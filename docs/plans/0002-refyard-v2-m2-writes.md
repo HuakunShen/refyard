@@ -250,3 +250,91 @@ tests/e2e/stash.spec.ts                          4 cases in Chromium
 
 Unverified: stash behaviour with submodules (never recursed by this build, and no
 test drives one), and stash/pop under a real editor-driven conflict resolution.
+
+---
+
+## T11 — Worktrees and submodules
+
+Delivered (7 operations):
+
+```
+packages/git-core/src/plan/worktrees.ts          add/remove/lock/unlock argv
+packages/git-core/src/plan/submodules.ts         add/update --checkout/sync argv
+packages/git-core/src/workflows/worktrees.ts     the 7 workflows
+packages/host-node/src/coordinator/worktree-effects.ts  the 7 effects
+packages/git-ui/src/components/{WorktreePanel,SubmodulePanel}.svelte
+tests/integration/worktree-submodule.test.ts     11 cases
+tests/e2e/worktree.spec.ts                       2 cases in Chromium
+```
+
+### Deviations and findings, recorded deliberately
+
+- **The reference lists `core/workflows/submodules.ts` and
+  `coordinator/composite-queue.ts`; neither exists.** The three submodule workflows
+  live beside the worktree workflows in `workflows/worktrees.ts` (one file, one
+  subject: nested checkouts), and the composite queue is the coordinator's existing
+  single-writer queue — the operations are one repository's writes, so a second queue
+  would be a second writer. What the reference asked for from a composite queue
+  (report partial effects, never claim a rollback) is what `NetworkOutcome`-style
+  partial results already do for multi-ref operations.
+- **The destination is a path inside an approved root, re-checked at effect time.**
+  `relativeDestination` is resolved against the root the repository was registered
+  under and compared again with containment _after_ resolution, so a symlinked root or
+  a `..` that survives validation cannot land outside it. The case
+  `refuses a destination that escapes the approved root` drives it through the API.
+- **The primary worktree is refused before Git runs**, and the panel offers no remove
+  control for it: a button whose only outcome is Git's refusal teaches the wrong
+  thing. The test asserts both — the API refuses, and the checkout is still there
+  (`git status --porcelain=v2` exits 0 afterwards).
+- **Removal is never forced.** No `--force` exists in the planner; a dirty or locked
+  worktree is refused by Git and reported as that refusal, and the integration case
+  asserts a dirty worktree survives the attempt. Nothing falls back to `rm -rf`.
+- **`update` is `--checkout` only.** `--remote`, `--force`, `--merge` and `--rebase`
+  are not spelled anywhere, which is also the defense against a configured
+  `submodule.<name>.update` shell command: no switch that would consult it is passed.
+  The case `updates a submodule to exactly the recorded commit` moves the submodule's
+  remote ahead and proves the checkout lands on the recorded commit, not the newer one.
+- **Submodule state is three object names, never a flag.** `recordedOid` (the parent
+  commit), `indexOid` (the parent index) and `actualOid` (the checkout) are separate
+  fields, and the read has its own tests for the states that disagree. `unknown` is
+  its own state for a gitlink this build could not read — never folded into clean.
+- **The fixture had to play the user for file transport, and the product does not.**
+  `git submodule add` clones through a transport, and a clone from a local path is
+  refused by Git's own `protocol.file.allow` policy. A repository-local setting does
+  **not** apply to that child clone (verified with `git config --show-origin` plus a
+  failing add), so the fixture appends the setting to the isolated scratch `HOME`'s
+  global config — the fixture acting as the machine's user. Nothing in the product
+  sets `protocol.file.allow`, and no test asserts that it does.
+- **The bare-remote fixture was on the wrong branch, and the failure looked like a
+  product bug.** `createBareRemote` ran `git init --bare` without
+  `--initial-branch`, so with the isolated (empty) global config its HEAD named
+  `master` while fixtures push `main`; the submodule clone then landed on an unborn
+  branch and failed with `You are on a branch yet to be born`. The fixture now pins
+  `--initial-branch=main`, matching `createRepo`.
+- **Unimplemented kinds moved on.** `http.test.ts` and `auth.test.ts` pinned
+  `lockWorktree` as "a kind with no effect"; T11 gave it one, so those premises now
+  use `initRepository`, which this build still does not implement (and does not
+  advertise).
+
+### Verification, actually run
+
+| Command                                                             | Result                                                     |
+| ------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `pnpm exec vitest run tests/integration/worktree-submodule.test.ts` | 11 passed                                                  |
+| `pnpm test:e2e --grep worktree`                                     | 2 passed                                                   |
+| `pnpm test:e2e`                                                     | 20 passed                                                  |
+| `pnpm test`                                                         | 477 passed (28 files)                                      |
+| `pnpm check`                                                        | 8 packages, 0 errors                                       |
+| `pnpm check:boundaries`                                             | 3 portable packages, 51 source files; 49 test/script files |
+| `pnpm check:contract`                                               | artifacts match, 438 named schemas                         |
+| `pnpm test:portable`                                                | neutral IIFE 60,542 bytes, no host globals                 |
+
+Unverified: a submodule that is itself a repository with submodules (`--recursive` is
+plumbed and exercised only against a flat fixture), worktrees on a filesystem without
+`stat`-able links (no Windows run), and `removeWorktree` against a worktree whose
+directory was deleted by hand (Git's `prune` path, which this build does not offer).
+
+`initRepository` and `cloneRepository` remain deliberately absent from
+`capabilities`: they address a workspace root rather than a repository, and the
+approved-root flow they need is not built. A request for either is answered with the
+closed `UnsupportedOperation` code, never a `202`.

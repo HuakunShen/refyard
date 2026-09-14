@@ -146,6 +146,10 @@ references/                the delivered v2 design package (read-only)
   `.css`/`.md`. Generated build output is exempt; scripts are TypeScript run by bun or Node 24.
 - **Formatting**: prettier (root, single `pnpm format`). Import order: node builtins, external,
   workspace, relative — type-only imports first in their group.
+- **Workspace code is imported by package name.** Each package's `exports` maps `./*` to
+  `./src/*.ts`, so a test or a script writes `@refyard/host-node/coordinator/jobs` instead of a
+  path into `packages/host-node/src` — TypeScript sources are consumed directly, with no build
+  step in between. `pnpm check:boundaries` fails on a relative reach-in.
 
 ## 6. Commandments for every task
 
