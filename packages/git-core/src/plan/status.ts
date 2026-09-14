@@ -63,23 +63,33 @@ export function planStatus(
  *
  * `--path-format=absolute` is required: without it `--git-common-dir` prints a
  * relative path that means something different depending on where Git was run.
+ *
+ * `omitTopLevel` exists because Git refuses `--show-toplevel` outside a work tree:
+ * in a bare repository the combined call exits 128 after printing only the paths it
+ * could resolve. The caller asks for the bare-safe form when it needs layout facts
+ * for a repository with no working tree, instead of reading a half-printed answer
+ * as if it were complete.
  */
-export function planRepositoryLayout(context: PlanContext): GitCommandSpec {
-  return spec(
-    context,
-    [
-      "--no-optional-locks",
-      "rev-parse",
-      "--path-format=absolute",
-      "--absolute-git-dir",
-      "--git-common-dir",
-      "--show-toplevel",
-      "--is-bare-repository",
-      "--show-object-format",
-      "--is-shallow-repository",
-    ],
-    "rev-parse layout",
+export function planRepositoryLayout(
+  context: PlanContext,
+  options: { readonly omitTopLevel?: boolean } = {},
+): GitCommandSpec {
+  const argv = [
+    "--no-optional-locks",
+    "rev-parse",
+    "--path-format=absolute",
+    "--absolute-git-dir",
+    "--git-common-dir",
+  ];
+  if (options.omitTopLevel !== true) {
+    argv.push("--show-toplevel");
+  }
+  argv.push(
+    "--is-bare-repository",
+    "--show-object-format",
+    "--is-shallow-repository",
   );
+  return spec(context, argv, "rev-parse layout");
 }
 
 /** HEAD state in one line: `HEAD` or a detached object name. */
@@ -88,6 +98,21 @@ export function planHeadRef(context: PlanContext): GitCommandSpec {
     context,
     ["symbolic-ref", "--quiet", "HEAD"],
     "symbolic-ref HEAD",
+  );
+}
+
+/**
+ * The object HEAD points at, or a non-zero exit when there is none.
+ *
+ * `--verify --quiet` is what makes "no commits yet" a plain exit status 1 instead
+ * of a message to be matched: an unborn repository is a normal state, and the
+ * caller needs to distinguish it from a real failure without reading English.
+ */
+export function planHeadOid(context: PlanContext): GitCommandSpec {
+  return spec(
+    context,
+    ["rev-parse", "--verify", "--quiet", "HEAD"],
+    "rev-parse HEAD",
   );
 }
 

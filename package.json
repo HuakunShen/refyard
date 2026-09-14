@@ -11,13 +11,15 @@
     "format": "prettier --write \"**/*.{ts,svelte,md,json,yaml}\"",
     "test": "vitest run",
     "test:unit": "vitest run tests/unit tests/contract tests/core tests/graph",
-    "test:integration": "vitest run tests/node tests/integration"
+    "test:integration": "vitest run tests/node tests/integration",
+    "test:portable": "bun scripts/check-portable.ts"
   },
   "devDependencies": {
     "@refyard/git-contract": "workspace:*",
     "@refyard/git-core": "workspace:*",
     "@refyard/host-node": "workspace:*",
     "@types/node": "catalog:",
+    "esbuild": "catalog:",
     "oxc-parser": "catalog:",
     "prettier": "catalog:",
     "turbo": "catalog:",

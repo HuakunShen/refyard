@@ -93,3 +93,58 @@ export {
   type PreviewStore,
   type PreviewStoreOptions,
 } from "./filesystem/preview.js";
+export {
+  createRootRegistry,
+  type RegisterRootOptions,
+  type RootRecord,
+  type RootRegistry,
+  type RootRegistryOptions,
+} from "./registry/roots.js";
+export {
+  createRepositoryRegistry,
+  type RegisterRepositoryInput,
+  type RepositoryRecord,
+  type RepositoryRegistry,
+  type RepositoryRegistryOptions,
+} from "./registry/repositories.js";
+export {
+  createWorktreeRegistry,
+  type HostWorktree,
+  type WorktreeRegistry,
+  type WorktreeRegistryOptions,
+} from "./registry/worktrees.js";
+export {
+  createPathRegistry,
+  type PathBinding,
+  type PathRegistry,
+  type PathRegistryOptions,
+} from "./registry/paths.js";
+export {
+  createSnapshotStore,
+  type CursorPayload,
+  type CursorResult,
+  type SnapshotKind,
+  type SnapshotRecord,
+  type SnapshotStore,
+  type SnapshotStoreOptions,
+} from "./coordinator/snapshots.js";
+export {
+  createReadService,
+  ReadProblem,
+  type DiffQuery,
+  type HistoryQuery,
+  type ReadService,
+  type ReadServiceOptions,
+  type StatusQuery,
+} from "./coordinator/reads.js";
+export {
+  createGitDirLookup,
+  fileExistsIn,
+  isoFromMs,
+  isoFromSeconds,
+  readOperationMarkers,
+  redactRemoteUrl,
+  synthesizeUntrackedPatch,
+  type GitDirLookup,
+  type SynthesizedPatch,
+} from "./coordinator/read-support.js";

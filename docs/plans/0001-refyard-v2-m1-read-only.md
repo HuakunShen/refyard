@@ -154,6 +154,19 @@ boundary checks, history snapshots with fixed tips and bounded paging, diff meta
 worktree/submodule three-OID status, stash locator+OID pairing, preview tokens (5 min).
 Portability smoke builds a neutral IIFE and executes planner/parser fixtures with no Node/Web
 globals injected; recorded as a smoke check, not a QuickJS result.
+**Deviations from the reference file list, recorded deliberately:** the core workflow files are
+`engine`, `status`, `history`, `repository` (refs, worktrees, submodules, stashes — they share one
+listing→facts shape) and `diff`, plus `parse/meta.ts` and `plan/refs.ts` for the formats those reads
+need (remotes, `.gitmodules`, `ls-tree`, `rev-list` topology, `cat-file --batch-check`);
+`planRepositoryLayout` gained `omitTopLevel` because Git refuses `--show-toplevel` in a bare
+repository; the host adds `coordinator/read-support.ts` (operation markers, per-worktree Git
+directory, URL redaction, synthesized untracked patches) and `coordinator/snapshot-types.ts`.
+Two behaviours are narrower than the prose and are stated here rather than discovered later:
+cursors are random server-resolved ids (the contract caps a `cur_` id at 96 characters, and an
+opaque handle the client cannot read is the point), and a diff lists at most 200 files with
+`truncated` set, fetching patches only for a named path. The portability smoke lives in
+`scripts/lib/portable.ts` so `pnpm test:portable` and the Vitest suite prove the same thing, and
+`pnpm-workspace.yaml` allows esbuild's install script because that check needs its binary.
 Verification: `pnpm exec vitest run tests/integration/reads.test.ts tests/portable &&
 pnpm test:portable && pnpm check:boundaries`.
 Commit: `feat: add scoped repository reads and portable core smoke`.

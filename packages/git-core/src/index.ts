@@ -1,12 +1,16 @@
 /**
  * `@refyard/git-core` — the portable Git engine.
  *
- * Two responsibilities, and nothing else:
+ * Three responsibilities, and nothing else:
  *
  * - **planners** produce every production `git` invocation as a fixed argument
  *   vector (`plan/`),
  * - **parsers** turn Git's machine output back into structured facts, reading
- *   bytes rather than decoded text (`parse/`).
+ *   bytes rather than decoded text (`parse/`),
+ * - **workflows** compose those two into reads that answer a product question —
+ *   a status snapshot, a history page, a bounded diff (`workflows/`). They run
+ *   commands through `GitEngine`, which the host implements, so a workflow is
+ *   still plain code with no process, filesystem or clock of its own.
  *
  * It imports no host module and touches no host global: privileged I/O arrives
  * through `GitHostPort`, text decoding through `TextCodec`, and time through the
@@ -23,6 +27,13 @@ export * from "./parse/worktree.js";
 export * from "./parse/cat-file.js";
 export * from "./parse/patch.js";
 export * from "./parse/network.js";
+export * from "./parse/meta.js";
 export * from "./plan/status.js";
 export * from "./plan/paths.js";
 export * from "./plan/commit.js";
+export * from "./plan/refs.js";
+export * from "./workflows/engine.js";
+export * from "./workflows/status.js";
+export * from "./workflows/history.js";
+export * from "./workflows/repository.js";
+export * from "./workflows/diff.js";

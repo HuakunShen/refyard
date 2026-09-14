@@ -2,6 +2,12 @@ packages:
   - "apps/*"
   - "packages/*"
 
+# esbuild's install script only places its own platform binary; the portability
+# smoke (scripts/check-portable.ts) needs that binary, and nothing else in the
+# workspace is allowed to run install scripts.
+allowBuilds:
+  esbuild: true
+
 # Every dependency version lives here so a package.json can only ask for a name.
 # The plan forbids silent "latest" upgrades during task execution; bumping a
 # version means editing this file, which shows up in the task's own commit.
