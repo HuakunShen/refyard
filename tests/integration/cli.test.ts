@@ -112,6 +112,33 @@ describe("argument parsing", () => {
     expect(parseArgs(["a", "b"]).ok).toBe(false);
   });
 
+  it("parses --ticket-ttl in whole seconds and defaults to 60", () => {
+    const parsed = parseArgs([
+      "serve",
+      "--repo",
+      "/tmp/repo",
+      "--ticket-ttl",
+      "3600",
+    ]);
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok && parsed.command.kind === "serve") {
+      expect(parsed.command.ticketTtlSeconds).toBe(3600);
+    }
+    const defaulted = parseArgs(["serve", "--repo", "/tmp/repo"]);
+    if (defaulted.ok && defaulted.command.kind === "serve") {
+      expect(defaulted.command.ticketTtlSeconds).toBe(60);
+    }
+  });
+
+  it("rejects a ticket ttl that is missing, not a number, or outside 1..86400", () => {
+    // Prevents: a typo like `--ticket-ttl 1e9` silently minting a day-long (or
+    // year-long) credential, and an empty flag doing nothing at all.
+    expect(parseArgs(["serve", "--ticket-ttl"]).ok).toBe(false);
+    expect(parseArgs(["serve", "--ticket-ttl", "abc"]).ok).toBe(false);
+    expect(parseArgs(["serve", "--ticket-ttl", "0"]).ok).toBe(false);
+    expect(parseArgs(["serve", "--ticket-ttl", "99999"]).ok).toBe(false);
+  });
+
   it("accepts help and version anywhere", () => {
     expect(parseArgs(["--help"]).ok).toBe(true);
     expect(parseArgs(["serve", "-v"]).ok).toBe(true);

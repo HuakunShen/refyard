@@ -8,8 +8,8 @@
  *
  * ```
  * refyard [path]                    # same as `open`
- * refyard open [path] [--port N] [--no-open]
- * refyard serve --repo <path> [--port N] [--no-open]
+ * refyard open [path] [--port N] [--ticket-ttl S] [--no-open]
+ * refyard serve --repo <path> [--port N] [--ticket-ttl S] [--no-open]
  * refyard doctor [--json]
  * ```
  *
@@ -20,7 +20,11 @@
  *   is how tests and throwaway sessions work);
  * - exactly one path may be given, and it is resolved relative to the caller's
  *   working directory — never inside core, which has no notion of a cwd;
- * - `--allow-root` must be explicit, so running as root is never an accident.
+ * - `--allow-root` must be explicit, so running as root is never an accident;
+ * - `--ticket-ttl` widens the pairing ticket's life beyond the 60-second default — a
+ *   convenience for a URL that will be read later (a chat message, a bookmarked note),
+ *   never a smaller default.
+ 
  */
 import { resolve } from "node:path";
 
@@ -31,6 +35,7 @@ export type CliCommand =
       readonly port: number;
       readonly portExplicit: boolean;
       readonly openBrowser: boolean;
+      readonly ticketTtlSeconds: number;
       readonly allowRoot: boolean;
     }
   | {
@@ -39,6 +44,7 @@ export type CliCommand =
       readonly port: number;
       readonly portExplicit: boolean;
       readonly openBrowser: boolean;
+      readonly ticketTtlSeconds: number;
       readonly allowRoot: boolean;
     }
   | {
@@ -54,6 +60,8 @@ export type ParseResult =
   | { readonly ok: false; readonly message: string };
 
 export const DEFAULT_PORT = 47831;
+/** Matches the auth store's default; both exist so the CLI can print what it chose. */
+export const DEFAULT_TICKET_TTL_SECONDS = 60;
 
 const HELP_TEXT = `refyard — a local Git workbench
 
@@ -66,6 +74,7 @@ usage:
 options:
   --repo <path>     repository to serve (required by \`serve\`, optional otherwise)
   --port <n>        loopback port; default ${DEFAULT_PORT}, 0 asks for a free one
+  --ticket-ttl <s>  pairing ticket lifetime in seconds; default 60, max 86400
   --no-open         do not open a browser
   --json            machine-readable output (doctor)
   --allow-root      permit running as root; off by default
@@ -104,6 +113,7 @@ export function parseArgs(
   let port = DEFAULT_PORT;
   let portExplicit = false;
   let openBrowser = kind !== "serve";
+  let ticketTtlSeconds = DEFAULT_TICKET_TTL_SECONDS;
   let json = false;
   let allowRoot = false;
 
@@ -139,6 +149,32 @@ export function parseArgs(
         }
         port = parsed;
         portExplicit = true;
+        index += 1;
+        break;
+      }
+      case "--ticket-ttl": {
+        const value = words[index + 1];
+        if (value === undefined) {
+          return {
+            ok: false,
+            message: "--ticket-ttl requires a number of seconds",
+          };
+        }
+        if (!/^\d{1,5}$/.test(value)) {
+          return {
+            ok: false,
+            message: `--ticket-ttl must be a whole number of seconds, not "${value}"`,
+          };
+        }
+        const parsed = Number.parseInt(value, 10);
+        if (parsed < 1 || parsed > 86_400) {
+          return {
+            ok: false,
+            message:
+              "--ticket-ttl must be between 1 and 86400 seconds (24 hours)",
+          };
+        }
+        ticketTtlSeconds = parsed;
         index += 1;
         break;
       }
@@ -192,6 +228,7 @@ export function parseArgs(
       port,
       portExplicit,
       openBrowser,
+      ticketTtlSeconds,
       allowRoot,
     },
   };

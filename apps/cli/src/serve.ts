@@ -57,7 +57,7 @@ import {
   type ReadKind,
   type UnavailableReason,
 } from "@refyard/git-contract";
-import { DEFAULT_PORT } from "./args.js";
+import { DEFAULT_PORT, DEFAULT_TICKET_TTL_SECONDS } from "./args.js";
 import { openInBrowser } from "./browser.js";
 import { MINIMAL_PAGE } from "./minimal-page.js";
 
@@ -270,6 +270,8 @@ export async function assembleService(
 export interface RunServiceOptions extends AssembleOptions {
   readonly port: number;
   readonly openBrowser: boolean;
+  /** Pairing-ticket lifetime in seconds; 60 unless --ticket-ttl says otherwise. */
+  readonly ticketTtlSeconds: number;
   /** Directory of the built web app; when absent, a placeholder page is served. */
   readonly webRoot: string | null;
   readonly allowRoot: boolean;
@@ -306,6 +308,7 @@ export async function runService(
     events: assembly.events,
     serviceInstanceId: assembly.serviceInstanceId,
     port: options.port,
+    ticketTtlSeconds: options.ticketTtlSeconds,
     webRoot: options.webRoot,
     inlineDocument: MINIMAL_PAGE,
     grants: {
@@ -326,6 +329,9 @@ export async function runService(
   options.write(`  git:        ${assembly.gitVersion}`);
   options.write(
     `  port:       ${http.port}${options.port === 0 ? " (chosen by the OS)" : ""}`,
+  );
+  options.write(
+    `  ticket ttl: ${options.ticketTtlSeconds}s${options.ticketTtlSeconds === DEFAULT_TICKET_TTL_SECONDS ? "" : " (--ticket-ttl)"}`,
   );
   options.write(
     `  ui:         ${options.webRoot === null ? "placeholder page (the Svelte app is built in a later task)" : options.webRoot}`,

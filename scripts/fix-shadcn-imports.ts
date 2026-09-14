@@ -13,30 +13,31 @@ import { join, relative } from "node:path";
 const ROOT = "packages/git-ui/src/components/ui";
 
 async function filesIn(directory: string): Promise<string[]> {
-	const entries = await readdir(directory, { withFileTypes: true });
-	const files = [];
-	for (const entry of entries) {
-		const path = join(directory, entry.name);
-		if (entry.isDirectory()) {
-			files.push(...(await filesIn(path)));
-		} else if (/\.(svelte|ts)$/.test(entry.name)) {
-			files.push(path);
-		}
-	}
-	return files;
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await filesIn(path)));
+    } else if (/\.(svelte|ts)$/.test(entry.name)) {
+      files.push(path);
+    }
+  }
+  return files;
 }
 
 let rewritten = 0;
 for (const path of await filesIn(ROOT)) {
-	const source = await readFile(path, "utf8");
-	// From `src/components/ui/<dir>/<file>`, `$lib/x` is `../../../x`.
-	const updated = source.replaceAll(
-		/\$lib\//g,
-		() => `${relative(join(path, ".."), "packages/git-ui/src").replaceAll("\\", "/")}/`,
-	);
-	if (updated !== source) {
-		await writeFile(path, updated);
-		rewritten += 1;
-	}
+  const source = await readFile(path, "utf8");
+  // From `src/components/ui/<dir>/<file>`, `$lib/x` is `../../../x`.
+  const updated = source.replaceAll(
+    /\$lib\//g,
+    () =>
+      `${relative(join(path, ".."), "packages/git-ui/src").replaceAll("\\", "/")}/`,
+  );
+  if (updated !== source) {
+    await writeFile(path, updated);
+    rewritten += 1;
+  }
 }
 console.log(`fix-shadcn-imports: rewrote ${rewritten} files under ${ROOT}`);

@@ -93,6 +93,11 @@ export interface HttpHostOptions {
   /** Grants every session paired through this host receives. */
   readonly grants: SessionGrants;
   readonly actor?: string;
+  /**
+   * Pairing-ticket lifetime in seconds. The 60-second default is the design; widening it
+   * is a CLI-level choice for a URL that will be read later, never a smaller number.
+   */
+  readonly ticketTtlSeconds?: number;
   /** Injectable for tests; production uses the real clock. */
   readonly now?: () => number;
   readonly log?: (line: string) => void;
@@ -122,6 +127,9 @@ export async function startHttpHost(
   const auth = createAuthStore({
     serviceInstanceId,
     ...(options.now === undefined ? {} : { now: options.now }),
+    ...(options.ticketTtlSeconds === undefined
+      ? {}
+      : { ticketTtlSeconds: options.ticketTtlSeconds }),
   });
   const assets = createAssetServer({
     webRoot: options.webRoot ?? null,

@@ -82,6 +82,7 @@ async function runServeCommand(
     gitPath: io.gitPath,
     port: command.port,
     openBrowser: command.openBrowser,
+    ticketTtlSeconds: command.ticketTtlSeconds,
     webRoot,
     allowRoot: command.allowRoot,
     write: io.write,
