@@ -95,6 +95,7 @@ export {
 } from "./filesystem/preview.js";
 export {
   createRootRegistry,
+  defaultStateRoot,
   type RegisterRootOptions,
   type RootRecord,
   type RootRegistry,

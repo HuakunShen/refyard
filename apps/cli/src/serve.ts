@@ -70,6 +70,7 @@ import {
 } from "@refyard/git-contract";
 import { DEFAULT_PORT, DEFAULT_TICKET_TTL_SECONDS } from "./args.js";
 import { isPairingCommand } from "./pairing-reprint.js";
+import { reportedVersion } from "./version.js";
 import { openInBrowser } from "./browser.js";
 import { MINIMAL_PAGE } from "./minimal-page.js";
 
@@ -99,6 +100,13 @@ export interface AssembleOptions {
   readonly repositoryPath: string;
   readonly gitPath: string;
   readonly write: (line: string) => void;
+  /**
+   * Where notes go when stdout belongs to a machine.
+   *
+   * `--json` mode needs one channel for data and another for everything else: without
+   * this, the pairing URL would have to go to stdout and stop being machine-readable.
+   */
+  readonly writeError?: (line: string) => void;
   /** Injected in tests so no real Git process is probed twice. */
   readonly skipDoctor?: boolean;
 }
@@ -316,8 +324,17 @@ export interface RunServiceOptions extends AssembleOptions {
   /** Directory of the built web app; when absent, a placeholder page is served. */
   readonly webRoot: string | null;
   readonly allowRoot: boolean;
+  /**
+   * Machine output: one JSON object on stdout, pairing material on stderr only.
+   *
+   * A terminal is a private channel; a pipe may be read by anything, so the ticket
+   * never appears on stdout in this mode.
+   */
+  readonly json?: boolean;
   /** Injected by tests so a run does not need a signal to stop. */
   readonly installSignalHandlers?: boolean;
+  /** How long a stop waits for in-flight requests; the host's default is 5 s. */
+  readonly shutdownGraceMs?: number;
 }
 
 export interface RunningService {
@@ -352,20 +369,81 @@ export async function runService(
     ticketTtlSeconds: options.ticketTtlSeconds,
     webRoot: options.webRoot,
     inlineDocument: MINIMAL_PAGE,
+    ...(options.shutdownGraceMs === undefined
+      ? {}
+      : { shutdownGraceMs: options.shutdownGraceMs }),
     grants: {
       allowedRootIds: [assembly.allowedRootId],
       repositoryIds: [assembly.repositoryId],
       scopes: ["repository:read"],
     },
     log: (line) => {
-      options.write(`  ${line}`);
+      // Service logs are diagnostics, not data: a machine reading stdout must not
+      // find them interleaved with the JSON object.
+      if (options.json === true) {
+        note(`  ${line}`);
+      } else {
+        options.write(`  ${line}`);
+      }
     },
   });
 
   const origin = `http://127.0.0.1:${http.port}`;
   const pairingUrl = http.pairingUrl(origin);
+  // Without a separate error channel (a host that only passes `write`), notes fall
+  // back to it rather than being dropped silently.
+  const note = options.writeError ?? options.write;
 
-  options.write(`refyard ${CONTRACT_VERSION} (api ${API_MAJOR})`);
+  /**
+   * Two output modes, and the difference is who is reading.
+   *
+   * A terminal gets the banner, including the pairing URL — the user's own screen is
+   * the private channel that a web page cannot read. A machine (`--json`) gets one
+   * JSON object on stdout with no pairing material in it at all, and the pairing URL
+   * goes to stderr: a supervisor can capture it, a log can strip it, and a program
+   * parsing stdout can never mistake a ticket for data.
+   */
+  if (options.json === true) {
+    options.write(
+      JSON.stringify({
+        serviceInstanceId: http.serviceInstanceId,
+        port: http.port,
+        url: origin,
+        apiMajor: API_MAJOR,
+        contractVersion: CONTRACT_VERSION,
+        repositoryId: assembly.repositoryId,
+        ui: options.webRoot,
+      }),
+    );
+    note(`pairing URL (single use): ${pairingUrl}`);
+    if (options.openBrowser) {
+      const opened = await openInBrowser(`${origin}/`);
+      if (!opened.ok) {
+        note(`could not open a browser: ${opened.reason}`);
+      }
+    }
+    let jsonClosed = false;
+    const closeJson = async (): Promise<void> => {
+      if (jsonClosed) {
+        return;
+      }
+      jsonClosed = true;
+      await http.close();
+    };
+    if (options.installSignalHandlers !== false) {
+      const onJsonSignal = (): void => {
+        note("stopping: no new requests will be accepted");
+        void closeJson().then(() => {
+          process.exitCode = 0;
+        });
+      };
+      process.on("SIGINT", onJsonSignal);
+      process.on("SIGTERM", onJsonSignal);
+    }
+    return { http, assembly, url: origin, pairingUrl, close: closeJson };
+  }
+
+  options.write(`refyard ${await reportedVersion()} (api ${API_MAJOR})`);
   options.write(`  repository: ${options.repositoryPath}`);
   options.write(`  git:        ${assembly.gitVersion}`);
   options.write(

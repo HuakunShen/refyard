@@ -53,3 +53,10 @@ references
 
 # Generated development build output (see scripts/bundle-cli.ts).
 .refyard-dev/
+
+# Generated publication staging (see scripts/build-release.ts). The manifest in
+# packages/npm-dist is source; everything it stages next to it is not.
+packages/npm-dist/bin/
+packages/npm-dist/dist/
+packages/npm-dist/web/
+packages/npm-dist/*.tgz

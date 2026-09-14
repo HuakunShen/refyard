@@ -42,6 +42,7 @@ export type CliCommand =
       readonly openBrowser: boolean;
       readonly ticketTtlSeconds: number;
       readonly allowRoot: boolean;
+      readonly json: boolean;
     }
   | {
       readonly kind: "serve";
@@ -51,6 +52,7 @@ export type CliCommand =
       readonly openBrowser: boolean;
       readonly ticketTtlSeconds: number;
       readonly allowRoot: boolean;
+      readonly json: boolean;
     }
   | {
       readonly kind: "doctor";
@@ -106,7 +108,8 @@ options:
   --port <n>        loopback port; default ${DEFAULT_PORT}, 0 asks for a free one
   --ticket-ttl <s>  pairing ticket lifetime in seconds; default 60, max 86400
   --no-open         do not open a browser
-  --json            machine-readable output (doctor)
+  --json            machine-readable output; for \`open\`/\`serve\` it prints one JSON
+                    object on stdout (no ticket) and sends the pairing URL to stderr
   --allow-root      permit running as root; off by default
   -h, --help        this text
   -v, --version     version info
@@ -256,6 +259,7 @@ export function parseArgs(
       openBrowser,
       ticketTtlSeconds: ticketTtl.value,
       allowRoot,
+      json,
     },
   };
 }

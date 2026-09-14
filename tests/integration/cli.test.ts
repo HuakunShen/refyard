@@ -297,6 +297,134 @@ describe("serving a repository", () => {
     }
   });
 
+  it("keeps pairing material off stdout in --json mode", async () => {
+    // Prevents: a supervisor parsing stdout as JSON and finding a ticket — or, worse,
+    // logging one. The machine channel carries data; the pairing URL is a note.
+    const io = collect();
+    const running = await runService({
+      repositoryPath: repo.root,
+      gitPath: fixtureGitPath(),
+      port: 0,
+      openBrowser: false,
+      ticketTtlSeconds: 60,
+      webRoot: null,
+      allowRoot: false,
+      installSignalHandlers: false,
+      json: true,
+      write: io.write,
+      writeError: io.writeError,
+    });
+    try {
+      expect(io.lines).toHaveLength(1);
+      const ready = JSON.parse(io.lines[0] ?? "{}") as {
+        serviceInstanceId: string;
+        port: number;
+        url: string;
+        apiMajor: number;
+        repositoryId: string;
+      };
+      expect(ready.serviceInstanceId).toMatch(/^srvc_/);
+      expect(ready.port).toBe(running.http.port);
+      expect(ready.url).toEqual(`http://127.0.0.1:${running.http.port}`);
+      expect(ready.apiMajor).toBeGreaterThanOrEqual(1);
+      expect(io.lines[0] ?? "").not.toContain("pair=");
+      expect(io.lines[0] ?? "").not.toContain("ticket");
+
+      // The human-readable URL still exists, on the channel meant for notes.
+      const paired = io.errors.find((line) => line.includes("pair="));
+      expect(paired).toBeDefined();
+      expect(paired).toContain(ticketFrom(running.pairingUrl));
+    } finally {
+      await running.close();
+    }
+  });
+
+  it("drains an in-flight request before closing, and does not hang on idle ones", async () => {
+    // Prevents: Ctrl+C during work that is already the server's. Stopping must mean
+    // "accept nothing new and let what is running finish", not "drop the answer to
+    // something that already ran" — and it must not wait on an idle keep-alive socket
+    // either, which is the other way this goes wrong.
+    const io = collect();
+    const running = await runService({
+      repositoryPath: repo.root,
+      gitPath: fixtureGitPath(),
+      port: 0,
+      openBrowser: false,
+      ticketTtlSeconds: 60,
+      webRoot: null,
+      allowRoot: false,
+      installSignalHandlers: false,
+      shutdownGraceMs: 300,
+      write: io.write,
+    });
+    const origin = `http://127.0.0.1:${running.http.port}`;
+    const exchanged = await fetch(`${origin}/api/v1/session/exchange`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin },
+      body: JSON.stringify({ ticket: ticketFrom(running.pairingUrl) }),
+    });
+    const { token } = (await exchanged.json()) as { token: string };
+
+    // An event stream: the server has answered and the request stays open until the
+    // client goes away, which is a request that is unambiguously in flight.
+    const stream = await fetch(`${origin}/api/v1/events`, {
+      headers: { authorization: `Bearer ${token}`, origin },
+    });
+    expect(stream.status).toBe(200);
+    expect(stream.headers.get("content-type")).toContain("text/event-stream");
+
+    const startedAt = Date.now();
+    await running.close();
+    const elapsed = Date.now() - startedAt;
+    // It waited for the stream (at least part of the grace period) instead of cutting
+    // it immediately...
+    expect(elapsed).toBeGreaterThanOrEqual(150);
+    // ...and it did not wait forever either: the grace period is a bound, not a hope.
+    expect(elapsed).toBeLessThan(3_000);
+    await stream.body?.cancel().catch(() => undefined);
+
+    // A listener that has stopped really is gone.
+    await expect(
+      fetch(`${origin}/api/v1/capabilities`, {
+        headers: { authorization: `Bearer ${token}`, origin },
+      }),
+    ).rejects.toThrow();
+
+    // With nothing in flight, closing does not burn the grace period: idle keep-alive
+    // sockets must not hold the process open.
+    const idle = await runService({
+      repositoryPath: repo.root,
+      gitPath: fixtureGitPath(),
+      port: 0,
+      openBrowser: false,
+      ticketTtlSeconds: 60,
+      webRoot: null,
+      allowRoot: false,
+      installSignalHandlers: false,
+      shutdownGraceMs: 2_000,
+      write: io.write,
+    });
+    const idleStarted = Date.now();
+    await idle.close();
+    expect(Date.now() - idleStarted).toBeLessThan(1_000);
+  });
+
+  it("reports the version of the installation, not of the source tree", async () => {
+    // A packaged build writes dist/build-info.json beside the bundle; the banner and
+    // `--version` read it, so an installed copy does not claim to be "0.0.0-dev".
+    const io = collect();
+    const result = await main(["--version"], {
+      write: io.write,
+      writeError: io.writeError,
+      cliDirectory,
+      gitPath: fixtureGitPath(),
+      cwd: repo.root,
+    });
+    expect(result.exitCode).toBe(EXIT_OK);
+    // Running from source there is no build-info, so the constant is the honest answer.
+    expect(io.lines[0]).toMatch(/^refyard \d+\.\d+\.\d+/);
+  });
+
   it("keeps serving after startup when the terminal interface is installed", async () => {
     // Prevents: a startup-order bug where the console wiring closed the service the
     // moment `runService` resolved, so the process exited (cleanly, code 0) before

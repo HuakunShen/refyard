@@ -101,6 +101,13 @@ export interface HttpHostOptions {
   /** Injectable for tests; production uses the real clock. */
   readonly now?: () => number;
   readonly log?: (line: string) => void;
+  /**
+   * How long `close()` waits for in-flight requests before cutting their sockets.
+   *
+   * The default (5 s) is enough for a read and for a queued operation to be reported;
+   * tests lower it so a shutdown case does not wait in real time.
+   */
+  readonly shutdownGraceMs?: number;
 }
 
 export interface HttpHost {
@@ -149,7 +156,20 @@ export async function startHttpHost(
   };
   let originPolicy: OriginPolicy | null = null;
 
+  /**
+   * Requests that have started and not finished.
+   *
+   * Shutdown needs this count to keep its promise: "stop accepting new work, finish
+   * what is running". A mutation that has been accepted is a write in progress, and
+   * cutting its connection does not stop the write — it only hides the answer.
+   */
+  let inFlight = 0;
+
   const server: Server = createServer((request, response) => {
+    inFlight += 1;
+    response.on("close", () => {
+      inFlight -= 1;
+    });
     void handle(request, response).catch((error: unknown) => {
       const correlationId = newCorrelationId();
       log(
@@ -655,7 +675,12 @@ export async function startHttpHost(
     },
 
     async close(): Promise<void> {
-      await closeQuietly(server);
+      await closeQuietly(server, {
+        inFlight: () => inFlight,
+        ...(options.shutdownGraceMs === undefined
+          ? {}
+          : { graceMs: options.shutdownGraceMs }),
+      });
     },
   };
 }
@@ -699,11 +724,30 @@ function headerValue(
   return value;
 }
 
-async function closeQuietly(server: Server): Promise<void> {
-  await new Promise<void>((resolve) => {
+/**
+ * Stop accepting connections, let what is running finish, then close.
+ *
+ * `server.close()` alone stops the listener but also waits for every open socket —
+ * including idle keep-alive connections a browser is holding, which would keep the
+ * process alive for minutes. `closeAllConnections()` alone cuts in-flight work in
+ * half. So the order is: stop accepting, drain what is running (bounded by
+ * `graceMs`), drop idle sockets, and only then cut whatever is left.
+ */
+async function closeQuietly(
+  server: Server,
+  options: { readonly inFlight: () => number; readonly graceMs?: number } = {
+    inFlight: () => 0,
+  },
+): Promise<void> {
+  const graceMs = options.graceMs ?? 5_000;
+  const closed = new Promise<void>((resolve) => {
     server.close(() => resolve());
-    // A listener that never started has no connections to drain; closing is then a
-    // no-op and must not hang the caller.
-    server.closeAllConnections?.();
   });
+  const deadline = Date.now() + graceMs;
+  while (options.inFlight() > 0 && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  server.closeIdleConnections?.();
+  server.closeAllConnections?.();
+  await closed;
 }

@@ -15,7 +15,7 @@
 import { parseArgs, helpText, type CliCommand } from "./args.js";
 import { runDoctorCommand } from "./doctor.js";
 import { findWebRoot, runService, type RunningService } from "./serve.js";
-import { CLI_VERSION } from "./version.js";
+import { CLI_VERSION, reportedVersion } from "./version.js";
 
 export interface MainIO {
   readonly write: (line: string) => void;
@@ -53,7 +53,7 @@ export async function main(
       io.write(helpText());
       return { exitCode: EXIT_OK };
     case "version":
-      io.write(`refyard ${CLI_VERSION}`);
+      io.write(`refyard ${await reportedVersion()}`);
       return { exitCode: EXIT_OK };
     case "doctor": {
       const exitCode = await runDoctorCommand({
@@ -85,7 +85,9 @@ async function runServeCommand(
     ticketTtlSeconds: command.ticketTtlSeconds,
     webRoot,
     allowRoot: command.allowRoot,
+    json: command.json,
     write: io.write,
+    writeError: io.writeError,
   });
   return { exitCode: EXIT_OK, running };
 }

@@ -322,6 +322,8 @@ importers:
         specifier: workspace:*
         version: link:../git-core
 
+  packages/npm-dist: {}
+
 packages:
 
   '@esbuild/aix-ppc64@0.28.2':

@@ -69,7 +69,7 @@ export interface RootRegistryOptions {
   readonly handles: HandleRegistry;
   readonly codec: ReturnType<typeof createTextCodec>;
   readonly nextRootId?: () => string;
-  /** Parent of the private state directory; defaults to `.refyard` in the temp dir. */
+  /** Overrides where the private state directory lives; see `defaultStateRoot`. */
   readonly stateRootPath?: string;
   readonly now?: () => number;
 }
@@ -191,11 +191,52 @@ export function createRootRegistry(options: RootRegistryOptions): RootRegistry {
     },
 
     async stateRoot(): Promise<string> {
-      const root =
-        options.stateRootPath ??
-        join(process.env["TMPDIR"] ?? "/tmp", "refyard-state");
+      const root = options.stateRootPath ?? defaultStateRoot();
       await mkdir(root, { recursive: true, mode: 0o700 });
       return root;
     },
   };
+}
+
+/**
+ * Where the journal and recovery backups live when nothing says otherwise.
+ *
+ * It used to be `$TMPDIR/refyard-state`, which was wrong for what is stored there:
+ * a recovery backup exists so a discard can be undone *later*, and the system is
+ * free to clear a temporary directory in between — on macOS `TMPDIR` is per-user and
+ * purgeable. The state directory is therefore a per-user, durable location, chosen
+ * the way each platform expects, and `REFYARD_STATE_DIR` overrides it (which is how a
+ * test or a portable install pins it).
+ */
+export function defaultStateRoot(): string {
+  const override = process.env["REFYARD_STATE_DIR"];
+  if (override !== undefined && override.length > 0) {
+    return override;
+  }
+  const home = process.env["HOME"] ?? process.env["USERPROFILE"];
+  switch (process.platform) {
+    case "darwin": {
+      return home === undefined
+        ? join(process.env["TMPDIR"] ?? "/tmp", "refyard-state")
+        : join(home, "Library", "Application Support", "refyard");
+    }
+    case "win32": {
+      const localAppData = process.env["LOCALAPPDATA"];
+      if (localAppData !== undefined && localAppData.length > 0) {
+        return join(localAppData, "refyard");
+      }
+      return home === undefined
+        ? join(process.env["TMPDIR"] ?? ".", "refyard-state")
+        : join(home, "AppData", "Local", "refyard");
+    }
+    default: {
+      const xdg = process.env["XDG_STATE_HOME"];
+      if (xdg !== undefined && xdg.length > 0) {
+        return join(xdg, "refyard");
+      }
+      return home === undefined
+        ? join(process.env["TMPDIR"] ?? "/tmp", "refyard-state")
+        : join(home, ".local", "state", "refyard");
+    }
+  }
 }
