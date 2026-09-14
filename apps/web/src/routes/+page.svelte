@@ -17,11 +17,13 @@
     GitClientError,
     createEventStream,
     createGitClient,
+    createMutationClient,
   } from "@refyard/git-client";
   import type {
     CommitDetail,
     CommitSummary,
     DiffResponse,
+    ParsedMutationRequest,
     StatusEntry,
   } from "@refyard/git-contract";
   import { layoutPages, type GraphCommit } from "@refyard/git-graph";
@@ -34,6 +36,7 @@
     CardTitle,
     CommitDetailPanel,
     CommitList,
+    CommitPanel,
     ConnectionPanel,
     DiffPanel,
     DEFAULT_METRICS,
@@ -41,6 +44,7 @@
     RefsPanel,
     Separator,
     RepositoryList,
+    StagingPanel,
     StateBanner,
     StatusList,
     shortOid,
@@ -333,6 +337,182 @@
     };
   });
 
+  /* --------------------------------------------------------------- mutations */
+
+  // Writes live behind the same authenticated client as reads. The page owns the
+  // client and the confirmation flow; `git-ui` panels only render and emit intent.
+  const mutations = $derived(
+    createMutationClient({
+      baseUrl,
+      fetch: (input, init) => fetch(input, init),
+      token: () => token,
+    }),
+  );
+
+  const OPERATION_TERMINAL = new Set([
+    "succeeded",
+    "failed",
+    "needsAttention",
+    "unknown",
+    "cancelled",
+  ]);
+
+  let mutationBusy = $state(false);
+  let stagingMessage = $state<string | null>(null);
+  let commitResult = $state<string | null>(null);
+
+  const implementedKinds = $derived(
+    new Set((capabilities.data?.operations ?? []).map((entry) => entry.kind)),
+  );
+  const stagingAvailable = $derived(implementedKinds.has("stagePaths"));
+  const commitAvailable = $derived(implementedKinds.has("commit"));
+
+  /**
+   * Follow an accepted operation to its terminal state.
+   *
+   * The UI shows an outcome, so it polls the record rather than pretending the 202
+   * is the result. A lost poll is surfaced as-is; nothing is resubmitted.
+   */
+  async function awaitOperation(operationId: string): Promise<string> {
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      const record = await mutations.get(operationId);
+      if (OPERATION_TERMINAL.has(record.status)) {
+        if (record.status === "succeeded") {
+          return record.result?.summary ?? "done";
+        }
+        return `${record.status}: ${record.problem?.message ?? "no detail"}`;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    return "the operation did not finish in time; check the operation list before retrying";
+  }
+
+  /**
+   * Refresh status, then hand the writer the snapshot it must target.
+   *
+   * Mutations carry the snapshot they were planned against; re-reading first means a
+   * request is not refused as stale because the user took a moment to decide.
+   */
+  async function performWrite(
+    label: string,
+    buildOperation: (context: {
+      worktreeId: string;
+    }) =>
+      | ParsedMutationRequest["operation"]
+      | Promise<ParsedMutationRequest["operation"]>,
+    report: (message: string | null) => void = (message) => {
+      stagingMessage = message;
+    },
+  ): Promise<void> {
+    mutationBusy = true;
+    report(null);
+    try {
+      if (selectedRepositoryId === null || primaryWorktreeId === null) {
+        throw new Error("no repository selected");
+      }
+      const snapshot = await client.status({
+        repositoryId: selectedRepositoryId,
+        worktreeId: primaryWorktreeId,
+      });
+      const operation = await buildOperation({
+        worktreeId: snapshot.worktreeId,
+      });
+      const submitted = await mutations.submit({
+        clientRequestId: `${label}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+        target: {
+          kind: "worktree",
+          repositoryId: snapshot.repositoryId,
+          worktreeId: snapshot.worktreeId,
+          expectedSnapshotId: snapshot.snapshotId,
+        },
+        operation,
+      });
+      const operationId =
+        submitted.kind === "accepted"
+          ? submitted.accepted.operationId
+          : submitted.record.operationId;
+      report(await awaitOperation(operationId));
+      // The SSE hint will also invalidate; doing it here as well keeps the pane
+      // correct when the stream is down.
+      await queryClient.invalidateQueries({
+        queryKey: ["status", baseUrl, token, selectedRepositoryId],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["history", baseUrl, token, selectedRepositoryId],
+      });
+    } catch (error) {
+      report(describeProblem(error));
+    } finally {
+      mutationBusy = false;
+    }
+  }
+
+  /** Preview tokens for a selection, positionally aligned with the path ids. */
+  async function previewTokensFor(
+    worktreeId: string,
+    pathIds: readonly string[],
+  ): Promise<readonly string[]> {
+    const previews = await client.previews({
+      repositoryId: selectedRepositoryId ?? "",
+      worktreeId,
+      pathIds: [...pathIds],
+    });
+    const byPath = new Map(
+      previews.tokens.map((token) => [token.pathId, token.previewToken]),
+    );
+    return pathIds.map((pathId) => {
+      const token = byPath.get(pathId);
+      if (token === undefined) {
+        throw new Error("the host issued no preview token for a selected path");
+      }
+      return token;
+    });
+  }
+
+  function onStage(pathIds: readonly string[]): void {
+    void performWrite("stage", async ({ worktreeId }) => ({
+      kind: "stagePaths",
+      pathIds: [...pathIds],
+      previewTokens: [...(await previewTokensFor(worktreeId, pathIds))],
+    }));
+  }
+
+  function onUnstage(pathIds: readonly string[]): void {
+    void performWrite("unstage", () => ({
+      kind: "unstagePaths",
+      pathIds: [...pathIds],
+    }));
+  }
+
+  function onDiscard(pathIds: readonly string[]): void {
+    void performWrite("discard", async ({ worktreeId }) => ({
+      kind: "discardTrackedPaths",
+      pathIds: [...pathIds],
+      previewTokens: [...(await previewTokensFor(worktreeId, pathIds))],
+      confirmed: true,
+    }));
+  }
+
+  function onCommit(message: string): void {
+    void performWrite(
+      "commit",
+      () => ({ kind: "commit", message }),
+      (result) => {
+        commitResult = result;
+      },
+    );
+  }
+
+  function onAmend(message: string | null): void {
+    void performWrite(
+      "amend",
+      () => ({ kind: "amendCommit", message, confirmed: true }),
+      (result) => {
+        commitResult = result;
+      },
+    );
+  }
+
   /* --------------------------------------------------------------- live hints */
 
   $effect(() => {
@@ -454,9 +634,20 @@
         {#if capabilities.data.operations.length === 0}
           <Badge
             tone="muted"
-            title="M1 exposes no write operations: no route, no capability, no button."
+            data-testid="build-badge"
+            title="No write operations: no route, no capability, no button."
           >
             read-only build
+          </Badge>
+        {:else}
+          <Badge
+            tone="branch"
+            data-testid="build-badge"
+            title={`Implemented write operations: ${capabilities.data.operations
+              .map((operation) => operation.kind)
+              .join(", ")}`}
+          >
+            {capabilities.data.operations.length} write operations
           </Badge>
         {/if}
       </span>
@@ -616,6 +807,55 @@
               {/if}
             </CardContent>
           </Card>
+
+          {#if stagingAvailable}
+            <Separator />
+
+            <Card size="sm">
+              <CardHeader>
+                <CardTitle
+                  class="text-xs font-semibold tracking-wide text-ink-muted uppercase"
+                >
+                  Stage &amp; commit
+                </CardTitle>
+              </CardHeader>
+              <CardContent class="flex flex-col gap-3">
+                {#if status.isPending}
+                  <StateBanner state="loading" title="Reading status…" />
+                {:else if status.isError}
+                  <StateBanner
+                    state="error"
+                    title="Could not read status"
+                    detail={describeProblem(status.error)}
+                  />
+                {:else if status.data !== undefined}
+                  <StagingPanel
+                    entries={status.data.entries}
+                    disabled={mutationBusy}
+                    busy={mutationBusy}
+                    message={stagingMessage}
+                    {onStage}
+                    {onUnstage}
+                    {onDiscard}
+                  />
+                  {#if commitAvailable}
+                    <Separator />
+                    <CommitPanel
+                      stagedCount={status.data.entries.filter(
+                        (entry) => entry.indexStatus !== ".",
+                      ).length}
+                      disabled={mutationBusy}
+                      busy={mutationBusy}
+                      canAmend={status.data.head.kind === "born"}
+                      message={commitResult}
+                      {onCommit}
+                      {onAmend}
+                    />
+                  {/if}
+                {/if}
+              </CardContent>
+            </Card>
+          {/if}
 
           <Separator />
 

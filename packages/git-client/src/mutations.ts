@@ -147,8 +147,26 @@ export function createMutationClient(
       if (!response.ok) {
         throw problemFrom(response.status, text);
       }
-      const envelope = recordEnvelopeSchema.parse(JSON.parse(text));
-      return envelope.operation;
+      // The by-id read is the list read with one entry: the host serves the same
+      // shape for both, and the contract's singular envelope exists only for
+      // submissions and events.
+      const parsed = z
+        .looseObject({ operations: z.array(operationRecordSchema) })
+        .parse(JSON.parse(text));
+      const record = parsed.operations[0];
+      if (record === undefined) {
+        throw problemFrom(
+          response.status,
+          JSON.stringify({
+            problem: {
+              code: "NotFound",
+              message: "no such operation for this session",
+              retryable: false,
+            },
+          }),
+        );
+      }
+      return record;
     },
 
     async list(limit) {

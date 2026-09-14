@@ -37,9 +37,11 @@ import {
   createPreviewStore,
   createReadService,
   createRecovery,
+  createRecoveryStore,
   createRepositoryRegistry,
   createRootRegistry,
   createSnapshotStore,
+  createStagingEffects,
   createTextCodec,
   createWorktreeRegistry,
   DEFAULT_RETENTION,
@@ -58,6 +60,7 @@ import {
   API_MAJOR,
   CONTRACT_VERSION,
   MUTATION_KINDS,
+  targetKindsOf,
   type ReadKind,
   type UnavailableReason,
 } from "@refyard/git-contract";
@@ -207,6 +210,27 @@ export async function assembleService(
     "stashes",
   ];
 
+  const stagingEffects = createStagingEffects({
+    engine,
+    repositories,
+    paths,
+    previews,
+    backups: createRecoveryStore({ root: join(stateRoot, "backups") }),
+  });
+
+  const mutations = createMutationCoordinator({
+    journal,
+    repositories,
+    worktrees,
+    engine,
+    recovery,
+    snapshots,
+    events,
+    effects: stagingEffects,
+    nextOperationId: () => `op_${randomBytes(9).toString("base64url")}`,
+    nextSequence: () => (sequence += 1),
+  });
+
   const read = createReadService({
     engine,
     roots,
@@ -231,22 +255,12 @@ export async function assembleService(
     },
     unavailable,
     reads,
-    operations: [],
-  });
-
-  const mutations = createMutationCoordinator({
-    journal,
-    repositories,
-    worktrees,
-    engine,
-    recovery,
-    snapshots,
-    events,
-    // No effect is registered in this build: `capabilities.operations` stays empty
-    // because it is derived from this list, so the two cannot disagree.
-    effects: [],
-    nextOperationId: () => `op_${randomBytes(9).toString("base64url")}`,
-    nextSequence: () => (sequence += 1),
+    // The registry is the single source: a kind is advertised exactly when an
+    // effect for it was registered above.
+    operations: mutations.implementedKinds().map((kind) => ({
+      kind,
+      targets: [...targetKindsOf(kind)],
+    })),
   });
 
   return {

@@ -334,18 +334,21 @@ describe("authorization and request shape", () => {
     expect(body.problem.code).toBe("NotFound");
   });
 
-  it("answers 501 for a read this build does not implement", async () => {
-    // Prevents: an unimplemented read being answered with a plausible empty success,
-    // which a UI would then render as "nothing to see".
-    const response = await service.fetch("/api/v1/previews", { token });
+  it("answers 501 for a path this build does not implement", async () => {
+    // Prevents: an unimplemented path being answered with a plausible empty success,
+    // which a UI would then render as "nothing to see". (Previews became a real
+    // route when mutations arrived; repository registration never did.)
+    const response = await service.fetch("/api/v1/repositories/register", { token });
     expect(response.status).toBe(501);
     const body = (await response.json()) as { problem: { code: string } };
     expect(body.problem.code).toBe("UnsupportedOperation");
   });
 
   it("answers 501 for a mutation no effect implements, never a fake 202", async () => {
-    // Prevents: the UI believing a stage or a commit was accepted when this build
-    // has no code that could run it.
+    // Prevents: the UI believing a branch was created when this build has no code
+    // that could run it. (stagePaths and its siblings are implemented in T08; a
+    // branch operation still is not, and an unknown worktree on an implemented
+    // kind is a 404, not a 501.)
     const response = await service.fetch("/api/v1/operations", {
       method: "POST",
       token,
@@ -353,15 +356,15 @@ describe("authorization and request shape", () => {
       body: JSON.stringify({
         clientRequestId: "req-1",
         target: {
-          kind: "worktree",
+          kind: "repository",
           repositoryId: service.repositoryId,
-          worktreeId: "wt_unknown",
           expectedSnapshotId: "snap_unknown",
         },
         operation: {
-          kind: "stagePaths",
-          pathIds: ["path_x"],
-          previewTokens: ["pt_x"],
+          kind: "createBranch",
+          branchName: "no-branch",
+          startOid: null,
+          switchToIt: false,
         },
       }),
     });

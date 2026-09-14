@@ -69,7 +69,7 @@ test.describe("read-only workbench", () => {
     await page.goto(service.pairingUrl);
 
     // Pairing happens on load; the header only renders once a session exists.
-    await expect(page.getByText("read-only build")).toBeVisible();
+    await expect(page.getByTestId("build-badge")).toBeVisible();
     await expect(page.getByRole("heading", { name: "History" })).toBeVisible();
 
     // The two commits the fixture made.
@@ -83,21 +83,22 @@ test.describe("read-only workbench", () => {
     const graphPaths = page.locator("svg[data-slot='graph-gutter'] path");
     expect(await graphPaths.count()).toBeGreaterThan(0);
 
-    // Changed paths, with Git's own status letters and no action offered.
-    await expect(page.getByText("untracked.txt")).toBeVisible();
+    // Changed paths, in Git's own status letters. The path appears in both the
+    // Changes list and the staging list; either is the pane rendering real status.
+    await expect(page.getByText("untracked.txt").first()).toBeVisible();
     await expect(page.getByText("metadata only")).toHaveCount(0);
   });
 
   test("removes the spent ticket from the address bar", async ({ page }) => {
     await page.goto(service.pairingUrl);
-    await expect(page.getByText("read-only build")).toBeVisible();
+    await expect(page.getByTestId("build-badge")).toBeVisible();
     // Either spelling counts: a spent ticket must not survive a reload or a bookmark.
     expect(page.url()).not.toContain("pair=");
   });
 
   test("opens a commit's diff from the history list", async ({ page }) => {
     await page.goto(service.pairingUrl);
-    await expect(page.getByText("read-only build")).toBeVisible();
+    await expect(page.getByTestId("build-badge")).toBeVisible();
 
     await page
       .getByRole("button", { name: /second/ })
@@ -124,7 +125,7 @@ test.describe("read-only workbench", () => {
     page,
   }) => {
     await page.goto(service.pairingUrl);
-    await expect(page.getByText("read-only build")).toBeVisible();
+    await expect(page.getByTestId("build-badge")).toBeVisible();
 
     await page
       .getByRole("button", { name: /a\.txt/ })
@@ -140,7 +141,7 @@ test.describe("read-only workbench", () => {
     page,
   }) => {
     await page.goto(service.pairingUrl);
-    await expect(page.getByText("read-only build")).toBeVisible();
+    await expect(page.getByTestId("build-badge")).toBeVisible();
 
     const row = await page
       .getByRole("button", { name: /second/ })
@@ -162,24 +163,17 @@ test.describe("read-only workbench", () => {
     expect(Math.abs(rowCentre - circleCentre)).toBeLessThanOrEqual(2);
   });
 
-  test("offers no control that could change the repository", async ({
+  test("offers a control only for an operation this build implements", async ({
     page,
   }) => {
     await page.goto(service.pairingUrl);
-    await expect(page.getByText("read-only build")).toBeVisible();
+    await expect(page.getByTestId("build-badge")).toBeVisible();
 
-    // M1's promise: the capability list has no write operation, so nothing on screen may
-    // look like one. This assertion fails first if a write affordance is ever added
-    // without the operation behind it.
-    for (const label of [
-      /^stage/i,
-      /^unstage/i,
-      /^commit/i,
-      /^discard/i,
-      /^stash/i,
-      /^push/i,
-      /^pull/i,
-    ]) {
+    // The badge states what is implemented, and the controls on screen match it: the
+    // staging surface exists, and nothing offers a kind with no effect behind it.
+    await expect(page.getByText(/write operations/)).toBeVisible();
+    await expect(page.getByTestId("staging-panel")).toBeVisible();
+    for (const label of [/^stash/i, /^push/i, /^pull/i, /^merge/i]) {
       await expect(page.getByRole("button", { name: label })).toHaveCount(0);
     }
   });
@@ -189,7 +183,7 @@ test.describe("read-only workbench", () => {
     await page.goto(`${origin}/?pair=not-a-real-ticket`);
 
     await expect(page.getByText("Pairing failed")).toBeVisible();
-    await expect(page.getByText("read-only build")).toHaveCount(0);
+    await expect(page.getByTestId("build-badge")).toHaveCount(0);
   });
 });
 

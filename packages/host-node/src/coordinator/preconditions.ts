@@ -44,11 +44,31 @@ export interface PreconditionContext {
     readonly expectedFingerprint: string;
     readonly currentFingerprint: string | null;
   }[];
+  /**
+   * A refusal established while gathering the facts themselves — an unknown
+   * repository or worktree, for instance. Checked before anything else, so the
+   * submit path can answer with the real code instead of an internal error.
+   */
+  readonly refusal?: {
+    readonly code: Problem["code"];
+    readonly message: string;
+  };
 }
 
 export function checkPreconditions(
   context: PreconditionContext,
 ): PreconditionOutcome {
+  if (context.refusal !== undefined) {
+    return {
+      ok: false,
+      problem: {
+        code: context.refusal.code,
+        message: context.refusal.message,
+        retryable: false,
+      },
+    };
+  }
+
   if (context.restartBlock !== null) {
     return {
       ok: false,
@@ -140,7 +160,44 @@ export function checkPreconditions(
  * It is built from the index entries of the paths a request names plus the Head, so
  * an unrelated file changing elsewhere does not invalidate a confirmation the user
  * just gave — while a change to the confirmed paths always does.
+ *
+ * This is the single derivation for "the index as the request was planned
+ * against": the read layer snapshots it and the submit-time freshness check
+ * recomputes it. Two derivations that differed in encoding would make every
+ * submission look stale (or, worse, hide a real change), so both call this.
  */
+export function statusIndexKey(facts: {
+  readonly head: { readonly oid: string | null };
+  readonly records: readonly {
+    readonly path: Uint8Array;
+    readonly originalPath: Uint8Array | null;
+    readonly modes: {
+      readonly index: string | null;
+      readonly worktree: string | null;
+    };
+    readonly oids: { readonly index: string | null };
+    readonly stages: readonly unknown[];
+  }[];
+}): string {
+  return indexFingerprint({
+    headOid: facts.head.oid,
+    entries: facts.records.map((entry) => ({
+      pathKey: `${pathKeyOf(entry.path)}:${entry.originalPath === null ? "" : pathKeyOf(entry.originalPath)}`,
+      mode: entry.modes.index ?? entry.modes.worktree ?? "-",
+      oid: entry.oids.index ?? "-",
+      stage: entry.stages.length,
+    })),
+  });
+}
+
+function pathKeyOf(bytes: Uint8Array): string {
+  let key = "";
+  for (const byte of bytes) {
+    key += byte.toString(16).padStart(2, "0");
+  }
+  return key;
+}
+
 export function indexFingerprint(input: {
   readonly headOid: string | null;
   readonly entries: readonly {

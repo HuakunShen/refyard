@@ -16,14 +16,17 @@
  * engine to the event ring, so a state change reaches connected clients through the
  * same path a re-read would take.
  */
-import type { ParsedMutationRequest } from "@refyard/git-contract";
+import type {
+  MutationKind,
+  ParsedMutationRequest,
+} from "@refyard/git-contract";
 import type { GitEngine } from "@refyard/git-core";
 import {
-  pathKey,
   readHeadFacts,
   readStatusFacts,
   type StatusFacts,
 } from "@refyard/git-core";
+import { HandleError } from "../filesystem/handles.js";
 import type { EventRing } from "../http/events.js";
 import type { Recovery } from "../journal/recovery.js";
 import type { JournalStore } from "../journal/store.js";
@@ -36,7 +39,7 @@ import {
   type JobEngine,
   type MutationEffect,
 } from "./jobs.js";
-import { indexFingerprint, type PreconditionContext } from "./preconditions.js";
+import { statusIndexKey, type PreconditionContext } from "./preconditions.js";
 
 export interface MutationCoordinatorOptions {
   readonly journal: JournalStore;
@@ -55,7 +58,7 @@ export interface MutationCoordinatorOptions {
 export interface MutationCoordinator {
   readonly jobs: JobEngine;
   /** The kinds this build can actually run; published in `capabilities`. */
-  implementedKinds(): readonly string[];
+  implementedKinds(): readonly MutationKind[];
   /** Repositories blocked by an unresolved operation after a restart. */
   blockedRepositories(): readonly string[];
 }
@@ -81,15 +84,7 @@ export function repositoryIdOfTarget(
  * elsewhere — while a change to one of the confirmed paths always invalidates it.
  */
 export function currentIndexKey(facts: StatusFacts): string {
-  return indexFingerprint({
-    headOid: facts.head.oid,
-    entries: facts.records.map((record) => ({
-      pathKey: `${pathKey(record.path)}\u0000${pathKey(record.originalPath ?? new Uint8Array(0))}`,
-      mode: record.modes.index ?? record.modes.worktree ?? "-",
-      oid: record.oids.index ?? "-",
-      stage: record.stages.length,
-    })),
-  });
+  return statusIndexKey(facts);
 }
 
 export function createMutationCoordinator(
@@ -116,13 +111,48 @@ export function createMutationCoordinator(
       };
     }
     const block = options.recovery.blockFor(repositoryId);
-    const record = await options.repositories.require(repositoryId);
+    let record;
+    try {
+      record = await options.repositories.require(repositoryId);
+    } catch (error) {
+      if (error instanceof HandleError && error.code === "NotFound") {
+        return {
+          snapshotHeadOid: null,
+          currentHeadOid: null,
+          indexUnchanged: false,
+          operationInProgress: null,
+          restartBlock: null,
+          refusal: {
+            code: "NotFound" as const,
+            message:
+              "that request names a repository this service does not know",
+          },
+        };
+      }
+      throw error;
+    }
     const worktreeId =
       request.target.kind === "worktree" ? request.target.worktreeId : null;
-    const worktree = await options.repositories.worktree(
-      repositoryId,
-      worktreeId,
-    );
+    let worktree;
+    try {
+      worktree = await options.repositories.worktree(repositoryId, worktreeId);
+    } catch (error) {
+      if (error instanceof HandleError && error.code === "NotFound") {
+        return {
+          snapshotHeadOid: null,
+          currentHeadOid: null,
+          indexUnchanged: false,
+          operationInProgress: null,
+          restartBlock: null,
+          refusal: {
+            code: "NotFound" as const,
+            message:
+              "that request names a worktree this service does not know; reload and retry",
+          },
+        };
+      }
+      throw error;
+    }
     if (worktree.handle === null) {
       return {
         snapshotHeadOid: null,

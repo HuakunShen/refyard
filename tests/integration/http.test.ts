@@ -22,6 +22,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   createGitClient,
+  createMutationClient,
   GitClientError,
 } from "../../packages/git-client/src/index.js";
 import { createRepo, type GitFixtureRepo } from "../support/repo.js";
@@ -179,7 +180,19 @@ describe("git client", () => {
     const { client } = await pairedClient();
     const capabilities = await client.capabilities();
     expect(capabilities.apiMajor).toBe(1);
-    expect(capabilities.operations).toEqual([]);
+    // The staging mutations are implemented in this build and must be advertised;
+    // everything else must stay absent until an effect exists for it.
+    const kinds = capabilities.operations.map((operation) => operation.kind);
+    expect(kinds).toEqual(
+      expect.arrayContaining([
+        "stagePaths",
+        "unstagePaths",
+        "discardTrackedPaths",
+        "commit",
+        "amendCommit",
+      ]),
+    );
+    expect(kinds).not.toContain("createBranch");
     expect(capabilities.reads).toContain("status");
   });
 
@@ -252,14 +265,29 @@ describe("git client", () => {
   });
 
   it("turns a 501 for an unimplemented operation into UnsupportedOperation", async () => {
-    const { client } = await pairedClient();
-    // `previews` is a real path this build does not implement; the client surfaces
-    // the closed code instead of a generic failure.
+    const { token } = await pairedClient();
+    const mutations = createMutationClient({
+      baseUrl: service.baseUrl,
+      fetch: (input, init) =>
+        service.fetch(String(input).replace(service.baseUrl, ""), init ?? {}),
+      token: () => token,
+    });
+    // `createBranch` has no effect in this build; the client surfaces the closed
+    // code instead of a generic failure.
     await expect(
-      client.previews({
-        repositoryId: service.repositoryId,
-        worktreeId: "wt_x",
-        pathIds: ["path_x"],
+      mutations.submit({
+        clientRequestId: "http-501-1",
+        target: {
+          kind: "repository",
+          repositoryId: service.repositoryId,
+          expectedSnapshotId: "snap_x",
+        },
+        operation: {
+          kind: "createBranch",
+          branchName: "no-branch",
+          startOid: null,
+          switchToIt: false,
+        },
       }),
     ).rejects.toMatchObject({ code: "UnsupportedOperation", status: 501 });
   });

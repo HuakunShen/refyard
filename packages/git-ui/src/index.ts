@@ -65,10 +65,13 @@ export { default as ModeToggle } from "./components/ModeToggle.svelte";
 export { default as CommitDetailPanel } from "./components/CommitDetailPanel.svelte";
 export { default as CommitGraph } from "./components/CommitGraph.svelte";
 export { default as CommitList } from "./components/CommitList.svelte";
+export { default as CommitPanel } from "./components/CommitPanel.svelte";
+export { default as ConfirmAction } from "./components/ConfirmAction.svelte";
 export { default as ConnectionPanel } from "./components/ConnectionPanel.svelte";
 export { default as DiffPanel } from "./components/DiffPanel.svelte";
 export { default as RefsPanel } from "./components/RefsPanel.svelte";
 export { default as RepositoryList } from "./components/RepositoryList.svelte";
+export { default as StagingPanel } from "./components/StagingPanel.svelte";
 export {
   default as StateBanner,
   type BannerState,

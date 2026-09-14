@@ -248,6 +248,12 @@ export {
   type SubmitResult,
 } from "./coordinator/jobs.js";
 export {
+  createStagingEffects,
+  STAGING_MUTATION_KINDS,
+  type RecoveryBackupWriter,
+  type StagingEffectsOptions,
+} from "./coordinator/previews.js";
+export {
   createMutationCoordinator,
   currentIndexKey,
   repositoryIdOfTarget,

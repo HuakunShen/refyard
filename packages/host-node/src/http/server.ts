@@ -512,16 +512,19 @@ export async function startHttpHost(
           body: actionBody,
           services,
         });
+        // The route declares its success status; 200 is the default. A 202 here means
+        // "accepted for execution", never "done".
+        const successStatus = route.successStatus?.(body) ?? 200;
         log(
           logLine({
             method,
             path: cleanPath,
-            status: 200,
+            status: successStatus,
             durationMs: now() - startedAt,
             sessionId: session.sessionId,
           }),
         );
-        sendJson(response, 200, body);
+        sendJson(response, successStatus, body);
       } catch (error) {
         const problem =
           error instanceof ReadProblem

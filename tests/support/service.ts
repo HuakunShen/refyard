@@ -23,9 +23,11 @@ import {
   createPreviewStore,
   createReadService,
   createRecovery,
+  createRecoveryStore,
   createRepositoryRegistry,
   createRootRegistry,
   createSnapshotStore,
+  createStagingEffects,
   createTextCodec,
   createWorktreeRegistry,
   DEFAULT_RETENTION,
@@ -35,9 +37,14 @@ import {
   type JournalStore,
   type MutationCoordinator,
   type MutationEffect,
+  type RecoveryBackupWriter,
 } from "../../packages/host-node/src/index.js";
 import { createHostEngine, type GitEngine } from "@refyard/git-core";
-import { API_MAJOR, CONTRACT_VERSION } from "@refyard/git-contract";
+import {
+  API_MAJOR,
+  CONTRACT_VERSION,
+  targetKindsOf,
+} from "@refyard/git-contract";
 import { fixtureGitPath, type GitFixtureRepo } from "./repo.js";
 
 export interface TestService {
@@ -71,8 +78,10 @@ export interface StartTestServiceOptions {
    * Reuse a state root, which is how a restart test sees the previous journal.
    */
   readonly stateRoot?: string;
-  /** Effects this test host can run; empty means every mutation is unimplemented. */
+  /** Effects this test host can run; default is the real T08 staging effects. */
   readonly effects?: readonly MutationEffect[];
+  /** Replace the discard backup store, e.g. with one that always refuses. */
+  readonly backupStore?: RecoveryBackupWriter;
   /** Extra web assets to serve, for the static-file cases. */
   readonly webRoot?: string | null;
   readonly inlineDocument?: string;
@@ -141,6 +150,33 @@ export async function startTestService(
   await recovery.run();
   const events = createEventRing();
   let sequence = 0;
+
+  const mutations = createMutationCoordinator({
+    journal,
+    repositories,
+    worktrees,
+    engine,
+    recovery,
+    snapshots,
+    events,
+    // The real product wiring: the T08 staging effects, exactly as the CLI
+    // registers them, so a passing test is evidence about the product. A test
+    // passes `effects` only to install a controlled stub.
+    effects:
+      options.effects ??
+      createStagingEffects({
+        engine,
+        repositories,
+        paths,
+        previews,
+        backups:
+          options.backupStore ??
+          createRecoveryStore({ root: join(stateRoot, "backups") }),
+      }),
+    nextOperationId: () => `op_${(counter += 1).toString(36)}`,
+    nextSequence: () => (sequence += 1),
+  });
+
   const read = createReadService({
     engine,
     roots,
@@ -175,20 +211,12 @@ export async function startTestService(
       "submodules",
       "stashes",
     ],
-    operations: [],
-  });
-
-  const mutations = createMutationCoordinator({
-    journal,
-    repositories,
-    worktrees,
-    engine,
-    recovery,
-    snapshots,
-    events,
-    effects: options.effects ?? [],
-    nextOperationId: () => `op_${(counter += 1).toString(36)}`,
-    nextSequence: () => (sequence += 1),
+    // Derived from the live registry, as the CLI does: an operation is
+    // advertised exactly when an effect for it is registered.
+    operations: mutations.implementedKinds().map((kind) => ({
+      kind,
+      targets: [...targetKindsOf(kind)],
+    })),
   });
 
   const log: string[] = [];

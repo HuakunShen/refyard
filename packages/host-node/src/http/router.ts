@@ -25,6 +25,7 @@ import {
   historyQuerySchema,
   operationAcceptedSchema,
   operationsListQuerySchema,
+  previewsRequestSchema,
   repositoriesQuerySchema,
   repositoryQuerySchema,
   worktreeQuerySchema,
@@ -54,6 +55,15 @@ export interface RouteDefinition {
    * Absent on action routes, whose input is a validated JSON body.
    */
   readonly schema?: z.ZodObject<z.ZodRawShape>;
+  /**
+   * The HTTP status a successful response carries, from the response body.
+   *
+   * Almost every route answers 200; the submission route answers 202 for a fresh
+   * acceptance, because "accepted for execution" is not "done" and a client must be
+   * able to tell them apart. The status is derived here, at the route, so the server
+   * never keeps a second table of which paths are special.
+   */
+  readonly successStatus?: (body: unknown) => number;
   handle(input: {
     readonly session: Session;
     readonly query: unknown;
@@ -137,6 +147,11 @@ export function readRoutes(): readonly RouteDefinition[] {
       repositoryQuerySchema,
       async (query, services) => services.read.stashes(query),
     ),
+    actionRoute(
+      "/api/v1/previews",
+      previewsRequestSchema,
+      async (body, services) => services.read.previews(body),
+    ),
     readRoute(
       "/api/v1/operations",
       operationsListQuerySchema,
@@ -200,44 +215,56 @@ function actionRoute<Schema extends z.ZodType<unknown>>(
 
 export function mutationRoutes(): readonly RouteDefinition[] {
   return [
-    actionRoute(
-      "/api/v1/operations",
-      MutationRequestSchema,
-      async (body, services) => {
-        const mutations = services.mutations;
-        if (mutations === undefined) {
-          throw new ReadProblem({
-            code: "UnsupportedOperation",
-            message:
-              "this host has no mutation engine; no operation was accepted and none will run",
+    {
+      ...actionRoute(
+        "/api/v1/operations",
+        MutationRequestSchema,
+        async (body, services) => {
+          const mutations = services.mutations;
+          if (mutations === undefined) {
+            throw new ReadProblem({
+              code: "UnsupportedOperation",
+              message:
+                "this host has no mutation engine; no operation was accepted and none will run",
+            });
+          }
+          const result = await mutations.jobs.submit({
+            request: body,
+            actor: SERVICES_ACTOR,
           });
-        }
-        const result = await mutations.jobs.submit({
-          request: body,
-          actor: SERVICES_ACTOR,
-        });
-        if (!result.ok) {
-          throw new ReadProblem({
-            code: result.problem.code,
-            message: result.problem.message,
-            ...(result.problem.details === undefined
-              ? {}
-              : { details: result.problem.details }),
-            retryable: result.problem.retryable,
+          if (!result.ok) {
+            throw new ReadProblem({
+              code: result.problem.code,
+              message: result.problem.message,
+              ...(result.problem.details === undefined
+                ? {}
+                : { details: result.problem.details }),
+              retryable: result.problem.retryable,
+            });
+          }
+          if (result.duplicate) {
+            // A replay of an accepted request returns the recorded operation rather than
+            // a second acceptance, which is what makes a retry after a lost response safe.
+            return { operation: result.record, duplicate: true };
+          }
+          return operationAcceptedSchema.parse({
+            operationId: result.record.operationId,
+            status: "accepted",
+            acceptedAt: result.record.acceptedAt,
           });
-        }
-        if (result.duplicate) {
-          // A replay of an accepted request returns the recorded operation rather than
-          // a second acceptance, which is what makes a retry after a lost response safe.
-          return { operation: result.record, duplicate: true };
-        }
-        return operationAcceptedSchema.parse({
-          operationId: result.record.operationId,
-          status: "accepted",
-          acceptedAt: result.record.acceptedAt,
-        });
-      },
-    ),
+        },
+      ),
+      // A fresh acceptance is 202: the operation has not run yet, and a client that
+      // treated it as a result would be showing an outcome nobody has observed. A
+      // replay answers 200 with the recorded operation.
+      successStatus: (body) =>
+        typeof body === "object" &&
+        body !== null &&
+        "status" in body &&
+        body.status === "accepted"
+          ? 202
+          : 200,
+    },
 
     actionRoute(
       "/api/v1/operations/cancel",
@@ -278,9 +305,6 @@ export const SERVICES_ACTOR = "local-user";
 
 /** Known paths this build does not implement, so a client learns that clearly. */
 export const UNIMPLEMENTED_PATHS: readonly string[] = [
-  // Write operations that no effect implements yet, and one read this build does
-  // not ship. All three answer 501 rather than a plausible-looking empty answer.
-  "/api/v1/previews",
   "/api/v1/repositories/register",
 ];
 

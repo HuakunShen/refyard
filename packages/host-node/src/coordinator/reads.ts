@@ -85,7 +85,7 @@ import type { HostWorktree, WorktreeRegistry } from "../registry/worktrees.js";
 import type { RootRegistry } from "../registry/roots.js";
 import type { PreviewStore } from "../filesystem/preview.js";
 import type { SnapshotStore, SnapshotRecord } from "./snapshots.js";
-import { indexFingerprint } from "./preconditions.js";
+import { statusIndexKey } from "./preconditions.js";
 import {
   createGitDirLookup,
   fileExistsIn,
@@ -1180,28 +1180,8 @@ export function createReadService(options: ReadServiceOptions): ReadService {
    * enough to detect "the state the user confirmed has moved" without hashing the
    * whole repository on every read — the design forbids that explicitly.
    */
-  function indexKeyOf(facts: {
-    readonly head: { readonly oid: string | null };
-    readonly records: readonly {
-      readonly path: Uint8Array;
-      readonly originalPath: Uint8Array | null;
-      readonly modes: {
-        readonly index: string | null;
-        readonly worktree: string | null;
-      };
-      readonly oids: { readonly index: string | null };
-      readonly stages: readonly unknown[];
-    }[];
-  }): string {
-    return indexFingerprint({
-      headOid: facts.head.oid,
-      entries: facts.records.map((entry) => ({
-        pathKey: `${bytesKey(entry.path)}:${entry.originalPath === null ? "" : bytesKey(entry.originalPath)}`,
-        mode: entry.modes.index ?? entry.modes.worktree ?? "-",
-        oid: entry.oids.index ?? "-",
-        stage: entry.stages.length,
-      })),
-    });
+  function indexKeyOf(facts: Parameters<typeof statusIndexKey>[0]): string {
+    return statusIndexKey(facts);
   }
 
   function collectTips(

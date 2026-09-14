@@ -37,3 +37,6 @@ export * from "./workflows/status.js";
 export * from "./workflows/history.js";
 export * from "./workflows/repository.js";
 export * from "./workflows/diff.js";
+export * from "./workflows/stage.js";
+export * from "./workflows/discard.js";
+export * from "./workflows/commit.js";
