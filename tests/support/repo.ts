@@ -36,6 +36,8 @@ export interface GitRunOptions {
   readonly cwd?: string;
   /** Extra environment entries merged over the isolated environment. */
   readonly env?: Readonly<Record<string, string>>;
+  /** Bytes written to the process's stdin, for commands that read a list or a message. */
+  readonly stdin?: Uint8Array;
 }
 
 export interface GitFixtureRepo {
@@ -142,20 +144,26 @@ async function runGit(
   argv: readonly string[],
   cwd: string,
   env: Readonly<Record<string, string>>,
+  stdin?: Uint8Array,
 ): Promise<GitRunResult> {
   return new Promise<GitRunResult>((resolvePromise, rejectPromise) => {
     const child = spawn(fixtureGitPath(), [...argv], {
       cwd,
       env,
       shell: false,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"],
     });
+    if (stdin !== undefined && child.stdin !== null) {
+      child.stdin.end(Buffer.from(stdin));
+    }
     const stdoutChunks: Uint8Array[] = [];
     const stderrChunks: Uint8Array[] = [];
-    child.stdout.on("data", (chunk: Buffer) => {
+    // Optional-chained because the stdio array is built conditionally, so the
+    // process type is the generic one: a missing pipe simply yields no bytes.
+    child.stdout?.on("data", (chunk: Buffer) => {
       stdoutChunks.push(new Uint8Array(chunk));
     });
-    child.stderr.on("data", (chunk: Buffer) => {
+    child.stderr?.on("data", (chunk: Buffer) => {
       stderrChunks.push(new Uint8Array(chunk));
     });
     child.on("error", rejectPromise);
@@ -213,7 +221,7 @@ export async function createRepo(
   ): Promise<GitRunResult> => {
     const runEnv =
       runOptions.env === undefined ? env : { ...env, ...runOptions.env };
-    return runGit(args, runOptions.cwd ?? root, runEnv);
+    return runGit(args, runOptions.cwd ?? root, runEnv, runOptions.stdin);
   };
   const git = async (
     args: readonly string[],

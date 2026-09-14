@@ -15,6 +15,7 @@
   },
   "devDependencies": {
     "@refyard/git-contract": "workspace:*",
+    "@refyard/git-core": "workspace:*",
     "@types/node": "catalog:",
     "oxc-parser": "catalog:",
     "prettier": "catalog:",

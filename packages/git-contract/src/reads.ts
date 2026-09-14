@@ -518,9 +518,10 @@ export const filePatchSchema = z
     }),
     z.strictObject({
       kind: z.literal("submodule"),
-      recordedOid: objectIdSchema.nullable(),
-      indexOid: objectIdSchema.nullable(),
-      actualOid: objectIdSchema.nullable(),
+      /** The object the old side of the diff referenced. */
+      oldOid: objectIdSchema.nullable(),
+      /** The object the new side references. */
+      newOid: objectIdSchema.nullable(),
     }),
   ])
   .meta({

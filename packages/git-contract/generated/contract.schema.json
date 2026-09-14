@@ -4235,7 +4235,7 @@
           "type": "string",
           "const": "submodule"
         },
-        "recordedOid": {
+        "oldOid": {
           "anyOf": [
             {
               "$ref": "#/$defs/ObjectId"
@@ -4245,17 +4245,7 @@
             }
           ]
         },
-        "indexOid": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ObjectId"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "actualOid": {
+        "newOid": {
           "anyOf": [
             {
               "$ref": "#/$defs/ObjectId"
@@ -4268,9 +4258,8 @@
       },
       "required": [
         "kind",
-        "recordedOid",
-        "indexOid",
-        "actualOid"
+        "oldOid",
+        "newOid"
       ],
       "additionalProperties": false
     },

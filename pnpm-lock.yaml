@@ -35,6 +35,9 @@ importers:
       '@refyard/git-contract':
         specifier: workspace:*
         version: link:packages/git-contract
+      '@refyard/git-core':
+        specifier: workspace:*
+        version: link:packages/git-core
       '@types/node':
         specifier: 'catalog:'
         version: 26.5.1
@@ -62,6 +65,12 @@ importers:
       zod:
         specifier: 'catalog:'
         version: 4.6.5
+
+  packages/git-core:
+    devDependencies:
+      '@refyard/git-contract':
+        specifier: workspace:*
+        version: link:../git-contract
 
 packages:
 
