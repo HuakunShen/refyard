@@ -422,3 +422,87 @@ The reference's `git-ui/OperationCenter.svelte` was not written as a separate
 component: the conflict panel plus the existing panels already cover what it was for
 (one place that shows an unfinished operation and the ways to end it), and a second
 surface listing the same records would be a second place to keep correct.
+
+---
+
+## T13 — Packaging for npm and npx
+
+Delivered:
+
+```
+packages/npm-dist/package.json   the published manifest (source; everything else is staged)
+scripts/build-release.ts         bundles the CLI, stages the UI, writes build-info
+scripts/pack-smoke.ts            packs the tarball and uses it from a clean HOME
+apps/cli/src/{args,serve,main}.ts --json machine mode; installation version report
+tests/pack/installed.test.ts     8 cases on the manifest and the staged artifact
+tests/node/state-root.test.ts    5 cases on where private state lives
+docs/installation.md             install, run, pair, stop, uninstall
+```
+
+### Deviations and findings, recorded deliberately
+
+- **The staged `.mjs` and the bundle are generated, not committed.** The reference
+  lists `packages/npm-dist/bin/refyard.mjs` as a source file; this repository's rule
+  is that no raw JavaScript is source, so only `package.json` is tracked and
+  `build-release.ts` writes `bin/refyard.mjs` (with a shebang), `dist/cli.mjs`,
+  `dist/build-info.json` and `web/`. `.gitignore` records the split.
+- **`engines` is `>=26 <27`, not `>=24 <25`.** The reference's example test predates
+  the user's 2026-09-14 direction pinning this repository to Node 26; the test asserts
+  the pinned range and the smoke run refuses to report success on another major.
+- **No license is invented.** The manifest is `private: true` with
+  `license: "UNLICENSED"`, so `npm publish` is refused by npm itself and no text is
+  attributed to a project that has not chosen one. A test asserts both fields, because
+  the tempting "fix" for a missing LICENSE is to paste someone else's.
+- **`--json` is a new output mode, and it is the reason pairing material moved.** The
+  banner used to go to stdout unconditionally, which meant a supervisor parsing stdout
+  would find a ticket. Now `--json` prints exactly one JSON object (no ticket) and every
+  note — pairing URL, service logs, browser-open failure — goes to stderr. The terminal
+  keeps the human banner, because a terminal is a private channel.
+- **The banner reported the contract version as the program version.** It printed
+  `refyard 1.0.0 (api 1)` while the CLI's own version is `0.0.0-dev`; the packaged
+  copy now reads `dist/build-info.json` beside the bundle and reports _that_ version,
+  falling back to the source constant when there is no build.
+- **Private state moved out of the temp directory.** The journal and the recovery
+  backups used to default to `$TMPDIR/refyard-state`. A backup exists so a discard can
+  be undone _later_, and macOS is free to clear `TMPDIR` in between — so the default is
+  now `~/Library/Application Support/refyard`, `$XDG_STATE_HOME/refyard` (or
+  `~/.local/state/refyard`), or `%LOCALAPPDATA%\refyard`, overridable with
+  `REFYARD_STATE_DIR`. This is a safety change, not a tidiness one.
+- **Shutdown drained nothing before this task.** `close()` called `server.close()`
+  _and_ `closeAllConnections()` immediately, which cut in-flight requests in half. The
+  order is now: stop accepting, wait for in-flight requests (bounded, default 5 s),
+  drop idle keep-alive sockets, then force-close what is left. The test drives it with a
+  real event stream, because a stream is unambiguously in flight, and asserts both that
+  the wait happens and that an idle server does not pay for it.
+- **`pnpm pack:smoke` is a script, not a vitest file.** It needs a clean `HOME`, an
+  isolated npm cache and `--offline`, and it runs the real `npm exec --package=<tgz>`
+  path — the same thing a user runs. Running that inside vitest would have meant faking
+  exactly the isolation that makes it meaningful. `tests/pack/installed.test.ts` covers
+  the manifest invariants in the normal suite.
+- **A bun-run script cannot trust `process.execPath` or `process.version`.** The first
+  smoke run compared bun's reported Node version against the Node that `npm exec`
+  actually spawned and failed. The script now asks `node --version` from `PATH` and
+  asserts the supported major, which is a better check than the one it replaced.
+
+### Verification, actually run
+
+| Command                                              | Result                                                     |
+| ---------------------------------------------------- | ---------------------------------------------------------- |
+| `pnpm build:release`                                 | staged, bundle 1,224,517 bytes, commit d5d3748             |
+| `pnpm pack:smoke`                                    | 14 steps passed (tarball 744,895 bytes, 73 entries)        |
+| `pnpm exec vitest run tests/pack`                    | 8 passed                                                   |
+| `pnpm exec vitest run tests/node/state-root.test.ts` | 5 passed                                                   |
+| `pnpm exec vitest run tests/integration/cli.test.ts` | 27 passed                                                  |
+| `pnpm test`                                          | 512 passed (32 files)                                      |
+| `pnpm check`                                         | 8 packages, 0 errors                                       |
+| `pnpm check:boundaries`                              | 3 portable packages, 53 source files; 56 test/script files |
+| `pnpm check:contract`                                | artifacts match, 438 named schemas                         |
+
+Unverified: the tarball on Windows and on a machine without Node 26 (the manifest
+refuses the install there, but the refusal itself was not exercised), an `npm exec`
+run against a _registry_ copy of this package (there is none, by design), and a
+packaged install on a filesystem without `chmod` support (the bin shebang is set at
+build time and not re-checked at install).
+
+Nothing here publishes. The tarball is only ever installed from a local path, and
+`--offline` in the smoke run is what proves no registry was consulted.
