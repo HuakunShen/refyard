@@ -120,3 +120,76 @@ Environment: macOS 25.6.0 arm64, Node 26.8.2, git 2.50.1 (Apple Git-155).
 Firefox and Windows are not verified for T08; discard backups were exercised on
 APFS only; no test drives a merge conflict or a submodule discard (those operations
 are refused by selection, and the refusals are covered).
+
+---
+
+## T09 — Branch, remote, init/clone and fetch/push/pull
+
+Delivered in this round (11 of the plan's operations):
+
+```
+packages/git-core/src/plan/branches.ts         branch create/switch/rename/delete/upstream
+packages/git-core/src/plan/remotes.ts          remote config + fetch/push/upstream-ref/ff-merge
+packages/git-core/src/workflows/branches.ts    run-and-classify for the five branch commands
+packages/git-core/src/workflows/network.ts     per-ref porcelain outcomes; pull as fetch+merge
+packages/host-node/src/coordinator/effects-support.ts   shared target resolution (T08+T09)
+packages/host-node/src/coordinator/repository-effects.ts  the 11 effects
+packages/git-ui/src/components/{BranchPanel,RemotePanel}.svelte
+tests/integration/network.test.ts              16 cases over local bare remotes
+tests/e2e/branch.spec.ts                       3 cases in Chromium
+```
+
+Deliberately **not** delivered, and still absent from `capabilities`:
+`initRepository` and `cloneRepository`. A workspace target needs the approved-root
+flow (destination inside an approved root, relative destination, no absolute paths
+from a client) and `CloneDialog.svelte`; registering that flow is its own step, and
+announcing the operations without it is exactly what the capability rule forbids.
+
+### Deviations and findings, recorded deliberately
+
+- **Semantic validation was written in T01 and never called.** `validate.ts` had
+  `validateBranchName` (leading dash, `..`, `@{`, trailing `.`/`.lock`) and
+  `validateRemoteUrl` (transport helpers like `ext::` refused, https/ssh/scp-like/
+  absolute-local allowlist) with their own tests, but no live path invoked them. The
+  operations route now runs `validateOperationSemantics` after the schema and before
+  the engine, so `ext::sh -c …` and `-D` are 400s at the boundary rather than
+  refusals after acceptance.
+- **`git pull` has no `--porcelain`.** The reference design asks pull to report
+  "tracking refs updated" separately from "the branch did not move", and a single
+  `git pull` exit code cannot. Pull is implemented as its two real halves:
+  `git fetch --porcelain <remote>` (the same planner the fetch operation uses) then
+  `git merge --ff-only <upstream>` after resolving `<branch>@{upstream}` with
+  `git rev-parse`. A pull naming a different remote than the branch tracks is
+  refused before either half runs.
+- **Push publishes one ref, always.** `--porcelain` plus an explicit
+  `<src>:<dst>`, `--no-follow-tags` (a user's `push.followTags` must not turn one
+  ref into a tag sweep), no `--force`, no `--mirror`. A rejected push reports Git's
+  own per-ref reason; a timeout is `unknown` because the remote may have received
+  the objects.
+- **A partial pull is `failed`, with both facts in the message.** The fetch half may
+  have moved remote-tracking refs while the branch half refused; the message says
+  so, and the branch is untouched — no merge, no rebase, no autostash.
+- **`updateRemote` can be partial** (rename applied, URL change failed). That is
+  reported as `needsAttention` with a message that tells the reader the remote may
+  have been renamed — never as a clean failure.
+- **A branch-name test found the gap the design predicted**: the plan's own
+  "reject leading options" requirement is enforced by `validate.ts`, not by the
+  schema regex, and the test drives it through HTTP.
+
+### Verification, actually run
+
+| Command                                                  | Result                                                     |
+| -------------------------------------------------------- | ---------------------------------------------------------- |
+| `pnpm exec vitest run tests/integration/network.test.ts` | 16 passed                                                  |
+| `pnpm test:e2e --grep branch`                            | 3 passed (Chromium)                                        |
+| `pnpm test:e2e`                                          | 14 passed                                                  |
+| `pnpm test`                                              | 446 passed (26 files)                                      |
+| `pnpm check`                                             | 8 packages, 0 errors                                       |
+| `pnpm check:boundaries`                                  | 3 portable packages, 46 source files, no host dependencies |
+| `pnpm check:contract`                                    | artifacts match, 438 named schemas                         |
+| `pnpm test:portable`                                     | neutral IIFE, no host globals                              |
+
+Environment: macOS 25.6.0 arm64, Node 26.8.2, git 2.50.1 (Apple Git-155). Remotes in
+every test are local bare repositories — **no network, no credentials, no hosting
+dependency** — so real HTTPS/SSH behaviour (helpers, SSH agent, host-key
+verification, credential prompts) is **unverified** by this round.
