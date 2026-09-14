@@ -1,0 +1,252 @@
+{
+  "apiMajor": 1,
+  "contractVersion": "1.0.0",
+  "operations": [
+    {
+      "kind": "initRepository",
+      "targets": [
+        "workspace"
+      ],
+      "payloadSchema": "InitRepositoryOperation"
+    },
+    {
+      "kind": "cloneRepository",
+      "targets": [
+        "workspace"
+      ],
+      "payloadSchema": "CloneRepositoryOperation"
+    },
+    {
+      "kind": "stagePaths",
+      "targets": [
+        "worktree"
+      ],
+      "payloadSchema": "StagePathsOperation"
+    },
+    {
+      "kind": "unstagePaths",
+      "targets": [
+        "worktree"
+      ],
+      "payloadSchema": "UnstagePathsOperation"
+    },
+    {
+      "kind": "discardTrackedPaths",
+      "targets": [
+        "worktree"
+      ],
+      "payloadSchema": "DiscardTrackedPathsOperation"
+    },
+    {
+      "kind": "commit",
+      "targets": [
+        "worktree"
+      ],
+      "payloadSchema": "CommitOperation"
+    },
+    {
+      "kind": "amendCommit",
+      "targets": [
+        "worktree"
+      ],
+      "payloadSchema": "AmendCommitOperation"
+    },
+    {
+      "kind": "createBranch",
+      "targets": [
+        "repository"
+      ],
+      "payloadSchema": "CreateBranchOperation"
+    },
+    {
+      "kind": "switchBranch",
+      "targets": [
+        "worktree"
+      ],
+      "payloadSchema": "SwitchBranchOperation"
+    },
+    {
+      "kind": "renameBranch",
+      "targets": [
+        "repository"
+      ],
+      "payloadSchema": "RenameBranchOperation"
+    },
+    {
+      "kind": "deleteBranch",
+      "targets": [
+        "repository"
+      ],
+      "payloadSchema": "DeleteBranchOperation"
+    },
+    {
+      "kind": "setBranchUpstream",
+      "targets": [
+        "repository"
+      ],
+      "payloadSchema": "SetBranchUpstreamOperation"
+    },
+    {
+      "kind": "addRemote",
+      "targets": [
+        "repository"
+      ],
+      "payloadSchema": "AddRemoteOperation"
+    },
+    {
+      "kind": "updateRemote",
+      "targets": [
+        "repository"
+      ],
+      "payloadSchema": "UpdateRemoteOperation"
+    },
+    {
+      "kind": "removeRemote",
+      "targets": [
+        "repository"
+      ],
+      "payloadSchema": "RemoveRemoteOperation"
+    },
+    {
+      "kind": "fetch",
+      "targets": [
+        "repository"
+      ],
+      "payloadSchema": "FetchOperation"
+    },
+    {
+      "kind": "push",
+      "targets": [
+        "repository"
+      ],
+      "payloadSchema": "PushOperation"
+    },
+    {
+      "kind": "pull",
+      "targets": [
+        "worktree"
+      ],
+      "payloadSchema": "PullOperation"
+    },
+    {
+      "kind": "createStash",
+      "targets": [
+        "worktree"
+      ],
+      "payloadSchema": "CreateStashOperation"
+    },
+    {
+      "kind": "applyStash",
+      "targets": [
+        "worktree"
+      ],
+      "payloadSchema": "ApplyStashOperation"
+    },
+    {
+      "kind": "popStash",
+      "targets": [
+        "worktree"
+      ],
+      "payloadSchema": "PopStashOperation"
+    },
+    {
+      "kind": "dropStash",
+      "targets": [
+        "repository"
+      ],
+      "payloadSchema": "DropStashOperation"
+    },
+    {
+      "kind": "createTag",
+      "targets": [
+        "repository"
+      ],
+      "payloadSchema": "CreateTagOperation"
+    },
+    {
+      "kind": "deleteTag",
+      "targets": [
+        "repository"
+      ],
+      "payloadSchema": "DeleteTagOperation"
+    },
+    {
+      "kind": "pushTag",
+      "targets": [
+        "repository"
+      ],
+      "payloadSchema": "PushTagOperation"
+    },
+    {
+      "kind": "createWorktree",
+      "targets": [
+        "repository"
+      ],
+      "payloadSchema": "CreateWorktreeOperation"
+    },
+    {
+      "kind": "removeWorktree",
+      "targets": [
+        "repository"
+      ],
+      "payloadSchema": "RemoveWorktreeOperation"
+    },
+    {
+      "kind": "lockWorktree",
+      "targets": [
+        "repository"
+      ],
+      "payloadSchema": "LockWorktreeOperation"
+    },
+    {
+      "kind": "unlockWorktree",
+      "targets": [
+        "repository"
+      ],
+      "payloadSchema": "UnlockWorktreeOperation"
+    },
+    {
+      "kind": "addSubmodule",
+      "targets": [
+        "worktree"
+      ],
+      "payloadSchema": "AddSubmoduleOperation"
+    },
+    {
+      "kind": "updateSubmodule",
+      "targets": [
+        "worktree"
+      ],
+      "payloadSchema": "UpdateSubmoduleOperation"
+    },
+    {
+      "kind": "syncSubmodule",
+      "targets": [
+        "worktree"
+      ],
+      "payloadSchema": "SyncSubmoduleOperation"
+    },
+    {
+      "kind": "merge",
+      "targets": [
+        "worktree"
+      ],
+      "payloadSchema": "MergeOperation"
+    },
+    {
+      "kind": "continueMerge",
+      "targets": [
+        "worktree"
+      ],
+      "payloadSchema": "ContinueMergeOperation"
+    },
+    {
+      "kind": "abortMerge",
+      "targets": [
+        "worktree"
+      ],
+      "payloadSchema": "AbortMergeOperation"
+    }
+  ],
+  "count": 35
+}

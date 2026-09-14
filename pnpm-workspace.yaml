@@ -1,3 +1,57 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# Every dependency version lives here so a package.json can only ask for a name.
+# The plan forbids silent "latest" upgrades during task execution; bumping a
+# version means editing this file, which shows up in the task's own commit.
+catalog:
+  "@lucide/svelte": 1.46.0
+  "@sveltejs/adapter-static": 3.0.10
+  "@sveltejs/kit": 2.70.3
+  "@sveltejs/vite-plugin-svelte": 7.3.0
+  "@tailwindcss/vite": 4.3.3
+  "@tanstack/svelte-query": 6.1.48
+  "@tanstack/svelte-virtual": 3.13.39
+  "@types/node": 26.5.1
+  bits-ui: 2.19.2
+  clsx: 2.1.1
+  esbuild: 0.28.2
+  mode-watcher: 1.1.0
+  oxc-parser: 0.150.0
+  prettier: 3.9.6
+  svelte: 5.57.0
+  svelte-check: 4.7.6
+  tailwind-merge: 3.7.0
+  tailwind-variants: 3.3.1
+  tailwindcss: 4.3.3
+  tsdown: 0.23.0
+  turbo: 2.10.12
+  typescript: 7.0.2
+  vite: 8.3.0
+  vitest: 4.1.11
+  zod: 4.6.5
+
+minimumReleaseAgeExclude:
+  - "@oxc-parser/binding-android-arm-eabi@0.150.0"
+  - "@oxc-parser/binding-android-arm64@0.150.0"
+  - "@oxc-parser/binding-darwin-arm64@0.150.0"
+  - "@oxc-parser/binding-darwin-x64@0.150.0"
+  - "@oxc-parser/binding-freebsd-x64@0.150.0"
+  - "@oxc-parser/binding-linux-arm-gnueabihf@0.150.0"
+  - "@oxc-parser/binding-linux-arm-musleabihf@0.150.0"
+  - "@oxc-parser/binding-linux-arm64-gnu@0.150.0"
+  - "@oxc-parser/binding-linux-arm64-musl@0.150.0"
+  - "@oxc-parser/binding-linux-ppc64-gnu@0.150.0"
+  - "@oxc-parser/binding-linux-riscv64-gnu@0.150.0"
+  - "@oxc-parser/binding-linux-riscv64-musl@0.150.0"
+  - "@oxc-parser/binding-linux-s390x-gnu@0.150.0"
+  - "@oxc-parser/binding-linux-x64-gnu@0.150.0"
+  - "@oxc-parser/binding-linux-x64-musl@0.150.0"
+  - "@oxc-parser/binding-openharmony-arm64@0.150.0"
+  - "@oxc-parser/binding-win32-arm64-msvc@0.150.0"
+  - "@oxc-parser/binding-win32-ia32-msvc@0.150.0"
+  - "@oxc-parser/binding-win32-x64-msvc@0.150.0"
+  - "@oxc-project/types@0.150.0"
+  - oxc-parser@0.150.0
+  - zod@4.6.5

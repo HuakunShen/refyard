@@ -1,17 +1,27 @@
 {
   "name": "refyard",
   "private": true,
+  "type": "module",
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
-    "lint": "turbo run lint",
-    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
-    "check-types": "turbo run check-types"
+    "check": "turbo run check && tsc --noEmit -p tsconfig.json",
+    "check:boundaries": "bun scripts/check-boundaries.ts",
+    "check:contract": "bun scripts/check-contract.ts",
+    "format": "prettier --write \"**/*.{ts,svelte,md,json,yaml}\"",
+    "test": "vitest run",
+    "test:unit": "vitest run tests/unit tests/contract tests/core tests/graph",
+    "test:integration": "vitest run tests/node tests/integration"
   },
   "devDependencies": {
-    "prettier": "3.9.6",
-    "turbo": "^2.10.12",
-    "typescript": "7.0.2"
+    "@refyard/git-contract": "workspace:*",
+    "@types/node": "catalog:",
+    "oxc-parser": "catalog:",
+    "prettier": "catalog:",
+    "turbo": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:",
+    "zod": "catalog:"
   },
   "packageManager": "pnpm@11.25.0",
   "engines": {

@@ -1,0 +1,8 @@
+# Reference material is the user's delivered package: never reformat it.
+references
+node_modules
+pnpm-lock.yaml
+.turbo
+# Generated contract artifacts are produced by scripts/generate-schema.ts and
+# compared byte-for-byte; prettier must not touch them.
+packages/git-contract/generated

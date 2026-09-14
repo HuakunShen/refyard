@@ -1,0 +1,5795 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://refyard.invalid/contract/1.0.0/contract.schema.json",
+  "title": "Refyard GitService contract",
+  "description": "Generated from packages/git-contract by `pnpm check:contract`. Schemas are JSON-Schema exports of the Zod schemas; request validation is authoritative in the Zod source, and its semantic rules (branch-name grammar, URL schemes, path containment) are intentionally not expressible here.",
+  "x-api-major": 1,
+  "x-contract-version": "1.0.0",
+  "$defs": {
+    "AbortMergeOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema129"
+        },
+        "confirmed": {
+          "$ref": "#/$defs/__schema38"
+        }
+      },
+      "required": [
+        "kind",
+        "confirmed"
+      ],
+      "additionalProperties": false,
+      "description": "Abort the in-progress merge. When Git cannot restore the previous state, the diagnostic is reported instead of a reset fallback."
+    },
+    "AddRemoteOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema58"
+        },
+        "remoteName": {
+          "$ref": "#/$defs/RemoteName"
+        },
+        "fetchUrl": {
+          "$ref": "#/$defs/RemoteUrl"
+        },
+        "pushUrl": {
+          "$ref": "#/$defs/__schema59"
+        }
+      },
+      "required": [
+        "kind",
+        "remoteName",
+        "fetchUrl",
+        "pushUrl"
+      ],
+      "additionalProperties": false,
+      "description": "Add a remote, optionally with a separate push URL."
+    },
+    "AddSubmoduleOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema111"
+        },
+        "remoteUrl": {
+          "$ref": "#/$defs/RemoteUrl"
+        },
+        "relativePath": {
+          "$ref": "#/$defs/RelativeDestination"
+        },
+        "branchName": {
+          "$ref": "#/$defs/__schema112"
+        },
+        "initialize": {
+          "$ref": "#/$defs/__schema113"
+        }
+      },
+      "required": [
+        "kind",
+        "remoteUrl",
+        "relativePath",
+        "branchName",
+        "initialize"
+      ],
+      "additionalProperties": false,
+      "description": "Add a submodule from an approved remote or local path. Arbitrary transport helpers are refused, and the destination is shown before any network connection."
+    },
+    "AllowedRootId": {
+      "type": "string",
+      "pattern": "^root_[A-Za-z0-9_-]{1,96}$",
+      "description": "A directory the service was explicitly granted, resolved by the host."
+    },
+    "AmendCommitOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema42"
+        },
+        "message": {
+          "$ref": "#/$defs/__schema43"
+        },
+        "confirmed": {
+          "$ref": "#/$defs/__schema38"
+        }
+      },
+      "required": [
+        "kind",
+        "message",
+        "confirmed"
+      ],
+      "additionalProperties": false,
+      "description": "Rewrite the tip commit. `null` keeps the existing message. The UI must say a rewrite happened; this version performs no follow-up force push."
+    },
+    "ApiMajor": {
+      "type": "number",
+      "const": 1,
+      "description": "Public API major version. A mismatch means the client must not call write endpoints."
+    },
+    "ApplyStashOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema83"
+        },
+        "stash": {
+          "$ref": "#/$defs/StashRef"
+        },
+        "restoreIndex": {
+          "$ref": "#/$defs/__schema84"
+        }
+      },
+      "required": [
+        "kind",
+        "stash",
+        "restoreIndex"
+      ],
+      "additionalProperties": false,
+      "description": "Apply a stash and keep it. The locator must still resolve to the given object."
+    },
+    "BranchName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[^\\u0000-\\u0020\\u007f~^:?*[\\\\]+$",
+      "description": "A short branch name such as `main` or `feature/graph-paging`."
+    },
+    "CancelOperationRequest": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        }
+      },
+      "required": [
+        "operationId"
+      ],
+      "additionalProperties": false,
+      "description": "Cancel an operation that has not started. A running mutation is not cancellable in this version."
+    },
+    "CapabilitiesQuery": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "CapabilitiesResponse": {
+      "type": "object",
+      "properties": {
+        "apiMajor": {
+          "$ref": "#/$defs/__schema154"
+        },
+        "contractVersion": {
+          "$ref": "#/$defs/__schema155"
+        },
+        "serviceInstanceId": {
+          "$ref": "#/$defs/ServiceInstanceId"
+        },
+        "host": {
+          "$ref": "#/$defs/__schema156"
+        },
+        "git": {
+          "$ref": "#/$defs/__schema157"
+        },
+        "reads": {
+          "$ref": "#/$defs/__schema158"
+        },
+        "operations": {
+          "$ref": "#/$defs/__schema159"
+        },
+        "limits": {
+          "$ref": "#/$defs/RuntimeLimits"
+        },
+        "unavailable": {
+          "$ref": "#/$defs/__schema160"
+        }
+      },
+      "required": [
+        "apiMajor",
+        "contractVersion",
+        "serviceInstanceId",
+        "host",
+        "git",
+        "reads",
+        "operations",
+        "limits",
+        "unavailable"
+      ],
+      "additionalProperties": false,
+      "description": "What this build can do right now. An operation missing from `operations` is not implemented or not safe on this machine; it is never reported as available and then refused."
+    },
+    "ClientRequestId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "description": "Client-chosen idempotency key. Reusing it with a different payload is a conflict, not a retry."
+    },
+    "CloneRepositoryOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema30"
+        },
+        "remoteUrl": {
+          "$ref": "#/$defs/RemoteUrl"
+        },
+        "relativeDestination": {
+          "$ref": "#/$defs/RelativeDestination"
+        },
+        "initializeSubmodules": {
+          "$ref": "#/$defs/__schema31"
+        }
+      },
+      "required": [
+        "kind",
+        "remoteUrl",
+        "relativeDestination",
+        "initializeSubmodules"
+      ],
+      "additionalProperties": false,
+      "description": "Clone an approved remote into an approved root. Submodules are initialised only when asked; credential helpers are the target machine’s."
+    },
+    "CommitDetail": {
+      "type": "object",
+      "properties": {
+        "oid": {
+          "$ref": "#/$defs/ObjectId"
+        },
+        "parents": {
+          "$ref": "#/$defs/__schema199"
+        },
+        "treeOid": {
+          "$ref": "#/$defs/ObjectId"
+        },
+        "authorName": {
+          "$ref": "#/$defs/__schema200"
+        },
+        "authorEmail": {
+          "$ref": "#/$defs/__schema201"
+        },
+        "authoredAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "committerName": {
+          "$ref": "#/$defs/__schema202"
+        },
+        "committerEmail": {
+          "$ref": "#/$defs/__schema203"
+        },
+        "committedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "subject": {
+          "$ref": "#/$defs/__schema204"
+        },
+        "body": {
+          "$ref": "#/$defs/__schema205"
+        },
+        "encoding": {
+          "$ref": "#/$defs/__schema206"
+        },
+        "signed": {
+          "$ref": "#/$defs/__schema207"
+        }
+      },
+      "required": [
+        "oid",
+        "parents",
+        "treeOid",
+        "authorName",
+        "authorEmail",
+        "authoredAt",
+        "committerName",
+        "committerEmail",
+        "committedAt",
+        "subject",
+        "body",
+        "encoding",
+        "signed"
+      ],
+      "additionalProperties": false,
+      "description": "Full commit metadata and message, decoded through the host text codec."
+    },
+    "CommitMessage": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1048576,
+      "description": "Message passed on stdin as UTF-8 bytes. Maximum 1048576 bytes; empty or whitespace-only messages are rejected."
+    },
+    "CommitOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema40"
+        },
+        "message": {
+          "$ref": "#/$defs/CommitMessage"
+        }
+      },
+      "required": [
+        "kind",
+        "message"
+      ],
+      "additionalProperties": false,
+      "description": "Commit the current index with the given message. Nothing is staged implicitly, no empty commit is created, and user hooks and signing settings stay in force."
+    },
+    "CommitSummary": {
+      "type": "object",
+      "properties": {
+        "oid": {
+          "$ref": "#/$defs/ObjectId"
+        },
+        "parents": {
+          "$ref": "#/$defs/__schema191"
+        },
+        "subject": {
+          "$ref": "#/$defs/__schema192"
+        },
+        "authorName": {
+          "$ref": "#/$defs/__schema193"
+        },
+        "authorEmail": {
+          "$ref": "#/$defs/__schema194"
+        },
+        "authoredAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "committedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "refNames": {
+          "$ref": "#/$defs/__schema195"
+        },
+        "signed": {
+          "$ref": "#/$defs/__schema196"
+        },
+        "boundary": {
+          "$ref": "#/$defs/__schema197"
+        },
+        "missingParents": {
+          "$ref": "#/$defs/__schema198"
+        }
+      },
+      "required": [
+        "oid",
+        "parents",
+        "subject",
+        "authorName",
+        "authorEmail",
+        "authoredAt",
+        "committedAt",
+        "refNames",
+        "signed",
+        "boundary",
+        "missingParents"
+      ],
+      "additionalProperties": false,
+      "description": "One row of history. `boundary` marks a shallow/grafted edge and `missingParents` names parents whose objects are absent, so a UI never draws an unloaded parent as a root."
+    },
+    "ContinueMergeOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema126"
+        },
+        "message": {
+          "$ref": "#/$defs/__schema127"
+        }
+      },
+      "required": [
+        "kind",
+        "message"
+      ],
+      "additionalProperties": false,
+      "description": "Complete a merge after the conflicted paths were resolved outside and staged."
+    },
+    "CreateBranchOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema45"
+        },
+        "branchName": {
+          "$ref": "#/$defs/BranchName"
+        },
+        "startOid": {
+          "$ref": "#/$defs/__schema46"
+        },
+        "switchToIt": {
+          "$ref": "#/$defs/__schema47"
+        }
+      },
+      "required": [
+        "kind",
+        "branchName",
+        "startOid",
+        "switchToIt"
+      ],
+      "additionalProperties": false,
+      "description": "Create a branch, optionally at a specific commit and optionally checked out."
+    },
+    "CreateStashOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema78"
+        },
+        "message": {
+          "$ref": "#/$defs/__schema79"
+        },
+        "includeUntracked": {
+          "$ref": "#/$defs/__schema80"
+        },
+        "keepIndex": {
+          "$ref": "#/$defs/__schema81"
+        }
+      },
+      "required": [
+        "kind",
+        "message",
+        "includeUntracked",
+        "keepIndex"
+      ],
+      "additionalProperties": false,
+      "description": "Stash working-tree changes. Ignored files are never included, and submodules are not stashed recursively."
+    },
+    "CreateTagOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema91"
+        },
+        "tagName": {
+          "$ref": "#/$defs/TagName"
+        },
+        "targetOid": {
+          "$ref": "#/$defs/__schema92"
+        },
+        "annotation": {
+          "$ref": "#/$defs/__schema93"
+        }
+      },
+      "required": [
+        "kind",
+        "tagName",
+        "targetOid",
+        "annotation"
+      ],
+      "additionalProperties": false,
+      "description": "Create a lightweight tag (`annotation: null`) or an annotated one. An existing tag is never overwritten."
+    },
+    "CreateWorktreeOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema99"
+        },
+        "relativeDestination": {
+          "$ref": "#/$defs/RelativeDestination"
+        },
+        "reference": {
+          "$ref": "#/$defs/WorktreeReference"
+        }
+      },
+      "required": [
+        "kind",
+        "relativeDestination",
+        "reference"
+      ],
+      "additionalProperties": false,
+      "description": "Add a linked worktree inside an approved root. A branch already checked out elsewhere stays refused."
+    },
+    "Cursor": {
+      "type": "string",
+      "pattern": "^cur_[A-Za-z0-9_-]{1,96}$",
+      "description": "Opaque continuation for a paged read; never parsed by clients."
+    },
+    "DeleteBranchOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema53"
+        },
+        "branchName": {
+          "$ref": "#/$defs/BranchName"
+        },
+        "confirmed": {
+          "$ref": "#/$defs/__schema38"
+        }
+      },
+      "required": [
+        "kind",
+        "branchName",
+        "confirmed"
+      ],
+      "additionalProperties": false,
+      "description": "Delete a fully merged local branch. Unmerged branches are refused; there is no force delete."
+    },
+    "DeleteTagOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema95"
+        },
+        "tagName": {
+          "$ref": "#/$defs/TagName"
+        },
+        "confirmed": {
+          "$ref": "#/$defs/__schema38"
+        }
+      },
+      "required": [
+        "kind",
+        "tagName",
+        "confirmed"
+      ],
+      "additionalProperties": false,
+      "description": "Delete one local tag. Remote tags are never touched."
+    },
+    "DiffFile": {
+      "type": "object",
+      "properties": {
+        "pathId": {
+          "$ref": "#/$defs/PathId"
+        },
+        "displayPath": {
+          "$ref": "#/$defs/DisplayPath"
+        },
+        "oldPathId": {
+          "$ref": "#/$defs/__schema243"
+        },
+        "oldDisplayPath": {
+          "$ref": "#/$defs/__schema244"
+        },
+        "changeKind": {
+          "$ref": "#/$defs/__schema245"
+        },
+        "isBinary": {
+          "$ref": "#/$defs/__schema246"
+        },
+        "isSubmodule": {
+          "$ref": "#/$defs/__schema247"
+        },
+        "insertions": {
+          "$ref": "#/$defs/__schema248"
+        },
+        "deletions": {
+          "$ref": "#/$defs/__schema249"
+        },
+        "modes": {
+          "$ref": "#/$defs/__schema250"
+        },
+        "patch": {
+          "$ref": "#/$defs/FilePatch"
+        }
+      },
+      "required": [
+        "pathId",
+        "displayPath",
+        "oldPathId",
+        "oldDisplayPath",
+        "changeKind",
+        "isBinary",
+        "isSubmodule",
+        "insertions",
+        "deletions",
+        "modes",
+        "patch"
+      ],
+      "additionalProperties": false,
+      "description": "One changed file with its bounded patch."
+    },
+    "DiffQuery": {
+      "type": "object",
+      "properties": {
+        "repositoryId": {
+          "$ref": "#/$defs/RepositoryId"
+        },
+        "worktreeId": {
+          "$ref": "#/$defs/__schema303"
+        },
+        "kind": {
+          "$ref": "#/$defs/__schema304"
+        },
+        "oid": {
+          "$ref": "#/$defs/__schema305"
+        },
+        "from": {
+          "$ref": "#/$defs/__schema306"
+        },
+        "to": {
+          "$ref": "#/$defs/__schema307"
+        },
+        "pathId": {
+          "$ref": "#/$defs/__schema308"
+        },
+        "maxBytes": {
+          "$ref": "#/$defs/__schema309"
+        }
+      },
+      "required": [
+        "repositoryId",
+        "kind"
+      ],
+      "additionalProperties": false,
+      "description": "A diff is always bounded and always scoped: worktree-vs-index, index-vs-HEAD, one commit, or a two-point range. `pathId` restricts it to one path."
+    },
+    "DiffResponse": {
+      "type": "object",
+      "properties": {
+        "snapshotId": {
+          "$ref": "#/$defs/SnapshotId"
+        },
+        "repositoryId": {
+          "$ref": "#/$defs/RepositoryId"
+        },
+        "worktreeId": {
+          "$ref": "#/$defs/__schema251"
+        },
+        "readAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "request": {
+          "$ref": "#/$defs/__schema252"
+        },
+        "files": {
+          "$ref": "#/$defs/__schema253"
+        },
+        "stats": {
+          "$ref": "#/$defs/__schema254"
+        },
+        "truncated": {
+          "$ref": "#/$defs/__schema255"
+        }
+      },
+      "required": [
+        "snapshotId",
+        "repositoryId",
+        "worktreeId",
+        "readAt",
+        "request",
+        "files",
+        "stats",
+        "truncated"
+      ],
+      "additionalProperties": false,
+      "description": "A bounded diff read: selected paths, one commit, or a two-point range."
+    },
+    "DiscardTrackedPathsOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema37"
+        },
+        "pathIds": {
+          "$ref": "#/$defs/__schema23"
+        },
+        "previewTokens": {
+          "$ref": "#/$defs/__schema24"
+        },
+        "confirmed": {
+          "$ref": "#/$defs/__schema38"
+        }
+      },
+      "required": [
+        "kind",
+        "pathIds",
+        "previewTokens",
+        "confirmed"
+      ],
+      "additionalProperties": false,
+      "description": "Restore selected tracked files from the index — not from HEAD — after backing up what the change would destroy. Untracked, ignored, symlink and submodule paths are refused."
+    },
+    "DisplayPath": {
+      "type": "string",
+      "maxLength": 4096,
+      "description": "Escaped, human-readable form of a path. For display only: never send it back as an operation input."
+    },
+    "DropStashOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema89"
+        },
+        "stash": {
+          "$ref": "#/$defs/StashRef"
+        },
+        "confirmed": {
+          "$ref": "#/$defs/__schema38"
+        }
+      },
+      "required": [
+        "kind",
+        "stash",
+        "confirmed"
+      ],
+      "additionalProperties": false,
+      "description": "Discard one stash entry. This is a repository-level change; it cannot be undone from the UI."
+    },
+    "EventEnvelope": {
+      "type": "object",
+      "properties": {
+        "sequence": {
+          "$ref": "#/$defs/__schema296"
+        },
+        "emittedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "payload": {
+          "$ref": "#/$defs/EventPayload"
+        }
+      },
+      "required": [
+        "sequence",
+        "emittedAt",
+        "payload"
+      ],
+      "additionalProperties": false,
+      "description": "One event with its monotonic sequence number, so a client can detect a gap and re-read."
+    },
+    "EventPayload": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/__schema292"
+        },
+        {
+          "$ref": "#/$defs/__schema293"
+        },
+        {
+          "$ref": "#/$defs/__schema294"
+        },
+        {
+          "$ref": "#/$defs/__schema295"
+        }
+      ],
+      "description": "SSE payload. Events are hints that invalidate cached reads; they are never the only source of truth."
+    },
+    "EventsQuery": {
+      "type": "object",
+      "properties": {
+        "since": {
+          "$ref": "#/$defs/__schema310"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Event stream. `since` resumes after a sequence number; if the ring no longer holds that point, the stream starts with an `eventGap`."
+    },
+    "FetchOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema68"
+        },
+        "remoteName": {
+          "$ref": "#/$defs/RemoteName"
+        },
+        "prune": {
+          "$ref": "#/$defs/__schema69"
+        },
+        "tags": {
+          "$ref": "#/$defs/__schema70"
+        }
+      },
+      "required": [
+        "kind",
+        "remoteName",
+        "prune",
+        "tags"
+      ],
+      "additionalProperties": false,
+      "description": "Fetch one remote. Each ref’s outcome is reported separately; the result is a change to remote-tracking refs, never to local branches."
+    },
+    "FilePatch": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/__schema238"
+        },
+        {
+          "$ref": "#/$defs/__schema239"
+        },
+        {
+          "$ref": "#/$defs/__schema240"
+        },
+        {
+          "$ref": "#/$defs/__schema241"
+        },
+        {
+          "$ref": "#/$defs/__schema242"
+        }
+      ],
+      "description": "Text patches are bounded and parsed; a synthesized patch means the file is untracked and its content came from an authorised read, not from Git."
+    },
+    "FullRefName": {
+      "type": "string",
+      "minLength": 6,
+      "maxLength": 1024,
+      "pattern": "^refs\\/[^\\u0000-\\u0020\\u007f~^:?*[\\\\]+$",
+      "description": "Fully qualified ref such as `refs/heads/main` or `refs/tags/v1.0.0`. Explicit source and destination refs keep a push from inheriting surprise refspecs."
+    },
+    "GitCapabilities": {
+      "type": "object",
+      "properties": {
+        "porcelainV2Status": {
+          "$ref": "#/$defs/__schema145"
+        },
+        "worktreeListZ": {
+          "$ref": "#/$defs/__schema146"
+        },
+        "catFileBatch": {
+          "$ref": "#/$defs/__schema147"
+        },
+        "pushPorcelain": {
+          "$ref": "#/$defs/__schema148"
+        },
+        "fetchPorcelain": {
+          "$ref": "#/$defs/__schema149"
+        },
+        "objectFormats": {
+          "$ref": "#/$defs/__schema150"
+        }
+      },
+      "required": [
+        "porcelainV2Status",
+        "worktreeListZ",
+        "catFileBatch",
+        "pushPorcelain",
+        "fetchPorcelain",
+        "objectFormats"
+      ],
+      "additionalProperties": false,
+      "description": "Machine formats probed on this machine, not inferred from a version string. A missing format removes the dependent feature from `operations`."
+    },
+    "HeadState": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema161"
+        },
+        "branchName": {
+          "$ref": "#/$defs/__schema162"
+        },
+        "oid": {
+          "$ref": "#/$defs/__schema163"
+        },
+        "detached": {
+          "$ref": "#/$defs/__schema164"
+        }
+      },
+      "required": [
+        "kind",
+        "branchName",
+        "oid",
+        "detached"
+      ],
+      "additionalProperties": false,
+      "description": "`unborn` is a repository with no commits yet — not an error, and not a missing branch."
+    },
+    "HealthResponse": {
+      "type": "object",
+      "properties": {
+        "alive": {
+          "$ref": "#/$defs/__schema135"
+        },
+        "apiMajor": {
+          "$ref": "#/$defs/__schema136"
+        },
+        "serviceInstanceId": {
+          "$ref": "#/$defs/ServiceInstanceId"
+        }
+      },
+      "required": [
+        "alive",
+        "apiMajor",
+        "serviceInstanceId"
+      ],
+      "additionalProperties": false,
+      "description": "Liveness only. A 200 here does not prove the listener is this service, so the CLI verifies identity out of band before opening a browser."
+    },
+    "HistoryPage": {
+      "type": "object",
+      "properties": {
+        "snapshotId": {
+          "$ref": "#/$defs/SnapshotId"
+        },
+        "repositoryId": {
+          "$ref": "#/$defs/RepositoryId"
+        },
+        "readAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "objectFormat": {
+          "$ref": "#/$defs/ObjectFormat"
+        },
+        "shallow": {
+          "$ref": "#/$defs/__schema208"
+        },
+        "commits": {
+          "$ref": "#/$defs/__schema209"
+        },
+        "nextCursor": {
+          "$ref": "#/$defs/__schema210"
+        },
+        "tipsMoved": {
+          "$ref": "#/$defs/__schema211"
+        },
+        "truncated": {
+          "$ref": "#/$defs/__schema212"
+        },
+        "detail": {
+          "$ref": "#/$defs/__schema213"
+        }
+      },
+      "required": [
+        "snapshotId",
+        "repositoryId",
+        "readAt",
+        "objectFormat",
+        "shallow",
+        "commits",
+        "nextCursor",
+        "tipsMoved",
+        "truncated",
+        "detail"
+      ],
+      "additionalProperties": false,
+      "description": "A page of the commit graph in topological order. Paging continues from a cursor bound to the tips it started with; `tipsMoved` tells the UI the branch advanced, and the old page is still served from the old tips rather than re-interpreted."
+    },
+    "HistoryQuery": {
+      "type": "object",
+      "properties": {
+        "repositoryId": {
+          "$ref": "#/$defs/RepositoryId"
+        },
+        "worktreeId": {
+          "$ref": "#/$defs/__schema298"
+        },
+        "cursor": {
+          "$ref": "#/$defs/__schema299"
+        },
+        "limit": {
+          "$ref": "#/$defs/__schema300"
+        },
+        "detailOid": {
+          "$ref": "#/$defs/__schema301"
+        },
+        "firstParentOnly": {
+          "$ref": "#/$defs/__schema302"
+        }
+      },
+      "required": [
+        "repositoryId"
+      ],
+      "additionalProperties": false,
+      "description": "History page request. `cursor` continues a page from the tips it started with; `detailOid` additionally returns one full commit message."
+    },
+    "InitRepositoryOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema27"
+        },
+        "initialBranch": {
+          "$ref": "#/$defs/__schema28"
+        }
+      },
+      "required": [
+        "kind",
+        "initialBranch"
+      ],
+      "additionalProperties": false,
+      "description": "Create a repository at the workspace destination. `null` uses Git’s default branch name."
+    },
+    "LockWorktreeOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema106"
+        },
+        "worktreeId": {
+          "$ref": "#/$defs/WorktreeId"
+        },
+        "reason": {
+          "$ref": "#/$defs/__schema107"
+        }
+      },
+      "required": [
+        "kind",
+        "worktreeId",
+        "reason"
+      ],
+      "additionalProperties": false,
+      "description": "Lock a linked worktree, with an optional reason."
+    },
+    "MergeOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema122"
+        },
+        "sourceOid": {
+          "$ref": "#/$defs/ObjectId"
+        },
+        "mode": {
+          "$ref": "#/$defs/__schema123"
+        },
+        "message": {
+          "$ref": "#/$defs/__schema124"
+        }
+      },
+      "required": [
+        "kind",
+        "sourceOid",
+        "mode",
+        "message"
+      ],
+      "additionalProperties": false,
+      "description": "Merge one explicit commit into the current branch. Conflicts stop the operation with unmerged index stages shown; they are never auto-resolved."
+    },
+    "MutationRequest": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/__schema26"
+        },
+        {
+          "$ref": "#/$defs/__schema29"
+        },
+        {
+          "$ref": "#/$defs/__schema32"
+        },
+        {
+          "$ref": "#/$defs/__schema34"
+        },
+        {
+          "$ref": "#/$defs/__schema36"
+        },
+        {
+          "$ref": "#/$defs/__schema39"
+        },
+        {
+          "$ref": "#/$defs/__schema41"
+        },
+        {
+          "$ref": "#/$defs/__schema44"
+        },
+        {
+          "$ref": "#/$defs/__schema48"
+        },
+        {
+          "$ref": "#/$defs/__schema50"
+        },
+        {
+          "$ref": "#/$defs/__schema52"
+        },
+        {
+          "$ref": "#/$defs/__schema54"
+        },
+        {
+          "$ref": "#/$defs/__schema57"
+        },
+        {
+          "$ref": "#/$defs/__schema60"
+        },
+        {
+          "$ref": "#/$defs/__schema65"
+        },
+        {
+          "$ref": "#/$defs/__schema67"
+        },
+        {
+          "$ref": "#/$defs/__schema71"
+        },
+        {
+          "$ref": "#/$defs/__schema74"
+        },
+        {
+          "$ref": "#/$defs/__schema77"
+        },
+        {
+          "$ref": "#/$defs/__schema82"
+        },
+        {
+          "$ref": "#/$defs/__schema85"
+        },
+        {
+          "$ref": "#/$defs/__schema88"
+        },
+        {
+          "$ref": "#/$defs/__schema90"
+        },
+        {
+          "$ref": "#/$defs/__schema94"
+        },
+        {
+          "$ref": "#/$defs/__schema96"
+        },
+        {
+          "$ref": "#/$defs/__schema98"
+        },
+        {
+          "$ref": "#/$defs/__schema103"
+        },
+        {
+          "$ref": "#/$defs/__schema105"
+        },
+        {
+          "$ref": "#/$defs/__schema108"
+        },
+        {
+          "$ref": "#/$defs/__schema110"
+        },
+        {
+          "$ref": "#/$defs/__schema114"
+        },
+        {
+          "$ref": "#/$defs/__schema118"
+        },
+        {
+          "$ref": "#/$defs/__schema121"
+        },
+        {
+          "$ref": "#/$defs/__schema125"
+        },
+        {
+          "$ref": "#/$defs/__schema128"
+        }
+      ],
+      "description": "A closed mutation: idempotency key, the resource it addresses, and the operation. Unknown keys and unknown operation kinds are rejected."
+    },
+    "MutationTarget": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/WorkspaceTarget"
+        },
+        {
+          "$ref": "#/$defs/RepositoryTarget"
+        },
+        {
+          "$ref": "#/$defs/WorktreeTarget"
+        }
+      ],
+      "description": "Discriminated by `kind`; an operation accepts only the kinds it declares."
+    },
+    "ObjectFormat": {
+      "type": "string",
+      "enum": [
+        "sha1",
+        "sha256"
+      ],
+      "description": "Hash format of a repository, as reported by Git, never assumed."
+    },
+    "ObjectId": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+      "description": "Git object name. The accepted lengths are the known object formats; the repository decides which one applies."
+    },
+    "OperationAccepted": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        },
+        "status": {
+          "$ref": "#/$defs/__schema130"
+        },
+        "acceptedAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "operationId",
+        "status",
+        "acceptedAt"
+      ],
+      "additionalProperties": false,
+      "description": "The operation was recorded durably. It has not run yet, and may still fail."
+    },
+    "OperationId": {
+      "type": "string",
+      "pattern": "^op_[A-Za-z0-9_-]{1,96}$",
+      "description": "A submitted mutation. Also the handle for querying its outcome."
+    },
+    "OperationQuery": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        }
+      },
+      "required": [
+        "operationId"
+      ],
+      "additionalProperties": false,
+      "description": "Look up one submitted operation."
+    },
+    "OperationRecord": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "$ref": "#/$defs/OperationId"
+        },
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "kind": {
+          "$ref": "#/$defs/__schema282"
+        },
+        "target": {
+          "$ref": "#/$defs/MutationTarget"
+        },
+        "status": {
+          "$ref": "#/$defs/OperationStatus"
+        },
+        "sequence": {
+          "$ref": "#/$defs/__schema283"
+        },
+        "acceptedAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "startedAt": {
+          "$ref": "#/$defs/__schema284"
+        },
+        "finishedAt": {
+          "$ref": "#/$defs/__schema285"
+        },
+        "result": {
+          "$ref": "#/$defs/__schema286"
+        },
+        "problem": {
+          "$ref": "#/$defs/__schema287"
+        }
+      },
+      "required": [
+        "operationId",
+        "clientRequestId",
+        "kind",
+        "target",
+        "status",
+        "sequence",
+        "acceptedAt",
+        "startedAt",
+        "finishedAt",
+        "result",
+        "problem"
+      ],
+      "additionalProperties": false,
+      "description": "A journal entry as the client sees it. The journal itself stores metadata and payload digests, never diffs, messages, tokens or credentials."
+    },
+    "OperationResult": {
+      "type": "object",
+      "properties": {
+        "summary": {
+          "$ref": "#/$defs/__schema277"
+        },
+        "changedRefs": {
+          "$ref": "#/$defs/__schema278"
+        },
+        "changedPaths": {
+          "$ref": "#/$defs/__schema279"
+        },
+        "snapshotInvalidated": {
+          "$ref": "#/$defs/__schema280"
+        },
+        "newHeadOid": {
+          "$ref": "#/$defs/__schema281"
+        }
+      },
+      "required": [
+        "summary",
+        "changedRefs",
+        "changedPaths",
+        "snapshotInvalidated",
+        "newHeadOid"
+      ],
+      "additionalProperties": false,
+      "description": "What a finished operation reports: re-read facts and the invalidation the UI must act on, not Git’s stdout text."
+    },
+    "OperationStatus": {
+      "type": "string",
+      "enum": [
+        "accepted",
+        "running",
+        "succeeded",
+        "failed",
+        "needsAttention",
+        "unknown",
+        "cancelled"
+      ],
+      "description": "Terminal states are `succeeded`, `failed`, `needsAttention`, `unknown` and `cancelled`. `unknown` means Git may have changed things and the service will not guess or retry."
+    },
+    "OperationsListResponse": {
+      "type": "object",
+      "properties": {
+        "operations": {
+          "$ref": "#/$defs/__schema288"
+        },
+        "truncated": {
+          "$ref": "#/$defs/__schema289"
+        }
+      },
+      "required": [
+        "operations",
+        "truncated"
+      ],
+      "additionalProperties": false,
+      "description": "Recent operations for the requesting actor."
+    },
+    "PatchHunk": {
+      "type": "object",
+      "properties": {
+        "header": {
+          "$ref": "#/$defs/__schema232"
+        },
+        "oldStart": {
+          "$ref": "#/$defs/__schema233"
+        },
+        "oldLines": {
+          "$ref": "#/$defs/__schema234"
+        },
+        "newStart": {
+          "$ref": "#/$defs/__schema235"
+        },
+        "newLines": {
+          "$ref": "#/$defs/__schema236"
+        },
+        "lines": {
+          "$ref": "#/$defs/__schema237"
+        }
+      },
+      "required": [
+        "header",
+        "oldStart",
+        "oldLines",
+        "newStart",
+        "newLines",
+        "lines"
+      ],
+      "additionalProperties": false,
+      "description": "A parsed hunk, so the UI renders lines without re-parsing patch grammar."
+    },
+    "PatchLine": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema229"
+        },
+        "text": {
+          "$ref": "#/$defs/__schema230"
+        },
+        "noNewline": {
+          "$ref": "#/$defs/__schema231"
+        }
+      },
+      "required": [
+        "kind",
+        "text",
+        "noNewline"
+      ],
+      "additionalProperties": false,
+      "description": "One patch line without its leading marker; `noNewline` carries the end-of-file marker."
+    },
+    "PathEncoding": {
+      "type": "string",
+      "enum": [
+        "utf8",
+        "unrepresentable"
+      ],
+      "description": "Whether this path can be handed back for execution. `unrepresentable` paths are readable metadata only; operations mentioning them are rejected."
+    },
+    "PathId": {
+      "type": "string",
+      "pattern": "^path_[A-Za-z0-9_-]{1,96}$",
+      "description": "One path inside a worktree, bound to the raw bytes of that path. The only input accepted by path mutations."
+    },
+    "PathSelection": {
+      "type": "object",
+      "properties": {
+        "pathIds": {
+          "$ref": "#/$defs/__schema23"
+        },
+        "previewTokens": {
+          "$ref": "#/$defs/__schema24"
+        }
+      },
+      "required": [
+        "pathIds",
+        "previewTokens"
+      ],
+      "additionalProperties": false,
+      "description": "Paths plus their content-fingerprint tokens; lengths must match exactly."
+    },
+    "PlainPathSelection": {
+      "type": "object",
+      "properties": {
+        "pathIds": {
+          "$ref": "#/$defs/__schema25"
+        }
+      },
+      "required": [
+        "pathIds"
+      ],
+      "additionalProperties": false,
+      "description": "Paths addressed by id, in this worktree."
+    },
+    "PopStashOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema86"
+        },
+        "stash": {
+          "$ref": "#/$defs/StashRef"
+        },
+        "restoreIndex": {
+          "$ref": "#/$defs/__schema87"
+        },
+        "confirmed": {
+          "$ref": "#/$defs/__schema38"
+        }
+      },
+      "required": [
+        "kind",
+        "stash",
+        "restoreIndex",
+        "confirmed"
+      ],
+      "additionalProperties": false,
+      "description": "Apply a stash and drop it on success only. A conflict leaves the stash in place for a human to resolve."
+    },
+    "PreviewToken": {
+      "type": "string",
+      "pattern": "^pt_[A-Za-z0-9_-]{1,96}$",
+      "description": "Authorises acting on one path whose content fingerprint matched when the preview was taken."
+    },
+    "PreviewsRequest": {
+      "type": "object",
+      "properties": {
+        "repositoryId": {
+          "$ref": "#/$defs/RepositoryId"
+        },
+        "worktreeId": {
+          "$ref": "#/$defs/WorktreeId"
+        },
+        "pathIds": {
+          "$ref": "#/$defs/__schema290"
+        }
+      },
+      "required": [
+        "repositoryId",
+        "worktreeId",
+        "pathIds"
+      ],
+      "additionalProperties": false,
+      "description": "Ask for content fingerprints of selected paths before a stage or discard."
+    },
+    "PreviewsResponse": {
+      "type": "object",
+      "properties": {
+        "repositoryId": {
+          "$ref": "#/$defs/RepositoryId"
+        },
+        "worktreeId": {
+          "$ref": "#/$defs/WorktreeId"
+        },
+        "snapshotId": {
+          "$ref": "#/$defs/SnapshotId"
+        },
+        "readAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "tokens": {
+          "$ref": "#/$defs/__schema291"
+        }
+      },
+      "required": [
+        "repositoryId",
+        "worktreeId",
+        "snapshotId",
+        "readAt",
+        "tokens"
+      ],
+      "additionalProperties": false,
+      "description": "Content fingerprints bound to paths. The tokens expire, and a token whose file changed is stale rather than silently still valid."
+    },
+    "Problem": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ProblemCode"
+        },
+        "message": {
+          "$ref": "#/$defs/__schema131"
+        },
+        "details": {
+          "$ref": "#/$defs/__schema132"
+        },
+        "retryable": {
+          "$ref": "#/$defs/__schema133"
+        },
+        "operationId": {
+          "$ref": "#/$defs/__schema134"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "retryable"
+      ],
+      "additionalProperties": false,
+      "description": "One failure, with enough detail for a UI decision."
+    },
+    "ProblemCode": {
+      "type": "string",
+      "enum": [
+        "Unauthenticated",
+        "Forbidden",
+        "NotFound",
+        "InvalidRequest",
+        "UnsupportedOperation",
+        "InvalidOperationPayload",
+        "UnsupportedPathEncoding",
+        "StaleSnapshot",
+        "StalePreview",
+        "Conflict",
+        "IdempotencyConflict",
+        "ResourceBusy",
+        "LimitExceeded",
+        "GitCommandFailed",
+        "NeedsAttention",
+        "UncertainOutcome",
+        "Timeout",
+        "Cancelled",
+        "Unavailable",
+        "InternalError"
+      ],
+      "description": "Closed set of failure codes. Clients branch on these, not on message text."
+    },
+    "ProblemResponse": {
+      "type": "object",
+      "properties": {
+        "problem": {
+          "$ref": "#/$defs/Problem"
+        }
+      },
+      "required": [
+        "problem"
+      ],
+      "additionalProperties": false,
+      "description": "The body of any 4xx/5xx JSON response."
+    },
+    "PullOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema75"
+        },
+        "remoteName": {
+          "$ref": "#/$defs/RemoteName"
+        },
+        "mode": {
+          "$ref": "#/$defs/__schema76"
+        }
+      },
+      "required": [
+        "kind",
+        "remoteName",
+        "mode"
+      ],
+      "additionalProperties": false,
+      "description": "Fast-forward the current branch from its remote. A divergence fails: this version never merges or rebases implicitly, and it separates \"remote-tracking refs updated\" from \"working branch not moved\"."
+    },
+    "PushOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema72"
+        },
+        "remoteName": {
+          "$ref": "#/$defs/RemoteName"
+        },
+        "sourceRef": {
+          "$ref": "#/$defs/FullRefName"
+        },
+        "destinationRef": {
+          "$ref": "#/$defs/FullRefName"
+        },
+        "setUpstream": {
+          "$ref": "#/$defs/__schema73"
+        }
+      },
+      "required": [
+        "kind",
+        "remoteName",
+        "sourceRef",
+        "destinationRef",
+        "setUpstream"
+      ],
+      "additionalProperties": false,
+      "description": "Push exactly one explicit source ref to one explicit destination ref. No mirroring, no implicit follow-tags, no force."
+    },
+    "PushTagOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema97"
+        },
+        "remoteName": {
+          "$ref": "#/$defs/RemoteName"
+        },
+        "tagName": {
+          "$ref": "#/$defs/TagName"
+        }
+      },
+      "required": [
+        "kind",
+        "remoteName",
+        "tagName"
+      ],
+      "additionalProperties": false,
+      "description": "Push one tag by name, without force and without deleting anything remotely."
+    },
+    "ReadKind": {
+      "type": "string",
+      "enum": [
+        "capabilities",
+        "repositories",
+        "status",
+        "history",
+        "refs",
+        "diff",
+        "worktrees",
+        "submodules",
+        "stashes",
+        "operations",
+        "events"
+      ],
+      "description": "One read the service implements."
+    },
+    "RefEntry": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/__schema214"
+        },
+        "fullName": {
+          "$ref": "#/$defs/__schema215"
+        },
+        "oid": {
+          "$ref": "#/$defs/ObjectId"
+        },
+        "isCurrent": {
+          "$ref": "#/$defs/__schema216"
+        },
+        "upstream": {
+          "$ref": "#/$defs/__schema217"
+        }
+      },
+      "required": [
+        "name",
+        "fullName",
+        "oid",
+        "isCurrent",
+        "upstream"
+      ],
+      "additionalProperties": false,
+      "description": "A local branch, with its upstream state when one is configured."
+    },
+    "RefsSnapshot": {
+      "type": "object",
+      "properties": {
+        "snapshotId": {
+          "$ref": "#/$defs/SnapshotId"
+        },
+        "repositoryId": {
+          "$ref": "#/$defs/RepositoryId"
+        },
+        "readAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "objectFormat": {
+          "$ref": "#/$defs/ObjectFormat"
+        },
+        "head": {
+          "$ref": "#/$defs/HeadState"
+        },
+        "branches": {
+          "$ref": "#/$defs/__schema223"
+        },
+        "remoteBranches": {
+          "$ref": "#/$defs/__schema224"
+        },
+        "tags": {
+          "$ref": "#/$defs/__schema225"
+        },
+        "remotes": {
+          "$ref": "#/$defs/__schema226"
+        },
+        "otherRefs": {
+          "$ref": "#/$defs/__schema227"
+        },
+        "truncated": {
+          "$ref": "#/$defs/__schema228"
+        }
+      },
+      "required": [
+        "snapshotId",
+        "repositoryId",
+        "readAt",
+        "objectFormat",
+        "head",
+        "branches",
+        "remoteBranches",
+        "tags",
+        "remotes",
+        "otherRefs",
+        "truncated"
+      ],
+      "additionalProperties": false,
+      "description": "Branches, remote-tracking refs, tags and remotes in one read. URLs are redacted for display; the host never returns a credential."
+    },
+    "RelativeDestination": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "description": "Path relative to an approved root. Absolute paths, `..` segments and `.git` components are rejected by validation."
+    },
+    "RemoteName": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,62})$",
+      "description": "A configured remote name such as `origin`."
+    },
+    "RemoteRefEntry": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/__schema218"
+        },
+        "fullName": {
+          "$ref": "#/$defs/__schema219"
+        },
+        "oid": {
+          "$ref": "#/$defs/ObjectId"
+        },
+        "remoteName": {
+          "$ref": "#/$defs/RemoteName"
+        }
+      },
+      "required": [
+        "name",
+        "fullName",
+        "oid",
+        "remoteName"
+      ],
+      "additionalProperties": false,
+      "description": "A remote-tracking ref, as observed locally after the last fetch."
+    },
+    "RemoteUrl": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "description": "https:// or ssh:// URL, scp-like `user@host:path`, or an absolute local path the user approved. Credentials are redacted before display or logging."
+    },
+    "RemoveRemoteOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema66"
+        },
+        "remoteName": {
+          "$ref": "#/$defs/RemoteName"
+        },
+        "confirmed": {
+          "$ref": "#/$defs/__schema38"
+        }
+      },
+      "required": [
+        "kind",
+        "remoteName",
+        "confirmed"
+      ],
+      "additionalProperties": false,
+      "description": "Remove a remote and its remote-tracking refs. Local branches are untouched."
+    },
+    "RemoveWorktreeOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema104"
+        },
+        "worktreeId": {
+          "$ref": "#/$defs/WorktreeId"
+        },
+        "confirmed": {
+          "$ref": "#/$defs/__schema38"
+        }
+      },
+      "required": [
+        "kind",
+        "worktreeId",
+        "confirmed"
+      ],
+      "additionalProperties": false,
+      "description": "Remove a clean, non-primary, unlocked worktree. Git’s own refusal is reported as-is; nothing falls back to recursive deletion."
+    },
+    "RenameBranchOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema51"
+        },
+        "branchName": {
+          "$ref": "#/$defs/BranchName"
+        },
+        "newName": {
+          "$ref": "#/$defs/BranchName"
+        }
+      },
+      "required": [
+        "kind",
+        "branchName",
+        "newName"
+      ],
+      "additionalProperties": false,
+      "description": "Rename a local branch."
+    },
+    "RepositoriesQuery": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
+    "RepositoriesResponse": {
+      "type": "object",
+      "properties": {
+        "repositories": {
+          "$ref": "#/$defs/__schema169"
+        },
+        "allowedRoots": {
+          "$ref": "#/$defs/__schema170"
+        }
+      },
+      "required": [
+        "repositories",
+        "allowedRoots"
+      ],
+      "additionalProperties": false,
+      "description": "Registered repositories and the roots they were approved under. Registration is explicit; nothing is discovered by scanning the disk."
+    },
+    "RepositoryId": {
+      "type": "string",
+      "pattern": "^repo_[A-Za-z0-9_-]{1,96}$",
+      "description": "One common Git directory. Worktrees share it; a second clone of the same project does not."
+    },
+    "RepositoryQuery": {
+      "type": "object",
+      "properties": {
+        "repositoryId": {
+          "$ref": "#/$defs/RepositoryId"
+        }
+      },
+      "required": [
+        "repositoryId"
+      ],
+      "additionalProperties": false,
+      "description": "Queries that address a repository — its refs, remotes, tags, worktree list."
+    },
+    "RepositorySummary": {
+      "type": "object",
+      "properties": {
+        "repositoryId": {
+          "$ref": "#/$defs/RepositoryId"
+        },
+        "allowedRootId": {
+          "$ref": "#/$defs/AllowedRootId"
+        },
+        "displayName": {
+          "$ref": "#/$defs/__schema165"
+        },
+        "displayPath": {
+          "$ref": "#/$defs/DisplayPath"
+        },
+        "objectFormat": {
+          "$ref": "#/$defs/ObjectFormat"
+        },
+        "worktreeIds": {
+          "$ref": "#/$defs/__schema166"
+        },
+        "primaryWorktreeId": {
+          "$ref": "#/$defs/WorktreeId"
+        },
+        "head": {
+          "$ref": "#/$defs/HeadState"
+        },
+        "operationInProgress": {
+          "$ref": "#/$defs/__schema167"
+        },
+        "lastFetchedAt": {
+          "$ref": "#/$defs/__schema168"
+        }
+      },
+      "required": [
+        "repositoryId",
+        "allowedRootId",
+        "displayName",
+        "displayPath",
+        "objectFormat",
+        "worktreeIds",
+        "primaryWorktreeId",
+        "head",
+        "operationInProgress",
+        "lastFetchedAt"
+      ],
+      "additionalProperties": false,
+      "description": "One registered repository, as shown in the repository list."
+    },
+    "RepositoryTarget": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema20"
+        },
+        "repositoryId": {
+          "$ref": "#/$defs/RepositoryId"
+        },
+        "expectedSnapshotId": {
+          "$ref": "#/$defs/SnapshotId"
+        }
+      },
+      "required": [
+        "kind",
+        "repositoryId",
+        "expectedSnapshotId"
+      ],
+      "additionalProperties": false,
+      "description": "A repository-level change: refs, remotes, tags, worktrees, submodule wiring."
+    },
+    "RuntimeLimits": {
+      "type": "object",
+      "properties": {
+        "historyDefaultPageSize": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "historyMaxPageSize": {
+          "$ref": "#/$defs/__schema1"
+        },
+        "patchMaxBytesPerFile": {
+          "$ref": "#/$defs/__schema2"
+        },
+        "patchMaxLinesPerFile": {
+          "$ref": "#/$defs/__schema3"
+        },
+        "objectMaxBytes": {
+          "$ref": "#/$defs/__schema4"
+        },
+        "logicalCacheMaxBytes": {
+          "$ref": "#/$defs/__schema5"
+        },
+        "previewTokenTtlSeconds": {
+          "$ref": "#/$defs/__schema6"
+        },
+        "readonlyDeadlineSeconds": {
+          "$ref": "#/$defs/__schema7"
+        },
+        "networkDeadlineSeconds": {
+          "$ref": "#/$defs/__schema8"
+        },
+        "hookDeadlineSeconds": {
+          "$ref": "#/$defs/__schema9"
+        },
+        "queuedOperationsPerActor": {
+          "$ref": "#/$defs/__schema10"
+        },
+        "concurrentGitProcesses": {
+          "$ref": "#/$defs/__schema11"
+        },
+        "concurrentReadersPerRepository": {
+          "$ref": "#/$defs/__schema12"
+        },
+        "eventRingMaxEvents": {
+          "$ref": "#/$defs/__schema13"
+        },
+        "eventRingMaxBytes": {
+          "$ref": "#/$defs/__schema14"
+        },
+        "pathSelectionMaxEntries": {
+          "$ref": "#/$defs/__schema15"
+        },
+        "historyTipsMax": {
+          "$ref": "#/$defs/__schema16"
+        },
+        "commitMessageMaxBytes": {
+          "$ref": "#/$defs/__schema17"
+        },
+        "branchNameMaxLength": {
+          "$ref": "#/$defs/__schema18"
+        }
+      },
+      "required": [
+        "historyDefaultPageSize",
+        "historyMaxPageSize",
+        "patchMaxBytesPerFile",
+        "patchMaxLinesPerFile",
+        "objectMaxBytes",
+        "logicalCacheMaxBytes",
+        "previewTokenTtlSeconds",
+        "readonlyDeadlineSeconds",
+        "networkDeadlineSeconds",
+        "hookDeadlineSeconds",
+        "queuedOperationsPerActor",
+        "concurrentGitProcesses",
+        "concurrentReadersPerRepository",
+        "eventRingMaxEvents",
+        "eventRingMaxBytes",
+        "pathSelectionMaxEntries",
+        "historyTipsMax",
+        "commitMessageMaxBytes",
+        "branchNameMaxLength"
+      ],
+      "additionalProperties": false,
+      "description": "Limits the service enforces on reads, requests, queues and event streams."
+    },
+    "ServiceInstanceId": {
+      "type": "string",
+      "pattern": "^srvc_[A-Za-z0-9_-]{1,96}$",
+      "description": "Identifies one running service process; changes across restarts."
+    },
+    "SessionExchangeRequest": {
+      "type": "object",
+      "properties": {
+        "ticket": {
+          "$ref": "#/$defs/__schema137"
+        }
+      },
+      "required": [
+        "ticket"
+      ],
+      "additionalProperties": false,
+      "description": "Body of POST /api/v1/session/exchange. The ticket is single-use, short-lived and bound to one instance, origin, actor and resource set."
+    },
+    "SessionExchangeResponse": {
+      "type": "object",
+      "properties": {
+        "token": {
+          "$ref": "#/$defs/__schema138"
+        },
+        "tokenType": {
+          "$ref": "#/$defs/__schema139"
+        },
+        "expiresAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "serviceInstanceId": {
+          "$ref": "#/$defs/ServiceInstanceId"
+        },
+        "apiMajor": {
+          "$ref": "#/$defs/__schema140"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/__schema141"
+        },
+        "grants": {
+          "$ref": "#/$defs/SessionGrants"
+        }
+      },
+      "required": [
+        "token",
+        "tokenType",
+        "expiresAt",
+        "serviceInstanceId",
+        "apiMajor",
+        "sessionId",
+        "grants"
+      ],
+      "additionalProperties": false,
+      "description": "An in-memory bearer session. Never persisted client-side."
+    },
+    "SessionGrants": {
+      "type": "object",
+      "properties": {
+        "allowedRootIds": {
+          "$ref": "#/$defs/__schema142"
+        },
+        "repositoryIds": {
+          "$ref": "#/$defs/__schema143"
+        },
+        "scopes": {
+          "$ref": "#/$defs/__schema144"
+        }
+      },
+      "required": [
+        "allowedRootIds",
+        "repositoryIds",
+        "scopes"
+      ],
+      "additionalProperties": false,
+      "description": "What this session is allowed to reach."
+    },
+    "SetBranchUpstreamOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema55"
+        },
+        "branchName": {
+          "$ref": "#/$defs/BranchName"
+        },
+        "upstream": {
+          "$ref": "#/$defs/__schema56"
+        }
+      },
+      "required": [
+        "kind",
+        "branchName",
+        "upstream"
+      ],
+      "additionalProperties": false,
+      "description": "Set or clear (with `null`) the upstream of a local branch."
+    },
+    "SnapshotId": {
+      "type": "string",
+      "pattern": "^snap_[A-Za-z0-9_-]{1,96}$",
+      "description": "A recorded read of mutable state. Mutations carry the snapshot they were planned against."
+    },
+    "StagePathsOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema33"
+        },
+        "pathIds": {
+          "$ref": "#/$defs/__schema23"
+        },
+        "previewTokens": {
+          "$ref": "#/$defs/__schema24"
+        }
+      },
+      "required": [
+        "kind",
+        "pathIds",
+        "previewTokens"
+      ],
+      "additionalProperties": false,
+      "description": "Stage exactly the selected paths. Renames include whichever old and new paths are required; nothing is staged recursively."
+    },
+    "StashEntry": {
+      "type": "object",
+      "properties": {
+        "oid": {
+          "$ref": "#/$defs/ObjectId"
+        },
+        "locator": {
+          "$ref": "#/$defs/StashLocator"
+        },
+        "message": {
+          "$ref": "#/$defs/__schema273"
+        },
+        "createdAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "branchDisplay": {
+          "$ref": "#/$defs/__schema274"
+        }
+      },
+      "required": [
+        "oid",
+        "locator",
+        "message",
+        "createdAt",
+        "branchDisplay"
+      ],
+      "additionalProperties": false,
+      "description": "A stash entry. The locator is where it currently sits in the reflog and moves as stashes are added or dropped, so writes always carry the OID too."
+    },
+    "StashLocator": {
+      "type": "string",
+      "pattern": "^stash@\\{\\d+\\}$",
+      "description": "Reflog locator of a stash entry, e.g. `stash@{2}`."
+    },
+    "StashRef": {
+      "type": "object",
+      "properties": {
+        "oid": {
+          "$ref": "#/$defs/__schema22"
+        },
+        "locator": {
+          "$ref": "#/$defs/StashLocator"
+        }
+      },
+      "required": [
+        "oid",
+        "locator"
+      ],
+      "additionalProperties": false,
+      "description": "A stash identified by object name, with the locator it was listed under. The host re-checks that the locator still points at that object before any write."
+    },
+    "StashesResponse": {
+      "type": "object",
+      "properties": {
+        "snapshotId": {
+          "$ref": "#/$defs/SnapshotId"
+        },
+        "repositoryId": {
+          "$ref": "#/$defs/RepositoryId"
+        },
+        "readAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "stashes": {
+          "$ref": "#/$defs/__schema275"
+        },
+        "truncated": {
+          "$ref": "#/$defs/__schema276"
+        }
+      },
+      "required": [
+        "snapshotId",
+        "repositoryId",
+        "readAt",
+        "stashes",
+        "truncated"
+      ],
+      "additionalProperties": false,
+      "description": "Stash entries, newest first."
+    },
+    "StatusEntry": {
+      "type": "object",
+      "properties": {
+        "pathId": {
+          "$ref": "#/$defs/PathId"
+        },
+        "displayPath": {
+          "$ref": "#/$defs/DisplayPath"
+        },
+        "pathEncoding": {
+          "$ref": "#/$defs/PathEncoding"
+        },
+        "kind": {
+          "$ref": "#/$defs/__schema176"
+        },
+        "indexStatus": {
+          "$ref": "#/$defs/__schema177"
+        },
+        "worktreeStatus": {
+          "$ref": "#/$defs/__schema178"
+        },
+        "originalPathId": {
+          "$ref": "#/$defs/__schema179"
+        },
+        "originalDisplayPath": {
+          "$ref": "#/$defs/__schema180"
+        },
+        "headOid": {
+          "$ref": "#/$defs/__schema181"
+        },
+        "indexOid": {
+          "$ref": "#/$defs/__schema182"
+        },
+        "modes": {
+          "$ref": "#/$defs/__schema183"
+        },
+        "submodule": {
+          "$ref": "#/$defs/__schema184"
+        },
+        "stages": {
+          "$ref": "#/$defs/__schema185"
+        }
+      },
+      "required": [
+        "pathId",
+        "displayPath",
+        "pathEncoding",
+        "kind",
+        "indexStatus",
+        "worktreeStatus",
+        "originalPathId",
+        "originalDisplayPath",
+        "headOid",
+        "indexOid",
+        "modes",
+        "submodule",
+        "stages"
+      ],
+      "additionalProperties": false,
+      "description": "One changed path. Status characters are Git’s own (`.`, `M`, `A`, `D`, `R`, `U`, …); the UI decides presentation, never re-parses them into meaning."
+    },
+    "StatusSnapshot": {
+      "type": "object",
+      "properties": {
+        "snapshotId": {
+          "$ref": "#/$defs/SnapshotId"
+        },
+        "repositoryId": {
+          "$ref": "#/$defs/RepositoryId"
+        },
+        "worktreeId": {
+          "$ref": "#/$defs/WorktreeId"
+        },
+        "readAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "head": {
+          "$ref": "#/$defs/HeadState"
+        },
+        "upstream": {
+          "$ref": "#/$defs/__schema186"
+        },
+        "operationInProgress": {
+          "$ref": "#/$defs/__schema187"
+        },
+        "entries": {
+          "$ref": "#/$defs/__schema188"
+        },
+        "entryCount": {
+          "$ref": "#/$defs/__schema189"
+        },
+        "truncated": {
+          "$ref": "#/$defs/__schema190"
+        }
+      },
+      "required": [
+        "snapshotId",
+        "repositoryId",
+        "worktreeId",
+        "readAt",
+        "head",
+        "upstream",
+        "operationInProgress",
+        "entries",
+        "entryCount",
+        "truncated"
+      ],
+      "additionalProperties": false,
+      "description": "Working-tree and index state at a point in time. `ahead`/`behind` describe local remote-tracking refs only — they are not the server’s state."
+    },
+    "SubmoduleStatus": {
+      "type": "object",
+      "properties": {
+        "commitChanged": {
+          "$ref": "#/$defs/__schema171"
+        },
+        "modified": {
+          "$ref": "#/$defs/__schema172"
+        },
+        "untracked": {
+          "$ref": "#/$defs/__schema173"
+        }
+      },
+      "required": [
+        "commitChanged",
+        "modified",
+        "untracked"
+      ],
+      "additionalProperties": false,
+      "description": "Submodule flags from porcelain v2’s `sub` field."
+    },
+    "SubmoduleSummary": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/__schema263"
+        },
+        "pathId": {
+          "$ref": "#/$defs/PathId"
+        },
+        "displayPath": {
+          "$ref": "#/$defs/DisplayPath"
+        },
+        "recordedOid": {
+          "$ref": "#/$defs/__schema264"
+        },
+        "indexOid": {
+          "$ref": "#/$defs/__schema265"
+        },
+        "actualOid": {
+          "$ref": "#/$defs/__schema266"
+        },
+        "state": {
+          "$ref": "#/$defs/__schema267"
+        },
+        "urlDisplay": {
+          "$ref": "#/$defs/__schema268"
+        },
+        "branchName": {
+          "$ref": "#/$defs/__schema269"
+        },
+        "submoduleRepositoryId": {
+          "$ref": "#/$defs/__schema270"
+        }
+      },
+      "required": [
+        "name",
+        "pathId",
+        "displayPath",
+        "recordedOid",
+        "indexOid",
+        "actualOid",
+        "state",
+        "urlDisplay",
+        "branchName",
+        "submoduleRepositoryId"
+      ],
+      "additionalProperties": false,
+      "description": "Three object names, never one \"up to date\" flag: what the parent commit records, what the parent index has, and what the submodule actually checked out."
+    },
+    "SubmodulesResponse": {
+      "type": "object",
+      "properties": {
+        "snapshotId": {
+          "$ref": "#/$defs/SnapshotId"
+        },
+        "repositoryId": {
+          "$ref": "#/$defs/RepositoryId"
+        },
+        "worktreeId": {
+          "$ref": "#/$defs/WorktreeId"
+        },
+        "readAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "submodules": {
+          "$ref": "#/$defs/__schema271"
+        },
+        "truncated": {
+          "$ref": "#/$defs/__schema272"
+        }
+      },
+      "required": [
+        "snapshotId",
+        "repositoryId",
+        "worktreeId",
+        "readAt",
+        "submodules",
+        "truncated"
+      ],
+      "additionalProperties": false,
+      "description": "Submodule state as seen from one worktree."
+    },
+    "SwitchBranchOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema49"
+        },
+        "branchName": {
+          "$ref": "#/$defs/BranchName"
+        }
+      },
+      "required": [
+        "kind",
+        "branchName"
+      ],
+      "additionalProperties": false,
+      "description": "Check out an existing branch. Never forced: a conflict with local changes is reported, not resolved by discarding them."
+    },
+    "SyncSubmoduleOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema119"
+        },
+        "pathIds": {
+          "$ref": "#/$defs/__schema25"
+        },
+        "recursive": {
+          "$ref": "#/$defs/__schema120"
+        }
+      },
+      "required": [
+        "kind",
+        "pathIds",
+        "recursive"
+      ],
+      "additionalProperties": false,
+      "description": "Copy submodule URLs from the parent repository configuration into the submodules."
+    },
+    "TagEntry": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/TagName"
+        },
+        "fullName": {
+          "$ref": "#/$defs/__schema220"
+        },
+        "oid": {
+          "$ref": "#/$defs/ObjectId"
+        },
+        "annotated": {
+          "$ref": "#/$defs/__schema221"
+        },
+        "targetOid": {
+          "$ref": "#/$defs/__schema222"
+        }
+      },
+      "required": [
+        "name",
+        "fullName",
+        "oid",
+        "annotated",
+        "targetOid"
+      ],
+      "additionalProperties": false,
+      "description": "A tag. For an annotated tag `oid` is the tag object and `targetOid` the commit it points at."
+    },
+    "TagName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[^\\u0000-\\u0020\\u007f~^:?*[\\\\]+$",
+      "description": "A short tag name such as `v1.2.0`."
+    },
+    "TargetKind": {
+      "type": "string",
+      "enum": [
+        "workspace",
+        "repository",
+        "worktree"
+      ],
+      "description": "Which kind of resource a mutation addresses."
+    },
+    "Timestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{3})?Z$",
+      "description": "ISO-8601 UTC instant, e.g. 2026-09-14T12:00:00.000Z."
+    },
+    "UnavailableReason": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/__schema151"
+        },
+        "message": {
+          "$ref": "#/$defs/__schema152"
+        },
+        "operations": {
+          "$ref": "#/$defs/__schema153"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "operations"
+      ],
+      "additionalProperties": false,
+      "description": "Why some operations are absent from this build."
+    },
+    "UnlockWorktreeOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema109"
+        },
+        "worktreeId": {
+          "$ref": "#/$defs/WorktreeId"
+        }
+      },
+      "required": [
+        "kind",
+        "worktreeId"
+      ],
+      "additionalProperties": false,
+      "description": "Unlock a worktree that was locked."
+    },
+    "UnmergedStage": {
+      "type": "object",
+      "properties": {
+        "stage": {
+          "$ref": "#/$defs/__schema174"
+        },
+        "mode": {
+          "$ref": "#/$defs/__schema175"
+        },
+        "oid": {
+          "$ref": "#/$defs/ObjectId"
+        }
+      },
+      "required": [
+        "stage",
+        "mode",
+        "oid"
+      ],
+      "additionalProperties": false,
+      "description": "One index stage of a conflicted path: base, ours, theirs."
+    },
+    "UnstagePathsOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema35"
+        },
+        "pathIds": {
+          "$ref": "#/$defs/__schema25"
+        }
+      },
+      "required": [
+        "kind",
+        "pathIds"
+      ],
+      "additionalProperties": false,
+      "description": "Reset the selected paths in the index only. Working-tree files are never touched."
+    },
+    "UpdateRemoteOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema61"
+        },
+        "remoteName": {
+          "$ref": "#/$defs/RemoteName"
+        },
+        "newName": {
+          "$ref": "#/$defs/__schema62"
+        },
+        "fetchUrl": {
+          "$ref": "#/$defs/__schema63"
+        },
+        "pushUrl": {
+          "$ref": "#/$defs/__schema64"
+        }
+      },
+      "required": [
+        "kind",
+        "remoteName",
+        "newName",
+        "fetchUrl",
+        "pushUrl"
+      ],
+      "additionalProperties": false,
+      "description": "Rename a remote and/or change its URLs. At least one change must be present; `pushUrl: null` clears it."
+    },
+    "UpdateSubmoduleOperation": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema115"
+        },
+        "pathIds": {
+          "$ref": "#/$defs/__schema25"
+        },
+        "initialize": {
+          "$ref": "#/$defs/__schema116"
+        },
+        "recursive": {
+          "$ref": "#/$defs/__schema117"
+        }
+      },
+      "required": [
+        "kind",
+        "pathIds",
+        "initialize",
+        "recursive"
+      ],
+      "additionalProperties": false,
+      "description": "Check out the commit the parent repository records. `--remote` and `--force` are not available, and configured update shell commands are ignored."
+    },
+    "WorkspaceTarget": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema19"
+        },
+        "allowedRootId": {
+          "$ref": "#/$defs/AllowedRootId"
+        },
+        "relativeDestination": {
+          "$ref": "#/$defs/RelativeDestination"
+        }
+      },
+      "required": [
+        "kind",
+        "allowedRootId",
+        "relativeDestination"
+      ],
+      "additionalProperties": false,
+      "description": "A location inside an approved root, for operations that create repositories."
+    },
+    "WorktreeId": {
+      "type": "string",
+      "pattern": "^wt_[A-Za-z0-9_-]{1,96}$",
+      "description": "One worktree of a repository, with its own HEAD and index."
+    },
+    "WorktreeQuery": {
+      "type": "object",
+      "properties": {
+        "repositoryId": {
+          "$ref": "#/$defs/RepositoryId"
+        },
+        "worktreeId": {
+          "$ref": "#/$defs/__schema297"
+        }
+      },
+      "required": [
+        "repositoryId"
+      ],
+      "additionalProperties": false,
+      "description": "Queries that address a worktree. Omitting `worktreeId` selects the primary worktree."
+    },
+    "WorktreeReference": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/__schema100"
+        },
+        {
+          "$ref": "#/$defs/__schema101"
+        },
+        {
+          "$ref": "#/$defs/__schema102"
+        }
+      ],
+      "description": "What the new worktree checks out. A branch already checked out elsewhere is refused by Git, not overridden."
+    },
+    "WorktreeSummary": {
+      "type": "object",
+      "properties": {
+        "worktreeId": {
+          "$ref": "#/$defs/WorktreeId"
+        },
+        "displayPath": {
+          "$ref": "#/$defs/DisplayPath"
+        },
+        "head": {
+          "$ref": "#/$defs/HeadState"
+        },
+        "isMain": {
+          "$ref": "#/$defs/__schema256"
+        },
+        "isBare": {
+          "$ref": "#/$defs/__schema257"
+        },
+        "isDetached": {
+          "$ref": "#/$defs/__schema258"
+        },
+        "isLocked": {
+          "$ref": "#/$defs/__schema259"
+        },
+        "lockReason": {
+          "$ref": "#/$defs/__schema260"
+        },
+        "isPrunable": {
+          "$ref": "#/$defs/__schema261"
+        }
+      },
+      "required": [
+        "worktreeId",
+        "displayPath",
+        "head",
+        "isMain",
+        "isBare",
+        "isDetached",
+        "isLocked",
+        "lockReason",
+        "isPrunable"
+      ],
+      "additionalProperties": false,
+      "description": "Worktrees of one repository share its refs but have independent HEAD, index and files."
+    },
+    "WorktreeTarget": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/__schema21"
+        },
+        "repositoryId": {
+          "$ref": "#/$defs/RepositoryId"
+        },
+        "worktreeId": {
+          "$ref": "#/$defs/WorktreeId"
+        },
+        "expectedSnapshotId": {
+          "$ref": "#/$defs/SnapshotId"
+        }
+      },
+      "required": [
+        "kind",
+        "repositoryId",
+        "worktreeId",
+        "expectedSnapshotId"
+      ],
+      "additionalProperties": false,
+      "description": "A worktree-level change: index, working files, HEAD, merges, stashes."
+    },
+    "WorktreesResponse": {
+      "type": "object",
+      "properties": {
+        "snapshotId": {
+          "$ref": "#/$defs/SnapshotId"
+        },
+        "repositoryId": {
+          "$ref": "#/$defs/RepositoryId"
+        },
+        "readAt": {
+          "$ref": "#/$defs/Timestamp"
+        },
+        "worktrees": {
+          "$ref": "#/$defs/__schema262"
+        }
+      },
+      "required": [
+        "snapshotId",
+        "repositoryId",
+        "readAt",
+        "worktrees"
+      ],
+      "additionalProperties": false,
+      "description": "All worktrees of a repository, including the primary one."
+    },
+    "__schema0": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema1": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema10": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema100": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "existingBranch"
+        },
+        "branchName": {
+          "$ref": "#/$defs/BranchName"
+        }
+      },
+      "required": [
+        "kind",
+        "branchName"
+      ],
+      "additionalProperties": false
+    },
+    "__schema101": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "newBranch"
+        },
+        "branchName": {
+          "$ref": "#/$defs/BranchName"
+        },
+        "startOid": {
+          "$ref": "#/$defs/ObjectId"
+        }
+      },
+      "required": [
+        "kind",
+        "branchName",
+        "startOid"
+      ],
+      "additionalProperties": false
+    },
+    "__schema102": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "detached"
+        },
+        "oid": {
+          "$ref": "#/$defs/ObjectId"
+        }
+      },
+      "required": [
+        "kind",
+        "oid"
+      ],
+      "additionalProperties": false
+    },
+    "__schema103": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/RepositoryTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/RemoveWorktreeOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema104": {
+      "type": "string",
+      "const": "removeWorktree"
+    },
+    "__schema105": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/RepositoryTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/LockWorktreeOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema106": {
+      "type": "string",
+      "const": "lockWorktree"
+    },
+    "__schema107": {
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 1024
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema108": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/RepositoryTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/UnlockWorktreeOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema109": {
+      "type": "string",
+      "const": "unlockWorktree"
+    },
+    "__schema11": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema110": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/WorktreeTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/AddSubmoduleOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema111": {
+      "type": "string",
+      "const": "addSubmodule"
+    },
+    "__schema112": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/BranchName"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema113": {
+      "type": "boolean"
+    },
+    "__schema114": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/WorktreeTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/UpdateSubmoduleOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema115": {
+      "type": "string",
+      "const": "updateSubmodule"
+    },
+    "__schema116": {
+      "type": "boolean"
+    },
+    "__schema117": {
+      "type": "boolean"
+    },
+    "__schema118": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/WorktreeTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/SyncSubmoduleOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema119": {
+      "type": "string",
+      "const": "syncSubmodule"
+    },
+    "__schema12": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema120": {
+      "type": "boolean"
+    },
+    "__schema121": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/WorktreeTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/MergeOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema122": {
+      "type": "string",
+      "const": "merge"
+    },
+    "__schema123": {
+      "type": "string",
+      "enum": [
+        "default",
+        "no-ff"
+      ]
+    },
+    "__schema124": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CommitMessage"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema125": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/WorktreeTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/ContinueMergeOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema126": {
+      "type": "string",
+      "const": "continueMerge"
+    },
+    "__schema127": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CommitMessage"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema128": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/WorktreeTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/AbortMergeOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema129": {
+      "type": "string",
+      "const": "abortMerge"
+    },
+    "__schema13": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema130": {
+      "type": "string",
+      "const": "accepted"
+    },
+    "__schema131": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "__schema132": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": [
+          "string",
+          "number",
+          "boolean"
+        ]
+      }
+    },
+    "__schema133": {
+      "type": "boolean"
+    },
+    "__schema134": {
+      "$ref": "#/$defs/OperationId"
+    },
+    "__schema135": {
+      "type": "boolean",
+      "const": true
+    },
+    "__schema136": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "__schema137": {
+      "type": "string",
+      "minLength": 16,
+      "maxLength": 512
+    },
+    "__schema138": {
+      "type": "string",
+      "minLength": 16,
+      "maxLength": 2048
+    },
+    "__schema139": {
+      "type": "string",
+      "const": "Bearer"
+    },
+    "__schema14": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema140": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "__schema141": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "__schema142": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/AllowedRootId"
+      }
+    },
+    "__schema143": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/RepositoryId"
+      }
+    },
+    "__schema144": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+      }
+    },
+    "__schema145": {
+      "type": "boolean"
+    },
+    "__schema146": {
+      "type": "boolean"
+    },
+    "__schema147": {
+      "type": "boolean"
+    },
+    "__schema148": {
+      "type": "boolean"
+    },
+    "__schema149": {
+      "type": "boolean"
+    },
+    "__schema15": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema150": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ObjectFormat"
+      }
+    },
+    "__schema151": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "__schema152": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "__schema153": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "initRepository",
+          "cloneRepository",
+          "stagePaths",
+          "unstagePaths",
+          "discardTrackedPaths",
+          "commit",
+          "amendCommit",
+          "createBranch",
+          "switchBranch",
+          "renameBranch",
+          "deleteBranch",
+          "setBranchUpstream",
+          "addRemote",
+          "updateRemote",
+          "removeRemote",
+          "fetch",
+          "push",
+          "pull",
+          "createStash",
+          "applyStash",
+          "popStash",
+          "dropStash",
+          "createTag",
+          "deleteTag",
+          "pushTag",
+          "createWorktree",
+          "removeWorktree",
+          "lockWorktree",
+          "unlockWorktree",
+          "addSubmodule",
+          "updateSubmodule",
+          "syncSubmodule",
+          "merge",
+          "continueMerge",
+          "abortMerge"
+        ]
+      }
+    },
+    "__schema154": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "__schema155": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32
+    },
+    "__schema156": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "node"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "kind",
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    "__schema157": {
+      "type": "object",
+      "properties": {
+        "executableDisplay": {
+          "$ref": "#/$defs/DisplayPath"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "features": {
+          "$ref": "#/$defs/GitCapabilities"
+        }
+      },
+      "required": [
+        "executableDisplay",
+        "version",
+        "features"
+      ],
+      "additionalProperties": false
+    },
+    "__schema158": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ReadKind"
+      }
+    },
+    "__schema159": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "initRepository",
+              "cloneRepository",
+              "stagePaths",
+              "unstagePaths",
+              "discardTrackedPaths",
+              "commit",
+              "amendCommit",
+              "createBranch",
+              "switchBranch",
+              "renameBranch",
+              "deleteBranch",
+              "setBranchUpstream",
+              "addRemote",
+              "updateRemote",
+              "removeRemote",
+              "fetch",
+              "push",
+              "pull",
+              "createStash",
+              "applyStash",
+              "popStash",
+              "dropStash",
+              "createTag",
+              "deleteTag",
+              "pushTag",
+              "createWorktree",
+              "removeWorktree",
+              "lockWorktree",
+              "unlockWorktree",
+              "addSubmodule",
+              "updateSubmodule",
+              "syncSubmodule",
+              "merge",
+              "continueMerge",
+              "abortMerge"
+            ]
+          },
+          "targets": {
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/TargetKind"
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "targets"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "__schema16": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema160": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/UnavailableReason"
+      }
+    },
+    "__schema161": {
+      "type": "string",
+      "enum": [
+        "born",
+        "unborn"
+      ]
+    },
+    "__schema162": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/BranchName"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema163": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ObjectId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema164": {
+      "type": "boolean"
+    },
+    "__schema165": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "__schema166": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/WorktreeId"
+      }
+    },
+    "__schema167": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "merge",
+            "cherry-pick",
+            "revert",
+            "rebase",
+            "bisect",
+            "apply-mailbox",
+            "unknown"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema168": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Timestamp"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema169": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/RepositorySummary"
+      }
+    },
+    "__schema17": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema170": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "allowedRootId": {
+            "$ref": "#/$defs/AllowedRootId"
+          },
+          "displayPath": {
+            "$ref": "#/$defs/DisplayPath"
+          },
+          "repositoryIds": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/RepositoryId"
+            }
+          }
+        },
+        "required": [
+          "allowedRootId",
+          "displayPath",
+          "repositoryIds"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "__schema171": {
+      "type": "boolean"
+    },
+    "__schema172": {
+      "type": "boolean"
+    },
+    "__schema173": {
+      "type": "boolean"
+    },
+    "__schema174": {
+      "anyOf": [
+        {
+          "type": "number",
+          "const": 1
+        },
+        {
+          "type": "number",
+          "const": 2
+        },
+        {
+          "type": "number",
+          "const": 3
+        }
+      ]
+    },
+    "__schema175": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 16
+    },
+    "__schema176": {
+      "type": "string",
+      "enum": [
+        "ordinary",
+        "renamed",
+        "copied",
+        "unmerged",
+        "untracked",
+        "ignored"
+      ]
+    },
+    "__schema177": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1
+    },
+    "__schema178": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1
+    },
+    "__schema179": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PathId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema18": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema180": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DisplayPath"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema181": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ObjectId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema182": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ObjectId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema183": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "head": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "index": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "worktree": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "head",
+            "index",
+            "worktree"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema184": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SubmoduleStatus"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema185": {
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UnmergedStage"
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema186": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "ahead": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "behind": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "name",
+            "ahead",
+            "behind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema187": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "merge",
+            "cherry-pick",
+            "revert",
+            "rebase",
+            "bisect",
+            "apply-mailbox",
+            "unknown"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema188": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/StatusEntry"
+      }
+    },
+    "__schema189": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema19": {
+      "type": "string",
+      "const": "workspace"
+    },
+    "__schema190": {
+      "type": "boolean"
+    },
+    "__schema191": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ObjectId"
+      }
+    },
+    "__schema192": {
+      "type": "string",
+      "maxLength": 4096
+    },
+    "__schema193": {
+      "type": "string",
+      "maxLength": 512
+    },
+    "__schema194": {
+      "type": "string",
+      "maxLength": 512
+    },
+    "__schema195": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024
+      }
+    },
+    "__schema196": {
+      "type": "boolean"
+    },
+    "__schema197": {
+      "type": "boolean"
+    },
+    "__schema198": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ObjectId"
+      }
+    },
+    "__schema199": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ObjectId"
+      }
+    },
+    "__schema2": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema20": {
+      "type": "string",
+      "const": "repository"
+    },
+    "__schema200": {
+      "type": "string",
+      "maxLength": 512
+    },
+    "__schema201": {
+      "type": "string",
+      "maxLength": 512
+    },
+    "__schema202": {
+      "type": "string",
+      "maxLength": 512
+    },
+    "__schema203": {
+      "type": "string",
+      "maxLength": 512
+    },
+    "__schema204": {
+      "type": "string",
+      "maxLength": 4096
+    },
+    "__schema205": {
+      "type": "string",
+      "maxLength": 16777216
+    },
+    "__schema206": {
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 64
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema207": {
+      "type": "boolean"
+    },
+    "__schema208": {
+      "type": "boolean"
+    },
+    "__schema209": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/CommitSummary"
+      }
+    },
+    "__schema21": {
+      "type": "string",
+      "const": "worktree"
+    },
+    "__schema210": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Cursor"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema211": {
+      "type": "boolean"
+    },
+    "__schema212": {
+      "type": "boolean"
+    },
+    "__schema213": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CommitDetail"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema214": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "__schema215": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "__schema216": {
+      "type": "boolean"
+    },
+    "__schema217": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "fullName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024
+            },
+            "ahead": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "behind": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "gone": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "fullName",
+            "ahead",
+            "behind",
+            "gone"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema218": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "__schema219": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "__schema22": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "__schema220": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "__schema221": {
+      "type": "boolean"
+    },
+    "__schema222": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ObjectId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema223": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/RefEntry"
+      }
+    },
+    "__schema224": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/RemoteRefEntry"
+      }
+    },
+    "__schema225": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/TagEntry"
+      }
+    },
+    "__schema226": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "$ref": "#/$defs/RemoteName"
+          },
+          "fetchUrlDisplay": {
+            "type": "string",
+            "maxLength": 2048
+          },
+          "pushUrlDisplay": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "fetchUrlDisplay",
+          "pushUrlDisplay"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "__schema227": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "fullName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "oid": {
+            "$ref": "#/$defs/ObjectId"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "stash",
+              "notes",
+              "replace",
+              "other"
+            ]
+          }
+        },
+        "required": [
+          "fullName",
+          "oid",
+          "kind"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "__schema228": {
+      "type": "boolean"
+    },
+    "__schema229": {
+      "type": "string",
+      "enum": [
+        "context",
+        "add",
+        "remove"
+      ]
+    },
+    "__schema23": {
+      "minItems": 1,
+      "maxItems": 1000,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/PathId"
+      }
+    },
+    "__schema230": {
+      "type": "string"
+    },
+    "__schema231": {
+      "type": "boolean"
+    },
+    "__schema232": {
+      "type": "string",
+      "maxLength": 512
+    },
+    "__schema233": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "__schema234": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "__schema235": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "__schema236": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "__schema237": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/PatchLine"
+      }
+    },
+    "__schema238": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "text"
+        },
+        "hunks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PatchHunk"
+          }
+        },
+        "synthesized": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind",
+        "hunks",
+        "synthesized"
+      ],
+      "additionalProperties": false
+    },
+    "__schema239": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "binary"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "__schema24": {
+      "minItems": 1,
+      "maxItems": 1000,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/PreviewToken"
+      }
+    },
+    "__schema240": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "oversize"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "kind",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "__schema241": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "unavailable"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "required": [
+        "kind",
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "__schema242": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "submodule"
+        },
+        "recordedOid": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ObjectId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "indexOid": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ObjectId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "actualOid": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ObjectId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "recordedOid",
+        "indexOid",
+        "actualOid"
+      ],
+      "additionalProperties": false
+    },
+    "__schema243": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PathId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema244": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DisplayPath"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema245": {
+      "type": "string",
+      "enum": [
+        "added",
+        "modified",
+        "deleted",
+        "renamed",
+        "copied",
+        "typeChanged",
+        "unmerged"
+      ]
+    },
+    "__schema246": {
+      "type": "boolean"
+    },
+    "__schema247": {
+      "type": "boolean"
+    },
+    "__schema248": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema249": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema25": {
+      "minItems": 1,
+      "maxItems": 1000,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/PathId"
+      }
+    },
+    "__schema250": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "old": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "new": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "old",
+            "new"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema251": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/WorktreeId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema252": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "unstaged",
+            "staged",
+            "untracked",
+            "commit",
+            "range"
+          ]
+        },
+        "oid": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ObjectId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ObjectId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "to": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ObjectId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pathId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PathId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "oid",
+        "from",
+        "to",
+        "pathId"
+      ],
+      "additionalProperties": false
+    },
+    "__schema253": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/DiffFile"
+      }
+    },
+    "__schema254": {
+      "type": "object",
+      "properties": {
+        "filesChanged": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "insertions": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "deletions": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "binaryFiles": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "filesChanged",
+        "insertions",
+        "deletions",
+        "binaryFiles"
+      ],
+      "additionalProperties": false
+    },
+    "__schema255": {
+      "type": "boolean"
+    },
+    "__schema256": {
+      "type": "boolean"
+    },
+    "__schema257": {
+      "type": "boolean"
+    },
+    "__schema258": {
+      "type": "boolean"
+    },
+    "__schema259": {
+      "type": "boolean"
+    },
+    "__schema26": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/WorkspaceTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/InitRepositoryOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema260": {
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 1024
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema261": {
+      "type": "boolean"
+    },
+    "__schema262": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/WorktreeSummary"
+      }
+    },
+    "__schema263": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "__schema264": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ObjectId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema265": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ObjectId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema266": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ObjectId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema267": {
+      "type": "string",
+      "enum": [
+        "uninitialized",
+        "initialized",
+        "outOfSync",
+        "dirty",
+        "unknown"
+      ]
+    },
+    "__schema268": {
+      "type": "string",
+      "maxLength": 2048
+    },
+    "__schema269": {
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 255
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema27": {
+      "type": "string",
+      "const": "initRepository"
+    },
+    "__schema270": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RepositoryId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema271": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/SubmoduleSummary"
+      }
+    },
+    "__schema272": {
+      "type": "boolean"
+    },
+    "__schema273": {
+      "type": "string",
+      "maxLength": 4096
+    },
+    "__schema274": {
+      "anyOf": [
+        {
+          "type": "string",
+          "maxLength": 1024
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema275": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/StashEntry"
+      }
+    },
+    "__schema276": {
+      "type": "boolean"
+    },
+    "__schema277": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "__schema278": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024
+      }
+    },
+    "__schema279": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema28": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/BranchName"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema280": {
+      "type": "boolean"
+    },
+    "__schema281": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ObjectId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema282": {
+      "type": "string",
+      "enum": [
+        "initRepository",
+        "cloneRepository",
+        "stagePaths",
+        "unstagePaths",
+        "discardTrackedPaths",
+        "commit",
+        "amendCommit",
+        "createBranch",
+        "switchBranch",
+        "renameBranch",
+        "deleteBranch",
+        "setBranchUpstream",
+        "addRemote",
+        "updateRemote",
+        "removeRemote",
+        "fetch",
+        "push",
+        "pull",
+        "createStash",
+        "applyStash",
+        "popStash",
+        "dropStash",
+        "createTag",
+        "deleteTag",
+        "pushTag",
+        "createWorktree",
+        "removeWorktree",
+        "lockWorktree",
+        "unlockWorktree",
+        "addSubmodule",
+        "updateSubmodule",
+        "syncSubmodule",
+        "merge",
+        "continueMerge",
+        "abortMerge"
+      ]
+    },
+    "__schema283": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema284": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Timestamp"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema285": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Timestamp"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema286": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/OperationResult"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema287": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Problem"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema288": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/OperationRecord"
+      }
+    },
+    "__schema289": {
+      "type": "boolean"
+    },
+    "__schema29": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/WorkspaceTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/CloneRepositoryOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema290": {
+      "minItems": 1,
+      "maxItems": 1000,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/PathId"
+      }
+    },
+    "__schema291": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "pathId": {
+            "$ref": "#/$defs/PathId"
+          },
+          "previewToken": {
+            "$ref": "#/$defs/PreviewToken"
+          },
+          "sizeBytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "contentKind": {
+            "type": "string",
+            "enum": [
+              "text",
+              "binary",
+              "unrepresentable"
+            ]
+          },
+          "fingerprintAlgorithm": {
+            "type": "string",
+            "const": "sha256"
+          },
+          "expiresAt": {
+            "$ref": "#/$defs/Timestamp"
+          }
+        },
+        "required": [
+          "pathId",
+          "previewToken",
+          "sizeBytes",
+          "contentKind",
+          "fingerprintAlgorithm",
+          "expiresAt"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "__schema292": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "operation"
+        },
+        "operation": {
+          "$ref": "#/$defs/OperationRecord"
+        }
+      },
+      "required": [
+        "kind",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema293": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "repositoryChanged"
+        },
+        "repositoryId": {
+          "$ref": "#/$defs/RepositoryId"
+        },
+        "worktreeIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorktreeId"
+          }
+        },
+        "snapshotInvalidated": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind",
+        "repositoryId",
+        "worktreeIds",
+        "snapshotInvalidated"
+      ],
+      "additionalProperties": false
+    },
+    "__schema294": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "eventGap"
+        },
+        "fromSequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "toSequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "kind",
+        "fromSequence",
+        "toSequence"
+      ],
+      "additionalProperties": false
+    },
+    "__schema295": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "session"
+        },
+        "expiresAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "kind",
+        "expiresAt"
+      ],
+      "additionalProperties": false
+    },
+    "__schema296": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema297": {
+      "$ref": "#/$defs/WorktreeId"
+    },
+    "__schema298": {
+      "$ref": "#/$defs/WorktreeId"
+    },
+    "__schema299": {
+      "$ref": "#/$defs/Cursor"
+    },
+    "__schema3": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema30": {
+      "type": "string",
+      "const": "cloneRepository"
+    },
+    "__schema300": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 500
+    },
+    "__schema301": {
+      "$ref": "#/$defs/ObjectId"
+    },
+    "__schema302": {
+      "type": "boolean"
+    },
+    "__schema303": {
+      "$ref": "#/$defs/WorktreeId"
+    },
+    "__schema304": {
+      "type": "string",
+      "enum": [
+        "unstaged",
+        "staged",
+        "untracked",
+        "commit",
+        "range"
+      ]
+    },
+    "__schema305": {
+      "$ref": "#/$defs/ObjectId"
+    },
+    "__schema306": {
+      "$ref": "#/$defs/ObjectId"
+    },
+    "__schema307": {
+      "$ref": "#/$defs/ObjectId"
+    },
+    "__schema308": {
+      "$ref": "#/$defs/PathId"
+    },
+    "__schema309": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 2097152
+    },
+    "__schema31": {
+      "type": "boolean"
+    },
+    "__schema310": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema32": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/WorktreeTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/StagePathsOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema33": {
+      "type": "string",
+      "const": "stagePaths"
+    },
+    "__schema34": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/WorktreeTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/UnstagePathsOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema35": {
+      "type": "string",
+      "const": "unstagePaths"
+    },
+    "__schema36": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/WorktreeTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/DiscardTrackedPathsOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema37": {
+      "type": "string",
+      "const": "discardTrackedPaths"
+    },
+    "__schema38": {
+      "type": "boolean",
+      "const": true
+    },
+    "__schema39": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/WorktreeTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/CommitOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema4": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema40": {
+      "type": "string",
+      "const": "commit"
+    },
+    "__schema41": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/WorktreeTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/AmendCommitOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema42": {
+      "type": "string",
+      "const": "amendCommit"
+    },
+    "__schema43": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CommitMessage"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema44": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/RepositoryTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/CreateBranchOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema45": {
+      "type": "string",
+      "const": "createBranch"
+    },
+    "__schema46": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ObjectId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema47": {
+      "type": "boolean"
+    },
+    "__schema48": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/WorktreeTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/SwitchBranchOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema49": {
+      "type": "string",
+      "const": "switchBranch"
+    },
+    "__schema5": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema50": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/RepositoryTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/RenameBranchOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema51": {
+      "type": "string",
+      "const": "renameBranch"
+    },
+    "__schema52": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/RepositoryTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/DeleteBranchOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema53": {
+      "type": "string",
+      "const": "deleteBranch"
+    },
+    "__schema54": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/RepositoryTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/SetBranchUpstreamOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema55": {
+      "type": "string",
+      "const": "setBranchUpstream"
+    },
+    "__schema56": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "remoteName": {
+              "$ref": "#/$defs/RemoteName"
+            },
+            "branchName": {
+              "$ref": "#/$defs/BranchName"
+            }
+          },
+          "required": [
+            "remoteName",
+            "branchName"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema57": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/RepositoryTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/AddRemoteOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema58": {
+      "type": "string",
+      "const": "addRemote"
+    },
+    "__schema59": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RemoteUrl"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema6": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema60": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/RepositoryTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/UpdateRemoteOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema61": {
+      "type": "string",
+      "const": "updateRemote"
+    },
+    "__schema62": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema63": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RemoteUrl"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema64": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RemoteUrl"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema65": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/RepositoryTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/RemoveRemoteOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema66": {
+      "type": "string",
+      "const": "removeRemote"
+    },
+    "__schema67": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/RepositoryTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/FetchOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema68": {
+      "type": "string",
+      "const": "fetch"
+    },
+    "__schema69": {
+      "type": "boolean"
+    },
+    "__schema7": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema70": {
+      "type": "string",
+      "enum": [
+        "none",
+        "following"
+      ]
+    },
+    "__schema71": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/RepositoryTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/PushOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema72": {
+      "type": "string",
+      "const": "push"
+    },
+    "__schema73": {
+      "type": "boolean"
+    },
+    "__schema74": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/WorktreeTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/PullOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema75": {
+      "type": "string",
+      "const": "pull"
+    },
+    "__schema76": {
+      "type": "string",
+      "const": "ff-only"
+    },
+    "__schema77": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/WorktreeTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/CreateStashOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema78": {
+      "type": "string",
+      "const": "createStash"
+    },
+    "__schema79": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CommitMessage"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema8": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema80": {
+      "type": "boolean"
+    },
+    "__schema81": {
+      "type": "boolean"
+    },
+    "__schema82": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/WorktreeTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/ApplyStashOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema83": {
+      "type": "string",
+      "const": "applyStash"
+    },
+    "__schema84": {
+      "type": "boolean"
+    },
+    "__schema85": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/WorktreeTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/PopStashOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema86": {
+      "type": "string",
+      "const": "popStash"
+    },
+    "__schema87": {
+      "type": "boolean"
+    },
+    "__schema88": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/RepositoryTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/DropStashOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema89": {
+      "type": "string",
+      "const": "dropStash"
+    },
+    "__schema9": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema90": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/RepositoryTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/CreateTagOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema91": {
+      "type": "string",
+      "const": "createTag"
+    },
+    "__schema92": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ObjectId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema93": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "message": {
+              "$ref": "#/$defs/CommitMessage"
+            }
+          },
+          "required": [
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema94": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/RepositoryTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/DeleteTagOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema95": {
+      "type": "string",
+      "const": "deleteTag"
+    },
+    "__schema96": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/RepositoryTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/PushTagOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema97": {
+      "type": "string",
+      "const": "pushTag"
+    },
+    "__schema98": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/RepositoryTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/CreateWorktreeOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema99": {
+      "type": "string",
+      "const": "createWorktree"
+    }
+  }
+}
