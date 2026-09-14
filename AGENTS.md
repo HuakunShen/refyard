@@ -54,7 +54,10 @@ system git CLI → the target machine's repo, credentials, hooks
   composition, routing, and the connection config (so Kunkun can reuse the same components later).
 - **All HTTP is authenticated**, reads included. Loopback only (default port 47831, `--port 0` for
   tests). Exact `Origin`/`Host` checks, single-use bootstrap ticket exchanged for an in-memory
-  bearer, JSON 404 for unknown `/api` paths, no CORS wildcard, no fallthrough to the SPA.
+  bearer, JSON 404 for unknown `/api` paths, no CORS wildcard, no fallthrough to the SPA. The
+  opted-in hosted-UI form (`docs/product/north-star.md` §5) is the only thing allowed to relax any
+  of this, and only as an explicit origin allowlist plus password → session exchange — never by
+  widening the default.
 - **One writer per common Git directory** inside this service; the queue never claims to lock out
   an external IDE, terminal, or AI. Do not delete Git lock files, force operations, or disable
   hooks/host-key verification to make a test pass.
@@ -119,7 +122,7 @@ packages/git-ui/           Svelte 5 components; injected GitService; no $app/*
 packages/npm-dist/         publication staging (T13)
 scripts/                   TypeScript dev scripts (boundaries, contract, portable, pack, bench)
 tests/{support,contract,core,node,integration,portable,graph,e2e,pack,security,compat,fixtures}
-docs/                      plans/, goals/, evidence/, installation.md, browser-support.md
+docs/                      product/north-star.md, discussions/, plans/, goals/, evidence/, installation.md, browser-support.md
 references/                the delivered v2 design package (read-only)
 ```
 
@@ -172,3 +175,9 @@ and queue substrate verified but no mutation exposed to users. T08–T15 (writes
 release gates) follow after the M1 report; T16–T18 (Xross, Kunkun, native-host review) are out of
 scope until the standalone V1 ships. `capabilities` must simply omit anything unimplemented —
 never report it as supported, never fake a `202`.
+
+Product shape lives in `docs/product/north-star.md`: four usage forms (local workbench, managed
+workspaces, opt-in hosted UI, embedded core) and the decisions that keep them compatible, plus the
+scheduled direction for Hono/`hono-openapi`/Scalar and `@hono/mcp`. Read it before proposing a
+change to who may reach the service, what core may import, or how repositories get approved; the
+capability-honesty rule above applies to every form.
