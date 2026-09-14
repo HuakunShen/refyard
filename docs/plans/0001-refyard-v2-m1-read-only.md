@@ -256,6 +256,10 @@ Deviations and findings, recorded deliberately:
   correct as a default and blocks a static SPA's inline bootstrap; `packages/host-node/src/http/csp.ts`
   computes the hash of the inline scripts in the document being served and names them, so
   `'unsafe-inline'` is never introduced. Covered by `tests/node/csp.test.ts` and by the e2e run.
+  One accepted consequence: dependencies that probe `Function` availability (Zod's runtime
+  check, tailwind-variants' class compiler) trip a CSP eval block and fall back to their
+  non-eval paths — visible as a console message in Firefox, harmless by design, and the
+  response to it is never `unsafe-eval`.
 - **One read is two requests, by design.** A diff without `pathId` lists the change set and
   fetches no patches; the pane therefore asks for one file's patch when that file is selected.
   The e2e spec follows the same two steps.
