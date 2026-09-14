@@ -39,3 +39,8 @@ yarn-error.log*
 
 references
 
+# The developer's global git ignore (~/.config/git/ignore) ignores AGENTS.md to
+# keep agent instruction files out of other repositories. Here it is the project's
+# rules and is meant to be tracked, and a repo-level pattern takes precedence.
+!AGENTS.md
+
