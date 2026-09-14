@@ -16,6 +16,7 @@
   "devDependencies": {
     "@refyard/git-contract": "workspace:*",
     "@refyard/git-core": "workspace:*",
+    "@refyard/host-node": "workspace:*",
     "@types/node": "catalog:",
     "oxc-parser": "catalog:",
     "prettier": "catalog:",
@@ -26,6 +27,6 @@
   },
   "packageManager": "pnpm@11.25.0",
   "engines": {
-    "node": ">=24"
+    "node": ">=26 <27"
   }
 }

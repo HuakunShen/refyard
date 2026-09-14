@@ -38,6 +38,9 @@ importers:
       '@refyard/git-core':
         specifier: workspace:*
         version: link:packages/git-core
+      '@refyard/host-node':
+        specifier: workspace:*
+        version: link:packages/host-node
       '@types/node':
         specifier: 'catalog:'
         version: 26.5.1
@@ -71,6 +74,15 @@ importers:
       '@refyard/git-contract':
         specifier: workspace:*
         version: link:../git-contract
+
+  packages/host-node:
+    dependencies:
+      '@refyard/git-contract':
+        specifier: workspace:*
+        version: link:../git-contract
+      '@refyard/git-core':
+        specifier: workspace:*
+        version: link:../git-core
 
 packages:
 

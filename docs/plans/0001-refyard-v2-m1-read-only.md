@@ -134,6 +134,14 @@ settlement for close/spawn-error/timeout/output-limit; POSIX process groups, Win
 with a recorded limitation; doctor probes machine formats in a scratch repo. Path codec keeps
 `displayPath` (escaped, read-only) separate from execution paths and returns
 `UnsupportedPathEncoding` instead of lossy decoding.
+**Deviations from the reference file list, recorded deliberately:** the recovery store lives in
+`filesystem/metadata.ts` next to the fingerprints it verifies (splitting them would put the
+"backup is verified before the operation may run" rule across two files), and
+`process/git-host.ts` was added because the handle registry and the runner need one place that
+combines them — that file is the only implementation of `GitHostPort`. Two behaviours are also
+narrower than the prose: `encodeExecutionPath` refuses any text in the `\xNN` escape form even
+when it could be a real filename (the ambiguous case fails closed), and content that is neither
+valid UTF-8 nor NUL-binary is reported as `unrepresentable` rather than guessed as text or binary.
 Verification: `pnpm exec vitest run tests/node && pnpm check:boundaries && pnpm check`.
 Commit: `feat: implement Node host ports and safe Git process lifecycle`.
 
