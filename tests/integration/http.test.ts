@@ -25,7 +25,11 @@ import {
   GitClientError,
 } from "../../packages/git-client/src/index.js";
 import { createRepo, type GitFixtureRepo } from "../support/repo.js";
-import { startTestService, type TestService } from "../support/service.js";
+import {
+  startTestService,
+  ticketFrom,
+  type TestService,
+} from "../support/service.js";
 
 const DOCUMENT = "<!doctype html><title>shell</title><div id=app></div>";
 
@@ -165,9 +169,7 @@ describe("git client", () => {
       token: () => token,
     });
     const exchanged = await client.exchangeTicket(
-      service.pairingUrl.slice(
-        service.pairingUrl.indexOf("#pair=") + "#pair=".length,
-      ),
+      ticketFrom(service.pairingUrl),
     );
     token = exchanged.token;
     return { client, token };

@@ -2,9 +2,15 @@
  * Runtime connection resolution.
  *
  * These cases protect the two facts the security model rests on: the ticket is read from
- * the fragment and nowhere else, and the address the app talks to is decided by rules a
- * user can predict — a bad override falls back to the page's own origin instead of
- * producing a page that talks to nothing and explains nothing.
+ * wherever the pairing URL carried it (fragment first, query string as an equal citizen —
+ * the user's 2026-09-15 direction, after a browser flow dropped the fragment), and the
+ * address the app talks to is decided by rules a user can predict — a bad override falls
+ * back to the page's own origin instead of producing a page that talks to nothing and
+ * explains nothing.
+ *
+ * The query form's exposure is bounded, and these are the bounds the tests keep an eye on:
+ * the host never logs a query string, the ticket is single-use and expires in sixty
+ * seconds, and `stripTicket` clears it from the address bar once it is spent.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -24,24 +30,43 @@ describe("pairing ticket", () => {
     expect(config.baseUrl).toBe("http://127.0.0.1:47831");
   });
 
-  it("accepts the design package's `ticket` spelling as well as the CLI's `pair`", () => {
-    // A pairing URL is pasted around; refusing the other name turns a working URL into an
-    // authentication failure.
+  it("reads the ticket from the query string, so opening the printed URL pairs", () => {
     const config = parseSessionConfig({
-      href: "http://127.0.0.1:47831/#ticket=abc123",
+      href: "http://127.0.0.1:47831/?pair=abc123",
       storedBaseUrl: null,
     });
     expect(config.ticket).toBe("abc123");
+    expect(config.baseUrl).toBe("http://127.0.0.1:47831");
   });
 
-  it("ignores a ticket in the query string", () => {
-    // A query string is sent to the server and written to logs; accepting one here would
-    // teach users to paste tickets into places that keep them.
+  it("accepts the design package's `ticket` spelling in both positions", () => {
+    // A pairing URL is pasted around; refusing the other name turns a working URL into an
+    // authentication failure.
+    for (const href of [
+      "http://127.0.0.1:47831/#ticket=abc123",
+      "http://127.0.0.1:47831/?ticket=abc123",
+    ]) {
+      expect(parseSessionConfig({ href, storedBaseUrl: null }).ticket).toBe(
+        "abc123",
+      );
+    }
+  });
+
+  it("prefers the fragment when a URL somehow carries both", () => {
     const config = parseSessionConfig({
-      href: "http://127.0.0.1:47831/?ticket=abc123",
+      href: "http://127.0.0.1:47831/?pair=from-query#pair=from-fragment",
       storedBaseUrl: null,
     });
-    expect(config.ticket).toBeNull();
+    expect(config.ticket).toBe("from-fragment");
+  });
+
+  it("reads a ticket from a URL that also overrides the service address", () => {
+    const config = parseSessionConfig({
+      href: "http://127.0.0.1:47831/?api=http://127.0.0.1:5000&pair=abc123",
+      storedBaseUrl: null,
+    });
+    expect(config.ticket).toBe("abc123");
+    expect(config.baseUrl).toBe("http://127.0.0.1:5000");
   });
 
   it("reads a ticket from a fragment that carries more than the ticket", () => {
@@ -51,10 +76,17 @@ describe("pairing ticket", () => {
 
   it("returns null rather than an empty ticket for an empty fragment", () => {
     expect(readTicket(new URL("http://127.0.0.1:47831/#"))).toBeNull();
+    expect(readTicket(new URL("http://127.0.0.1:47831/?pair="))).toBeNull();
     expect(readTicket(null)).toBeNull();
   });
 
-  it("strips only the fragment, so the app keeps its query and path", () => {
+  it("strips the ticket from both the fragment and the query, keeping everything else", () => {
+    expect(stripTicket("http://127.0.0.1:47831/repo/1?pair=abc&x=2")).toBe(
+      "http://127.0.0.1:47831/repo/1?x=2",
+    );
+    expect(stripTicket("http://127.0.0.1:47831/?pair=abc&ticket=def")).toBe(
+      "http://127.0.0.1:47831/",
+    );
     expect(stripTicket("http://127.0.0.1:47831/repo/1?x=2#ticket=abc")).toBe(
       "http://127.0.0.1:47831/repo/1?x=2",
     );

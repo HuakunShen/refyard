@@ -634,9 +634,13 @@ export async function startHttpHost(
         actor: options.actor ?? "cli",
         grants: options.grants,
       });
-      // The ticket lives in the fragment: the browser strips it before any request,
-      // it never reaches a server log, and it is never sent in a Referer.
-      return `${origin}/#pair=${ticket.ticket}`;
+      // The ticket rides in the query string (the user's 2026-09-15 direction, after a
+      // browser flow was observed dropping the fragment). That is safe here because this
+      // server never logs a query string, documents go out with `Referrer-Policy:
+      // no-referrer`, and the ticket is single-use and expires in sixty seconds; the page
+      // also strips it from the address bar as soon as it is spent. The fragment spelling
+      // (`/#pair=…`) keeps working for URLs already in circulation.
+      return `${origin}/?pair=${ticket.ticket}`;
     },
 
     async close(): Promise<void> {

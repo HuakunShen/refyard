@@ -259,10 +259,25 @@ Deviations and findings, recorded deliberately:
 - **One read is two requests, by design.** A diff without `pathId` lists the change set and
   fetches no patches; the pane therefore asks for one file's patch when that file is selected.
   The e2e spec follows the same two steps.
+- **Known read gap, found while demoing:** `kind: "commit"` against a _merge_ commit returns an
+  empty change set, where `git show <merge> --stat` reports the diff against the first parent.
+  Ordinary commits are unaffected (the e2e covers one). To fix in the reads round (T08+), with
+  a fixture repository whose merge is exercised by the integration suite — deciding then
+  whether a merge reads against its first parent (what `git show --stat` does) or is reported
+  as "merge: no single diff" so the pane can say so.
 - **The session token is kept in `sessionStorage`, not only in memory.** The pairing ticket is
   single use, so an in-memory-only token makes a reload a dead end. `sessionStorage` survives a
   reload and dies with the tab; it is never in `localStorage`. Recorded here because the design
   package says "in-memory bearer".
+- **Pairing URLs carry the ticket in the query string too** (user direction, 2026-09-15, after a
+  real browser flow was observed dropping the `#pair=` fragment and landing on the connect
+  panel). The CLI now prints `/?pair=…`; the app reads `pair`/`ticket` from the fragment _or_
+  the query — the fragment wins if both are present — and clears both from the address bar once
+  the ticket is spent. The query form's exposure is bounded and each bound is deliberate: the
+  host never logs a query string (`server.ts` splits the path at `?` before logging), documents
+  are served with `Referrer-Policy: no-referrer`, and the ticket is single-use with a
+  sixty-second life. The design package's fragment rationale ("never sent to a server") is
+  relaxed here on purpose, not by accident.
 - **Two TypeScript majors coexist for one tool.** `svelte-check` works through the TypeScript
   compiler API (peer range `^5 || ^6`), which TypeScript 7 — the native port this repository
   compiles with — does not expose. `packages/git-ui` and `apps/web` resolve TypeScript 6 through

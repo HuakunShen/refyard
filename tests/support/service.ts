@@ -270,11 +270,21 @@ export async function startTestService(
   };
 }
 
-/** The ticket carried in a pairing URL's fragment. */
+/** The ticket carried in a pairing URL, from its query string or its fragment. */
 export function ticketFrom(pairingUrl: string): string {
-  const hash = pairingUrl.indexOf("#pair=");
-  if (hash === -1) {
-    throw new Error("no ticket in that pairing URL");
+  const url = new URL(pairingUrl);
+  const fromQuery =
+    url.searchParams.get("pair") ?? url.searchParams.get("ticket");
+  if (fromQuery !== null && fromQuery.length > 0) {
+    return fromQuery;
   }
-  return pairingUrl.slice(hash + "#pair=".length);
+  const fragment =
+    url.hash.length > 1
+      ? (new URLSearchParams(url.hash.slice(1)).get("pair") ??
+        new URLSearchParams(url.hash.slice(1)).get("ticket"))
+      : null;
+  if (fragment !== null && fragment.length > 0) {
+    return fragment;
+  }
+  throw new Error("no ticket in that pairing URL");
 }

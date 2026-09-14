@@ -40,19 +40,44 @@
     onConnect,
   }: Props = $props();
 
-  /** Accept a bare ticket or a full pairing URL; the fragment is the part that matters. */
+  /**
+   * Accept a bare ticket or a full pairing URL in either spelling.
+   *
+   * A URL is the thing the CLI actually prints, so pasting one must work: the ticket is
+   * lifted from the query string first, then the fragment, and anything else is taken as
+   * the ticket itself.
+   */
   function acceptTicket(raw: string): void {
     const trimmed = raw.trim();
-    const hashIndex = trimmed.indexOf("#");
-    if (hashIndex !== -1) {
-      const fragment = new URLSearchParams(trimmed.slice(hashIndex + 1));
-      const fromFragment = fragment.get("pair") ?? fragment.get("ticket");
-      if (fromFragment !== null && fromFragment.length > 0) {
-        onTicket(fromFragment);
-        return;
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
+      try {
+        const url = new URL(trimmed);
+        const fromUrl =
+          clean(url.searchParams.get("pair")) ??
+          clean(url.searchParams.get("ticket")) ??
+          clean(
+            url.hash.length > 1
+              ? (new URLSearchParams(url.hash.slice(1)).get("pair") ??
+                  new URLSearchParams(url.hash.slice(1)).get("ticket"))
+              : null,
+          );
+        if (fromUrl !== null) {
+          onTicket(fromUrl);
+          return;
+        }
+      } catch {
+        // Not a parseable URL after all; treat the text as a bare ticket below.
       }
     }
     onTicket(trimmed);
+  }
+
+  function clean(value: string | null): string | null {
+    if (value === null) {
+      return null;
+    }
+    const trimmed = value.trim();
+    return trimmed.length === 0 ? null : trimmed;
   }
 </script>
 
@@ -81,9 +106,9 @@
     <Input
       id="refyard-ticket"
       label="Pairing ticket"
-      hint="Paste the pairing URL or just its ticket. It is single use and expires after 60 seconds."
+      hint="Paste the pairing URL (any spelling) or just its ticket. It is single use and expires after 60 seconds."
       value={ticket}
-      placeholder="http://127.0.0.1:47831/#pair=…"
+      placeholder="http://127.0.0.1:47831/?pair=…"
       monospace
       oninput={acceptTicket}
       onsubmit={onConnect}

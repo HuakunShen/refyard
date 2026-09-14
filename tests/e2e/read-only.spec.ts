@@ -90,7 +90,8 @@ test.describe("read-only workbench", () => {
   test("removes the spent ticket from the address bar", async ({ page }) => {
     await page.goto(service.pairingUrl);
     await expect(page.getByText("read-only build")).toBeVisible();
-    expect(page.url()).not.toContain("#pair=");
+    // Either spelling counts: a spent ticket must not survive a reload or a bookmark.
+    expect(page.url()).not.toContain("pair=");
   });
 
   test("opens a commit's diff from the history list", async ({ page }) => {
@@ -184,7 +185,7 @@ test.describe("read-only workbench", () => {
 
   test("reports a bad ticket instead of pairing", async ({ page }) => {
     const origin = new URL(service.pairingUrl).origin;
-    await page.goto(`${origin}/#pair=not-a-real-ticket`);
+    await page.goto(`${origin}/?pair=not-a-real-ticket`);
 
     await expect(page.getByText("Pairing failed")).toBeVisible();
     await expect(page.getByText("read-only build")).toHaveCount(0);
@@ -232,7 +233,7 @@ async function startService(repositoryPath: string): Promise<RunningService> {
 async function waitForPairingUrl(readOutput: () => string): Promise<string> {
   const deadline = Date.now() + 30_000;
   for (;;) {
-    const match = /http:\/\/127\.0\.0\.1:\d+\/#pair=[A-Za-z0-9_-]+/.exec(
+    const match = /http:\/\/127\.0\.0\.1:\d+\/[?#]pair=[A-Za-z0-9_-]+/.exec(
       readOutput(),
     );
     if (match !== null) {

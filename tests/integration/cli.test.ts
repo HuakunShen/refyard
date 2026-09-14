@@ -23,6 +23,7 @@ import {
   fixtureGitPath,
   type GitFixtureRepo,
 } from "../support/repo.js";
+import { ticketFrom } from "../support/service.js";
 
 const cliDirectory = join(
   import.meta.dirname,
@@ -122,12 +123,12 @@ describe("browser launching", () => {
     // Prevents: a URL reaching a shell, where a `&` or a backtick in a query string
     // would be executed instead of opened.
     const command = browserCommandFor(
-      "http://127.0.0.1:47831/#pair=abc",
+      "http://127.0.0.1:47831/?pair=abc",
       "darwin",
     );
     expect(command).toEqual({
       executable: "/usr/bin/open",
-      args: ["http://127.0.0.1:47831/#pair=abc"],
+      args: ["http://127.0.0.1:47831/?pair=abc"],
     });
     const linux = browserCommandFor("http://127.0.0.1:1/", "linux");
     expect(linux?.args).toEqual(["http://127.0.0.1:1/"]);
@@ -226,10 +227,8 @@ describe("serving a repository", () => {
       write: io.write,
     });
     try {
-      expect(running.pairingUrl).toContain("#pair=");
-      const ticket = running.pairingUrl.slice(
-        running.pairingUrl.indexOf("#pair=") + 6,
-      );
+      expect(running.pairingUrl).toContain("?pair=");
+      const ticket = ticketFrom(running.pairingUrl);
       const origin = `http://127.0.0.1:${running.http.port}`;
       const exchanged = await fetch(`${origin}/api/v1/session/exchange`, {
         method: "POST",
@@ -343,9 +342,7 @@ describe("serving a repository", () => {
       write: io.write,
     });
     try {
-      const ticket = running.pairingUrl.slice(
-        running.pairingUrl.indexOf("#pair=") + 6,
-      );
+      const ticket = ticketFrom(running.pairingUrl);
       // The only writable artifacts in this version are the recovery directory and
       // the state root; neither exists until a mutation runs, so nothing on disk can
       // hold the ticket yet. The check is that the CLI wrote no file at all.

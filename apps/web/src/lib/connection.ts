@@ -10,9 +10,13 @@
  * 3. otherwise this page's own origin — the normal case, because the service serves the
  *    page it is protecting, which is also why there is no CORS in the default path.
  *
- * The pairing ticket is read from the URL *fragment* and never from the query string: a
- * fragment is not sent to a server and does not appear in an access log, which is the
- * whole reason the CLI puts it there.
+ * The pairing ticket travels in the URL so that opening it pairs without typing anything.
+ * It is read from the fragment first and from the query string as an equal citizen (the
+ * user's 2026-09-15 direction: some browser flows drop the fragment, and a URL that pairs
+ * by being opened is the point). The query form is acceptable here because the exposure is
+ * bounded on every side: the host's request log never records a query string, documents are
+ * served with `Referrer-Policy: no-referrer`, the ticket is single-use and expires in sixty
+ * seconds, and the page clears it from the address bar the moment it is spent (`stripTicket`).
  */
 export interface SessionConfig {
   readonly baseUrl: string;
@@ -48,18 +52,32 @@ export function stripTicket(href: string): string {
     return href;
   }
   url.hash = "";
+  // Both spellings, wherever they travelled: what matters is that a spent ticket is not
+  // left sitting in the address bar, the session history, or a bookmark.
+  url.searchParams.delete("pair");
+  url.searchParams.delete("ticket");
   return url.toString();
 }
 
+/**
+ * The ticket this URL carries, from the fragment or the query string.
+ *
+ * `pair` is what the CLI mints. `ticket` is accepted in both positions because it is the
+ * spelling the design package uses, and a pairing URL is a thing users paste around:
+ * rejecting the other name would turn a working URL into an authentication failure.
+ */
 export function readTicket(url: URL | null): string | null {
-  if (url === null || url.hash.length <= 1) {
+  if (url === null) {
     return null;
   }
-  const fragment = new URLSearchParams(url.hash.slice(1));
-  // `pair` is what the CLI mints (`/#pair=…`). `ticket` is accepted as well because it is
-  // the spelling the design package uses, and a pairing URL is a thing users paste around:
-  // rejecting the other name would turn a working URL into an authentication failure.
-  return clean(fragment.get("pair")) ?? clean(fragment.get("ticket"));
+  const fragment =
+    url.hash.length > 1 ? new URLSearchParams(url.hash.slice(1)) : null;
+  return (
+    clean(fragment?.get("pair") ?? null) ??
+    clean(fragment?.get("ticket") ?? null) ??
+    clean(url.searchParams.get("pair")) ??
+    clean(url.searchParams.get("ticket"))
+  );
 }
 
 /** A normalised `http(s)` origin, or null when the value is missing or unusable. */
