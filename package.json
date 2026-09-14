@@ -6,6 +6,7 @@
     "build": "turbo run build",
     "dev": "turbo run dev",
     "check": "turbo run check && tsc --noEmit -p tsconfig.json",
+    "cli": "bun scripts/bundle-cli.ts && node .refyard-dev/cli.mjs",
     "check:boundaries": "bun scripts/check-boundaries.ts",
     "check:contract": "bun scripts/check-contract.ts",
     "format": "prettier --write \"**/*.{ts,svelte,md,json,yaml}\"",
@@ -17,6 +18,8 @@
   "devDependencies": {
     "@refyard/git-contract": "workspace:*",
     "@refyard/git-core": "workspace:*",
+    "@refyard/cli": "workspace:*",
+    "@refyard/git-client": "workspace:*",
     "@refyard/host-node": "workspace:*",
     "@types/node": "catalog:",
     "esbuild": "catalog:",

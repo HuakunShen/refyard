@@ -170,6 +170,16 @@ opaque handle the client cannot read is the point), and a diff lists at most 200
 Verification: `pnpm exec vitest run tests/integration/reads.test.ts tests/portable &&
 pnpm test:portable && pnpm check:boundaries`.
 Commit: `feat: add scoped repository reads and portable core smoke`.
+**T05 addendum, recorded deliberately:** the HTTP host is `http/{server,router,auth,origins,json,assets,errors}.ts`;
+the tests are `tests/integration/{auth,http,cli}.test.ts` with `tests/support/service.ts` as the
+harness, so asset handling and the CLI have their own suites rather than being folded into one file.
+Two decisions differ from the prose above and are stated here: (1) **an absent `Origin` is answered,
+not refused** — a document request carries no Origin, so refusing it would make opening the workbench
+impossible; what protects the data is that every read still requires a bearer, the service never reads
+a cookie, and it sends no CORS headers, while an explicit `Sec-Fetch-Site: cross-site` is refused
+outright (`null` origins are still refused); (2) **`refyard` runs from generated ESM** because Node 26
+strips types but does not rewrite the `.js` specifiers this repository uses — `scripts/bundle-cli.ts`
+produces `.refyard-dev/cli.mjs` with esbuild for development, and T13 owns the real packaged `bin`.
 
 ### T05 — authenticated HTTP, static host, client, minimal CLI
 

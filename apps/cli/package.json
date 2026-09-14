@@ -1,0 +1,21 @@
+{
+  "name": "@refyard/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "refyard": "./src/bin.ts"
+  },
+  "exports": {
+    ".": "./src/main.ts",
+    "./bin": "./src/bin.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@refyard/git-contract": "workspace:*",
+    "@refyard/git-core": "workspace:*",
+    "@refyard/host-node": "workspace:*"
+  }
+}

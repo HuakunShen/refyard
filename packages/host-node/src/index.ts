@@ -148,3 +148,47 @@ export {
   type GitDirLookup,
   type SynthesizedPatch,
 } from "./coordinator/read-support.js";
+export {
+  startHttpHost,
+  type HttpHost,
+  type HttpHostOptions,
+} from "./http/server.js";
+export {
+  createAuthStore,
+  type AuthStore,
+  type AuthorizeResult,
+  type BootstrapTicket,
+  type ExchangeResult,
+  type Session,
+  type SessionGrants,
+} from "./http/auth.js";
+export {
+  createOriginPolicy,
+  loopbackAuthorities,
+  originsFor,
+  type OriginPolicy,
+  type OriginPolicyOptions,
+  type OriginVerdict,
+} from "./http/origins.js";
+export {
+  createAssetServer,
+  HTML_HEADERS,
+  type AssetServer,
+  type AssetServerOptions,
+} from "./http/assets.js";
+export {
+  DEFAULT_HTTP_LIMITS,
+  logLine,
+  parseQuery,
+  readJsonBody,
+  redactUrl,
+  validate,
+  type HttpLimits,
+} from "./http/json.js";
+export {
+  STATUS_BY_CODE,
+  problemBody,
+  problemFor,
+  statusForProblem,
+} from "./http/errors.js";
+export { readRoutes, type RouteDefinition } from "./http/router.js";

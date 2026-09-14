@@ -35,6 +35,12 @@ importers:
 
   .:
     devDependencies:
+      '@refyard/cli':
+        specifier: workspace:*
+        version: link:apps/cli
+      '@refyard/git-client':
+        specifier: workspace:*
+        version: link:packages/git-client
       '@refyard/git-contract':
         specifier: workspace:*
         version: link:packages/git-contract
@@ -68,6 +74,24 @@ importers:
       zod:
         specifier: 'catalog:'
         version: 4.6.5
+
+  apps/cli:
+    dependencies:
+      '@refyard/git-contract':
+        specifier: workspace:*
+        version: link:../../packages/git-contract
+      '@refyard/git-core':
+        specifier: workspace:*
+        version: link:../../packages/git-core
+      '@refyard/host-node':
+        specifier: workspace:*
+        version: link:../../packages/host-node
+
+  packages/git-client:
+    dependencies:
+      '@refyard/git-contract':
+        specifier: workspace:*
+        version: link:../git-contract
 
   packages/git-contract:
     dependencies:

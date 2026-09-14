@@ -44,3 +44,5 @@ references
 # rules and is meant to be tracked, and a repo-level pattern takes precedence.
 !AGENTS.md
 
+# Generated development build output (see scripts/bundle-cli.ts).
+.refyard-dev/
