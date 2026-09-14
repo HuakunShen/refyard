@@ -1,0 +1,37 @@
+{
+  "name": "@refyard/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "prepare": "svelte-kit sync",
+    "check": "svelte-check --tsconfig ./tsconfig.json --threshold error"
+  },
+  "dependencies": {
+    "@refyard/git-client": "workspace:*",
+    "@refyard/git-contract": "workspace:*",
+    "@refyard/git-graph": "workspace:*",
+    "@refyard/git-ui": "workspace:*"
+  },
+  "devDependencies": {
+    "@lucide/svelte": "catalog:",
+    "@sveltejs/adapter-static": "catalog:",
+    "@sveltejs/kit": "catalog:",
+    "@sveltejs/vite-plugin-svelte": "catalog:",
+    "@tailwindcss/vite": "catalog:",
+    "@tanstack/svelte-query": "catalog:",
+    "@tanstack/svelte-virtual": "catalog:",
+    "bits-ui": "catalog:",
+    "clsx": "catalog:",
+    "svelte": "catalog:",
+    "svelte-check": "catalog:",
+    "tailwind-merge": "catalog:",
+    "tailwind-variants": "catalog:",
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:svelte",
+    "vite": "catalog:"
+  }
+}

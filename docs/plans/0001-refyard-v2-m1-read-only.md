@@ -8,6 +8,8 @@
 > that was the current major when it was written; the design principle (exactly one supported,
 > pinned major) is unchanged, and the reference T13 `engines` assertion is adapted with a comment.
 > Implements: `docs/goals/2026-09-14-m1-read-only-loop.md`
+> Product shape: `docs/product/north-star.md` (the four usage forms, written 2026-09-15). This plan
+> delivers form 1 for reads only; §6 records where forms 2–4 and the machine-facing surface land.
 > Baseline: HEAD `7263254` (`init`), clean tree except `.gitignore`.
 
 ## 1. Scope
@@ -228,6 +230,50 @@ Verification: `pnpm exec vitest run tests/graph && pnpm build && pnpm test:porta
 pnpm test:e2e --grep read-only`.
 Commit: `feat: add static Svelte Git workbench and stable graph layout`.
 
+Deviations and findings, recorded deliberately:
+
+- **The style stack is Tailwind v4 + a small local kit, not shadcn-svelte's generated
+  components.** The primitives (`Button`, `Input`, `Badge`, `StateBanner`) are hand-written with
+  `tailwind-variants`/`clsx`/`tailwind-merge`, and `components.json` records the shadcn-svelte
+  layout so `npx shadcn-svelte add` still works for components added later. Nothing in the kit is
+  copied from a reference project.
+- **`@tanstack/svelte-virtual` needed one non-obvious treatment.** Auto-subscribing the store
+  inside the effect that calls `setOptions` makes the effect its own dependency, and Svelte
+  reports `effect_update_depth_exceeded`; the component subscribes through `store.subscribe`
+  instead and keeps the update path one-way. This was found by the Playwright run, not by a test.
+- **Two real defects were found by the end-to-end run and fixed rather than worked around.**
+  (1) `app.html` spelled out SvelteKit's placeholder tokens inside an HTML comment, and the
+  substitution replaces the _first_ occurrence — the built document served the comment and left
+  the real placeholders unsubstituted, so the app never booted. (2) The virtualized rows were
+  never offset (`transform: translateY(item.start)` was missing), so every row painted at the top
+  of the list.
+- **The SSE client had a contract bug and no tests.** `createEventStream.start()` was documented
+  as resolving when the first connection is established but awaited the whole read loop, so it
+  resolved only when the stream _ended_; the UI showed "connecting…" forever. Fixed in
+  `packages/git-client`, with `tests/node/event-stream.test.ts` covering readiness, framing,
+  `eventGap`, authentication refusal and resume-after-drop.
+- **The host's CSP needed the document's own inline script by hash.** `script-src 'self'` is
+  correct as a default and blocks a static SPA's inline bootstrap; `packages/host-node/src/http/csp.ts`
+  computes the hash of the inline scripts in the document being served and names them, so
+  `'unsafe-inline'` is never introduced. Covered by `tests/node/csp.test.ts` and by the e2e run.
+- **One read is two requests, by design.** A diff without `pathId` lists the change set and
+  fetches no patches; the pane therefore asks for one file's patch when that file is selected.
+  The e2e spec follows the same two steps.
+- **The session token is kept in `sessionStorage`, not only in memory.** The pairing ticket is
+  single use, so an in-memory-only token makes a reload a dead end. `sessionStorage` survives a
+  reload and dies with the tab; it is never in `localStorage`. Recorded here because the design
+  package says "in-memory bearer".
+- **Two TypeScript majors coexist for one tool.** `svelte-check` works through the TypeScript
+  compiler API (peer range `^5 || ^6`), which TypeScript 7 — the native port this repository
+  compiles with — does not expose. `packages/git-ui` and `apps/web` resolve TypeScript 6 through
+  the named `svelte` catalog in `pnpm-workspace.yaml`; everything else stays on 7.0.2.
+- **Playwright is a new devDependency** (`@playwright/test`, root) with `playwright.config.ts`;
+  `pnpm test:e2e` builds the web bundle and the CLI bundle first, so a stale asset cannot produce
+  a confusing failure. The browser is Playwright's own Chromium — one platform, one engine.
+- **The e2e suite was run and passed** (7 tests, Chromium 153.0.8010.12 via Playwright 1.63.0, on
+  macOS 25.6.0 arm64, git 2.50.1 Apple Git-155). Firefox, WebKit and Windows are **not**
+  verified.
+
 ## 5. Risks and standing decisions
 
 - **Byte-safe paths on Node V1.** Git argv is a Unicode string. Valid-UTF-8 paths (spaces,
@@ -240,3 +286,35 @@ Commit: `feat: add static Svelte Git workbench and stable graph layout`.
   explicitly forbidden.
 - **Portability claims stay graded**: T01 static dependency check, T02 byte fixtures, T04 IIFE
   smoke. None of these prove QuickJS/JSC readiness.
+
+## 6. Product forms beyond M1
+
+`docs/product/north-star.md` (2026-09-15) fixes four usage forms. M1 delivers form 1 for reads
+only; the rest are targets, and this section decides where each one lands so a later task does not
+re-decide architecture under time pressure.
+
+- **Form 2 — managed workspaces (many repositories).** Needs a registration/approval surface beyond
+  the CLI's single path: `allowedRoot` approval for a new directory, the registry accepting it, the
+  session grant becoming a _list_ whose additions are journaled (and revocable), and a UI
+  affordance that renders only when the host publishes the capability. Candidate task: immediately
+  after the M1 report, **before** T08–T12, because the write tasks otherwise bake in a
+  single-repository session scope.
+- **Form 3 — hosted UI (opt-in).** Belongs to the T14 compatibility slice, together with Local
+  Network Access, CORS, an exact origin allowlist, password → session exchange, rate limiting and
+  lockout. North-star §5 lists the requirements and the risks; no second implementation of the API
+  is created for it, and the loopback default of form 1 is not weakened to make it work.
+- **Form 4 — embedded core.** Already enforced (`check:boundaries`, portable smoke). A real
+  embedded-engine run belongs to the native-host evaluation (T18); the current smoke result must
+  never be reported as a QuickJS/JSC result.
+- **Machine-facing surface (OpenAPI + Scalar + MCP) — decided 2026-09-15.** Hono (`hono` +
+  `@hono/node-server`) replaces the hand-written router when this lands; `hono-openapi`
+  (preferred over `@hono/zod-openapi`) generates `/openapi.json`; `@scalar/hono-api-reference`
+  serves the reference UI; `@hono/mcp` + `@modelcontextprotocol/sdk` expose **read tools only**
+  (`run_git(args)` is never a tool). Working wiring to copy from:
+  `~/Dev/kunkun/packages/local-api-server/src/openapi.ts` and `…/src/*-mcp.ts`. Candidate tasks:
+  **T19** (Hono migration; acceptance = the existing auth, origin, SSE and static-asset tests pass
+  unchanged) and **T20** (read-only MCP surface with its own policy principal). M1 deliberately
+  does not start this rewrite — the raw `node:http` host is verified, and the contract/router split
+  keeps the migration mechanical.
+- Until form 2 is a task, the CLI's single-root default stands: the approved root is the repository
+  directory itself, and a linked worktree elsewhere stays listed but unreadable.

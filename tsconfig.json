@@ -5,5 +5,5 @@
     "types": ["node"],
     "allowImportingTsExtensions": true
   },
-  "include": ["scripts", "tests", "vitest.config.ts"]
+  "include": ["scripts", "tests", "vitest.config.ts", "playwright.config.ts"]
 }

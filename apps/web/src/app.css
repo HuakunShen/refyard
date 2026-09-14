@@ -1,0 +1,25 @@
+/**
+ * The app's stylesheet: Tailwind, then the component library's tokens.
+ *
+ * `@source` points Tailwind at the component package's source. The package is linked into
+ * `node_modules`, which Tailwind scans by ignoring it, so without this line every utility
+ * used only inside `@refyard/git-ui` would be missing from the built CSS — the classic
+ * "works in dev, unstyled in the bundle" failure.
+ *
+ * The lane palette and the semantic colours live in the package's stylesheet, not here, so
+ * a second host can reuse the components without re-deriving a theme.
+ */
+@import "tailwindcss";
+@import "@refyard/git-ui/styles.css";
+
+@source "../../../packages/git-ui/src";
+
+html {
+  color-scheme: light dark;
+}
+
+body {
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}

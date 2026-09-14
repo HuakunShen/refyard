@@ -27,6 +27,13 @@ out/
 build
 dist
 
+# SvelteKit's generated types and route manifest (`svelte-kit sync`, run by `pnpm build`).
+.svelte-kit
+
+# Playwright's failure artifacts (traces, screenshots, page snapshots).
+test-results
+playwright-report
+
 
 # Debug
 npm-debug.log*

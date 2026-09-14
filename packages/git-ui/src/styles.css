@@ -1,0 +1,87 @@
+/**
+ * @refyard/git-ui — the tokens the components are written against.
+ *
+ * Imported by the app once, after Tailwind: `@import "@refyard/git-ui/styles.css";`.
+ *
+ * Every token is a CSS variable, and utilities are generated from them by Tailwind, so
+ * a theme is a list of values rather than a second set of components. The dark values
+ * live in a `prefers-color-scheme` block that overrides the same variables: no class
+ * toggling, and therefore no way for a component to be styled for the wrong scheme.
+ *
+ * The lane palette is part of this file rather than of the geometry module so that a
+ * host can restyle the graph — including for dark mode — without changing any code
+ * that decides where lanes are.
+ *
+ * `static` is deliberate: the graph reads `var(--color-lane-N)` from SVG attributes
+ * Tailwind cannot see (the geometry module builds that paint value at runtime), so the
+ * palette must be emitted whether or not a utility class happens to use each entry.
+ * Without it Tailwind drops the unused lanes and every line silently falls back to
+ * `currentColor`.
+ */
+
+@theme static {
+  --color-canvas: oklch(0.99 0.002 250);
+  --color-panel: oklch(1 0 0);
+  --color-panel-muted: oklch(0.97 0.004 250);
+  --color-border: oklch(0.9 0.006 250);
+  --color-ink: oklch(0.24 0.015 260);
+  --color-ink-muted: oklch(0.45 0.015 260);
+  --color-ink-faint: oklch(0.6 0.012 260);
+  --color-accent: oklch(0.55 0.16 255);
+  --color-accent-strong: oklch(0.48 0.16 255);
+  --color-accent-ink: oklch(0.99 0 0);
+  --color-add: oklch(0.55 0.14 150);
+  --color-remove: oklch(0.55 0.18 25);
+  --color-warn: oklch(0.62 0.13 75);
+  --color-danger: oklch(0.55 0.19 25);
+
+  --color-lane-1: oklch(0.62 0.17 255);
+  --color-lane-2: oklch(0.62 0.15 150);
+  --color-lane-3: oklch(0.66 0.16 60);
+  --color-lane-4: oklch(0.6 0.19 20);
+  --color-lane-5: oklch(0.6 0.17 310);
+  --color-lane-6: oklch(0.62 0.13 200);
+  --color-lane-7: oklch(0.6 0.17 340);
+  --color-lane-8: oklch(0.62 0.12 120);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-canvas: oklch(0.19 0.012 260);
+    --color-panel: oklch(0.23 0.014 260);
+    --color-panel-muted: oklch(0.26 0.013 260);
+    --color-border: oklch(0.33 0.014 260);
+    --color-ink: oklch(0.94 0.006 260);
+    --color-ink-muted: oklch(0.75 0.012 260);
+    --color-ink-faint: oklch(0.6 0.012 260);
+    --color-accent: oklch(0.68 0.15 255);
+    --color-accent-strong: oklch(0.74 0.15 255);
+    --color-accent-ink: oklch(0.18 0.01 260);
+    --color-add: oklch(0.72 0.15 150);
+    --color-remove: oklch(0.68 0.17 25);
+    --color-warn: oklch(0.76 0.13 80);
+    --color-danger: oklch(0.68 0.17 25);
+
+    --color-lane-1: oklch(0.72 0.15 255);
+    --color-lane-2: oklch(0.75 0.15 150);
+    --color-lane-3: oklch(0.78 0.14 70);
+    --color-lane-4: oklch(0.7 0.17 25);
+    --color-lane-5: oklch(0.72 0.16 310);
+    --color-lane-6: oklch(0.75 0.12 200);
+    --color-lane-7: oklch(0.7 0.16 340);
+    --color-lane-8: oklch(0.75 0.12 120);
+  }
+}
+
+/* A patch line's colour is its meaning; the background is only a tint of it. */
+@utility patch-add {
+  background-color: color-mix(in oklab, var(--color-add) 14%, transparent);
+}
+
+@utility patch-remove {
+  background-color: color-mix(in oklab, var(--color-remove) 14%, transparent);
+}
+
+@utility patch-context {
+  background-color: transparent;
+}

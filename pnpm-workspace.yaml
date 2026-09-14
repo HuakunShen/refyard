@@ -12,6 +12,7 @@ allowBuilds:
 # The plan forbids silent "latest" upgrades during task execution; bumping a
 # version means editing this file, which shows up in the task's own commit.
 catalog:
+  "@playwright/test": 1.63.0
   "@lucide/svelte": 1.46.0
   "@sveltejs/adapter-static": 3.0.10
   "@sveltejs/kit": 2.70.3
@@ -26,6 +27,7 @@ catalog:
   mode-watcher: 1.1.0
   oxc-parser: 0.150.0
   prettier: 3.9.6
+  prettier-plugin-svelte: 4.1.1
   svelte: 5.57.0
   svelte-check: 4.7.6
   tailwind-merge: 3.7.0
@@ -37,6 +39,15 @@ catalog:
   vite: 8.3.0
   vitest: 4.1.11
   zod: 4.6.5
+
+# `svelte-check` works through the TypeScript *compiler API*, whose peer range is ^5 || ^6.
+# The repository's compiler is TypeScript 7 (the native port, which does not expose that
+# API), so the two packages that type-check Svelte files resolve TypeScript 6 from this
+# named catalog: `"typescript": "catalog:svelte"`. Nothing else may use it — code that
+# compiles or type-checks plain TypeScript uses the default catalog's 7.x.
+catalogs:
+  svelte:
+    typescript: 6.0.3
 
 minimumReleaseAgeExclude:
   - "@oxc-parser/binding-android-arm-eabi@0.150.0"
@@ -61,3 +72,6 @@ minimumReleaseAgeExclude:
   - "@oxc-project/types@0.150.0"
   - oxc-parser@0.150.0
   - zod@4.6.5
+  - "@lucide/svelte@1.46.0"
+  - "@tanstack/svelte-virtual@3.13.39"
+  - "@tanstack/virtual-core@3.17.11"

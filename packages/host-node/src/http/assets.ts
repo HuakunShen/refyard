@@ -20,13 +20,16 @@
  * - **`/api/*` never falls through.** An unknown API path is a JSON 404, so a
  *   client cannot mistake an HTML shell for an API answer.
  * - **CSP and friends.** The page loads only its own bytes: no remote script, no
- *   CDN, no remote font, no framing by another origin.
+ *   CDN, no remote font, no framing by another origin. A document's own inline
+ *   bootstrap script is named by hash rather than permitted in general (see `csp.ts`),
+ *   which is what lets a static single-page app boot without `'unsafe-inline'`.
  */
 import { createReadStream } from "node:fs";
-import { realpath, stat } from "node:fs/promises";
+import { readFile, realpath, stat } from "node:fs/promises";
 import { extname, join, normalize, sep } from "node:path";
 import type { ServerResponse } from "node:http";
 import type { Problem } from "@refyard/git-contract";
+import { inlineScriptHashes, policyWithInlineScripts } from "./csp.js";
 
 export interface AssetServer {
   /** Serve one path, or report why it cannot be. */
@@ -96,6 +99,47 @@ export function createAssetServer(options: AssetServerOptions): AssetServer {
   const fallback = options.fallbackDocument ?? "200.html";
   let resolvedRoot: string | null = null;
   let rootReady = false;
+  /**
+   * Per-document headers, computed once per path.
+   *
+   * A document is read to find its inline scripts, and the result depends only on the
+   * bytes on disk; a packaged bundle does not change while the service is running, so the
+   * second request for a document must not pay for the first one's read.
+   */
+  const documentHeaderCache = new Map<
+    string,
+    Readonly<Record<string, string>>
+  >();
+
+  async function documentHeaders(
+    absolutePath: string,
+  ): Promise<Readonly<Record<string, string>>> {
+    const cached = documentHeaderCache.get(absolutePath);
+    if (cached !== undefined) {
+      return cached;
+    }
+    let headers: Readonly<Record<string, string>> = HTML_HEADERS;
+    try {
+      const html = await readFile(absolutePath, "utf8");
+      const hashes = inlineScriptHashes(html);
+      headers =
+        hashes.length === 0
+          ? HTML_HEADERS
+          : {
+              ...HTML_HEADERS,
+              "content-security-policy": policyWithInlineScripts(
+                HTML_HEADERS["content-security-policy"] ?? "",
+                hashes,
+              ),
+            };
+    } catch {
+      // A document that cannot be read is served (or fails) with the strict policy; a
+      // policy is not the place to report an I/O error.
+      headers = HTML_HEADERS;
+    }
+    documentHeaderCache.set(absolutePath, headers);
+    return headers;
+  }
 
   async function assetRoot(): Promise<string | null> {
     if (rootReady) {
@@ -206,7 +250,7 @@ export function createAssetServer(options: AssetServerOptions): AssetServer {
   }): Promise<void> {
     const extension = extname(input.absolutePath).toLowerCase();
     const headers = input.isDocument
-      ? HTML_HEADERS
+      ? await documentHeaders(input.absolutePath)
       : {
           "content-type":
             CONTENT_TYPES[extension] ?? "application/octet-stream",

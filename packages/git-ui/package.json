@@ -1,0 +1,30 @@
+{
+  "name": "@refyard/git-ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./styles.css": "./src/styles.css"
+  },
+  "scripts": {
+    "check": "svelte-check --tsconfig ./tsconfig.json --threshold error"
+  },
+  "dependencies": {
+    "@refyard/git-client": "workspace:*",
+    "@refyard/git-contract": "workspace:*",
+    "@refyard/git-graph": "workspace:*"
+  },
+  "devDependencies": {
+    "@lucide/svelte": "catalog:",
+    "@sveltejs/vite-plugin-svelte": "catalog:",
+    "@tanstack/svelte-virtual": "catalog:",
+    "bits-ui": "catalog:",
+    "clsx": "catalog:",
+    "svelte": "catalog:",
+    "svelte-check": "catalog:",
+    "tailwind-merge": "catalog:",
+    "tailwind-variants": "catalog:",
+    "typescript": "catalog:svelte"
+  }
+}

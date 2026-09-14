@@ -176,6 +176,7 @@ export {
   type AssetServer,
   type AssetServerOptions,
 } from "./http/assets.js";
+export { inlineScriptHashes, policyWithInlineScripts } from "./http/csp.js";
 export {
   DEFAULT_HTTP_LIMITS,
   logLine,

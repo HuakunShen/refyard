@@ -1,0 +1,281 @@
+/**
+ * The read-only loop, end to end, in a real browser.
+ *
+ * Everything here is the shipped article: the CLI's own bundle under Node, the static
+ * Svelte bundle it serves, a temporary repository created by the shared fixture (its own
+ * `HOME`, its own config, no network), and the machine's `git`. Nothing is stubbed, and no
+ * test writes to a repository it did not create.
+ *
+ * The assertions are weighted towards what a unit test cannot see: that opening the
+ * printed pairing URL really pairs, that the graph column stays aligned with the rows it
+ * belongs to, and — the point of M1 — that no control on screen could change the
+ * repository.
+ *
+ * A service is started per test because a pairing ticket is single use by design: sharing
+ * one across tests would either fail or teach the suite to reuse a credential.
+ */
+import { expect, test } from "@playwright/test";
+import { spawn } from "node:child_process";
+import { mkdir, rm, symlink, stat } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createRepo, type GitFixtureRepo } from "../support/repo.js";
+
+const REPO_ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
+const CLI_BUNDLE = join(REPO_ROOT, ".refyard-dev", "cli.mjs");
+const WEB_BUILD = join(REPO_ROOT, "apps", "web", "build");
+/** Where the CLI looks for a web build next to its own bundle. */
+const STAGED_WEB = join(REPO_ROOT, ".refyard-dev", "web");
+
+interface RunningService {
+  readonly pairingUrl: string;
+  stop(): Promise<void>;
+}
+
+test.beforeAll(async () => {
+  await ensureBuilt();
+});
+
+test.describe("read-only workbench", () => {
+  let repo: GitFixtureRepo;
+
+  test.beforeAll(async () => {
+    repo = await createRepo({ initialCommit: true });
+    await repo.write("b.txt", "second\n");
+    await repo.commitAll("second");
+    // A modified tracked file and an untracked one, so the Changes pane has both kinds
+    // and the diff pane has a real hunk rather than a synthesized file.
+    await repo.write("a.txt", "base\nchanged\n");
+    await repo.write("untracked.txt", "new file\n");
+  });
+
+  test.afterAll(async () => {
+    await repo.dispose();
+  });
+
+  let service: RunningService;
+
+  test.beforeEach(async () => {
+    service = await startService(repo.root);
+  });
+
+  test.afterEach(async () => {
+    await service.stop();
+  });
+
+  test("pairs by opening the printed URL and reads the repository", async ({
+    page,
+  }) => {
+    await page.goto(service.pairingUrl);
+
+    // Pairing happens on load; the header only renders once a session exists.
+    await expect(page.getByText("read-only build")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "History" })).toBeVisible();
+
+    // The two commits the fixture made.
+    await expect(
+      page.getByText("second", { exact: true }).first(),
+    ).toBeVisible();
+    await expect(page.getByText("base", { exact: true }).first()).toBeVisible();
+
+    // The graph drew real geometry for those rows.
+    const graphPaths = page.locator("svg[aria-hidden='true'] path");
+    expect(await graphPaths.count()).toBeGreaterThan(0);
+
+    // Changed paths, with Git's own status letters and no action offered.
+    await expect(page.getByText("untracked.txt")).toBeVisible();
+    await expect(page.getByText("metadata only")).toHaveCount(0);
+  });
+
+  test("removes the spent ticket from the address bar", async ({ page }) => {
+    await page.goto(service.pairingUrl);
+    await expect(page.getByText("read-only build")).toBeVisible();
+    expect(page.url()).not.toContain("#pair=");
+  });
+
+  test("opens a commit's diff from the history list", async ({ page }) => {
+    await page.goto(service.pairingUrl);
+    await expect(page.getByText("read-only build")).toBeVisible();
+
+    await page
+      .getByRole("button", { name: /second/ })
+      .first()
+      .click();
+
+    // The detail pane names the commit that was clicked...
+    await expect(page.getByText("committer", { exact: true })).toBeVisible();
+
+    // ... its change set is listed without patches (the host bounds that on purpose) ...
+    await expect(
+      page.getByText("Patches are read one path at a time"),
+    ).toBeVisible();
+
+    // ... and selecting the file reads its patch: the commit added b.txt with one line.
+    await page
+      .getByRole("button", { name: /b\.txt/ })
+      .first()
+      .click();
+    await expect(page.getByText("+second").first()).toBeVisible();
+  });
+
+  test("reads a changed path's diff when the path is selected", async ({
+    page,
+  }) => {
+    await page.goto(service.pairingUrl);
+    await expect(page.getByText("read-only build")).toBeVisible();
+
+    await page
+      .getByRole("button", { name: /a\.txt/ })
+      .first()
+      .click();
+    // The pane names which side of the change is being read...
+    await expect(page.getByText("unstaged", { exact: true })).toBeVisible();
+    // ... and the working-tree change against the index is a real hunk.
+    await expect(page.getByText("+changed").first()).toBeVisible();
+  });
+
+  test("keeps the graph aligned with the row it belongs to", async ({
+    page,
+  }) => {
+    await page.goto(service.pairingUrl);
+    await expect(page.getByText("read-only build")).toBeVisible();
+
+    const row = await page
+      .getByRole("button", { name: /second/ })
+      .first()
+      .boundingBox();
+    const circle = await page
+      .locator("svg[aria-hidden='true'] circle")
+      .first()
+      .boundingBox();
+    expect(row).not.toBeNull();
+    expect(circle).not.toBeNull();
+    if (row === null || circle === null) {
+      return;
+    }
+    // One row height is shared by the virtualized list and the geometry; if the two ever
+    // drift, the circle moves off its own row and this is where it shows up.
+    const rowCentre = row.y + row.height / 2;
+    const circleCentre = circle.y + circle.height / 2;
+    expect(Math.abs(rowCentre - circleCentre)).toBeLessThanOrEqual(2);
+  });
+
+  test("offers no control that could change the repository", async ({
+    page,
+  }) => {
+    await page.goto(service.pairingUrl);
+    await expect(page.getByText("read-only build")).toBeVisible();
+
+    // M1's promise: the capability list has no write operation, so nothing on screen may
+    // look like one. This assertion fails first if a write affordance is ever added
+    // without the operation behind it.
+    for (const label of [
+      /^stage/i,
+      /^unstage/i,
+      /^commit/i,
+      /^discard/i,
+      /^stash/i,
+      /^push/i,
+      /^pull/i,
+    ]) {
+      await expect(page.getByRole("button", { name: label })).toHaveCount(0);
+    }
+  });
+
+  test("reports a bad ticket instead of pairing", async ({ page }) => {
+    const origin = new URL(service.pairingUrl).origin;
+    await page.goto(`${origin}/#pair=not-a-real-ticket`);
+
+    await expect(page.getByText("Pairing failed")).toBeVisible();
+    await expect(page.getByText("read-only build")).toHaveCount(0);
+  });
+});
+
+/** Start the CLI bundle against one repository and wait for the pairing URL it prints. */
+async function startService(repositoryPath: string): Promise<RunningService> {
+  const child = spawn(
+    process.execPath,
+    [CLI_BUNDLE, "serve", "--no-open", "--port", "0", "--repo", repositoryPath],
+    {
+      cwd: REPO_ROOT,
+      env: { ...process.env, NO_COLOR: "1" },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+
+  let output = "";
+  const collect = (chunk: Buffer): void => {
+    output += chunk.toString("utf8");
+  };
+  child.stdout.on("data", collect);
+  child.stderr.on("data", collect);
+
+  const pairingUrl = await waitForPairingUrl(() => output);
+
+  return {
+    pairingUrl,
+    async stop(): Promise<void> {
+      if (child.exitCode !== null || child.signalCode !== null) {
+        return;
+      }
+      const exited = new Promise<void>((resolve) => {
+        child.once("exit", () => {
+          resolve();
+        });
+      });
+      child.kill("SIGTERM");
+      await exited;
+    },
+  };
+}
+
+async function waitForPairingUrl(readOutput: () => string): Promise<string> {
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    const match = /http:\/\/127\.0\.0\.1:\d+\/#pair=[A-Za-z0-9_-]+/.exec(
+      readOutput(),
+    );
+    if (match !== null) {
+      return match[0];
+    }
+    if (Date.now() > deadline) {
+      throw new Error(
+        `timed out waiting for the service to print a pairing URL. Output:\n${readOutput()}`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
+/**
+ * The e2e run needs the CLI bundle and the web build, both produced by the commands the
+ * plan lists before `pnpm test:e2e`. This only reports clearly when one is missing, so a
+ * failure is never an unexplained browser error.
+ */
+async function ensureBuilt(): Promise<void> {
+  for (const [label, path] of [
+    ["the CLI bundle (bun scripts/bundle-cli.ts)", CLI_BUNDLE],
+    ["the web build (pnpm build)", WEB_BUILD],
+  ] as const) {
+    try {
+      await stat(path);
+    } catch {
+      throw new Error(
+        `${label} is missing at ${path}; run the build before the e2e suite.`,
+      );
+    }
+  }
+  // The host serves a web build found next to its own bundle; staging a link keeps the
+  // repository root clean and `.refyard-dev/` is already ignored.
+  try {
+    await stat(STAGED_WEB);
+  } catch {
+    await mkdir(dirname(STAGED_WEB), { recursive: true });
+    await symlink(WEB_BUILD, STAGED_WEB, "dir");
+  }
+}
+
+// Remove the staged link even if Playwright's worker is recycled before the suite ends.
+process.on("exit", () => {
+  void rm(STAGED_WEB, { force: true });
+});

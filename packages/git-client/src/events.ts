@@ -72,6 +72,16 @@ export function createEventStream(options: EventStreamOptions): EventStream {
   let attempt = 0;
   let loopRunning = false;
 
+  // Resolved when the first response is accepted, so `start` can hand control back while
+  // the body keeps streaming.
+  let markConnected: (() => void) | null = null;
+  const connected = new Promise<void>((resolve) => {
+    markConnected = resolve;
+  });
+  function connectedSignal(): Promise<void> {
+    return connected;
+  }
+
   /** Reconnect with bounded backoff until stopped. */
   async function reconnectLoop(): Promise<void> {
     if (loopRunning) {
@@ -140,6 +150,8 @@ export function createEventStream(options: EventStreamOptions): EventStream {
       }
       isConnected = true;
       attempt = 0;
+      markConnected?.();
+      markConnected = null;
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -228,12 +240,21 @@ export function createEventStream(options: EventStreamOptions): EventStream {
   return {
     async start(): Promise<void> {
       stopped = false;
-      await connect();
-      if (!stopped) {
-        // The first connection is awaited so a caller knows the stream is up; the
-        // reconnection loop then runs on its own until `stop`.
-        void reconnectLoop();
-      }
+      // `connect` reads until the stream ends, which for a healthy stream is "until the
+      // service stops". Awaiting it would make `start` resolve at exactly the wrong moment
+      // — after the connection is gone — so the two are separated: readiness is signalled
+      // when the response is accepted, and the read loop runs on its own.
+      const connection = connect();
+      void connection.then(() => {
+        if (!stopped) {
+          // The first connection has ended; keep it up from here on.
+          void reconnectLoop();
+        }
+      });
+      // Ready when the stream is up, or when it has already ended (a refused or failed
+      // connection has reported itself through `onError`, and a caller waiting forever for
+      // a socket that will not open is a hang, not a retry).
+      await Promise.race([connectedSignal(), connection]);
     },
     stop(): void {
       stopped = true;
