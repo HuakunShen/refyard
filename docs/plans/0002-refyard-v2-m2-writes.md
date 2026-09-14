@@ -338,3 +338,87 @@ directory was deleted by hand (Git's `prune` path, which this build does not off
 `capabilities`: they address a workspace root rather than a repository, and the
 approved-root flow they need is not built. A request for either is answered with the
 closed `UnsupportedOperation` code, never a `202`.
+
+---
+
+## T12 — Merge, continue, abort
+
+Delivered (3 operations):
+
+```
+packages/git-core/src/plan/merge.ts                 merge / continue / abort / MERGE_HEAD argv
+packages/git-core/src/workflows/merge.ts            the 3 workflows and the stop classification
+packages/host-node/src/coordinator/merge-effects.ts the 3 effects
+packages/git-ui/src/components/ConflictPanel.svelte unfinished-operation panel
+apps/web/src/lib/operation-follow.ts                polling that never resubmits
+tests/integration/merge.test.ts                     14 cases
+tests/unit/operation-follow.test.ts                 6 cases
+tests/e2e/workflows.spec.ts                         2 cases in Chromium
+```
+
+### Deviations and findings, recorded deliberately
+
+- **`continueMerge` is `git commit`, not a merge command.** After a conflict the
+  resolved index already holds the merge; continuing is committing it. The planner
+  spells no path that stages, resolves or edits anything, and the effect classifies a
+  refusal with the merge state re-read afterwards — a refused continue leaves the
+  merge exactly where it was, which one case asserts.
+- **`abortMerge` never falls back to `reset --hard`.** `git merge --abort` is the
+  whole command; a refusal is reported with Git's diagnostic and the merge state is
+  left as it is. The plan's requirement ("don't paper over a failed restore") is a
+  property of the argv, not of a check that could be bypassed later.
+- **Staging had to be unblocked during a merge, and that was a real gap.** The
+  precondition "no operation in progress" blocked _every_ write, `stagePaths`
+  included — so the resolve → stage → continue flow the panel instructs the user to
+  perform was impossible through this API. The first end-to-end attempt is what
+  surfaced it: the browser flow could resolve the file and then nothing else. The
+  exemption list is now `stagePaths`, `unstagePaths`, `continueMerge`, `abortMerge`
+  for `merge` only; `commit` and `discardTrackedPaths` stay blocked, and one case
+  asserts both halves.
+- **A record is not a file list.** The conflict count travels as
+  `problem.details.conflictedPaths` and the _names_, with their three index stages,
+  come from the status read — which already had `stages` per path. `needsAttention`
+  with a result would have duplicated the read and, worse, frozen it.
+- **The status read already knew about in-progress operations.** `MERGE_HEAD`,
+  `CHERRY_PICK_HEAD`, `revert`, `rebase-merge`, `rebase-apply` and `BISECT_LOG` were
+  mapped in T04, so the merge work only had to add the write side and the UI. The
+  panel shows a foreign operation (rebase, cherry-pick, revert, bisect, mailbox) and
+  offers nothing for it, which is what "restrict conflict operations to ours" means
+  in practice.
+- **The follower moved out of the component.** "A dropped connection keeps the
+  operationId and recovery only queries" was previously an implicit property: the
+  page polled and, on a transport error, threw the id away with the message. It is now
+  `apps/web/src/lib/operation-follow.ts`, where a fake reader can prove that only
+  `get` is ever called (no resubmit path exists), that transport failures are retried
+  as reads, and that giving up names the operation id.
+- **Detached, unborn, missing-object and empty-remote states are handled by refusal,
+  not by repair.** Merging onto a detached HEAD works (Git allows it, and the case
+  asserts the checkout stays detached); an unborn HEAD, a source that is a blob, and a
+  source this repository does not have are all refused with a message, and nothing
+  fetches, configures or repairs the repository to make the merge possible. The last
+  case asserts the repository still has no remote afterwards.
+
+### Verification, actually run
+
+| Command                                                    | Result                                                     |
+| ---------------------------------------------------------- | ---------------------------------------------------------- |
+| `pnpm exec vitest run tests/integration/merge.test.ts`     | 14 passed                                                  |
+| `pnpm exec vitest run tests/unit/operation-follow.test.ts` | 6 passed                                                   |
+| `pnpm test:e2e --grep "merge workbench"`                   | 2 passed                                                   |
+| `pnpm test:e2e`                                            | 22 passed                                                  |
+| `pnpm test`                                                | 497 passed (30 files)                                      |
+| `pnpm check`                                               | 8 packages, 0 errors                                       |
+| `pnpm check:boundaries`                                    | 3 portable packages, 53 source files; 52 test/script files |
+| `pnpm check:contract`                                      | artifacts match, 438 named schemas                         |
+| `pnpm test:portable`                                       | neutral IIFE 60,542 bytes, no host globals                 |
+
+Unverified: a merge that conflicts inside a submodule path (`submodule` conflicts get
+Git's own resolution requirements, which this build does not model), a merge driven
+while the service restarts mid-operation (the restart block covers the _next_ request,
+and no test kills the service between acceptance and completion), and conflict
+resolution through a tool that leaves the index in a partly-staged state between polls.
+
+The reference's `git-ui/OperationCenter.svelte` was not written as a separate
+component: the conflict panel plus the existing panels already cover what it was for
+(one place that shows an unfinished operation and the ways to end it), and a second
+surface listing the same records would be a second place to keep correct.
