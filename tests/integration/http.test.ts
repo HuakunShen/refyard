@@ -24,7 +24,7 @@ import {
   createGitClient,
   createMutationClient,
   GitClientError,
-} from "../../packages/git-client/src/index.js";
+} from "@refyard/git-client";
 import { createRepo, type GitFixtureRepo } from "../support/repo.js";
 import {
   startTestService,

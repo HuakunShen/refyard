@@ -120,6 +120,9 @@ importers:
       '@refyard/git-graph':
         specifier: workspace:*
         version: link:packages/git-graph
+      '@refyard/git-ui':
+        specifier: workspace:*
+        version: link:packages/git-ui
       '@refyard/host-node':
         specifier: workspace:*
         version: link:packages/host-node

@@ -21,7 +21,7 @@
  * The engine is exported separately from the file walker so tests can feed it
  * synthetic sources and prove each rule fires (and each near-miss does not).
  */
-import { dirname, resolve } from "node:path";
+import { dirname, relative, resolve, sep } from "node:path";
 import { parseSync } from "oxc-parser";
 import { isInside } from "./files.ts";
 
@@ -201,6 +201,94 @@ function positionOf(
 function offsetOf(node: AstNode): number {
   const start = read(node, "start");
   return typeof start === "number" ? start : 0;
+}
+
+/** The workspace specifier that reaches `target`, when it is inside a package's `src`. */
+export function packageSpecifierFor(
+  repoRoot: string,
+  target: string,
+): string | null {
+  const packagesRoot = resolve(repoRoot, "packages");
+  if (!isInside(packagesRoot, target)) {
+    return null;
+  }
+  const parts = relative(packagesRoot, target).split(sep);
+  const [directory, marker, ...rest] = parts;
+  if (directory === undefined || marker !== "src" || rest.length === 0) {
+    return null;
+  }
+  const modulePath = rest
+    .join("/")
+    .replace(/\.(?:ts|tsx|mts|js|mjs|svelte)$/, "");
+  return modulePath === "index"
+    ? `@refyard/${directory}`
+    : `@refyard/${directory}/${modulePath}`;
+}
+
+/**
+ * A test or a script that reaches into a package's `src` by relative path.
+ *
+ * Those files are not part of a package, so they have no boundary of their own to
+ * escape — but a relative path is still the wrong way to get to package code: it
+ * bypasses the package's `exports` map (so a module that is deliberately not
+ * exported stays reachable anyway) and it keeps compiling after a file moves until
+ * the day it does not. Importing the package by name is the same gesture with the
+ * package in charge of what it offers.
+ */
+export function checkPackageReachIn(
+  repoRoot: string,
+  file: string,
+  source: string,
+): BoundaryViolation[] {
+  const violations: BoundaryViolation[] = [];
+  const starts = lineStarts(source);
+  const report = (offset: number, message: string): void => {
+    const { line, column } = positionOf(starts, offset);
+    violations.push({ file, line, column, rule: "package-reach-in", message });
+  };
+  const parsed = parseSync(file, source);
+  const firstError = parsed.errors[0];
+  if (firstError !== undefined) {
+    report(0, `file could not be parsed: ${String(firstError.message)}`);
+    return violations;
+  }
+
+  const requests: { readonly start: number; readonly value: string }[] = [];
+  for (const record of parsed.module.staticImports) {
+    requests.push({
+      start: record.moduleRequest.start,
+      value: record.moduleRequest.value,
+    });
+  }
+  for (const record of parsed.module.dynamicImports) {
+    // A dynamic import record carries only the request's span, so the text is read
+    // back from the source with its quotes removed.
+    const raw = source.slice(
+      record.moduleRequest.start,
+      record.moduleRequest.end,
+    );
+    requests.push({
+      start: record.moduleRequest.start,
+      value: raw.replace(/^["'`]|["'`]$/g, ""),
+    });
+  }
+
+  for (const request of requests) {
+    if (!request.value.startsWith(".")) {
+      continue;
+    }
+    const suggestion = packageSpecifierFor(
+      repoRoot,
+      resolve(dirname(file), request.value),
+    );
+    if (suggestion !== null) {
+      report(
+        request.start,
+        `relative import '${request.value}' reaches into a package's source — import '${suggestion}' instead`,
+      );
+    }
+  }
+  return violations;
 }
 
 /** Parent node types whose `key` is a type member name, not a value reference. */

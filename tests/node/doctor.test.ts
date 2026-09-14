@@ -19,9 +19,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   runDoctor,
   versionAtLeast,
-} from "../../packages/host-node/src/process/doctor.js";
-import { createGitHost } from "../../packages/host-node/src/process/git-host.js";
-import { createHandleRegistry } from "../../packages/host-node/src/filesystem/handles.js";
+} from "@refyard/host-node/process/doctor";
+import { createGitHost } from "@refyard/host-node/process/git-host";
+import { createHandleRegistry } from "@refyard/host-node/filesystem/handles";
 import {
   createRepo,
   fixtureGitPath,

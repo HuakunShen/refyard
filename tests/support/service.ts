@@ -40,7 +40,7 @@ import {
   type MutationCoordinator,
   type MutationEffect,
   type RecoveryBackupWriter,
-} from "../../packages/host-node/src/index.js";
+} from "@refyard/host-node";
 import { createHostEngine, type GitEngine } from "@refyard/git-core";
 import {
   API_MAJOR,

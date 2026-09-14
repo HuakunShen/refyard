@@ -24,7 +24,7 @@ import {
   previewsResponseSchema,
   statusSnapshotSchema,
   type OperationRecord,
-} from "../../packages/git-contract/src/index.js";
+} from "@refyard/git-contract";
 import { createRepo, type GitFixtureRepo } from "../support/repo.js";
 import {
   startTestService,

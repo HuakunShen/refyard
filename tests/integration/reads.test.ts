@@ -34,7 +34,7 @@ import {
   createTextCodec,
   createWorktreeRegistry,
   type ReadService,
-} from "../../packages/host-node/src/index.js";
+} from "@refyard/host-node";
 import {
   createRepo,
   fixtureGitPath,

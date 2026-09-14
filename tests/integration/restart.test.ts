@@ -14,10 +14,10 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createJournalStore } from "../../packages/host-node/src/journal/store.js";
-import { DEFAULT_RETENTION } from "../../packages/host-node/src/journal/retention.js";
-import { createRecovery } from "../../packages/host-node/src/journal/recovery.js";
-import { createEventRing } from "../../packages/host-node/src/http/events.js";
+import { createJournalStore } from "@refyard/host-node/journal/store";
+import { DEFAULT_RETENTION } from "@refyard/host-node/journal/retention";
+import { createRecovery } from "@refyard/host-node/journal/recovery";
+import { createEventRing } from "@refyard/host-node/http/events";
 import { createRepo, type GitFixtureRepo } from "../support/repo.js";
 import { startTestService, type TestService } from "../support/service.js";
 

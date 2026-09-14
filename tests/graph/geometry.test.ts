@@ -17,7 +17,7 @@ import {
   rowCenterY,
   rowGeometry,
   type GraphMetrics,
-} from "../../packages/git-ui/src/lib/geometry.js";
+} from "@refyard/git-ui/lib/geometry";
 
 const metrics: GraphMetrics = {
   ...DEFAULT_METRICS,

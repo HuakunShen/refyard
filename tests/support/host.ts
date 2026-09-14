@@ -16,7 +16,7 @@ import {
   createHandleRegistry,
   type GitHost,
   type HandleRegistry,
-} from "../../packages/host-node/src/index.js";
+} from "@refyard/host-node";
 import { fixtureGitPath, type GitFixtureRepo } from "./repo.js";
 
 export interface FixtureGitHost {

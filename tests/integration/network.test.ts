@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 import {
   refsSnapshotSchema,
   statusSnapshotSchema,
-} from "../../packages/git-contract/src/index.js";
+} from "@refyard/git-contract";
 import { createBareRemote, createRepo, type GitFixtureRepo } from "../support/repo.js";
 import {
   startTestService,

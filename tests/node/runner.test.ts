@@ -24,7 +24,7 @@ import {
   describeTermination,
   runGit,
   type RunGitOptions,
-} from "../../packages/host-node/src/process/runner.js";
+} from "@refyard/host-node/process/runner";
 import { nodeBinary, nodeScriptSpec } from "../support/fake-process.js";
 
 function options(overrides: Partial<RunGitOptions> = {}): RunGitOptions {

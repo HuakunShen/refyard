@@ -24,12 +24,12 @@ import { z } from "zod";
 import {
   createEffect,
   type MutationEffect,
-} from "../../packages/host-node/src/coordinator/jobs.js";
+} from "@refyard/host-node/coordinator/jobs";
 import {
   createJournalStore,
   canonicalPayloadDigest,
-} from "../../packages/host-node/src/journal/store.js";
-import { DEFAULT_RETENTION } from "../../packages/host-node/src/journal/retention.js";
+} from "@refyard/host-node/journal/store";
+import { DEFAULT_RETENTION } from "@refyard/host-node/journal/retention";
 import { createRepo, type GitFixtureRepo } from "../support/repo.js";
 import { startTestService, type TestService } from "../support/service.js";
 

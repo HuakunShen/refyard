@@ -12,10 +12,17 @@ import { listFiles, pathExists } from "./files.ts";
 import {
   HOST_GLOBALS,
   HOST_MEMBER_ACCESS,
+  checkPackageReachIn,
   checkSourceBoundaries,
   type BoundaryViolation,
   type PortabilityProfile,
 } from "./boundaries.ts";
+
+/**
+ * Directories whose files belong to no package, so they get their code through
+ * package names rather than paths.
+ */
+const UNPACKAGED_DIRECTORIES = ["tests", "scripts"] as const;
 
 export interface PortablePackage {
   /** Workspace directory name, e.g. `git-core`. */
@@ -172,11 +179,19 @@ export interface BoundaryCheckResult {
   readonly violations: readonly BoundaryViolation[];
   readonly checkedFiles: number;
   readonly checkedPackages: number;
+  /** Test and script files scanned for relative reach-ins into package sources. */
+  readonly checkedUnpackagedFiles: number;
   /** Packages declared portable whose sources do not exist yet (reported, not hidden). */
   readonly skippedPackages: readonly string[];
 }
 
-/** Check every portable package's sources and configuration. */
+/**
+ * Check every portable package's sources and configuration.
+ *
+ * The same walk covers `tests/` and `scripts/`: those files live outside every
+ * package, so nothing stops them from reaching into one by relative path, and the
+ * check is what makes the package name the only way in.
+ */
 export async function runBoundaryCheck(
   packagesRoot: string,
 ): Promise<BoundaryCheckResult> {
@@ -199,5 +214,26 @@ export async function runBoundaryCheck(
     }
     violations.push(...(await checkPortableTsconfig(pkg, packagesRoot)));
   }
-  return { violations, checkedFiles, checkedPackages, skippedPackages };
+
+  const repoRoot = dirname(packagesRoot);
+  let checkedUnpackagedFiles = 0;
+  for (const directory of UNPACKAGED_DIRECTORIES) {
+    const root = join(repoRoot, directory);
+    if (!(await pathExists(root))) {
+      continue;
+    }
+    for (const file of await listFiles(root, [".ts"])) {
+      const source = await readFile(file, "utf8");
+      violations.push(...checkPackageReachIn(repoRoot, file, source));
+      checkedUnpackagedFiles += 1;
+    }
+  }
+
+  return {
+    violations,
+    checkedFiles,
+    checkedPackages,
+    checkedUnpackagedFiles,
+    skippedPackages,
+  };
 }

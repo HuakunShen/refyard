@@ -32,11 +32,11 @@ import {
   isSafeRelativePath,
   readPathMetadata,
   sniffContentKind,
-} from "../../packages/host-node/src/index.js";
+} from "@refyard/host-node";
 import {
   createPreviewStore,
   fingerprintBytes,
-} from "../../packages/host-node/src/filesystem/preview.js";
+} from "@refyard/host-node/filesystem/preview";
 
 let scratch = "";
 

@@ -16,7 +16,7 @@ import type {
   GitRunContext,
   GitRunResult,
 } from "@refyard/git-core";
-import type { RunGitOptions } from "../../packages/host-node/src/process/runner.js";
+import type { RunGitOptions } from "@refyard/host-node/process/runner";
 
 export const nodeBinary = process.execPath;
 

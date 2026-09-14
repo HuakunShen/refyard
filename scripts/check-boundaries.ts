@@ -18,7 +18,8 @@ const result = await runBoundaryCheck(resolve(repoRoot, "packages"));
 
 if (result.violations.length === 0) {
   console.log(
-    `check:boundaries: ${result.checkedPackages} portable packages, ${result.checkedFiles} source files — no host dependencies`,
+    `check:boundaries: ${result.checkedPackages} portable packages, ${result.checkedFiles} source files — no host dependencies; ` +
+      `${result.checkedUnpackagedFiles} test/script files — packages imported by name`,
   );
   process.exit(0);
 }
@@ -34,6 +35,8 @@ for (const violation of result.violations) {
 }
 console.error(
   "\nHint: portable packages are packages/git-contract, packages/git-core and packages/git-graph." +
-    " Host APIs belong in packages/host-node behind a port.",
+    " Host APIs belong in packages/host-node behind a port." +
+    " Tests and scripts import a package by name (`@refyard/<package>/<module>`)," +
+    " never through a relative path into its `src`.",
 );
 process.exit(1);

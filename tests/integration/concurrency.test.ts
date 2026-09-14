@@ -20,15 +20,15 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   createQueue,
   DEFAULT_QUEUE_LIMITS,
-} from "../../packages/host-node/src/coordinator/queue.js";
+} from "@refyard/host-node/coordinator/queue";
 import {
   createEventRing,
   sseFrame,
-} from "../../packages/host-node/src/http/events.js";
+} from "@refyard/host-node/http/events";
 import { LIMITS } from "@refyard/git-contract";
 import { createRepo, type GitFixtureRepo } from "../support/repo.js";
 import { startTestService, type TestService } from "../support/service.js";
-import { createEffect } from "../../packages/host-node/src/coordinator/jobs.js";
+import { createEffect } from "@refyard/host-node/coordinator/jobs";
 import { z } from "zod";
 
 describe("queue limits", () => {

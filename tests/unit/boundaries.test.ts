@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import {
   HOST_GLOBALS,
   HOST_MEMBER_ACCESS,
+  checkPackageReachIn,
   checkSourceBoundaries,
   type BoundaryViolation,
   type PortabilityProfile,
@@ -239,5 +240,78 @@ describe("the boundary checker, on output shape", () => {
       "host-global",
       "host-read",
     ]);
+  });
+});
+
+describe("the package reach-in checker, on files outside a package", () => {
+  const FILE = "/repo/tests/integration/example.test.ts";
+
+  function reachIn(source: string): BoundaryViolation[] {
+    return checkPackageReachIn("/repo", FILE, source);
+  }
+
+  it("reports a relative import into a package's index", () => {
+    const violations = reachIn(
+      `import { z } from "../../packages/git-contract/src/index.js";`,
+    );
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.rule).toBe("package-reach-in");
+    expect(violations[0]?.message).toContain("'@refyard/git-contract'");
+  });
+
+  it("suggests the subpath for a module that is not the index", () => {
+    const violations = reachIn(
+      `import { createEffect } from "../../packages/host-node/src/coordinator/jobs.js";`,
+    );
+    expect(violations[0]?.message).toContain(
+      "'@refyard/host-node/coordinator/jobs'",
+    );
+  });
+
+  it("reports a dynamic import, which is the same reach-in with more words", () => {
+    const violations = reachIn(
+      `const mod = await import("../../packages/git-ui/src/lib/geometry.js");`,
+    );
+    expect(violations).toHaveLength(1);
+    expect(violations[0]?.message).toContain("'@refyard/git-ui/lib/geometry'");
+  });
+
+  it("reports one line per reach-in, since a file may have several", () => {
+    const violations = reachIn(
+      `import { a } from "../../packages/host-node/src/index.js";\n` +
+        `import { b } from "../../packages/git-core/src/index.js";`,
+    );
+    expect(violations.map((violation) => violation.line)).toEqual([1, 2]);
+  });
+
+  it("says nothing about a relative import that stays among the tests", () => {
+    expect(
+      reachIn(`import { createRepo } from "../../tests/support/repo.ts";`),
+    ).toEqual([]);
+    expect(reachIn(`import { helper } from "../support/host.ts";`)).toEqual([]);
+  });
+
+  it("says nothing about a package file that is not source", () => {
+    expect(
+      reachIn(`import pkg from "../../packages/git-ui/package.json";`),
+    ).toEqual([]);
+  });
+
+  it("says nothing about a package imported by name, which is the point", () => {
+    expect(reachIn(`import { z } from "@refyard/git-contract";`)).toEqual([]);
+    expect(
+      reachIn(`import { jobs } from "@refyard/host-node/coordinator/jobs";`),
+    ).toEqual([]);
+  });
+
+  it("keeps working when a script sits at the repository root", () => {
+    const violations = checkPackageReachIn(
+      "/repo",
+      "/repo/scripts/check-contract.ts",
+      `import { build } from "../packages/git-contract/src/json-schema.ts";`,
+    );
+    expect(violations[0]?.message).toContain(
+      "'@refyard/git-contract/json-schema'",
+    );
   });
 });

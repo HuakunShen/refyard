@@ -16,7 +16,7 @@ import {
   refsSnapshotSchema,
   statusSnapshotSchema,
   stashesResponseSchema,
-} from "../../packages/git-contract/src/index.js";
+} from "@refyard/git-contract";
 import {
   createBareRemote,
   createRepo,
