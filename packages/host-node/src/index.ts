@@ -259,6 +259,11 @@ export {
   type RepositoryEffectsOptions,
 } from "./coordinator/repository-effects.js";
 export {
+  createStashTagEffects,
+  STASH_TAG_MUTATION_KINDS,
+  type StashTagEffectsOptions,
+} from "./coordinator/stash-tag-effects.js";
+export {
   createMutationCoordinator,
   currentIndexKey,
   repositoryIdOfTarget,

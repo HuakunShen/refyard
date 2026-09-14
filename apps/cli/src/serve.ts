@@ -43,6 +43,7 @@ import {
   createRootRegistry,
   createSnapshotStore,
   createStagingEffects,
+  createStashTagEffects,
   createTextCodec,
   createWorktreeRegistry,
   DEFAULT_RETENTION,
@@ -219,6 +220,10 @@ export async function assembleService(
     backups: createRecoveryStore({ root: join(stateRoot, "backups") }),
   });
   const repositoryEffects = createRepositoryEffects({ engine, repositories });
+  const stashTagEffects = createStashTagEffects({
+    engine,
+    repositories,
+  });
 
   const mutations = createMutationCoordinator({
     journal,
@@ -228,7 +233,11 @@ export async function assembleService(
     recovery,
     snapshots,
     events,
-    effects: [...stagingEffects, ...repositoryEffects],
+    effects: [
+      ...stagingEffects,
+      ...repositoryEffects,
+      ...stashTagEffects,
+    ],
     nextOperationId: () => `op_${randomBytes(9).toString("base64url")}`,
     nextSequence: () => (sequence += 1),
   });

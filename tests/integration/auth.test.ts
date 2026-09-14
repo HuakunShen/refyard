@@ -345,9 +345,9 @@ describe("authorization and request shape", () => {
   });
 
   it("answers 501 for a mutation no effect implements, never a fake 202", async () => {
-    // Prevents: the UI believing a stash was created when this build has no code
-    // that could run it. (Staging is T08 and branches/remotes/network are T09; a
-    // stash operation still has no effect behind it.)
+    // Prevents: the UI believing a worktree was created when this build has no
+    // code that could run it. (Staging, branches/remotes/network and stash/tags
+    // have effects now; the worktree and merge operations still do not.)
     const response = await service.fetch("/api/v1/operations", {
       method: "POST",
       token,
@@ -355,16 +355,14 @@ describe("authorization and request shape", () => {
       body: JSON.stringify({
         clientRequestId: "req-1",
         target: {
-          kind: "worktree",
+          kind: "repository",
           repositoryId: service.repositoryId,
-          worktreeId: "wt_unknown",
           expectedSnapshotId: "snap_unknown",
         },
         operation: {
-          kind: "createStash",
-          message: null,
-          includeUntracked: false,
-          keepIndex: false,
+          kind: "lockWorktree",
+          worktreeId: "wt_unknown",
+          reason: null,
         },
       }),
     });

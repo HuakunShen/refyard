@@ -47,8 +47,10 @@
     Separator,
     RepositoryList,
     StagingPanel,
+    StashPanel,
     StateBanner,
     StatusList,
+    TagPanel,
     shortOid,
   } from "@refyard/git-ui";
   import {
@@ -204,6 +206,12 @@
   const refs = createQuery(() => ({
     queryKey: ["refs", baseUrl, token, selectedRepositoryId],
     queryFn: () => client.refs({ repositoryId: selectedRepositoryId ?? "" }),
+    enabled: enabled && selectedRepositoryId !== null,
+  }));
+
+  const stashes = createQuery(() => ({
+    queryKey: ["stashes", baseUrl, token, selectedRepositoryId],
+    queryFn: () => client.stashes({ repositoryId: selectedRepositoryId ?? "" }),
     enabled: enabled && selectedRepositoryId !== null,
   }));
 
@@ -372,6 +380,8 @@
   const commitAvailable = $derived(implementedKinds.has("commit"));
   const branchAvailable = $derived(implementedKinds.has("createBranch"));
   const networkAvailable = $derived(implementedKinds.has("fetch"));
+  const stashAvailable = $derived(implementedKinds.has("createStash"));
+  const tagAvailable = $derived(implementedKinds.has("createTag"));
 
   /**
    * Follow an accepted operation to its terminal state.
@@ -459,6 +469,9 @@
       });
       await queryClient.invalidateQueries({
         queryKey: ["refs", baseUrl, token, selectedRepositoryId],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["stashes", baseUrl, token, selectedRepositoryId],
       });
       await queryClient.invalidateQueries({
         queryKey: ["history", baseUrl, token, selectedRepositoryId],
@@ -645,6 +658,121 @@
         remoteMessage = result;
       },
       "worktree",
+    );
+  }
+
+  /* ---------------------------------------------------------------- stashes */
+
+  let stashResult = $state<string | null>(null);
+  let tagResult = $state<string | null>(null);
+
+  function onStashCreate(
+    stashMessage: string,
+    includeUntracked: boolean,
+  ): void {
+    void performWrite(
+      "stash-create",
+      () => ({
+        kind: "createStash",
+        message: stashMessage.trim().length === 0 ? null : stashMessage,
+        includeUntracked,
+        keepIndex: false,
+      }),
+      (result) => {
+        stashResult = result;
+      },
+      "worktree",
+    );
+  }
+
+  function onStashApply(stash: { oid: string; locator: string }): void {
+    void performWrite(
+      "stash-apply",
+      () => ({
+        kind: "applyStash",
+        stash: { oid: stash.oid, locator: stash.locator },
+        restoreIndex: false,
+      }),
+      (result) => {
+        stashResult = result;
+      },
+      "worktree",
+    );
+  }
+
+  function onStashPop(stash: { oid: string; locator: string }): void {
+    void performWrite(
+      "stash-pop",
+      () => ({
+        kind: "popStash",
+        stash: { oid: stash.oid, locator: stash.locator },
+        restoreIndex: false,
+        confirmed: true,
+      }),
+      (result) => {
+        stashResult = result;
+      },
+      "worktree",
+    );
+  }
+
+  function onStashDrop(stash: { oid: string; locator: string }): void {
+    void performWrite(
+      "stash-drop",
+      () => ({
+        kind: "dropStash",
+        stash: { oid: stash.oid, locator: stash.locator },
+        confirmed: true,
+      }),
+      (result) => {
+        stashResult = result;
+      },
+      "repository",
+    );
+  }
+
+  /* ------------------------------------------------------------------- tags */
+
+  function onTagCreate(tagName: string, annotation: string | null): void {
+    void performWrite(
+      "tag-create",
+      () => ({
+        kind: "createTag",
+        tagName,
+        targetOid: null,
+        annotation: annotation === null ? null : { message: annotation },
+      }),
+      (result) => {
+        tagResult = result;
+      },
+      "repository",
+    );
+  }
+
+  function onTagDelete(tagName: string): void {
+    void performWrite(
+      "tag-delete",
+      () => ({ kind: "deleteTag", tagName, confirmed: true }),
+      (result) => {
+        tagResult = result;
+      },
+      "repository",
+    );
+  }
+
+  function onTagPush(tagName: string): void {
+    const remote = refs.data?.remotes[0]?.name ?? null;
+    if (remote === null) {
+      tagResult = "no remote to push to";
+      return;
+    }
+    void performWrite(
+      "tag-push",
+      () => ({ kind: "pushTag", remoteName: remote, tagName }),
+      (result) => {
+        tagResult = result;
+      },
+      "repository",
     );
   }
 
@@ -1082,6 +1210,76 @@
                     {onFetch}
                     {onPush}
                     {onPull}
+                  />
+                {/if}
+              </CardContent>
+            </Card>
+          {/if}
+
+          {#if stashAvailable}
+            <Separator />
+            <Card size="sm">
+              <CardHeader>
+                <CardTitle
+                  class="text-xs font-semibold tracking-wide text-ink-muted uppercase"
+                >
+                  Stashes
+                </CardTitle>
+              </CardHeader>
+              <CardContent class="flex flex-col gap-2">
+                {#if stashes.isPending}
+                  <StateBanner state="loading" title="Reading stashes…" />
+                {:else if stashes.isError}
+                  <StateBanner
+                    state="error"
+                    title="Could not read stashes"
+                    detail={describeProblem(stashes.error)}
+                  />
+                {:else}
+                  <StashPanel
+                    stashes={stashes.data?.stashes ?? []}
+                    disabled={mutationBusy}
+                    busy={mutationBusy}
+                    message={stashResult}
+                    onCreate={onStashCreate}
+                    onApply={onStashApply}
+                    onPop={onStashPop}
+                    onDrop={onStashDrop}
+                  />
+                {/if}
+              </CardContent>
+            </Card>
+          {/if}
+
+          {#if tagAvailable}
+            <Separator />
+            <Card size="sm">
+              <CardHeader>
+                <CardTitle
+                  class="text-xs font-semibold tracking-wide text-ink-muted uppercase"
+                >
+                  Tags
+                </CardTitle>
+              </CardHeader>
+              <CardContent class="flex flex-col gap-2">
+                {#if refs.isPending}
+                  <StateBanner state="loading" title="Reading tags…" />
+                {:else if refs.isError}
+                  <StateBanner
+                    state="error"
+                    title="Could not read refs"
+                    detail={describeProblem(refs.error)}
+                  />
+                {:else}
+                  <TagPanel
+                    tags={refs.data?.tags ?? []}
+                    remoteName={refs.data?.remotes[0]?.name ?? null}
+                    disabled={mutationBusy}
+                    busy={mutationBusy}
+                    message={tagResult}
+                    onCreate={onTagCreate}
+                    onDelete={onTagDelete}
+                    onPush={onTagPush}
                   />
                 {/if}
               </CardContent>

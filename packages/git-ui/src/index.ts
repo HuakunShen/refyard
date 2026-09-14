@@ -74,11 +74,13 @@ export { default as RefsPanel } from "./components/RefsPanel.svelte";
 export { default as RemotePanel } from "./components/RemotePanel.svelte";
 export { default as RepositoryList } from "./components/RepositoryList.svelte";
 export { default as StagingPanel } from "./components/StagingPanel.svelte";
+export { default as StashPanel } from "./components/StashPanel.svelte";
 export {
   default as StateBanner,
   type BannerState,
 } from "./components/StateBanner.svelte";
 export { default as StatusList } from "./components/StatusList.svelte";
+export { default as TagPanel } from "./components/TagPanel.svelte";
 
 export * from "./lib/format.js";
 export * from "./lib/geometry.js";
