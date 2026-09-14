@@ -254,6 +254,11 @@ export {
   type StagingEffectsOptions,
 } from "./coordinator/previews.js";
 export {
+  createRepositoryEffects,
+  REPOSITORY_MUTATION_KINDS,
+  type RepositoryEffectsOptions,
+} from "./coordinator/repository-effects.js";
+export {
   createMutationCoordinator,
   currentIndexKey,
   repositoryIdOfTarget,

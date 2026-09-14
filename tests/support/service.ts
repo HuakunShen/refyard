@@ -24,6 +24,7 @@ import {
   createReadService,
   createRecovery,
   createRecoveryStore,
+  createRepositoryEffects,
   createRepositoryRegistry,
   createRootRegistry,
   createSnapshotStore,
@@ -44,6 +45,7 @@ import {
   API_MAJOR,
   CONTRACT_VERSION,
   targetKindsOf,
+  type OperationRecord,
 } from "@refyard/git-contract";
 import { fixtureGitPath, type GitFixtureRepo } from "./repo.js";
 
@@ -164,15 +166,18 @@ export async function startTestService(
     // passes `effects` only to install a controlled stub.
     effects:
       options.effects ??
-      createStagingEffects({
-        engine,
-        repositories,
-        paths,
-        previews,
-        backups:
-          options.backupStore ??
-          createRecoveryStore({ root: join(stateRoot, "backups") }),
-      }),
+      [
+        ...createStagingEffects({
+          engine,
+          repositories,
+          paths,
+          previews,
+          backups:
+            options.backupStore ??
+            createRecoveryStore({ root: join(stateRoot, "backups") }),
+        }),
+        ...createRepositoryEffects({ engine, repositories }),
+      ],
     nextOperationId: () => `op_${(counter += 1).toString(36)}`,
     nextSequence: () => (sequence += 1),
   });
@@ -296,6 +301,67 @@ export async function startTestService(
       await http.close();
     },
   };
+}
+
+/**
+ * Submit one mutation over HTTP as a paired client and wait for its terminal state.
+ *
+ * An accepted operation is not an outcome: this polls the record until the state
+ * machine settles, exactly as a UI must. It throws on a submission refused at the
+ * boundary, because a 4xx there is a different fact from a failed operation.
+ */
+export async function submitAndWait(
+  service: TestService,
+  body: unknown,
+  options: { readonly timeoutMs?: number } = {},
+): Promise<OperationRecord> {
+  const token = await service.pair();
+  const submitted = await service.fetch("/api/v1/operations", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    token,
+    body: JSON.stringify(body),
+  });
+  const text = await submitted.text();
+  if (submitted.status !== 200 && submitted.status !== 202) {
+    throw new Error(
+      `submit failed with HTTP ${submitted.status}: ${text.slice(0, 400)}`,
+    );
+  }
+  // A fresh acceptance is the flat envelope; a replay wraps the record.
+  const parsed = JSON.parse(text) as {
+    operationId?: string;
+    operation?: { operationId: string };
+  };
+  const operationId = parsed.operationId ?? parsed.operation?.operationId;
+  if (operationId === undefined) {
+    throw new Error(`submit response carried no operation id: ${text.slice(0, 200)}`);
+  }
+  const terminal = new Set([
+    "succeeded",
+    "failed",
+    "needsAttention",
+    "unknown",
+    "cancelled",
+  ]);
+  const deadline = Date.now() + (options.timeoutMs ?? 15_000);
+  while (Date.now() < deadline) {
+    const response = await service.fetch(
+      `/api/v1/operations?operationId=${operationId}`,
+      { token },
+    );
+    if (response.status === 200) {
+      const listed = (await response.json()) as {
+        operations: OperationRecord[];
+      };
+      const record = listed.operations[0];
+      if (record !== undefined && terminal.has(record.status)) {
+        return record;
+      }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error("operation did not reach a terminal status in time");
 }
 
 /** The ticket carried in a pairing URL, from its query string or its fragment. */

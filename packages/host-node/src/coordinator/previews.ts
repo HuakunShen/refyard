@@ -17,26 +17,16 @@
  * 6. run the core workflow and report the outcome honestly, including `unknown`.
  */
 import { join } from "node:path";
-import type {
-  MutationKind,
-  OperationResult,
-  ParsedMutationRequest,
-  Problem,
-} from "@refyard/git-contract";
+import type { MutationKind, Problem } from "@refyard/git-contract";
 import { OPERATION_SCHEMAS } from "@refyard/git-contract";
 import {
   pathKey,
-  readHeadFacts,
-  readStatusFacts,
   commitIndex,
   restoreSelectedPaths,
   selectDiscardablePaths,
   stageSelectedPaths,
   unstageSelectedPaths,
   type GitEngine,
-  type GitFailureCode,
-  type HeadFacts,
-  type StatusFacts,
   type StatusRecord,
 } from "@refyard/git-core";
 import {
@@ -48,13 +38,23 @@ import {
 import type { PreviewStore } from "../filesystem/preview.js";
 import type { PathRegistry } from "../registry/paths.js";
 import type { RepositoryRegistry } from "../registry/repositories.js";
+import { createEffect, type EffectOutcome, type MutationEffect } from "./jobs.js";
 import {
-  createEffect,
-  type EffectOutcome,
-  type MutationEffect,
-} from "./jobs.js";
-import { createGitDirLookup, readOperationMarkers } from "./read-support.js";
-import { repositoryIdOfTarget } from "./submit.js";
+  createFactsResolver,
+  failed,
+  failedOp,
+  resultOf,
+  unknownOutcome,
+  writeOutcomeFromGit,
+  type Resolution,
+  type WorktreeFacts,
+} from "./effects-support.js";
+
+interface ResolvedPath {
+  readonly pathId: string;
+  readonly executionBytes: Uint8Array;
+  readonly executionText: string;
+}
 
 /** The one recovery-store method the discard effect depends on. */
 export interface RecoveryBackupWriter {
@@ -73,166 +73,13 @@ export interface StagingEffectsOptions {
   readonly backups: RecoveryBackupWriter;
 }
 
-interface WorktreeFacts {
-  readonly worktreeId: string;
-  readonly repositoryId: string;
-  readonly cwdHandle: string;
-  readonly worktreePath: string;
-  readonly head: HeadFacts;
-  readonly status: StatusFacts;
-}
-
-interface ResolvedPath {
-  readonly pathId: string;
-  readonly executionBytes: Uint8Array;
-  readonly executionText: string;
-}
-
-type Resolution<T> =
-  | { readonly ok: true; readonly value: T }
-  | { readonly ok: false; readonly problem: Problem };
-
-function failed(problem: Problem): EffectOutcome {
-  return { kind: "failed", problem };
-}
-
-function failedOp(
-  operationId: string,
-  code: Problem["code"],
-  message: string,
-): EffectOutcome {
-  return failed({ code, message, retryable: false, operationId });
-}
-
-function unknownOutcome(operationId: string, message: string): EffectOutcome {
-  return {
-    kind: "unknown",
-    problem: {
-      code: "UncertainOutcome",
-      message,
-      retryable: false,
-      operationId,
-    },
-  };
-}
-
-function resultOf(input: {
-  readonly summary: string;
-  readonly changedPaths: number | null;
-  readonly newHeadOid: string | null;
-}): OperationResult {
-  return {
-    summary: input.summary,
-    changedRefs: [],
-    changedPaths: input.changedPaths,
-    snapshotInvalidated: true,
-    newHeadOid: input.newHeadOid,
-  };
-}
-
-/**
- * How a Git failure of a *writing* command maps to an outcome.
- *
- * A clean non-zero exit failed without ambiguity. A timeout, a signal or any
- * other odd termination may have half-updated the index, and calling that
- * "failed" would hide a change; those are unknown.
- */
-function writeOutcomeFromGit(
-  operationId: string,
-  outcome: {
-    readonly code: GitFailureCode;
-    readonly exitCode: number | null;
-    readonly diagnostic: string;
-  },
-): EffectOutcome {
-  if (
-    outcome.code === "GitTimedOut" ||
-    outcome.code === "GitTerminatedBySignal" ||
-    outcome.code === "GitOutputIncomplete"
-  ) {
-    return unknownOutcome(
-      operationId,
-      `the git command did not finish cleanly (${outcome.code}); whether the index changed is not known and nothing was retried`,
-    );
-  }
-  const message =
-    outcome.diagnostic.trim().length > 0
-      ? `git refused the operation: ${outcome.diagnostic}`
-      : `git refused the operation (exit ${outcome.exitCode ?? "unknown"})`;
-  return failedOp(operationId, "GitCommandFailed", message.slice(0, 2000));
-}
-
 export function createStagingEffects(
   options: StagingEffectsOptions,
 ): readonly MutationEffect[] {
-  const gitDirs = createGitDirLookup(options.engine);
-
-  /** Resolve the target worktree and read Head/status against it right now. */
-  async function resolveFacts(
-    request: ParsedMutationRequest,
-    operationId: string,
-  ): Promise<Resolution<WorktreeFacts>> {
-    const repositoryId = repositoryIdOfTarget(request.target);
-    if (repositoryId === null || request.target.kind !== "worktree") {
-      return {
-        ok: false,
-        problem: {
-          code: "InvalidOperationPayload",
-          message: "this operation must target a worktree",
-          retryable: false,
-          operationId,
-        },
-      };
-    }
-    const record = await options.repositories.require(repositoryId);
-    const worktree = await options.repositories.worktree(
-      repositoryId,
-      request.target.worktreeId,
-    );
-    if (worktree.handle === null) {
-      return {
-        ok: false,
-        problem: {
-          code: "Forbidden",
-          message: `${worktree.displayPath.text} is outside every approved root`,
-          retryable: false,
-          operationId,
-        },
-      };
-    }
-    const gitDir = await gitDirs.gitDirFor({
-      worktreeId: worktree.worktreeId,
-      handle: worktree.handle,
-      isMain: worktree.isMain,
-      primaryGitDir: record.gitDir,
-    });
-    const [head, status] = await Promise.all([
-      readHeadFacts(options.engine, worktree.handle),
-      readStatusFacts(options.engine, {
-        cwdHandle: worktree.handle,
-        layout: {
-          gitDir: record.gitDir,
-          commonDir: record.commonDir,
-          topLevel: record.bare ? null : record.displayPath.text,
-          bare: record.bare,
-          shallow: record.shallow,
-          objectFormat: record.objectFormat,
-        },
-        operationMarkers: await readOperationMarkers(gitDir),
-      }),
-    ]);
-    return {
-      ok: true,
-      value: {
-        worktreeId: worktree.worktreeId,
-        repositoryId,
-        cwdHandle: worktree.handle,
-        worktreePath: worktree.path,
-        head,
-        status,
-      },
-    };
-  }
+  const resolveFacts = createFactsResolver({
+    engine: options.engine,
+    repositories: options.repositories,
+  });
 
   /**
    * Resolve every path id to raw bytes. One unknown or unrepresentable path

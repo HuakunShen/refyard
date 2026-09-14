@@ -29,6 +29,7 @@
   import { layoutPages, type GraphCommit } from "@refyard/git-graph";
   import {
     Badge,
+    BranchPanel,
     Button,
     Card,
     CardContent,
@@ -42,6 +43,7 @@
     DEFAULT_METRICS,
     ModeToggle,
     RefsPanel,
+    RemotePanel,
     Separator,
     RepositoryList,
     StagingPanel,
@@ -360,12 +362,16 @@
   let mutationBusy = $state(false);
   let stagingMessage = $state<string | null>(null);
   let commitResult = $state<string | null>(null);
+  let branchMessage = $state<string | null>(null);
+  let remoteMessage = $state<string | null>(null);
 
   const implementedKinds = $derived(
     new Set((capabilities.data?.operations ?? []).map((entry) => entry.kind)),
   );
   const stagingAvailable = $derived(implementedKinds.has("stagePaths"));
   const commitAvailable = $derived(implementedKinds.has("commit"));
+  const branchAvailable = $derived(implementedKinds.has("createBranch"));
+  const networkAvailable = $derived(implementedKinds.has("fetch"));
 
   /**
    * Follow an accepted operation to its terminal state.
@@ -403,6 +409,7 @@
     report: (message: string | null) => void = (message) => {
       stagingMessage = message;
     },
+    targetKind: "worktree" | "repository" = "worktree",
   ): Promise<void> {
     mutationBusy = true;
     report(null);
@@ -410,21 +417,34 @@
       if (selectedRepositoryId === null || primaryWorktreeId === null) {
         throw new Error("no repository selected");
       }
-      const snapshot = await client.status({
-        repositoryId: selectedRepositoryId,
-        worktreeId: primaryWorktreeId,
-      });
-      const operation = await buildOperation({
-        worktreeId: snapshot.worktreeId,
-      });
+      const operation = await buildOperation({ worktreeId: primaryWorktreeId });
+      const target =
+        targetKind === "worktree"
+          ? await (async () => {
+              const snapshot = await client.status({
+                repositoryId: selectedRepositoryId,
+                worktreeId: primaryWorktreeId,
+              });
+              return {
+                kind: "worktree" as const,
+                repositoryId: snapshot.repositoryId,
+                worktreeId: snapshot.worktreeId,
+                expectedSnapshotId: snapshot.snapshotId,
+              };
+            })()
+          : await (async () => {
+              const snapshot = await client.refs({
+                repositoryId: selectedRepositoryId,
+              });
+              return {
+                kind: "repository" as const,
+                repositoryId: snapshot.repositoryId,
+                expectedSnapshotId: snapshot.snapshotId,
+              };
+            })();
       const submitted = await mutations.submit({
         clientRequestId: `${label}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-        target: {
-          kind: "worktree",
-          repositoryId: snapshot.repositoryId,
-          worktreeId: snapshot.worktreeId,
-          expectedSnapshotId: snapshot.snapshotId,
-        },
+        target,
         operation,
       });
       const operationId =
@@ -436,6 +456,9 @@
       // correct when the stream is down.
       await queryClient.invalidateQueries({
         queryKey: ["status", baseUrl, token, selectedRepositoryId],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["refs", baseUrl, token, selectedRepositoryId],
       });
       await queryClient.invalidateQueries({
         queryKey: ["history", baseUrl, token, selectedRepositoryId],
@@ -510,6 +533,118 @@
       (result) => {
         commitResult = result;
       },
+    );
+  }
+
+  /* ----------------------------------------------------- branches and remotes */
+
+  function onBranchCreate(branchName: string): void {
+    void performWrite(
+      "create-branch",
+      () => ({
+        kind: "createBranch",
+        branchName,
+        startOid: null,
+        switchToIt: false,
+      }),
+      (result) => {
+        branchMessage = result;
+      },
+      "repository",
+    );
+  }
+
+  function onBranchSwitch(branchName: string): void {
+    void performWrite(
+      "switch-branch",
+      () => ({ kind: "switchBranch", branchName }),
+      (result) => {
+        branchMessage = result;
+      },
+      "worktree",
+    );
+  }
+
+  function onBranchRename(branchName: string, newName: string): void {
+    void performWrite(
+      "rename-branch",
+      () => ({ kind: "renameBranch", branchName, newName }),
+      (result) => {
+        branchMessage = result;
+      },
+      "repository",
+    );
+  }
+
+  function onBranchDelete(branchName: string): void {
+    void performWrite(
+      "delete-branch",
+      () => ({ kind: "deleteBranch", branchName, confirmed: true }),
+      (result) => {
+        branchMessage = result;
+      },
+      "repository",
+    );
+  }
+
+  function onRemoteAdd(remoteName: string, fetchUrl: string): void {
+    void performWrite(
+      "add-remote",
+      () => ({ kind: "addRemote", remoteName, fetchUrl, pushUrl: null }),
+      (result) => {
+        remoteMessage = result;
+      },
+      "repository",
+    );
+  }
+
+  function onRemoteRemove(remoteName: string): void {
+    void performWrite(
+      "remove-remote",
+      () => ({ kind: "removeRemote", remoteName, confirmed: true }),
+      (result) => {
+        remoteMessage = result;
+      },
+      "repository",
+    );
+  }
+
+  function onFetch(remoteName: string): void {
+    void performWrite(
+      "fetch",
+      () => ({ kind: "fetch", remoteName, prune: false, tags: "none" }),
+      (result) => {
+        remoteMessage = result;
+      },
+      "repository",
+    );
+  }
+
+  function onPush(remoteName: string, branchName: string): void {
+    void performWrite(
+      "push",
+      () => ({
+        kind: "push",
+        remoteName,
+        sourceRef: `refs/heads/${branchName}`,
+        destinationRef: `refs/heads/${branchName}`,
+        setUpstream: false,
+      }),
+      (result) => {
+        remoteMessage = result;
+      },
+      "repository",
+    );
+  }
+
+  function onPull(remoteName: string): void {
+    void performWrite(
+      "pull",
+      () => ({ kind: "pull", remoteName, mode: "ff-only" }),
+      (result) => {
+        remoteMessage = result;
+      },
+      "worktree",
     );
   }
 
@@ -881,6 +1016,77 @@
               {/if}
             </CardContent>
           </Card>
+
+          {#if branchAvailable}
+            <Separator />
+            <Card size="sm">
+              <CardHeader>
+                <CardTitle
+                  class="text-xs font-semibold tracking-wide text-ink-muted uppercase"
+                >
+                  Branches
+                </CardTitle>
+              </CardHeader>
+              <CardContent class="flex flex-col gap-2">
+                {#if refs.isPending}
+                  <StateBanner state="loading" title="Reading branches…" />
+                {:else if refs.isError}
+                  <StateBanner
+                    state="error"
+                    title="Could not read refs"
+                    detail={describeProblem(refs.error)}
+                  />
+                {:else}
+                  <BranchPanel
+                    refs={refs.data ?? null}
+                    disabled={mutationBusy}
+                    busy={mutationBusy}
+                    message={branchMessage}
+                    onCreate={onBranchCreate}
+                    onSwitch={onBranchSwitch}
+                    onRename={onBranchRename}
+                    onDelete={onBranchDelete}
+                  />
+                {/if}
+              </CardContent>
+            </Card>
+          {/if}
+
+          {#if networkAvailable}
+            <Separator />
+            <Card size="sm">
+              <CardHeader>
+                <CardTitle
+                  class="text-xs font-semibold tracking-wide text-ink-muted uppercase"
+                >
+                  Remotes &amp; sync
+                </CardTitle>
+              </CardHeader>
+              <CardContent class="flex flex-col gap-2">
+                {#if refs.isPending}
+                  <StateBanner state="loading" title="Reading remotes…" />
+                {:else if refs.isError}
+                  <StateBanner
+                    state="error"
+                    title="Could not read refs"
+                    detail={describeProblem(refs.error)}
+                  />
+                {:else}
+                  <RemotePanel
+                    refs={refs.data ?? null}
+                    disabled={mutationBusy}
+                    busy={mutationBusy}
+                    message={remoteMessage}
+                    onAdd={onRemoteAdd}
+                    onRemove={onRemoteRemove}
+                    {onFetch}
+                    {onPush}
+                    {onPull}
+                  />
+                {/if}
+              </CardContent>
+            </Card>
+          {/if}
         {/if}
       </aside>
 

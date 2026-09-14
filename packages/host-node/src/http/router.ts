@@ -28,6 +28,7 @@ import {
   previewsRequestSchema,
   repositoriesQuerySchema,
   repositoryQuerySchema,
+  validateOperationSemantics,
   worktreeQuerySchema,
   type Problem,
 } from "@refyard/git-contract";
@@ -226,6 +227,22 @@ export function mutationRoutes(): readonly RouteDefinition[] {
               code: "UnsupportedOperation",
               message:
                 "this host has no mutation engine; no operation was accepted and none will run",
+            });
+          }
+          // Semantic validation at the boundary: the schema pins the shape, and these
+          // rules — a branch name that would read as an option, a remote URL that is a
+          // transport helper in disguise, a rename to its own name — are refused here,
+          // before an operation is accepted or Git is reached.
+          const problems = validateOperationSemantics(body.operation, body.target);
+          if (problems.length > 0) {
+            throw new ReadProblem({
+              code: "InvalidRequest",
+              message: `the operation is not valid: ${problems
+                .slice(0, 4)
+                .map((entry) => `${entry.path ?? "operation"} ${entry.message}`)
+                .join("; ")}`,
+              details: { issues: problems.length },
+              retryable: false,
             });
           }
           const result = await mutations.jobs.submit({

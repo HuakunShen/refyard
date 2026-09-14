@@ -38,6 +38,7 @@ import {
   createReadService,
   createRecovery,
   createRecoveryStore,
+  createRepositoryEffects,
   createRepositoryRegistry,
   createRootRegistry,
   createSnapshotStore,
@@ -217,6 +218,7 @@ export async function assembleService(
     previews,
     backups: createRecoveryStore({ root: join(stateRoot, "backups") }),
   });
+  const repositoryEffects = createRepositoryEffects({ engine, repositories });
 
   const mutations = createMutationCoordinator({
     journal,
@@ -226,7 +228,7 @@ export async function assembleService(
     recovery,
     snapshots,
     events,
-    effects: stagingEffects,
+    effects: [...stagingEffects, ...repositoryEffects],
     nextOperationId: () => `op_${randomBytes(9).toString("base64url")}`,
     nextSequence: () => (sequence += 1),
   });

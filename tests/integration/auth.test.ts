@@ -345,10 +345,9 @@ describe("authorization and request shape", () => {
   });
 
   it("answers 501 for a mutation no effect implements, never a fake 202", async () => {
-    // Prevents: the UI believing a branch was created when this build has no code
-    // that could run it. (stagePaths and its siblings are implemented in T08; a
-    // branch operation still is not, and an unknown worktree on an implemented
-    // kind is a 404, not a 501.)
+    // Prevents: the UI believing a stash was created when this build has no code
+    // that could run it. (Staging is T08 and branches/remotes/network are T09; a
+    // stash operation still has no effect behind it.)
     const response = await service.fetch("/api/v1/operations", {
       method: "POST",
       token,
@@ -356,15 +355,16 @@ describe("authorization and request shape", () => {
       body: JSON.stringify({
         clientRequestId: "req-1",
         target: {
-          kind: "repository",
+          kind: "worktree",
           repositoryId: service.repositoryId,
+          worktreeId: "wt_unknown",
           expectedSnapshotId: "snap_unknown",
         },
         operation: {
-          kind: "createBranch",
-          branchName: "no-branch",
-          startOid: null,
-          switchToIt: false,
+          kind: "createStash",
+          message: null,
+          includeUntracked: false,
+          keepIndex: false,
         },
       }),
     });
