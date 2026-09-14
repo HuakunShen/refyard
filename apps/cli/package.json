@@ -17,5 +17,8 @@
     "@refyard/git-contract": "workspace:*",
     "@refyard/git-core": "workspace:*",
     "@refyard/host-node": "workspace:*"
+  },
+  "devDependencies": {
+    "citty": "catalog:"
   }
 }
