@@ -193,3 +193,60 @@ Environment: macOS 25.6.0 arm64, Node 26.8.2, git 2.50.1 (Apple Git-155). Remote
 every test are local bare repositories — **no network, no credentials, no hosting
 dependency** — so real HTTPS/SSH behaviour (helpers, SSH agent, host-key
 verification, credential prompts) is **unverified** by this round.
+
+---
+
+## T10 — Stash/pop and tags
+
+Delivered (7 operations):
+
+```
+packages/git-core/src/plan/tags.ts               tag create (light/annotated)/delete/exists
+packages/git-core/src/workflows/stash.ts         stash create/apply/pop/drop, tag create/delete
+packages/host-node/src/coordinator/stash-tag-effects.ts  the 7 effects
+packages/git-ui/src/components/{StashPanel,TagPanel}.svelte
+tests/integration/stash-tags.test.ts             12 cases
+tests/e2e/stash.spec.ts                          4 cases in Chromium
+```
+
+### Deviations and findings, recorded deliberately
+
+- **A locator is re-resolved before every stash write.** `stash@{n}` is a position in
+  a reflog; the workflow runs `rev-parse <locator>^{commit}` and compares the object
+  name to the one the request carried. A mismatch is a `Conflict` that says the list
+  moved, not a different stash to act on — the case
+  `refuses to apply when the locator now points at a different stash` drives an
+  external `git stash` between selection and submit.
+- **A conflicted pop is `needsAttention`, and that is checked, not assumed.** After a
+  non-zero `stash pop` the workflow re-resolves the entry by object name: Git's rule
+  is that a conflicted pop does not drop, and the re-check turns that rule into
+  evidence the record carries. The e2e case asserts the entry is still on screen.
+- **A timeout during a pop is `unknown`**, never a conflict: whether the stash was
+  applied (or dropped) is genuinely not known, and nothing continues after it.
+- **`createTag` pre-checks the name** (`rev-parse --verify --quiet`, exit 1 = absent)
+  so "already exists" is a `Conflict` with a clear message rather than Git's message
+  after the object was prepared. No `--force` exists anywhere; an annotated message
+  travels on stdin via `--file=- --cleanup=verbatim`, so signing configuration stays
+  in force and the message is byte-exact.
+- **`deleteTag` is local only** (the test pushes a tag, deletes it locally, and
+  asserts the remote still has it); **`pushTag`** publishes one tag through the same
+  explicit-ref push planner T09 built, with `--no-follow-tags` and no force.
+- **`git tag --delete` never touches a remote** and no `--force`/`--overwrite` path
+  exists in the planners, so the acceptance gate ("tag 无默认 overwrite/force") is a
+  property of the argv, not of a check that could be bypassed.
+
+### Verification, actually run
+
+| Command                                                     | Result                               |
+| ----------------------------------------------------------- | ------------------------------------ |
+| `pnpm exec vitest run tests/integration/stash-tags.test.ts` | 12 passed                            |
+| `pnpm test:e2e --grep stash`                                | 4 passed                             |
+| `pnpm test:e2e`                                             | 17 passed                            |
+| `pnpm test`                                                 | 458 passed (27 files)                |
+| `pnpm check`                                                | 8 packages, 0 errors                 |
+| `pnpm check:boundaries`                                     | 3 portable packages, 48 source files |
+| `pnpm check:contract`                                       | artifacts match, 438 named schemas   |
+| `pnpm test:portable`                                        | neutral IIFE, no host globals        |
+
+Unverified: stash behaviour with submodules (never recursed by this build, and no
+test drives one), and stash/pop under a real editor-driven conflict resolution.
