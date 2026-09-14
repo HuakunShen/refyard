@@ -26,6 +26,8 @@
     onSwitch: (branchName: string) => void;
     onRename: (branchName: string, newName: string) => void;
     onDelete: (branchName: string) => void;
+    /** Merge the named branch into the current one; `noFf` forces a merge commit. */
+    onMerge: (branchName: string, noFf: boolean) => void;
     class?: string;
   }
 
@@ -38,12 +40,14 @@
     onSwitch,
     onRename,
     onDelete,
+    onMerge,
     class: className = "",
   }: Props = $props();
 
   let newBranch = $state("");
   let renaming = $state<string | null>(null);
   let renameValue = $state("");
+  let mergeNoFf = $state(false);
 
   const branches = $derived(refs?.branches ?? []);
 </script>
@@ -109,6 +113,15 @@
               >
                 Switch
               </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={disabled || busy}
+                onclick={() => onMerge(branch.name, mergeNoFf)}
+                data-testid={`merge-${branch.name}`}
+              >
+                Merge in
+              </Button>
             {/if}
             <Button
               size="sm"
@@ -158,6 +171,15 @@
         Create
       </Button>
     </div>
+    <label class="flex items-center gap-1 text-xs text-ink-muted">
+      <input
+        type="checkbox"
+        aria-label="merge creates a commit"
+        bind:checked={mergeNoFf}
+        disabled={disabled || busy}
+      />
+      merge always creates a commit (--no-ff)
+    </label>
   {/if}
 
   {#if message !== null}

@@ -38,6 +38,7 @@
     CommitDetailPanel,
     CommitList,
     CommitPanel,
+    ConflictPanel,
     ConnectionPanel,
     DiffPanel,
     DEFAULT_METRICS,
@@ -61,6 +62,7 @@
     useQueryClient,
   } from "@tanstack/svelte-query";
   import { parseSessionConfig, stripTicket } from "$lib/connection.js";
+  import { followOperation } from "$lib/operation-follow.js";
   import {
     readStoredBaseUrl,
     readStoredToken,
@@ -394,14 +396,6 @@
     }),
   );
 
-  const OPERATION_TERMINAL = new Set([
-    "succeeded",
-    "failed",
-    "needsAttention",
-    "unknown",
-    "cancelled",
-  ]);
-
   let mutationBusy = $state(false);
   let stagingMessage = $state<string | null>(null);
   let commitResult = $state<string | null>(null);
@@ -409,6 +403,7 @@
   let remoteMessage = $state<string | null>(null);
   let worktreeMessage = $state<string | null>(null);
   let submoduleMessage = $state<string | null>(null);
+  let mergeMessage = $state<string | null>(null);
 
   const implementedKinds = $derived(
     new Set((capabilities.data?.operations ?? []).map((entry) => entry.kind)),
@@ -421,6 +416,15 @@
   const tagAvailable = $derived(implementedKinds.has("createTag"));
   const worktreeAvailable = $derived(implementedKinds.has("createWorktree"));
   const submoduleAvailable = $derived(implementedKinds.has("addSubmodule"));
+  const mergeAvailable = $derived(implementedKinds.has("merge"));
+  /** The operation Git reports as unfinished, straight from the status read. */
+  const operationInProgress = $derived(
+    status.data?.operationInProgress ?? null,
+  );
+  /** Conflicted paths and their index stages, from the same read. */
+  const conflictedPaths = $derived(
+    (status.data?.entries ?? []).filter((entry) => entry.kind === "unmerged"),
+  );
   /** Branch names a new worktree may check out, from the refs read. */
   const branchNames = $derived(
     (refs.data?.branches ?? []).map((branch) => branch.name),
@@ -429,21 +433,12 @@
   /**
    * Follow an accepted operation to its terminal state.
    *
-   * The UI shows an outcome, so it polls the record rather than pretending the 202
-   * is the result. A lost poll is surfaced as-is; nothing is resubmitted.
+   * The UI shows an outcome, so it polls the record rather than pretending the 202 is
+   * the result. The polling rules — a lost connection re-reads, never resubmits — live
+   * in `$lib/operation-follow.ts`, where they are tested without a browser.
    */
   async function awaitOperation(operationId: string): Promise<string> {
-    for (let attempt = 0; attempt < 120; attempt += 1) {
-      const record = await mutations.get(operationId);
-      if (OPERATION_TERMINAL.has(record.status)) {
-        if (record.status === "succeeded") {
-          return record.result?.summary ?? "done";
-        }
-        return `${record.status}: ${record.problem?.message ?? "no detail"}`;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 250));
-    }
-    return "the operation did not finish in time; check the operation list before retrying";
+    return followOperation(mutations, operationId);
   }
 
   /**
@@ -646,6 +641,60 @@
         branchMessage = result;
       },
       "repository",
+    );
+  }
+
+  /* ------------------------------------------------------------------ merging */
+
+  /**
+   * Merge a branch into the current one.
+   *
+   * The request carries the commit the branch points at *now*, read from the refs on
+   * screen, so a branch that moves before the request lands is a stale snapshot the
+   * host refuses rather than a different merge than the one the user chose.
+   */
+  function onBranchMerge(branchName: string, noFf: boolean): void {
+    const branch = (refs.data?.branches ?? []).find(
+      (entry) => entry.name === branchName,
+    );
+    if (branch === undefined) {
+      mergeMessage = `no branch named ${branchName} is on screen; refresh and retry`;
+      return;
+    }
+    void performWrite(
+      "merge",
+      () => ({
+        kind: "merge",
+        sourceOid: branch.oid,
+        mode: noFf ? ("no-ff" as const) : ("default" as const),
+        message: null,
+      }),
+      (result) => {
+        mergeMessage = result;
+      },
+      "worktree",
+    );
+  }
+
+  function onMergeContinue(): void {
+    void performWrite(
+      "continue-merge",
+      () => ({ kind: "continueMerge", message: null }),
+      (result) => {
+        mergeMessage = result;
+      },
+      "worktree",
+    );
+  }
+
+  function onMergeAbort(): void {
+    void performWrite(
+      "abort-merge",
+      () => ({ kind: "abortMerge", confirmed: true }),
+      (result) => {
+        mergeMessage = result;
+      },
+      "worktree",
     );
   }
 
@@ -1282,6 +1331,18 @@
             </CardContent>
           </Card>
 
+          {#if mergeAvailable && (operationInProgress !== null || mergeMessage !== null)}
+            <ConflictPanel
+              {operationInProgress}
+              conflicted={conflictedPaths}
+              disabled={mutationBusy}
+              busy={mutationBusy}
+              message={mergeMessage}
+              onContinue={onMergeContinue}
+              onAbort={onMergeAbort}
+            />
+          {/if}
+
           {#if stagingAvailable}
             <Separator />
 
@@ -1385,6 +1446,7 @@
                     onSwitch={onBranchSwitch}
                     onRename={onBranchRename}
                     onDelete={onBranchDelete}
+                    onMerge={onBranchMerge}
                   />
                 {/if}
               </CardContent>

@@ -44,6 +44,7 @@ import {
   createSnapshotStore,
   createStagingEffects,
   createStashTagEffects,
+  createMergeEffects,
   createTextCodec,
   createWorktreeEffects,
   createWorktreeRegistry,
@@ -225,6 +226,7 @@ export async function assembleService(
     engine,
     repositories,
   });
+  const mergeEffects = createMergeEffects({ engine, repositories });
   const worktreeEffects = createWorktreeEffects({
     engine,
     repositories,
@@ -245,6 +247,7 @@ export async function assembleService(
       ...repositoryEffects,
       ...stashTagEffects,
       ...worktreeEffects,
+      ...mergeEffects,
     ],
     nextOperationId: () => `op_${randomBytes(9).toString("base64url")}`,
     nextSequence: () => (sequence += 1),

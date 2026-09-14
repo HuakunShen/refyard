@@ -171,7 +171,8 @@ test.describe("read-only workbench", () => {
 
     // The badge states what is implemented, and the controls on screen match it: every
     // surface whose operations have effects is mounted, and a kind this build has no
-    // effect for — merging is the remaining one — offers no control at all.
+    // effect for — cloning needs a workspace root this build cannot approve yet —
+    // offers no control at all.
     await expect(page.getByText(/write operations/)).toBeVisible();
     for (const panel of [
       "staging-panel",
@@ -179,10 +180,11 @@ test.describe("read-only workbench", () => {
       "tag-panel",
       "worktree-panel",
       "submodule-panel",
+      "branch-panel",
     ]) {
       await expect(page.getByTestId(panel)).toBeVisible();
     }
-    await expect(page.getByRole("button", { name: /^merge/i })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^clone/i })).toHaveCount(0);
   });
 
   test("reports a bad ticket instead of pairing", async ({ page }) => {

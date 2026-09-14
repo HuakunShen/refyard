@@ -195,8 +195,10 @@ describe("git client", () => {
     expect(kinds).toContain("createBranch");
     expect(kinds).toContain("createStash");
     expect(kinds).toContain("createWorktree");
-    // A kind with no effect must stay absent until one exists.
-    expect(kinds).not.toContain("abortMerge");
+    expect(kinds).toContain("abortMerge");
+    // A kind with no effect must stay absent until one exists: creating a repository
+    // addresses a workspace root, which this build has no flow for.
+    expect(kinds).not.toContain("initRepository");
     expect(capabilities.reads).toContain("status");
   });
 

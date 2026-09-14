@@ -39,7 +39,11 @@ import {
   type JobEngine,
   type MutationEffect,
 } from "./jobs.js";
-import { statusIndexKey, type PreconditionContext } from "./preconditions.js";
+import {
+  mayRunDuringOperation,
+  statusIndexKey,
+  type PreconditionContext,
+} from "./preconditions.js";
 
 export interface MutationCoordinatorOptions {
   readonly journal: JournalStore;
@@ -207,6 +211,9 @@ export function createMutationCoordinator(
           : snapshot.indexKey === null ||
             snapshot.indexKey === currentIndexKey(status),
       operationInProgress: status.operationInProgress,
+      // Continuing or aborting a merge is how a merge ends; every other kind — a
+      // second merge included — is blocked while one is unfinished.
+      mayRunDuring: mayRunDuringOperation(request.operation.kind),
       restartBlock:
         block === null
           ? null

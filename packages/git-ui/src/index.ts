@@ -68,6 +68,7 @@ export { default as CommitGraph } from "./components/CommitGraph.svelte";
 export { default as CommitList } from "./components/CommitList.svelte";
 export { default as CommitPanel } from "./components/CommitPanel.svelte";
 export { default as ConfirmAction } from "./components/ConfirmAction.svelte";
+export { default as ConflictPanel } from "./components/ConflictPanel.svelte";
 export { default as ConnectionPanel } from "./components/ConnectionPanel.svelte";
 export { default as DiffPanel } from "./components/DiffPanel.svelte";
 export { default as RefsPanel } from "./components/RefsPanel.svelte";

@@ -269,6 +269,11 @@ export {
   type WorktreeEffectsOptions,
 } from "./coordinator/worktree-effects.js";
 export {
+  createMergeEffects,
+  MERGE_MUTATION_KINDS,
+  type MergeEffectsOptions,
+} from "./coordinator/merge-effects.js";
+export {
   createMutationCoordinator,
   currentIndexKey,
   repositoryIdOfTarget,

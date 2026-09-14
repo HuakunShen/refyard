@@ -33,6 +33,16 @@ export interface PreconditionContext {
   readonly indexUnchanged: boolean;
   /** Operation Git reports as in progress, if any. */
   readonly operationInProgress: string | null;
+  /**
+   * In-progress operations this request is allowed to run alongside.
+   *
+   * Only the merge family passes anything here, and only `merge`: continuing or
+   * aborting a merge *is* the way to finish it, so refusing those because a merge is
+   * in progress would leave the repository with no way out. A rebase, cherry-pick,
+   * bisect or mailbox apply is not on any list — this build did not start it and
+   * must not be the thing that ends it.
+   */
+  readonly mayRunDuring?: readonly string[];
   /** A restart left an unresolved operation for this repository. */
   readonly restartBlock: {
     readonly reason: string;
@@ -84,7 +94,10 @@ export function checkPreconditions(
     };
   }
 
-  if (context.operationInProgress !== null) {
+  if (
+    context.operationInProgress !== null &&
+    !(context.mayRunDuring ?? []).includes(context.operationInProgress)
+  ) {
     return {
       ok: false,
       problem: {
@@ -214,4 +227,35 @@ export function indexFingerprint(input: {
     )
     .sort();
   return `${input.headOid ?? "(unborn)"}\n${rows.join("\n")}`;
+}
+
+/**
+ * In-progress operations each mutation may run alongside.
+ *
+ * While `merge` is unfinished, four kinds stay available, because they are the
+ * documented way through a conflict:
+ *
+ * - `stagePaths` **is** the resolution step. Git's own workflow is "resolve the
+ *   files, `git add` them, commit", so blocking staging would leave the repository
+ *   with no way to record the resolution the UI asks the user to perform.
+ * - `unstagePaths` is that step in reverse — taking a wrong stage back out before
+ *   continuing — and it cannot discard working-tree content.
+ * - `continueMerge` and `abortMerge` are the two ways to end the merge.
+ *
+ * Everything else stays blocked, `commit` and `discardTrackedPaths` included: a plain
+ * commit would write the wrong history in place of the merge commit, and a discard
+ * fights the conflict state. A rebase, cherry-pick, bisect, revert or mailbox apply is
+ * not on any list either — this build did not start it and must not be the thing that
+ * ends it.
+ */
+export function mayRunDuringOperation(kind: string): readonly string[] {
+  switch (kind) {
+    case "stagePaths":
+    case "unstagePaths":
+    case "continueMerge":
+    case "abortMerge":
+      return ["merge"];
+    default:
+      return [];
+  }
 }
