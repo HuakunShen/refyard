@@ -23,6 +23,7 @@ import {
   fixtureGitPath,
   type GitFixtureRepo,
 } from "../support/repo.js";
+import { isPairingCommand } from "../../apps/cli/src/pairing-reprint.js";
 import { ticketFrom } from "../support/service.js";
 
 const cliDirectory = join(
@@ -128,6 +129,17 @@ describe("argument parsing", () => {
     if (defaulted.ok && defaulted.command.kind === "serve") {
       expect(defaulted.command.ticketTtlSeconds).toBe(60);
     }
+  });
+
+  it("recognises the pairing reprint keystroke and nothing else", () => {
+    // The keystroke mints a credential, so the match must be exact: a line that happens
+    // to contain a p, or an empty Enter press, must not print a ticket.
+    expect(isPairingCommand("p")).toBe(true);
+    expect(isPairingCommand(" P ")).toBe(true);
+    expect(isPairingCommand("pair")).toBe(true);
+    expect(isPairingCommand("")).toBe(false);
+    expect(isPairingCommand("quit")).toBe(false);
+    expect(isPairingCommand("repo")).toBe(false);
   });
 
   it("rejects a ticket ttl that is missing, not a number, or outside 1..86400", () => {
@@ -282,6 +294,48 @@ describe("serving a repository", () => {
       expect(io.lines.join("\n")).toContain("Ctrl+C");
     } finally {
       await running.close();
+    }
+  });
+
+  it("keeps serving after startup when the terminal interface is installed", async () => {
+    // Prevents: a startup-order bug where the console wiring closed the service the
+    // moment `runService` resolved, so the process exited (cleanly, code 0) before
+    // any browser could pair — with no error anywhere.
+    const io = collect();
+    const installedInts = new Set(process.listeners("SIGINT"));
+    const installedTerms = new Set(process.listeners("SIGTERM"));
+    const running = await runService({
+      repositoryPath: repo.root,
+      gitPath: fixtureGitPath(),
+      port: 0,
+      openBrowser: false,
+      ticketTtlSeconds: 60,
+      webRoot: null,
+      allowRoot: false,
+      write: io.write,
+    });
+    try {
+      // An unauthenticated read must still be refused over HTTP — anything proves
+      // the listener is up, and 401 proves it is this service answering.
+      const response = await fetch(
+        `http://127.0.0.1:${running.http.port}/api/v1/status`,
+      );
+      expect(response.status).toBe(401);
+      expect(io.lines.join("\n")).toContain("press p + Enter");
+    } finally {
+      await running.close();
+      // The production path installs process-level signal handlers; remove the ones
+      // this test added so they cannot intercept a later Ctrl+C of the test runner.
+      for (const listener of process.listeners("SIGINT")) {
+        if (!installedInts.has(listener)) {
+          process.removeListener("SIGINT", listener);
+        }
+      }
+      for (const listener of process.listeners("SIGTERM")) {
+        if (!installedTerms.has(listener)) {
+          process.removeListener("SIGTERM", listener);
+        }
+      }
     }
   });
 

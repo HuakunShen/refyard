@@ -20,6 +20,10 @@
  * no service installer and no supervision — Xross is the future supervisor, and it
  * is not this release.
  */
+import {
+  createInterface,
+  type Interface as ConsoleInterface,
+} from "node:readline";
 import { dirname, join } from "node:path";
 import { realpath, stat } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
@@ -58,6 +62,7 @@ import {
   type UnavailableReason,
 } from "@refyard/git-contract";
 import { DEFAULT_PORT, DEFAULT_TICKET_TTL_SECONDS } from "./args.js";
+import { isPairingCommand } from "./pairing-reprint.js";
 import { openInBrowser } from "./browser.js";
 import { MINIMAL_PAGE } from "./minimal-page.js";
 
@@ -343,6 +348,9 @@ export async function runService(
   options.write(
     `  ready ${JSON.stringify({ serviceInstanceId: http.serviceInstanceId, port: http.port, url: origin })}`,
   );
+  options.write(
+    `  press p + Enter to print another pairing URL (each is single use)`,
+  );
   options.write(`  press Ctrl+C to stop`);
 
   if (options.openBrowser) {
@@ -356,6 +364,9 @@ export async function runService(
   }
 
   let closed = false;
+  // Created once the listener is up; `close` shuts it down so the terminal
+  // interface never holds the process open after a stop.
+  let consoleInterface: ConsoleInterface | null = null;
   const close = async (): Promise<void> => {
     if (closed) {
       return;
@@ -364,6 +375,7 @@ export async function runService(
     // Stop accepting new requests first, then drop sessions: an in-flight read gets
     // to finish, and nothing new is paired after the user asked to stop.
     await http.close();
+    consoleInterface?.close();
   };
 
   if (options.installSignalHandlers !== false) {
@@ -376,6 +388,20 @@ export async function runService(
     };
     process.on("SIGINT", onSignal);
     process.on("SIGTERM", onSignal);
+
+    // A second browser needs a second ticket, and minting must stay out of the
+    // authenticated API: the user's terminal is the channel that cannot be spoofed by a
+    // web page. The interface is closed with the service so it never holds the process
+    // open after a stop.
+    const readline = createInterface({ input: process.stdin });
+    consoleInterface = readline;
+    readline.on("line", (line) => {
+      if (isPairingCommand(line)) {
+        options.write("");
+        options.write("  a fresh pairing URL (single use):");
+        options.write(`    ${http.pairingUrl(origin)}`);
+      }
+    });
   }
 
   return {
