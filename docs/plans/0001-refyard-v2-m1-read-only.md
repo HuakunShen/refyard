@@ -308,6 +308,19 @@ Deviations and findings, recorded deliberately:
 - **The e2e suite was run and passed** (7 tests, Chromium 153.0.8010.12 via Playwright 1.63.0, on
   macOS 25.6.0 arm64, git 2.50.1 Apple Git-155). Firefox, WebKit and Windows are **not**
   verified.
+- **Ticket life is configurable and the terminal can mint another URL** (user direction,
+  2026-09-15, after a real pairing failure was diagnosed from the service log). The diagnosis
+  first: the reported "ticket is not valid" was **not expiry** — the log shows the first browser
+  exchanged its ticket (200) and the failure was the single-use rule consuming the ticket when a
+  second browser opened the same URL. Two changes followed. `--ticket-ttl <seconds>` (1..86400,
+  default 60) widens the printed ticket's life, and the banner reports the effective value; the
+  auth store takes the same value and the TTL tests use an injected clock. Because single use is
+  a property minting cannot relax, `refyard open`/`serve` also reads the terminal: typing `p` or
+  `pair` and Enter prints a fresh single-use pairing URL for the next browser. Verified by
+  driving the bundled CLI over a pipe: the reprinted ticket exchanges for a session (200) and the
+  session performs an authenticated read (200); a regression test covers that the service is
+  still answering after startup (the first wiring of this feature closed the listener the moment
+  `runService` resolved — a clean exit 0 with no error anywhere).
 
 ## 5. Risks and standing decisions
 
