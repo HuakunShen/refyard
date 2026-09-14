@@ -85,6 +85,7 @@ import type { HostWorktree, WorktreeRegistry } from "../registry/worktrees.js";
 import type { RootRegistry } from "../registry/roots.js";
 import type { PreviewStore } from "../filesystem/preview.js";
 import type { SnapshotStore, SnapshotRecord } from "./snapshots.js";
+import { indexFingerprint } from "./preconditions.js";
 import {
   createGitDirLookup,
   fileExistsIn,
@@ -425,6 +426,7 @@ export function createReadService(options: ReadServiceOptions): ReadService {
           repositoryId: record.repositoryId,
           worktreeId: worktree.worktreeId,
           headOid: facts.head.oid,
+          indexKey: indexKeyOf(facts),
         });
         const entries = facts.records.map((entry) => {
           const binding = mintPath({
@@ -1087,10 +1089,19 @@ export function createReadService(options: ReadServiceOptions): ReadService {
             details: { pathCount: query.pathIds.length },
           });
         }
+        // The preview names the state it was taken against, so a mutation built on
+        // it is refused if the index moved in between.
+        const previewFacts = await readStatusFacts(options.engine, {
+          cwdHandle: requireHandle(worktree),
+          layout: layoutOf(record),
+          operationMarkers: [],
+        });
         const snapshot = options.snapshots.create({
           kind: "status",
           repositoryId: record.repositoryId,
           worktreeId: worktree.worktreeId,
+          headOid: previewFacts.head.oid,
+          indexKey: indexKeyOf(previewFacts),
         });
 
         const tokens = [];
@@ -1160,6 +1171,37 @@ export function createReadService(options: ReadServiceOptions): ReadService {
       };
     }
     return readHeadFacts(options.engine, worktree.handle);
+  }
+
+  /**
+   * The index fingerprint a mutation will be checked against.
+   *
+   * It covers the paths Git already reported as changed plus the Head, which is
+   * enough to detect "the state the user confirmed has moved" without hashing the
+   * whole repository on every read — the design forbids that explicitly.
+   */
+  function indexKeyOf(facts: {
+    readonly head: { readonly oid: string | null };
+    readonly records: readonly {
+      readonly path: Uint8Array;
+      readonly originalPath: Uint8Array | null;
+      readonly modes: {
+        readonly index: string | null;
+        readonly worktree: string | null;
+      };
+      readonly oids: { readonly index: string | null };
+      readonly stages: readonly unknown[];
+    }[];
+  }): string {
+    return indexFingerprint({
+      headOid: facts.head.oid,
+      entries: facts.records.map((entry) => ({
+        pathKey: `${bytesKey(entry.path)}:${entry.originalPath === null ? "" : bytesKey(entry.originalPath)}`,
+        mode: entry.modes.index ?? entry.modes.worktree ?? "-",
+        oid: entry.oids.index ?? "-",
+        stage: entry.stages.length,
+      })),
+    });
   }
 
   function collectTips(

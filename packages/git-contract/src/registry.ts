@@ -58,6 +58,7 @@ import {
   historyPageSchema,
   historyQuerySchema,
   operationQuerySchema,
+  operationsListQuerySchema,
   operationRecordSchema,
   operationResultSchema,
   operationsListResponseSchema,
@@ -188,6 +189,7 @@ export const CONTRACT_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   HistoryQuery: historyQuerySchema,
   DiffQuery: diffQuerySchema,
   OperationQuery: operationQuerySchema,
+  OperationsListQuery: operationsListQuerySchema,
   EventsQuery: eventsQuerySchema,
 };
 

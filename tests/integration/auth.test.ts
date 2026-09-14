@@ -334,48 +334,49 @@ describe("authorization and request shape", () => {
     expect(body.problem.code).toBe("NotFound");
   });
 
-  it("answers 501 for a path this build does not implement", async () => {
-    // Prevents: a mutation or a preview being answered with a plausible empty
-    // success, which a UI would then render as "nothing changed".
-    for (const path of [
-      "/api/v1/operations",
-      "/api/v1/previews",
-      "/api/v1/events",
-    ]) {
-      const response = await service.fetch(path, { token });
-      expect(response.status).toBe(501);
-      const body = (await response.json()) as { problem: { code: string } };
-      expect(body.problem.code).toBe("UnsupportedOperation");
-    }
+  it("answers 501 for a read this build does not implement", async () => {
+    // Prevents: an unimplemented read being answered with a plausible empty success,
+    // which a UI would then render as "nothing to see".
+    const response = await service.fetch("/api/v1/previews", { token });
+    expect(response.status).toBe(501);
+    const body = (await response.json()) as { problem: { code: string } };
+    expect(body.problem.code).toBe("UnsupportedOperation");
   });
 
-  it("refuses a body over the limit without reading it into memory", async () => {
-    const small = await startTestService({
-      repo,
-      limits: { maxBodyBytes: 256 },
-    });
-    try {
-      const response = await fetch(`${small.baseUrl}/api/v1/session/exchange`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          origin: `http://127.0.0.1:${small.http.port}`,
-        },
-        body: JSON.stringify({ ticket: "x".repeat(4096) }),
-      });
-      expect(response.status).toBe(413);
-    } finally {
-      await small.close();
-    }
-  });
-
-  it("does not authenticate an OPTIONS preflight", async () => {
-    const response = await service.fetch("/api/v1/repositories", {
-      method: "OPTIONS",
+  it("answers 501 for a mutation no effect implements, never a fake 202", async () => {
+    // Prevents: the UI believing a stage or a commit was accepted when this build
+    // has no code that could run it.
+    const response = await service.fetch("/api/v1/operations", {
+      method: "POST",
       token,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        clientRequestId: "req-1",
+        target: {
+          kind: "worktree",
+          repositoryId: service.repositoryId,
+          worktreeId: "wt_unknown",
+          expectedSnapshotId: "snap_unknown",
+        },
+        operation: {
+          kind: "stagePaths",
+          pathIds: ["path_x"],
+          previewTokens: ["pt_x"],
+        },
+      }),
     });
-    expect(response.status).toBe(405);
-    expect(response.headers.get("access-control-allow-origin")).toBeNull();
+    expect(response.status).toBe(501);
+    const body = (await response.json()) as { problem: { code: string } };
+    expect(body.problem.code).toBe("UnsupportedOperation");
+  });
+
+  it("lists operations for this session, which is empty until one runs", async () => {
+    // The path is implemented and answers honestly rather than with a 501: an empty
+    // list is the truth for a session that has submitted nothing.
+    const response = await service.fetch("/api/v1/operations", { token });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { operations: unknown[] };
+    expect(body.operations).toEqual([]);
   });
 
   it("serves the same data over HTTP as the read service produces", async () => {

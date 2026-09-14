@@ -18,9 +18,13 @@
  */
 import { z } from "zod";
 import {
+  MutationRequestSchema,
+  cancelOperationRequestSchema,
   capabilitiesQuerySchema,
   diffQuerySchema,
   historyQuerySchema,
+  operationAcceptedSchema,
+  operationsListQuerySchema,
   repositoriesQuerySchema,
   repositoryQuerySchema,
   worktreeQuerySchema,
@@ -29,23 +33,32 @@ import {
 import type { ReadService } from "../coordinator/reads.js";
 import { ReadProblem } from "../coordinator/reads.js";
 import type { Session } from "./auth.js";
+import type { MutationCoordinator } from "../coordinator/submit.js";
+
+/** What a route handler may use. The engine is absent in a read-only host. */
+export interface RouteServices {
+  readonly read: ReadService;
+  readonly mutations?: MutationCoordinator | undefined;
+}
 
 export interface RouteDefinition {
   readonly method: "GET" | "POST";
   /** Exact path, no parameters: every input travels in the query or the body. */
   readonly path: string;
   /**
-   * The contract schema for this route's query.
+   * The contract schema for this route's *query*.
    *
    * Exposed so the server can convert raw parameter strings to the types the schema
    * declares before it checks the session's grant, and so the conversion stays
    * driven by the contract rather than by a list of key names kept in two places.
+   * Absent on action routes, whose input is a validated JSON body.
    */
-  readonly schema: z.ZodObject<z.ZodRawShape>;
+  readonly schema?: z.ZodObject<z.ZodRawShape>;
   handle(input: {
     readonly session: Session;
     readonly query: unknown;
-    readonly read: ReadService;
+    readonly body: unknown;
+    readonly services: RouteServices;
   }): Promise<unknown>;
 }
 
@@ -60,13 +73,13 @@ export interface RouteDefinition {
 function readRoute<Schema extends z.ZodObject<z.ZodRawShape>>(
   path: string,
   schema: Schema,
-  run: (query: z.infer<Schema>, read: ReadService) => Promise<unknown>,
+  run: (query: z.infer<Schema>, services: RouteServices) => Promise<unknown>,
 ): RouteDefinition {
   return {
     method: "GET",
     path,
     schema,
-    async handle({ query, read }) {
+    async handle({ query, services }) {
       const parsed = schema.safeParse(query);
       if (!parsed.success) {
         const first = parsed.error.issues[0];
@@ -80,7 +93,7 @@ function readRoute<Schema extends z.ZodObject<z.ZodRawShape>>(
           details: { issues: parsed.error.issues.length },
         });
       }
-      return run(parsed.data, read);
+      return run(parsed.data, services);
     },
   };
 }
@@ -90,42 +103,185 @@ export function readRoutes(): readonly RouteDefinition[] {
     readRoute(
       "/api/v1/capabilities",
       capabilitiesQuerySchema,
-      async (_query, read) => read.capabilities(),
+      async (_query, services) => services.read.capabilities(),
     ),
     readRoute(
       "/api/v1/repositories",
       repositoriesQuerySchema,
-      async (_query, read) => read.repositories(),
+      async (_query, services) => services.read.repositories(),
     ),
-    readRoute("/api/v1/status", worktreeQuerySchema, async (query, read) =>
-      read.status(query),
+    readRoute("/api/v1/status", worktreeQuerySchema, async (query, services) =>
+      services.read.status(query),
     ),
-    readRoute("/api/v1/history", historyQuerySchema, async (query, read) =>
-      read.history(query),
+    readRoute("/api/v1/history", historyQuerySchema, async (query, services) =>
+      services.read.history(query),
     ),
-    readRoute("/api/v1/refs", repositoryQuerySchema, async (query, read) =>
-      read.refs(query),
+    readRoute("/api/v1/refs", repositoryQuerySchema, async (query, services) =>
+      services.read.refs(query),
     ),
-    readRoute("/api/v1/diff", diffQuerySchema, async (query, read) =>
-      read.diff(query),
+    readRoute("/api/v1/diff", diffQuerySchema, async (query, services) =>
+      services.read.diff(query),
     ),
-    readRoute("/api/v1/worktrees", repositoryQuerySchema, async (query, read) =>
-      read.worktrees(query),
+    readRoute(
+      "/api/v1/worktrees",
+      repositoryQuerySchema,
+      async (query, services) => services.read.worktrees(query),
     ),
-    readRoute("/api/v1/submodules", worktreeQuerySchema, async (query, read) =>
-      read.submodules(query),
+    readRoute(
+      "/api/v1/submodules",
+      worktreeQuerySchema,
+      async (query, services) => services.read.submodules(query),
     ),
-    readRoute("/api/v1/stashes", repositoryQuerySchema, async (query, read) =>
-      read.stashes(query),
+    readRoute(
+      "/api/v1/stashes",
+      repositoryQuerySchema,
+      async (query, services) => services.read.stashes(query),
+    ),
+    readRoute(
+      "/api/v1/operations",
+      operationsListQuerySchema,
+      async (query, services) => {
+        const jobs = services.mutations?.jobs;
+        if (jobs === undefined) {
+          throw new ReadProblem({
+            code: "UnsupportedOperation",
+            message: "this host has no operation engine",
+          });
+        }
+        if (query.operationId !== undefined) {
+          const record = jobs.get(query.operationId, SERVICES_ACTOR);
+          if (record === null) {
+            throw new ReadProblem({
+              code: "NotFound",
+              message: "no such operation for this session",
+            });
+          }
+          return { operations: [record], truncated: false };
+        }
+        return jobs.list({ actor: SERVICES_ACTOR, limit: query.limit ?? 50 });
+      },
     ),
   ];
 }
 
+/**
+ * Declare an action route: one that takes a JSON body.
+ *
+ * The body schema is applied here for the same reason a read route applies its
+ * query schema — no handler can forget it, and the parameter's type comes from the
+ * schema rather than from a cast.
+ */
+function actionRoute<Schema extends z.ZodType<unknown>>(
+  path: string,
+  schema: Schema,
+  run: (body: z.infer<Schema>, services: RouteServices) => Promise<unknown>,
+): RouteDefinition {
+  return {
+    method: "POST",
+    path,
+    async handle({ body, services }) {
+      const parsed = schema.safeParse(body);
+      if (!parsed.success) {
+        const first = parsed.error.issues[0];
+        throw new ReadProblem({
+          code: "InvalidRequest",
+          message: `the body for ${path} is not valid: ${
+            first === undefined
+              ? "no detail"
+              : `${first.path.join(".") || "(root)"} ${first.message}`
+          }`,
+          details: { issues: parsed.error.issues.length },
+        });
+      }
+      return run(parsed.data, services);
+    },
+  };
+}
+
+export function mutationRoutes(): readonly RouteDefinition[] {
+  return [
+    actionRoute(
+      "/api/v1/operations",
+      MutationRequestSchema,
+      async (body, services) => {
+        const mutations = services.mutations;
+        if (mutations === undefined) {
+          throw new ReadProblem({
+            code: "UnsupportedOperation",
+            message:
+              "this host has no mutation engine; no operation was accepted and none will run",
+          });
+        }
+        const result = await mutations.jobs.submit({
+          request: body,
+          actor: SERVICES_ACTOR,
+        });
+        if (!result.ok) {
+          throw new ReadProblem({
+            code: result.problem.code,
+            message: result.problem.message,
+            ...(result.problem.details === undefined
+              ? {}
+              : { details: result.problem.details }),
+            retryable: result.problem.retryable,
+          });
+        }
+        if (result.duplicate) {
+          // A replay of an accepted request returns the recorded operation rather than
+          // a second acceptance, which is what makes a retry after a lost response safe.
+          return { operation: result.record, duplicate: true };
+        }
+        return operationAcceptedSchema.parse({
+          operationId: result.record.operationId,
+          status: "accepted",
+          acceptedAt: result.record.acceptedAt,
+        });
+      },
+    ),
+
+    actionRoute(
+      "/api/v1/operations/cancel",
+      cancelOperationRequestSchema,
+      async (body, services) => {
+        const mutations = services.mutations;
+        if (mutations === undefined) {
+          throw new ReadProblem({
+            code: "UnsupportedOperation",
+            message: "this host has no mutation engine",
+          });
+        }
+        const result = mutations.jobs.cancel({
+          operationId: body.operationId,
+          actor: SERVICES_ACTOR,
+        });
+        if (!result.ok) {
+          throw new ReadProblem({
+            code: result.problem.code,
+            message: result.problem.message,
+            retryable: result.problem.retryable,
+          });
+        }
+        return { operation: result.record };
+      },
+    ),
+  ];
+}
+
+/**
+ * The actor every request through this host is attributed to.
+ *
+ * One OS user, one browser session: the session id identifies the connection, and
+ * the actor identifies whose journal entries these are. A future multi-user host
+ * would derive this from the session instead of a constant.
+ */
+export const SERVICES_ACTOR = "local-user";
+
 /** Known paths this build does not implement, so a client learns that clearly. */
 export const UNIMPLEMENTED_PATHS: readonly string[] = [
-  "/api/v1/operations",
-  "/api/v1/events",
+  // Write operations that no effect implements yet, and one read this build does
+  // not ship. All three answer 501 rather than a plausible-looking empty answer.
   "/api/v1/previews",
+  "/api/v1/repositories/register",
 ];
 
 export function unsupportedProblem(path: string): Problem {

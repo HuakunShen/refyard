@@ -24,19 +24,27 @@ import { dirname, join } from "node:path";
 import { realpath, stat } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import {
+  createEventRing,
   createGitHost,
   createHandleRegistry,
+  createJournalStore,
+  createMutationCoordinator,
   createPathRegistry,
   createPreviewStore,
   createReadService,
+  createRecovery,
   createRepositoryRegistry,
   createRootRegistry,
   createSnapshotStore,
   createTextCodec,
   createWorktreeRegistry,
+  DEFAULT_RETENTION,
   runDoctor,
   startHttpHost,
+  type EventRing,
   type HttpHost,
+  type JournalStore,
+  type MutationCoordinator,
   type ReadService,
   type RepositoryRegistry,
   type RootRegistry,
@@ -55,6 +63,9 @@ import { MINIMAL_PAGE } from "./minimal-page.js";
 
 export interface ServiceAssembly {
   readonly read: ReadService;
+  readonly journal: JournalStore;
+  readonly mutations: MutationCoordinator;
+  readonly events: EventRing;
   /**
    * The id of this running process.
    *
@@ -93,6 +104,7 @@ export async function assembleService(
   const handles = createHandleRegistry();
   const roots = createRootRegistry({ handles, codec });
   let counter = 0;
+  let sequence = 0;
   const paths = createPathRegistry({
     codec,
     nextPathId: () => `path_${(counter += 1).toString(36)}`,
@@ -117,6 +129,19 @@ export async function assembleService(
   const previews = createPreviewStore();
 
   const serviceInstanceId = `srvc_${randomBytes(12).toString("base64url")}`;
+  // The journal lives in the private state root, never inside a repository, and the
+  // recovery pass runs before anything can write: an operation left in flight by a
+  // previous process is reported as unknown and blocks that repository until a human
+  // resolves it.
+  const stateRoot = await roots.stateRoot();
+  const journal = createJournalStore({
+    stateRoot,
+    retention: DEFAULT_RETENTION,
+  });
+  await journal.load();
+  const recovery = createRecovery({ journal });
+  await recovery.run();
+  const events = createEventRing();
   const doctor =
     options.skipDoctor === true
       ? null
@@ -204,8 +229,26 @@ export async function assembleService(
     operations: [],
   });
 
+  const mutations = createMutationCoordinator({
+    journal,
+    repositories,
+    worktrees,
+    engine,
+    recovery,
+    snapshots,
+    events,
+    // No effect is registered in this build: `capabilities.operations` stays empty
+    // because it is derived from this list, so the two cannot disagree.
+    effects: [],
+    nextOperationId: () => `op_${randomBytes(9).toString("base64url")}`,
+    nextSequence: () => (sequence += 1),
+  });
+
   return {
     read,
+    journal,
+    mutations,
+    events,
     serviceInstanceId,
     repositories,
     roots,
@@ -259,6 +302,8 @@ export async function runService(
   const assembly = await assembleService(options);
   const http = await startHttpHost({
     read: assembly.read,
+    mutations: assembly.mutations,
+    events: assembly.events,
     serviceInstanceId: assembly.serviceInstanceId,
     port: options.port,
     webRoot: options.webRoot,

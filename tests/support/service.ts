@@ -10,19 +10,31 @@
  * request then carries.
  */
 import { realpath } from "node:fs/promises";
+import { join } from "node:path";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import {
+  createEventRing,
   createGitHost,
   createHandleRegistry,
+  createJournalStore,
+  createMutationCoordinator,
   createPathRegistry,
   createPreviewStore,
   createReadService,
+  createRecovery,
   createRepositoryRegistry,
   createRootRegistry,
   createSnapshotStore,
   createTextCodec,
   createWorktreeRegistry,
+  DEFAULT_RETENTION,
   startHttpHost,
+  type EventRing,
   type HttpHost,
+  type JournalStore,
+  type MutationCoordinator,
+  type MutationEffect,
 } from "../../packages/host-node/src/index.js";
 import { createHostEngine, type GitEngine } from "@refyard/git-core";
 import { API_MAJOR, CONTRACT_VERSION } from "@refyard/git-contract";
@@ -34,6 +46,12 @@ export interface TestService {
   readonly instanceId: string;
   readonly repositoryId: string;
   readonly allowedRootId: string;
+  /** The mutation engine, wired exactly as the CLI wires it. */
+  readonly mutations: MutationCoordinator;
+  readonly journal: JournalStore;
+  readonly events: EventRing;
+  /** The private state root this service's journal lives in. */
+  readonly stateRoot: string;
   /** The pairing URL a browser would be sent to, ticket included in the fragment. */
   readonly pairingUrl: string;
   /** Exchange the ticket for a bearer token; returns the token. */
@@ -49,6 +67,12 @@ export interface TestService {
 
 export interface StartTestServiceOptions {
   readonly repo: GitFixtureRepo;
+  /**
+   * Reuse a state root, which is how a restart test sees the previous journal.
+   */
+  readonly stateRoot?: string;
+  /** Effects this test host can run; empty means every mutation is unimplemented. */
+  readonly effects?: readonly MutationEffect[];
   /** Extra web assets to serve, for the static-file cases. */
   readonly webRoot?: string | null;
   readonly inlineDocument?: string;
@@ -106,6 +130,17 @@ export async function startTestService(
   });
 
   const serviceInstanceId = `srvc_${(counter += 1).toString(36)}`;
+  const stateRoot =
+    options.stateRoot ?? (await mkdtemp(join(tmpdir(), "refyard-state-")));
+  const journal = createJournalStore({
+    stateRoot,
+    retention: DEFAULT_RETENTION,
+  });
+  await journal.load();
+  const recovery = createRecovery({ journal });
+  await recovery.run();
+  const events = createEventRing();
+  let sequence = 0;
   const read = createReadService({
     engine,
     roots,
@@ -143,9 +178,25 @@ export async function startTestService(
     operations: [],
   });
 
+  const mutations = createMutationCoordinator({
+    journal,
+    repositories,
+    worktrees,
+    engine,
+    recovery,
+    snapshots,
+    events,
+    effects: options.effects ?? [],
+    nextOperationId: () => `op_${(counter += 1).toString(36)}`,
+    nextSequence: () => (sequence += 1),
+  });
+
   const log: string[] = [];
+  let sessionToken: string | null = null;
   const http = await startHttpHost({
     read,
+    mutations,
+    events,
     serviceInstanceId,
     port: 0,
     webRoot: options.webRoot ?? null,
@@ -176,9 +227,18 @@ export async function startTestService(
     instanceId: http.serviceInstanceId,
     repositoryId: record.repositoryId,
     allowedRootId: root.allowedRootId,
+    mutations,
+    journal,
+    events,
+    stateRoot,
     pairingUrl,
     log,
     async pair(): Promise<string> {
+      // A ticket is single-use, so a second call reuses the session — which is what a
+      // browser does: one pairing per page load, then one bearer for its lifetime.
+      if (sessionToken !== null) {
+        return sessionToken;
+      }
       const ticket = ticketFrom(pairingUrl);
       const response = await fetch(`${baseUrl}/api/v1/session/exchange`, {
         method: "POST",
@@ -191,7 +251,8 @@ export async function startTestService(
         );
       }
       const body = (await response.json()) as { token: string };
-      return body.token;
+      sessionToken = body.token;
+      return sessionToken;
     },
     async fetch(path, init = {}) {
       const headers = new Headers(init.headers);

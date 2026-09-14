@@ -36,6 +36,15 @@ export interface SnapshotRecord {
   /** Object names this read was taken from; history pages are served from these. */
   readonly tips: readonly string[];
   readonly headOid: string | null;
+  /**
+   * Fingerprint of the index as this snapshot saw it, or null when the read did not
+   * observe the index.
+   *
+   * A mutation carries the snapshot it was planned against; comparing this value
+   * with a fresh read is what detects "the user confirmed a state that has since
+   * changed" without hashing the whole repository.
+   */
+  readonly indexKey: string | null;
 }
 
 export type CursorResult =
@@ -60,6 +69,7 @@ export interface SnapshotStore {
     readonly worktreeId: string | null;
     readonly tips?: readonly string[];
     readonly headOid?: string | null;
+    readonly indexKey?: string | null;
   }): SnapshotRecord;
   get(snapshotId: string): SnapshotRecord | null;
   /** Mint a cursor for a page; the id returned is the only thing the client sees. */
@@ -116,6 +126,7 @@ export function createSnapshotStore(
         createdAtMs: now(),
         tips: input.tips ?? [],
         headOid: input.headOid ?? null,
+        indexKey: input.indexKey ?? null,
       };
       records.set(record.snapshotId, record);
       return record;

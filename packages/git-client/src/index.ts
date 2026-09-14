@@ -15,3 +15,13 @@ export {
   type GitClient,
   type GitClientOptions,
 } from "./client.js";
+export {
+  createEventStream,
+  type EventStream,
+  type EventStreamOptions,
+} from "./events.js";
+export {
+  createMutationClient,
+  type MutationClient,
+  type MutationClientOptions,
+} from "./mutations.js";

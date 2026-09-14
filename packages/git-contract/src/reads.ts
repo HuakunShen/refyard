@@ -898,6 +898,17 @@ export const operationQuerySchema = z
     description: "Look up one submitted operation.",
   });
 
+export const operationsListQuerySchema = z
+  .strictObject({
+    operationId: operationIdSchema.optional(),
+    limit: z.int().positive().max(LIMITS.idempotencyMaxEntries).optional(),
+  })
+  .meta({
+    id: "OperationsListQuery",
+    description:
+      "Recent operations for the requesting actor; with `operationId` a single record, which is how a client checks an operation after losing the response.",
+  });
+
 export const eventsQuerySchema = z
   .strictObject({ since: z.int().nonnegative().optional() })
   .meta({
@@ -917,7 +928,7 @@ export const QUERY_SCHEMAS = {
   worktrees: repositoryQuerySchema,
   submodules: worktreeQuerySchema,
   stashes: repositoryQuerySchema,
-  operations: operationQuerySchema,
+  operations: operationsListQuerySchema,
   events: eventsQuerySchema,
 } as const;
 
@@ -970,6 +981,7 @@ export type OperationRecord = z.infer<typeof operationRecordSchema>;
 export type OperationsListResponse = z.infer<
   typeof operationsListResponseSchema
 >;
+export type OperationsListQuery = z.infer<typeof operationsListQuerySchema>;
 export type CancelOperationRequest = z.infer<
   typeof cancelOperationRequestSchema
 >;

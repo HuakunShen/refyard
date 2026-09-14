@@ -748,7 +748,7 @@
       "type": "object",
       "properties": {
         "since": {
-          "$ref": "#/$defs/__schema310"
+          "$ref": "#/$defs/__schema312"
         }
       },
       "additionalProperties": false,
@@ -1295,6 +1295,19 @@
         "cancelled"
       ],
       "description": "Terminal states are `succeeded`, `failed`, `needsAttention`, `unknown` and `cancelled`. `unknown` means Git may have changed things and the service will not guess or retry."
+    },
+    "OperationsListQuery": {
+      "type": "object",
+      "properties": {
+        "operationId": {
+          "$ref": "#/$defs/__schema310"
+        },
+        "limit": {
+          "$ref": "#/$defs/__schema311"
+        }
+      },
+      "additionalProperties": false,
+      "description": "Recent operations for the requesting actor; with `operationId` a single record, which is how a client checks an operation after losing the response."
     },
     "OperationsListResponse": {
       "type": "object",
@@ -5010,6 +5023,14 @@
       "type": "boolean"
     },
     "__schema310": {
+      "$ref": "#/$defs/OperationId"
+    },
+    "__schema311": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 2000
+    },
+    "__schema312": {
       "type": "integer",
       "minimum": 0,
       "maximum": 9007199254740991

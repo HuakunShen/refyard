@@ -29,6 +29,7 @@ import {
 import type { AddressInfo } from "node:net";
 import { randomBytes } from "node:crypto";
 import {
+  eventsQuerySchema,
   healthResponseSchema,
   sessionExchangeRequestSchema,
   sessionExchangeResponseSchema,
@@ -36,6 +37,14 @@ import {
 } from "@refyard/git-contract";
 import type { ReadService } from "../coordinator/reads.js";
 import { ReadProblem } from "../coordinator/reads.js";
+import type { MutationCoordinator } from "../coordinator/submit.js";
+import { createEventRing, createSseSession, type EventRing } from "./events.js";
+import {
+  UNIMPLEMENTED_PATHS,
+  mutationRoutes,
+  readRoutes,
+  unsupportedProblem,
+} from "./router.js";
 import {
   createAuthStore,
   type AuthStore,
@@ -50,6 +59,7 @@ import {
   parseQuery,
   readJsonBody,
   validate,
+  type ConvertedQuery,
   type HttpLimits,
 } from "./json.js";
 import {
@@ -65,14 +75,12 @@ import {
   originsFor,
   type OriginPolicy,
 } from "./origins.js";
-import {
-  UNIMPLEMENTED_PATHS,
-  readRoutes,
-  unsupportedProblem,
-} from "./router.js";
-
 export interface HttpHostOptions {
   readonly read: ReadService;
+  /** Present once a mutation engine exists; absent in a read-only host. */
+  readonly mutations?: MutationCoordinator;
+  /** Shared with the mutation coordinator so both publish to one ring. */
+  readonly events?: EventRing;
   readonly serviceInstanceId?: string;
   readonly port?: number;
   /** `127.0.0.1` unless the caller explicitly asked for IPv6 loopback too. */
@@ -96,6 +104,7 @@ export interface HttpHost {
   readonly serviceInstanceId: string;
   readonly auth: AuthStore;
   readonly assets: AssetServer;
+  readonly events: EventRing;
   /** A pairing URL for a browser: origin plus the ticket in the fragment. */
   pairingUrl(origin: string): string;
   close(): Promise<void>;
@@ -122,7 +131,14 @@ export async function startHttpHost(
   });
   const log = options.log ?? ((): void => {});
   const now = options.now ?? Date.now;
-  const routes = readRoutes();
+  const routes = [...readRoutes(), ...mutationRoutes()];
+  const events = options.events ?? createEventRing();
+  const services = {
+    read: options.read,
+    ...(options.mutations === undefined
+      ? {}
+      : { mutations: options.mutations }),
+  };
   let originPolicy: OriginPolicy | null = null;
 
   const server: Server = createServer((request, response) => {
@@ -250,6 +266,54 @@ export async function startHttpHost(
         }),
       );
       sendJson(response, 200, body);
+      return;
+    }
+
+    if (cleanPath === "/api/v1/events") {
+      // Streaming route: authenticated like every other read, then the connection
+      // belongs to the ring until the client goes away.
+      const authorized = auth.authorize({
+        authorization: headerValue(request, "authorization"),
+        serviceInstanceId,
+      });
+      if (!authorized.ok) {
+        log(
+          logLine({
+            method,
+            path: cleanPath,
+            status: 401,
+            durationMs: now() - startedAt,
+            problemCode: authorized.problem.code,
+          }),
+        );
+        sendProblem(response, authorized.problem);
+        return;
+      }
+      const query = parseQuery(rawQuery, limits);
+      if (!query.ok) {
+        sendProblem(response, query.problem);
+        return;
+      }
+      const converted = convertQuery(eventsQuerySchema, query.value);
+      if (!converted.ok) {
+        sendProblem(response, converted.problem);
+        return;
+      }
+      const since = converted.value["since"];
+      log(
+        logLine({
+          method,
+          path: cleanPath,
+          status: 200,
+          durationMs: now() - startedAt,
+          sessionId: authorized.session.sessionId,
+        }),
+      );
+      const session = createSseSession(events);
+      await session.start({
+        response,
+        since: typeof since === "number" ? since : undefined,
+      });
       return;
     }
 
@@ -384,15 +448,40 @@ export async function startHttpHost(
         sendProblem(response, query.problem);
         return;
       }
-      const converted = convertQuery(route.schema, query.value);
-      if (!converted.ok) {
-        sendProblem(response, converted.problem);
-        return;
+      // A GET route's query is converted with its contract schema; a POST route's
+      // input is its JSON body, read with a byte limit.
+      let queryValue: ConvertedQuery = {};
+      let actionBody: unknown = undefined;
+      if (route.method === "GET") {
+        const schema = route.schema;
+        if (schema === undefined) {
+          sendProblem(
+            response,
+            problemFor("InternalError", `${cleanPath} has no query schema`),
+          );
+          return;
+        }
+        const converted = convertQuery(schema, query.value);
+        if (!converted.ok) {
+          sendProblem(response, converted.problem);
+          return;
+        }
+        queryValue = converted.value;
+      } else {
+        const readBody = await readJsonBody(request, limits);
+        if (!readBody.ok) {
+          sendProblem(response, readBody.problem);
+          return;
+        }
+        actionBody = readBody.value;
       }
       // The grant is checked before the handler validates: a request naming a
       // repository this session does not cover is refused before anything reads Git,
       // and this check can only deny, never widen.
-      const scoped = checkScope(session, converted.value);
+      const scoped = checkScope(
+        session,
+        route.method === "GET" ? queryValue : actionBody,
+      );
       if (scoped !== null) {
         log(
           logLine({
@@ -411,8 +500,9 @@ export async function startHttpHost(
       try {
         const body = await route.handle({
           session,
-          query: converted.value,
-          read: options.read,
+          query: queryValue,
+          body: actionBody,
+          services,
         });
         log(
           logLine({
@@ -476,12 +566,9 @@ export async function startHttpHost(
   }
 
   /** Refuse a request that names a repository the session does not cover. */
-  function checkScope(
-    session: Session,
-    query: Record<string, string | string[] | number | boolean>,
-  ): Problem | null {
-    const repositoryId = query["repositoryId"];
-    if (typeof repositoryId !== "string") {
+  function checkScope(session: Session, input: unknown): Problem | null {
+    const repositoryId = repositoryIdForScope(input);
+    if (repositoryId === null) {
       // No repository named (or not a single string): the route's own schema decides
       // whether that is acceptable, and it cannot grant anything the session lacks.
       return null;
@@ -535,6 +622,7 @@ export async function startHttpHost(
     port: actualPort,
     serviceInstanceId,
     auth,
+    events,
     assets,
 
     pairingUrl(origin: string): string {
@@ -555,6 +643,34 @@ export async function startHttpHost(
       await closeQuietly(server);
     },
   };
+}
+
+/**
+ * The repository a request names, wherever it names it.
+ *
+ * A read carries `repositoryId` as a query parameter; a mutation carries it inside
+ * its target. Both are checked against the session's grant before anything runs, and
+ * this answers null for anything else — which can only mean "no grant check applies
+ * here", never "allowed".
+ */
+function repositoryIdForScope(input: unknown): string | null {
+  if (typeof input !== "object" || input === null) {
+    return null;
+  }
+  if ("repositoryId" in input && typeof input.repositoryId === "string") {
+    return input.repositoryId;
+  }
+  if (
+    "target" in input &&
+    typeof input.target === "object" &&
+    input.target !== null
+  ) {
+    const target = input.target;
+    if ("repositoryId" in target && typeof target.repositoryId === "string") {
+      return target.repositoryId;
+    }
+  }
+  return null;
 }
 
 function headerValue(

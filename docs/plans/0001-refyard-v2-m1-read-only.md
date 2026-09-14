@@ -205,6 +205,16 @@ machine — production capabilities stay gated.
 Verification: `pnpm exec vitest run tests/integration/jobs.test.ts tests/integration/restart.test.ts
 tests/integration/concurrency.test.ts`.
 Commit: `feat: journal and coordinate Git operations without replay`.
+**Deviations from the reference file list, recorded deliberately:** `cancel.ts` was folded into
+`jobs.ts` (cancellation is one transition of the same state machine, and separating it would have put
+the "never relabel a running mutation" rule away from the queue it depends on); `coordinator/events`
+became `http/events.ts` (the ring and the SSE writer ship together so the bound and its consumer
+cannot drift); `packages/git-client/src/mutations.ts` was added because the client needs submit/get/
+cancel and the design forbids retrying automatically. The contract gained one schema,
+`OperationsListQuery`, because the API exposes operations at one path with an optional `operationId`
+rather than at `/operations/{id}`; the generated artifacts were regenerated in this commit.
+Index freshness is checked with a fingerprint over the paths Git already reports as changed plus the
+Head, recorded with each snapshot — not by hashing the repository, which the design forbids.
 
 ### T07 — graph and the SvelteKit UI
 

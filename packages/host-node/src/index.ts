@@ -192,3 +192,72 @@ export {
   statusForProblem,
 } from "./http/errors.js";
 export { readRoutes, type RouteDefinition } from "./http/router.js";
+export {
+  createJournalStore,
+  canonicalJson,
+  canonicalPayloadDigest,
+  entryFromRecord,
+  journalExists,
+  journalPathFor,
+  type AppendOutcome,
+  type JournalEntry,
+  type JournalStore,
+  type JournalStoreOptions,
+} from "./journal/store.js";
+export {
+  DEFAULT_RETENTION,
+  decideRetention,
+  exceedsEntryBound,
+  isTerminalStatus,
+  mayPruneRecord,
+  type RetentionDecision,
+  type RetentionPolicy,
+} from "./journal/retention.js";
+export {
+  createRecovery,
+  type Recovery,
+  type RecoveryOptions,
+  type RecoveryReport,
+  type WriteBlock,
+} from "./journal/recovery.js";
+export {
+  createQueue,
+  DEFAULT_QUEUE_LIMITS,
+  type EnqueueResult,
+  type Queue,
+  type QueueLimits,
+  type QueueMode,
+  type QueueOptions,
+  type QueueTicket,
+} from "./coordinator/queue.js";
+export {
+  checkPreconditions,
+  indexFingerprint,
+  type PreconditionContext,
+  type PreconditionOutcome,
+} from "./coordinator/preconditions.js";
+export {
+  createEffect,
+  createJobEngine,
+  type EffectOutcome,
+  type JobEngine,
+  type JobEngineOptions,
+  type JobEvent,
+  type MutationEffect,
+  type SubmitResult,
+} from "./coordinator/jobs.js";
+export {
+  createMutationCoordinator,
+  currentIndexKey,
+  repositoryIdOfTarget,
+  type MutationCoordinator,
+  type MutationCoordinatorOptions,
+} from "./coordinator/submit.js";
+export {
+  createEventRing,
+  createSseSession,
+  sseFrame,
+  type EventRing,
+  type EventRingOptions,
+  type SseSession,
+} from "./http/events.js";
