@@ -1,87 +1,132 @@
 /**
- * @refyard/git-ui — the tokens the components are written against.
+ * @refyard/git-ui — the theme the components are written against.
  *
  * Imported by the app once, after Tailwind: `@import "@refyard/git-ui/styles.css";`.
  *
- * Every token is a CSS variable, and utilities are generated from them by Tailwind, so
- * a theme is a list of values rather than a second set of components. The dark values
- * live in a `prefers-color-scheme` block that overrides the same variables: no class
- * toggling, and therefore no way for a component to be styled for the wrong scheme.
+ * The token set is shadcn-svelte's semantic scheme (background, foreground, primary,
+ * muted, destructive, …), because the generated components in `components/ui` are written
+ * against those names. Two things are layered on top of it, not beside it:
  *
- * The lane palette is part of this file rather than of the geometry module so that a
- * host can restyle the graph — including for dark mode — without changing any code
- * that decides where lanes are.
+ * - **kit aliases** (`canvas`, `panel`, `ink`, `brand`, …) — the names this package's own
+ *   Git components were written with, each pointing at a shadcn token so the two vocabularies
+ *   cannot drift apart;
+ * - **the lane palette**, which the commit graph reads at runtime through
+ *   `var(--color-lane-N)` and which Tailwind therefore cannot see — one more reason the
+ *   theme block is `static` (emit every variable, used or not).
  *
- * `static` is deliberate: the graph reads `var(--color-lane-N)` from SVG attributes
- * Tailwind cannot see (the geometry module builds that paint value at runtime), so the
- * palette must be emitted whether or not a utility class happens to use each entry.
- * Without it Tailwind drops the unused lanes and every line silently falls back to
- * `currentColor`.
+ * Dark mode is a `.dark` class on `<html>`, set by `mode-watcher` (see the app's root
+ * layout), which is what the `@custom-variant` below wires Tailwind's `dark:` utilities to.
+ * A class — not `prefers-color-scheme` — because the user's choice has to win over the OS.
  */
 
-@theme static {
-  --color-canvas: oklch(0.99 0.002 250);
-  --color-panel: oklch(1 0 0);
-  --color-panel-muted: oklch(0.97 0.004 250);
-  --color-border: oklch(0.9 0.006 250);
-  --color-ink: oklch(0.24 0.015 260);
-  --color-ink-muted: oklch(0.45 0.015 260);
-  --color-ink-faint: oklch(0.6 0.012 260);
-  --color-accent: oklch(0.55 0.16 255);
-  --color-accent-strong: oklch(0.48 0.16 255);
-  --color-accent-ink: oklch(0.99 0 0);
-  --color-add: oklch(0.55 0.14 150);
-  --color-remove: oklch(0.55 0.18 25);
-  --color-warn: oklch(0.62 0.13 75);
-  --color-danger: oklch(0.55 0.19 25);
+@custom-variant dark (&:is(.dark *));
 
-  --color-lane-1: oklch(0.62 0.17 255);
-  --color-lane-2: oklch(0.62 0.15 150);
-  --color-lane-3: oklch(0.66 0.16 60);
-  --color-lane-4: oklch(0.6 0.19 20);
-  --color-lane-5: oklch(0.6 0.17 310);
-  --color-lane-6: oklch(0.62 0.13 200);
-  --color-lane-7: oklch(0.6 0.17 340);
-  --color-lane-8: oklch(0.62 0.12 120);
+@theme static {
+	--radius: 0.5rem;
+	--radius-sm: calc(var(--radius) - 4px);
+	--radius-md: calc(var(--radius) - 2px);
+	--radius-lg: var(--radius);
+	--radius-xl: calc(var(--radius) + 4px);
+
+	/* shadcn semantic set — light */
+	--color-background: oklch(0.99 0.002 250);
+	--color-foreground: oklch(0.24 0.015 260);
+	--color-card: oklch(1 0 0);
+	--color-card-foreground: oklch(0.24 0.015 260);
+	--color-popover: oklch(1 0 0);
+	--color-popover-foreground: oklch(0.24 0.015 260);
+	--color-primary: oklch(0.55 0.16 255);
+	--color-primary-foreground: oklch(0.99 0.002 250);
+	--color-secondary: oklch(0.97 0.004 250);
+	--color-secondary-foreground: oklch(0.3 0.02 260);
+	--color-muted: oklch(0.97 0.004 250);
+	--color-muted-foreground: oklch(0.5 0.02 260);
+	--color-accent: oklch(0.96 0.004 250);
+	--color-accent-foreground: oklch(0.3 0.02 260);
+	--color-destructive: oklch(0.55 0.19 25);
+	--color-destructive-foreground: oklch(0.99 0.002 250);
+	--color-border: oklch(0.91 0.006 250);
+	--color-input: oklch(0.91 0.006 250);
+	--color-ring: oklch(0.7 0.03 255);
+
+	/* kit aliases — the names the Git components read */
+	--color-canvas: var(--color-background);
+	--color-panel: var(--color-card);
+	--color-panel-muted: var(--color-muted);
+	--color-ink: var(--color-foreground);
+	--color-ink-muted: var(--color-muted-foreground);
+	--color-ink-faint: oklch(0.6 0.015 260);
+	--color-brand: var(--color-primary);
+	--color-danger: var(--color-destructive);
+	--color-add: oklch(0.55 0.14 150);
+	--color-remove: oklch(0.55 0.18 25);
+	--color-warn: oklch(0.62 0.13 75);
+
+	/* commit-graph lanes */
+	--color-lane-1: oklch(0.62 0.17 255);
+	--color-lane-2: oklch(0.62 0.15 150);
+	--color-lane-3: oklch(0.66 0.16 60);
+	--color-lane-4: oklch(0.6 0.19 20);
+	--color-lane-5: oklch(0.6 0.17 310);
+	--color-lane-6: oklch(0.62 0.13 200);
+	--color-lane-7: oklch(0.6 0.17 340);
+	--color-lane-8: oklch(0.62 0.12 120);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-canvas: oklch(0.19 0.012 260);
-    --color-panel: oklch(0.23 0.014 260);
-    --color-panel-muted: oklch(0.26 0.013 260);
-    --color-border: oklch(0.33 0.014 260);
-    --color-ink: oklch(0.94 0.006 260);
-    --color-ink-muted: oklch(0.75 0.012 260);
-    --color-ink-faint: oklch(0.6 0.012 260);
-    --color-accent: oklch(0.68 0.15 255);
-    --color-accent-strong: oklch(0.74 0.15 255);
-    --color-accent-ink: oklch(0.18 0.01 260);
-    --color-add: oklch(0.72 0.15 150);
-    --color-remove: oklch(0.68 0.17 25);
-    --color-warn: oklch(0.76 0.13 80);
-    --color-danger: oklch(0.68 0.17 25);
+.dark {
+	color-scheme: dark;
 
-    --color-lane-1: oklch(0.72 0.15 255);
-    --color-lane-2: oklch(0.75 0.15 150);
-    --color-lane-3: oklch(0.78 0.14 70);
-    --color-lane-4: oklch(0.7 0.17 25);
-    --color-lane-5: oklch(0.72 0.16 310);
-    --color-lane-6: oklch(0.75 0.12 200);
-    --color-lane-7: oklch(0.7 0.16 340);
-    --color-lane-8: oklch(0.75 0.12 120);
-  }
+	/* shadcn semantic set — dark */
+	--color-background: oklch(0.19 0.012 260);
+	--color-foreground: oklch(0.94 0.006 260);
+	--color-card: oklch(0.23 0.014 260);
+	--color-card-foreground: oklch(0.94 0.006 260);
+	--color-popover: oklch(0.23 0.014 260);
+	--color-popover-foreground: oklch(0.94 0.006 260);
+	--color-primary: oklch(0.68 0.15 255);
+	--color-primary-foreground: oklch(0.18 0.01 260);
+	--color-secondary: oklch(0.27 0.014 260);
+	--color-secondary-foreground: oklch(0.94 0.006 260);
+	--color-muted: oklch(0.27 0.014 260);
+	--color-muted-foreground: oklch(0.75 0.012 260);
+	--color-accent: oklch(0.29 0.014 260);
+	--color-accent-foreground: oklch(0.94 0.006 260);
+	--color-destructive: oklch(0.68 0.17 25);
+	--color-destructive-foreground: oklch(0.18 0.01 260);
+	--color-border: oklch(0.33 0.014 260);
+	--color-input: oklch(0.33 0.014 260);
+	--color-ring: oklch(0.5 0.03 255);
+
+	/* kit aliases that need their own dark values */
+	--color-ink-faint: oklch(0.58 0.015 260);
+	--color-add: oklch(0.72 0.15 150);
+	--color-remove: oklch(0.68 0.17 25);
+	--color-warn: oklch(0.76 0.13 80);
+
+	/* commit-graph lanes */
+	--color-lane-1: oklch(0.72 0.15 255);
+	--color-lane-2: oklch(0.75 0.15 150);
+	--color-lane-3: oklch(0.78 0.14 70);
+	--color-lane-4: oklch(0.7 0.17 25);
+	--color-lane-5: oklch(0.72 0.16 310);
+	--color-lane-6: oklch(0.75 0.12 200);
+	--color-lane-7: oklch(0.7 0.16 340);
+	--color-lane-8: oklch(0.75 0.12 120);
+}
+
+:root {
+	color-scheme: light;
 }
 
 /* A patch line's colour is its meaning; the background is only a tint of it. */
 @utility patch-add {
-  background-color: color-mix(in oklab, var(--color-add) 14%, transparent);
+	background-color: color-mix(in oklab, var(--color-add) 14%, transparent);
 }
 
 @utility patch-remove {
-  background-color: color-mix(in oklab, var(--color-remove) 14%, transparent);
+	background-color: color-mix(in oklab, var(--color-remove) 14%, transparent);
 }
 
 @utility patch-context {
-  background-color: transparent;
+	background-color: transparent;
 }

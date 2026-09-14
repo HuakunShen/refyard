@@ -13,6 +13,8 @@ allowBuilds:
 # version means editing this file, which shows up in the task's own commit.
 catalog:
   "@playwright/test": 1.63.0
+  "@internationalized/date": 3.12.4
+  "shadcn-svelte": 1.6.1
   "@lucide/svelte": 1.46.0
   "@sveltejs/adapter-static": 3.0.10
   "@sveltejs/kit": 2.70.3

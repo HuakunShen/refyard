@@ -2,19 +2,23 @@
   /**
    * Pairing the page with a running service.
    *
-   * The form takes a *ticket*, not a password: the CLI prints a URL whose fragment
-   * carries a single-use, 60-second ticket, and the fragment is never sent to a server
-   * by the browser. Pasting the whole URL is therefore expected and is handled — the
-   * component extracts the fragment itself so a user cannot be told "invalid ticket"
-   * for pasting the thing the CLI actually printed.
+   * The form takes a *ticket*, not a password: the CLI prints a URL that carries a
+   * single-use, 60-second ticket, and the page pairs itself on load. Pasting the whole
+   * URL is therefore expected and is handled — the component extracts the ticket itself
+   * so a user cannot be told "invalid ticket" for pasting the thing the CLI actually
+   * printed.
    *
    * The service address defaults to this page's own origin, because the service serving
    * the page is the service that will answer; a different address is only for the case
    * where the UI is loaded from elsewhere.
+   *
+   * The fields are assembled from the generated shadcn `Input` rather than being a
+   * hand-written component of their own: a label, the input, and a hint line.
    */
-  import Badge from "../ui/Badge.svelte";
-  import Button from "../ui/Button.svelte";
-  import Input from "../ui/Input.svelte";
+  import { Badge } from "./ui/badge/index.js";
+  import { Button } from "./ui/button/index.js";
+  import { Card, CardContent } from "./ui/card/index.js";
+  import { Input } from "./ui/input/index.js";
   import StateBanner from "./StateBanner.svelte";
 
   interface Props {
@@ -72,6 +76,11 @@
     onTicket(trimmed);
   }
 
+  /** The text of an input element, without casting: narrow, then read. */
+  function inputText(element: EventTarget | null): string {
+    return element instanceof HTMLInputElement ? element.value : "";
+  }
+
   function clean(value: string | null): string | null {
     if (value === null) {
       return null;
@@ -91,42 +100,64 @@
     </p>
   </header>
 
-  <div class="flex flex-col gap-4 rounded-lg border border-border bg-panel p-4">
-    <Input
-      id="refyard-base-url"
-      label="Service address"
-      hint={baseUrlIsDefault
-        ? "Taken from this page's origin — the service that served this page."
-        : "Overridden for this browser; clear it to fall back to this page's origin."}
-      value={baseUrl}
-      placeholder="http://127.0.0.1:47831"
-      oninput={onBaseUrl}
-    />
+  <Card>
+    <CardContent class="flex flex-col gap-4">
+      <div class="flex flex-col gap-1">
+        <label
+          class="text-xs font-medium text-ink-muted"
+          for="refyard-base-url"
+        >
+          Service address
+        </label>
+        <Input
+          id="refyard-base-url"
+          placeholder="http://127.0.0.1:47831"
+          value={baseUrl}
+          oninput={(event: Event) => onBaseUrl(inputText(event.currentTarget))}
+        />
+        <p class="text-xs text-ink-faint">
+          {baseUrlIsDefault
+            ? "Taken from this page's origin — the service that served this page."
+            : "Overridden for this browser; clear it to fall back to this page's origin."}
+        </p>
+      </div>
 
-    <Input
-      id="refyard-ticket"
-      label="Pairing ticket"
-      hint="Paste the pairing URL (any spelling) or just its ticket. It is single use and expires after 60 seconds."
-      value={ticket}
-      placeholder="http://127.0.0.1:47831/?pair=…"
-      monospace
-      oninput={acceptTicket}
-      onsubmit={onConnect}
-    />
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-medium text-ink-muted" for="refyard-ticket">
+          Pairing ticket
+        </label>
+        <Input
+          id="refyard-ticket"
+          placeholder="http://127.0.0.1:47831/?pair=…"
+          class="font-mono text-xs"
+          value={ticket}
+          oninput={(event: Event) =>
+            acceptTicket(inputText(event.currentTarget))}
+          onkeydown={(event: KeyboardEvent) => {
+            if (event.key === "Enter") {
+              onConnect();
+            }
+          }}
+        />
+        <p class="text-xs text-ink-faint">
+          Paste the pairing URL (any spelling) or just its ticket. It is single
+          use and expires after 60 seconds.
+        </p>
+      </div>
 
-    <div class="flex items-center gap-3">
-      <Button
-        variant="primary"
-        disabled={phase === "connecting" || ticket.length === 0}
-        onclick={onConnect}
-      >
-        {phase === "connecting" ? "Pairing…" : "Pair"}
-      </Button>
-      {#if baseUrlIsDefault}
-        <Badge tone="muted">same origin</Badge>
-      {/if}
-    </div>
-  </div>
+      <div class="flex items-center gap-3">
+        <Button
+          disabled={phase === "connecting" || ticket.length === 0}
+          onclick={onConnect}
+        >
+          {phase === "connecting" ? "Pairing…" : "Pair"}
+        </Button>
+        {#if baseUrlIsDefault}
+          <Badge variant="secondary">same origin</Badge>
+        {/if}
+      </div>
+    </CardContent>
+  </Card>
 
   {#if phase === "failed"}
     <StateBanner
@@ -140,6 +171,6 @@
   <p class="text-xs text-ink-faint">
     Run <code class="font-mono">refyard open &lt;path&gt;</code> in the repository
     you want to read. The ticket is exchanged for an in-memory session and this page
-    clears the fragment from the address bar.
+    clears it from the address bar.
   </p>
 </section>

@@ -28,12 +28,18 @@
   import {
     Badge,
     Button,
+    Card,
+    CardContent,
+    CardHeader,
+    CardTitle,
     CommitDetailPanel,
     CommitList,
     ConnectionPanel,
     DiffPanel,
     DEFAULT_METRICS,
+    ModeToggle,
     RefsPanel,
+    Separator,
     RepositoryList,
     StateBanner,
     StatusList,
@@ -475,6 +481,7 @@
       <span class="font-mono text-xs text-ink-faint" title="service address"
         >{baseUrl}</span
       >
+      <ModeToggle />
       <Button size="sm" variant="ghost" onclick={disconnect}>Disconnect</Button>
     {/if}
   </header>
@@ -487,7 +494,9 @@
         detail="The service was restarted or the session expired. Pair again with a fresh ticket."
       >
         {#snippet action()}
-          <Button size="sm" onclick={disconnect}>Pair again</Button>
+          <Button size="sm" variant="outline" onclick={disconnect}
+            >Pair again</Button
+          >
         {/snippet}
       </StateBanner>
     </div>
@@ -517,97 +526,121 @@
       <aside
         class="flex min-h-0 flex-col gap-3 overflow-auto border-r border-border p-3"
       >
-        <section class="flex flex-col gap-2">
-          <h2
-            class="text-xs font-semibold tracking-wide text-ink-muted uppercase"
-          >
-            Repositories
-          </h2>
-          {#if repositories.isPending}
-            <StateBanner state="loading" title="Loading repositories…" />
-          {:else if repositories.isError}
-            <StateBanner
-              state="error"
-              title="Could not list repositories"
-              detail={describeProblem(repositories.error)}
-            >
-              {#snippet action()}
-                <Button size="sm" onclick={() => void repositories.refetch()}
-                  >Retry</Button
-                >
-              {/snippet}
-            </StateBanner>
-          {:else if repositoryList.length === 0}
-            <StateBanner
-              state="empty"
-              title="No repositories"
-              detail="Start the service in a repository (refyard open <path>) to read it here."
-            />
-          {:else}
-            <RepositoryList
-              repositories={repositoryList}
-              selectedId={selectedRepositoryId}
-              onSelect={(repositoryId) => {
-                selectedRepositoryId = repositoryId;
-                selectedOid = null;
-                selectedPath = null;
-              }}
-            />
-          {/if}
-        </section>
-
-        {#if repository !== null}
-          <section class="flex flex-col gap-2">
-            <h2
+        <Card size="sm">
+          <CardHeader>
+            <CardTitle
               class="text-xs font-semibold tracking-wide text-ink-muted uppercase"
             >
-              Changes
-            </h2>
-            {#if status.isPending}
-              <StateBanner state="loading" title="Reading status…" />
-            {:else if status.isError}
+              Repositories
+            </CardTitle>
+          </CardHeader>
+          <CardContent class="flex flex-col gap-2">
+            {#if repositories.isPending}
+              <StateBanner state="loading" title="Loading repositories…" />
+            {:else if repositories.isError}
               <StateBanner
                 state="error"
-                title="Could not read status"
-                detail={describeProblem(status.error)}
+                title="Could not list repositories"
+                detail={describeProblem(repositories.error)}
               >
                 {#snippet action()}
-                  <Button size="sm" onclick={() => void status.refetch()}
-                    >Retry</Button
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onclick={() => void repositories.refetch()}
                   >
+                    Retry
+                  </Button>
                 {/snippet}
               </StateBanner>
-            {:else if status.data !== undefined}
-              <StatusList
-                snapshot={status.data}
-                selectedPathId={selectedPath?.pathId ?? null}
-                onSelect={(entry) => {
-                  selectedPath = entry;
+            {:else if repositoryList.length === 0}
+              <StateBanner
+                state="empty"
+                title="No repositories"
+                detail="Start the service in a repository (refyard open <path>) to read it here."
+              />
+            {:else}
+              <RepositoryList
+                repositories={repositoryList}
+                selectedId={selectedRepositoryId}
+                onSelect={(repositoryId) => {
+                  selectedRepositoryId = repositoryId;
                   selectedOid = null;
-                  selectedDiffPathId = null;
+                  selectedPath = null;
                 }}
               />
             {/if}
-          </section>
+          </CardContent>
+        </Card>
 
-          <section class="flex flex-col gap-2">
-            <h2
-              class="text-xs font-semibold tracking-wide text-ink-muted uppercase"
-            >
-              Refs
-            </h2>
-            {#if refs.isPending}
-              <StateBanner state="loading" title="Reading refs…" />
-            {:else if refs.isError}
-              <StateBanner
-                state="error"
-                title="Could not read refs"
-                detail={describeProblem(refs.error)}
-              />
-            {:else}
-              <RefsPanel refs={refs.data ?? null} />
-            {/if}
-          </section>
+        <Separator />
+
+        {#if repository !== null}
+          <Card size="sm">
+            <CardHeader>
+              <CardTitle
+                class="text-xs font-semibold tracking-wide text-ink-muted uppercase"
+              >
+                Changes
+              </CardTitle>
+            </CardHeader>
+            <CardContent class="flex flex-col gap-2">
+              {#if status.isPending}
+                <StateBanner state="loading" title="Reading status…" />
+              {:else if status.isError}
+                <StateBanner
+                  state="error"
+                  title="Could not read status"
+                  detail={describeProblem(status.error)}
+                >
+                  {#snippet action()}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onclick={() => void status.refetch()}
+                    >
+                      Retry
+                    </Button>
+                  {/snippet}
+                </StateBanner>
+              {:else if status.data !== undefined}
+                <StatusList
+                  snapshot={status.data}
+                  selectedPathId={selectedPath?.pathId ?? null}
+                  onSelect={(entry) => {
+                    selectedPath = entry;
+                    selectedOid = null;
+                    selectedDiffPathId = null;
+                  }}
+                />
+              {/if}
+            </CardContent>
+          </Card>
+
+          <Separator />
+
+          <Card size="sm">
+            <CardHeader>
+              <CardTitle
+                class="text-xs font-semibold tracking-wide text-ink-muted uppercase"
+              >
+                Refs
+              </CardTitle>
+            </CardHeader>
+            <CardContent class="flex flex-col gap-2">
+              {#if refs.isPending}
+                <StateBanner state="loading" title="Reading refs…" />
+              {:else if refs.isError}
+                <StateBanner
+                  state="error"
+                  title="Could not read refs"
+                  detail={describeProblem(refs.error)}
+                />
+              {:else}
+                <RefsPanel refs={refs.data ?? null} />
+              {/if}
+            </CardContent>
+          </Card>
         {/if}
       </aside>
 
@@ -644,9 +677,13 @@
             detail={describeProblem(history.error)}
           >
             {#snippet action()}
-              <Button size="sm" onclick={() => void history.refetch()}
-                >Retry</Button
+              <Button
+                size="sm"
+                variant="outline"
+                onclick={() => void history.refetch()}
               >
+                Retry
+              </Button>
             {/snippet}
           </StateBanner>
         {:else}
@@ -710,9 +747,13 @@
                   detail={describeProblem(diff.error)}
                 >
                   {#snippet action()}
-                    <Button size="sm" onclick={() => void diff.refetch()}
-                      >Retry</Button
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onclick={() => void diff.refetch()}
                     >
+                      Retry
+                    </Button>
                   {/snippet}
                 </StateBanner>
               </div>

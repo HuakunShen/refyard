@@ -11,7 +11,7 @@
    * whose HEAD is unborn or detached says so rather than guessing a branch name.
    */
   import type { RepositorySummary } from "@refyard/git-contract";
-  import Badge from "../ui/Badge.svelte";
+  import { Badge } from "./ui/badge/index.js";
   import { cn } from "../lib/utils.js";
   import { headLabel } from "../lib/format.js";
 
@@ -41,7 +41,7 @@
         class={cn(
           "flex w-full flex-col gap-1 rounded-md border px-2.5 py-2 text-left transition-colors",
           selected
-            ? "border-accent/50 bg-accent/10"
+            ? "border-brand/50 bg-brand/10"
             : "border-border bg-panel hover:bg-panel-muted",
         )}
       >

@@ -13,7 +13,7 @@
    *   its diff) and nothing else.
    */
   import type { StatusEntry, StatusSnapshot } from "@refyard/git-contract";
-  import Badge from "../ui/Badge.svelte";
+  import { Badge } from "./ui/badge/index.js";
   import { cn } from "../lib/utils.js";
   import {
     headLabel,
@@ -83,7 +83,7 @@
               title={statusEntryLabel(entry)}
               class={cn(
                 "flex w-full items-center gap-2 rounded px-2 py-1 text-left",
-                selected ? "bg-accent/10" : "hover:bg-panel-muted",
+                selected ? "bg-brand/10" : "hover:bg-panel-muted",
               )}
             >
               <span

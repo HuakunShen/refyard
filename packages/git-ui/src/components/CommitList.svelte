@@ -22,8 +22,8 @@
   import { onDestroy } from "svelte";
   import type { CommitSummary } from "@refyard/git-contract";
   import type { GraphRow } from "@refyard/git-graph";
-  import Badge from "../ui/Badge.svelte";
-  import Button from "../ui/Button.svelte";
+  import { Badge } from "./ui/badge/index.js";
+  import { Button } from "./ui/button/index.js";
   import CommitGraph from "./CommitGraph.svelte";
   import StateBanner from "./StateBanner.svelte";
   import {
@@ -154,6 +154,7 @@
           width={gutter}
           height={totalSize}
           aria-hidden="true"
+          data-slot="graph-gutter"
         >
           <CommitGraph
             rows={visibleRows}
@@ -177,7 +178,7 @@
                 aria-current={selected ? "true" : undefined}
                 class={cn(
                   "flex h-full w-full items-center gap-2 px-2 text-left",
-                  selected ? "bg-accent/10" : "hover:bg-panel-muted",
+                  selected ? "bg-brand/10" : "hover:bg-panel-muted",
                 )}
               >
                 <span
@@ -239,7 +240,12 @@
 
       <div class="flex items-center justify-center border-t border-border p-2">
         {#if hasMore}
-          <Button size="sm" disabled={loadingMore} onclick={onLoadMore}>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={loadingMore}
+            onclick={onLoadMore}
+          >
             {loadingMore ? "Loading…" : "Load more"}
           </Button>
         {:else}

@@ -78,8 +78,9 @@ test.describe("read-only workbench", () => {
     ).toBeVisible();
     await expect(page.getByText("base", { exact: true }).first()).toBeVisible();
 
-    // The graph drew real geometry for those rows.
-    const graphPaths = page.locator("svg[aria-hidden='true'] path");
+    // The graph drew real geometry for those rows. Scoped to the gutter: the header's
+    // theme-toggle icon is also an svg, and its sun is literally a circle.
+    const graphPaths = page.locator("svg[data-slot='graph-gutter'] path");
     expect(await graphPaths.count()).toBeGreaterThan(0);
 
     // Changed paths, with Git's own status letters and no action offered.
@@ -146,7 +147,7 @@ test.describe("read-only workbench", () => {
       .first()
       .boundingBox();
     const circle = await page
-      .locator("svg[aria-hidden='true'] circle")
+      .locator("svg[data-slot='graph-gutter'] circle")
       .first()
       .boundingBox();
     expect(row).not.toBeNull();

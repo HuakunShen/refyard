@@ -26,6 +26,7 @@
     "@tanstack/svelte-virtual": "catalog:",
     "bits-ui": "catalog:",
     "clsx": "catalog:",
+    "mode-watcher": "catalog:",
     "svelte": "catalog:",
     "svelte-check": "catalog:",
     "tailwind-merge": "catalog:",

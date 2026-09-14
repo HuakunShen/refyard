@@ -9,7 +9,7 @@
    * blank lines is not reflowed into something the author did not write.
    */
   import type { CommitDetail, CommitSummary } from "@refyard/git-contract";
-  import Badge from "../ui/Badge.svelte";
+  import { Badge } from "./ui/badge/index.js";
   import { absoluteTime, shortOid } from "../lib/format.js";
   import { cn } from "../lib/utils.js";
 

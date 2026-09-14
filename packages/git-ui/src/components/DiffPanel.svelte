@@ -19,7 +19,7 @@
     DiffResponse,
     FilePatch,
   } from "@refyard/git-contract";
-  import Badge from "../ui/Badge.svelte";
+  import { Badge } from "./ui/badge/index.js";
   import StateBanner from "./StateBanner.svelte";
   import { changeKindLabel, diffStatLabel } from "../lib/format.js";
   import { cn } from "../lib/utils.js";
@@ -138,7 +138,7 @@
             aria-current={selected ? "true" : undefined}
             class={cn(
               "flex w-full flex-wrap items-center gap-2 px-2 py-1.5 text-left",
-              selected ? "bg-accent/10" : "hover:bg-panel-muted",
+              selected ? "bg-brand/10" : "hover:bg-panel-muted",
             )}
           >
             <span

@@ -10,7 +10,7 @@
    * pane says so: a user who reads "2 behind" as a live fact will be surprised by a fetch.
    */
   import type { RefsSnapshot } from "@refyard/git-contract";
-  import Badge from "../ui/Badge.svelte";
+  import { Badge } from "./ui/badge/index.js";
   import { cn } from "../lib/utils.js";
   import { shortOid } from "../lib/format.js";
 

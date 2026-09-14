@@ -29,6 +29,7 @@
     "oxc-parser": "catalog:",
     "prettier": "catalog:",
     "prettier-plugin-svelte": "catalog:",
+    "shadcn-svelte": "catalog:",
     "turbo": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:",

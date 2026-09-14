@@ -16,11 +16,13 @@
     "@refyard/git-graph": "workspace:*"
   },
   "devDependencies": {
+    "@internationalized/date": "catalog:",
     "@lucide/svelte": "catalog:",
     "@sveltejs/vite-plugin-svelte": "catalog:",
     "@tanstack/svelte-virtual": "catalog:",
     "bits-ui": "catalog:",
     "clsx": "catalog:",
+    "mode-watcher": "catalog:",
     "svelte": "catalog:",
     "svelte-check": "catalog:",
     "tailwind-merge": "catalog:",

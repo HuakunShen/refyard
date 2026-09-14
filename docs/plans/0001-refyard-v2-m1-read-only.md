@@ -285,6 +285,22 @@ Deviations and findings, recorded deliberately:
 - **Playwright is a new devDependency** (`@playwright/test`, root) with `playwright.config.ts`;
   `pnpm test:e2e` builds the web bundle and the CLI bundle first, so a stale asset cannot produce
   a confusing failure. The browser is Playwright's own Chromium — one platform, one engine.
+- **The UI primitives are shadcn-svelte components, generated into this package** (user
+  direction, 2026-09-15: prefer generated components over hand-written ones).
+  `packages/git-ui/components.json` drives the CLI; `scripts/fix-shadcn-imports.ts` rewrites the
+  generated `$lib/…` imports to relative ones after every add, because this package is
+  deliberately not a SvelteKit app and must not depend on that alias. Generated so far: button,
+  badge, input, card, separator, dropdown-menu, scroll-area. One deliberate edit to a generated
+  file: the badge gained a Git-domain `tone` dimension (`branch`/`head`/`tag`/…), because a badge
+  here means something and callers should never pick colours by hand. The hand-written
+  Button/Input/Badge from the first T07 pass were removed in favour of the generated ones.
+- **Dark mode follows shadcn-svelte's Svelte recipe**: `mode-watcher` owns the `.dark` class on
+  `<html>` (`ModeWatcher` in the app's root layout), the theme tokens and the lane palette have
+  dark values under that class, Tailwind's `dark:` variant is wired to it via `@custom-variant`,
+  and a `ModeToggle` (generated `dropdown-menu` + `buttonVariants`) offers light/dark/system.
+  Verified in Chromium by driving the real dropdown and asserting the class flips; the dark and
+  light renders are recorded in the demo screenshots. WebKit and Firefox were not exercised for
+  the toggle.
 - **The e2e suite was run and passed** (7 tests, Chromium 153.0.8010.12 via Playwright 1.63.0, on
   macOS 25.6.0 arm64, git 2.50.1 Apple Git-155). Firefox, WebKit and Windows are **not**
   verified.
