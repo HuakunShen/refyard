@@ -80,7 +80,9 @@ export {
   type BannerState,
 } from "./components/StateBanner.svelte";
 export { default as StatusList } from "./components/StatusList.svelte";
+export { default as SubmodulePanel } from "./components/SubmodulePanel.svelte";
 export { default as TagPanel } from "./components/TagPanel.svelte";
+export { default as WorktreePanel } from "./components/WorktreePanel.svelte";
 
 export * from "./lib/format.js";
 export * from "./lib/geometry.js";

@@ -308,7 +308,14 @@ export async function createBareRemote(): Promise<BareRemoteFixture> {
     }
     return result.stdout;
   };
-  await runGit(["init", "--bare", "--quiet", path], scratchRoot, env);
+  // The same branch name `createRepo` uses, so a bare remote's HEAD points at a
+  // ref that exists once a fixture pushes to it; without this the isolated global
+  // config has no `init.defaultBranch` and the remote's HEAD names an unborn branch.
+  await runGit(
+    ["init", "--bare", "--quiet", "--initial-branch=main", path],
+    scratchRoot,
+    env,
+  );
   return {
     path,
     git,

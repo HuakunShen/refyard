@@ -169,13 +169,20 @@ test.describe("read-only workbench", () => {
     await page.goto(service.pairingUrl);
     await expect(page.getByTestId("build-badge")).toBeVisible();
 
-    // The badge states what is implemented, and the controls on screen match it: the
-    // staging surface exists, and nothing offers a kind with no effect behind it.
+    // The badge states what is implemented, and the controls on screen match it: every
+    // surface whose operations have effects is mounted, and a kind this build has no
+    // effect for — merging is the remaining one — offers no control at all.
     await expect(page.getByText(/write operations/)).toBeVisible();
-    await expect(page.getByTestId("staging-panel")).toBeVisible();
-    for (const label of [/^stash/i, /^push/i, /^pull/i, /^merge/i]) {
-      await expect(page.getByRole("button", { name: label })).toHaveCount(0);
+    for (const panel of [
+      "staging-panel",
+      "stash-panel",
+      "tag-panel",
+      "worktree-panel",
+      "submodule-panel",
+    ]) {
+      await expect(page.getByTestId(panel)).toBeVisible();
     }
+    await expect(page.getByRole("button", { name: /^merge/i })).toHaveCount(0);
   });
 
   test("reports a bad ticket instead of pairing", async ({ page }) => {

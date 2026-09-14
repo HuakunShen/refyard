@@ -92,8 +92,14 @@ test.describe("branch workbench", () => {
     await page.goto(service.pairingUrl);
     await expect(page.getByTestId("remote-panel")).toBeVisible();
 
-    await page.getByLabel("remote name").fill("origin");
-    await page.getByLabel("remote url").fill(remote.path);
+    await page
+      .getByTestId("remote-panel")
+      .getByLabel("remote name")
+      .fill("origin");
+    await page
+      .getByTestId("remote-panel")
+      .getByLabel("remote url")
+      .fill(remote.path);
     await page.getByTestId("add-remote").click();
     await expect(page.getByTestId("remote-message")).toContainText(
       /added remote origin/,

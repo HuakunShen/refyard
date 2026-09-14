@@ -264,6 +264,11 @@ export {
   type StashTagEffectsOptions,
 } from "./coordinator/stash-tag-effects.js";
 export {
+  createWorktreeEffects,
+  WORKTREE_MUTATION_KINDS,
+  type WorktreeEffectsOptions,
+} from "./coordinator/worktree-effects.js";
+export {
   createMutationCoordinator,
   currentIndexKey,
   repositoryIdOfTarget,

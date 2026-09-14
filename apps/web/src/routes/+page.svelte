@@ -50,7 +50,9 @@
     StashPanel,
     StateBanner,
     StatusList,
+    SubmodulePanel,
     TagPanel,
+    WorktreePanel,
     shortOid,
   } from "@refyard/git-ui";
   import {
@@ -215,6 +217,39 @@
     enabled: enabled && selectedRepositoryId !== null,
   }));
 
+  const worktrees = createQuery(() => ({
+    queryKey: ["worktrees", baseUrl, token, selectedRepositoryId],
+    queryFn: () =>
+      client.worktrees({ repositoryId: selectedRepositoryId ?? "" }),
+    enabled: enabled && selectedRepositoryId !== null,
+  }));
+
+  /**
+   * Submodule state of the primary worktree.
+   *
+   * The panel shows the worktree the write operations actually address, so the list
+   * and the buttons cannot disagree about which checkout they mean.
+   */
+  const submodules = createQuery(() => {
+    const worktreeId = repository?.primaryWorktreeId;
+    return {
+      queryKey: [
+        "submodules",
+        baseUrl,
+        token,
+        selectedRepositoryId,
+        worktreeId,
+      ],
+      queryFn: () =>
+        client.submodules({
+          repositoryId: selectedRepositoryId ?? "",
+          worktreeId: worktreeId ?? "",
+        }),
+      enabled:
+        enabled && selectedRepositoryId !== null && worktreeId !== undefined,
+    };
+  });
+
   const history = createInfiniteQuery(() => ({
     queryKey: ["history", baseUrl, token, selectedRepositoryId],
     queryFn: ({ pageParam }) =>
@@ -372,6 +407,8 @@
   let commitResult = $state<string | null>(null);
   let branchMessage = $state<string | null>(null);
   let remoteMessage = $state<string | null>(null);
+  let worktreeMessage = $state<string | null>(null);
+  let submoduleMessage = $state<string | null>(null);
 
   const implementedKinds = $derived(
     new Set((capabilities.data?.operations ?? []).map((entry) => entry.kind)),
@@ -382,6 +419,12 @@
   const networkAvailable = $derived(implementedKinds.has("fetch"));
   const stashAvailable = $derived(implementedKinds.has("createStash"));
   const tagAvailable = $derived(implementedKinds.has("createTag"));
+  const worktreeAvailable = $derived(implementedKinds.has("createWorktree"));
+  const submoduleAvailable = $derived(implementedKinds.has("addSubmodule"));
+  /** Branch names a new worktree may check out, from the refs read. */
+  const branchNames = $derived(
+    (refs.data?.branches ?? []).map((branch) => branch.name),
+  );
 
   /**
    * Follow an accepted operation to its terminal state.
@@ -475,6 +518,12 @@
       });
       await queryClient.invalidateQueries({
         queryKey: ["history", baseUrl, token, selectedRepositoryId],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["worktrees", baseUrl, token, selectedRepositoryId],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["submodules", baseUrl, token, selectedRepositoryId],
       });
     } catch (error) {
       report(describeProblem(error));
@@ -773,6 +822,168 @@
         tagResult = result;
       },
       "repository",
+    );
+  }
+
+  /* ------------------------------------------------ worktrees and submodules */
+
+  /**
+   * A new worktree's branch reference, resolved against the current refs.
+   *
+   * `newBranch` starts from the commit HEAD is at, read at request time rather than
+   * from the refs the screen was drawn with: the snapshot check would refuse a start
+   * point that moved while the user was typing, and a refusal is the honest answer
+   * only when the user actually asked for the old commit.
+   */
+  async function worktreeReference(reference: {
+    readonly kind: "newBranch" | "existingBranch" | "detached";
+    readonly branchName?: string;
+    readonly oid?: string;
+  }): Promise<
+    | {
+        readonly kind: "newBranch";
+        readonly branchName: string;
+        readonly startOid: string;
+      }
+    | { readonly kind: "existingBranch"; readonly branchName: string }
+    | { readonly kind: "detached"; readonly oid: string }
+  > {
+    if (reference.kind === "detached") {
+      return { kind: "detached", oid: reference.oid ?? "" };
+    }
+    if (reference.kind === "existingBranch") {
+      return { kind: "existingBranch", branchName: reference.branchName ?? "" };
+    }
+    if (selectedRepositoryId === null || primaryWorktreeId === null) {
+      throw new Error("no worktree selected");
+    }
+    const snapshot = await client.status({
+      repositoryId: selectedRepositoryId,
+      worktreeId: primaryWorktreeId,
+    });
+    const head = snapshot.head;
+    if (head.kind !== "born" || head.oid === null) {
+      throw new Error(
+        "this repository has no commit yet, so a new worktree has nothing to start from",
+      );
+    }
+    return {
+      kind: "newBranch",
+      branchName: reference.branchName ?? "",
+      startOid: head.oid,
+    };
+  }
+
+  function onWorktreeCreate(
+    relativeDestination: string,
+    reference: {
+      readonly kind: "newBranch" | "existingBranch" | "detached";
+      readonly branchName?: string;
+      readonly oid?: string;
+    },
+  ): void {
+    void performWrite(
+      "create-worktree",
+      async () => ({
+        kind: "createWorktree",
+        relativeDestination,
+        reference: await worktreeReference(reference),
+      }),
+      (result) => {
+        worktreeMessage = result;
+      },
+      "repository",
+    );
+  }
+
+  function onWorktreeRemove(worktreeId: string): void {
+    void performWrite(
+      "remove-worktree",
+      () => ({ kind: "removeWorktree", worktreeId, confirmed: true }),
+      (result) => {
+        worktreeMessage = result;
+      },
+      "repository",
+    );
+  }
+
+  function onWorktreeLock(worktreeId: string, reason: string | null): void {
+    void performWrite(
+      "lock-worktree",
+      () => ({ kind: "lockWorktree", worktreeId, reason }),
+      (result) => {
+        worktreeMessage = result;
+      },
+      "repository",
+    );
+  }
+
+  function onWorktreeUnlock(worktreeId: string): void {
+    void performWrite(
+      "unlock-worktree",
+      () => ({ kind: "unlockWorktree", worktreeId }),
+      (result) => {
+        worktreeMessage = result;
+      },
+      "repository",
+    );
+  }
+
+  function onSubmoduleAdd(input: {
+    remoteUrl: string;
+    relativePath: string;
+    branchName: string | null;
+  }): void {
+    void performWrite(
+      "add-submodule",
+      () => ({
+        kind: "addSubmodule",
+        remoteUrl: input.remoteUrl,
+        relativePath: input.relativePath,
+        branchName: input.branchName,
+        initialize: true,
+      }),
+      (result) => {
+        submoduleMessage = result;
+      },
+      "worktree",
+    );
+  }
+
+  function onSubmoduleUpdate(
+    pathIds: readonly string[],
+    recursive: boolean,
+  ): void {
+    void performWrite(
+      "update-submodule",
+      () => ({
+        kind: "updateSubmodule",
+        pathIds: [...pathIds],
+        initialize: true,
+        recursive,
+      }),
+      (result) => {
+        submoduleMessage = result;
+      },
+      "worktree",
+    );
+  }
+
+  function onSubmoduleSync(
+    pathIds: readonly string[],
+    recursive: boolean,
+  ): void {
+    void performWrite(
+      "sync-submodule",
+      () => ({
+        kind: "syncSubmodule",
+        pathIds: [...pathIds],
+        recursive,
+      }),
+      (result) => {
+        submoduleMessage = result;
+      },
+      "worktree",
     );
   }
 
@@ -1280,6 +1491,76 @@
                     onCreate={onTagCreate}
                     onDelete={onTagDelete}
                     onPush={onTagPush}
+                  />
+                {/if}
+              </CardContent>
+            </Card>
+          {/if}
+
+          {#if worktreeAvailable}
+            <Separator />
+            <Card size="sm">
+              <CardHeader>
+                <CardTitle
+                  class="text-xs font-semibold tracking-wide text-ink-muted uppercase"
+                >
+                  Worktrees
+                </CardTitle>
+              </CardHeader>
+              <CardContent class="flex flex-col gap-2">
+                {#if worktrees.isPending}
+                  <StateBanner state="loading" title="Reading worktrees…" />
+                {:else if worktrees.isError}
+                  <StateBanner
+                    state="error"
+                    title="Could not read worktrees"
+                    detail={describeProblem(worktrees.error)}
+                  />
+                {:else}
+                  <WorktreePanel
+                    worktrees={worktrees.data?.worktrees ?? []}
+                    branches={branchNames}
+                    disabled={mutationBusy}
+                    busy={mutationBusy}
+                    message={worktreeMessage}
+                    onCreate={onWorktreeCreate}
+                    onRemove={onWorktreeRemove}
+                    onLock={onWorktreeLock}
+                    onUnlock={onWorktreeUnlock}
+                  />
+                {/if}
+              </CardContent>
+            </Card>
+          {/if}
+
+          {#if submoduleAvailable}
+            <Separator />
+            <Card size="sm">
+              <CardHeader>
+                <CardTitle
+                  class="text-xs font-semibold tracking-wide text-ink-muted uppercase"
+                >
+                  Submodules
+                </CardTitle>
+              </CardHeader>
+              <CardContent class="flex flex-col gap-2">
+                {#if submodules.isPending}
+                  <StateBanner state="loading" title="Reading submodules…" />
+                {:else if submodules.isError}
+                  <StateBanner
+                    state="error"
+                    title="Could not read submodules"
+                    detail={describeProblem(submodules.error)}
+                  />
+                {:else}
+                  <SubmodulePanel
+                    submodules={submodules.data?.submodules ?? []}
+                    disabled={mutationBusy}
+                    busy={mutationBusy}
+                    message={submoduleMessage}
+                    onAdd={onSubmoduleAdd}
+                    onUpdate={onSubmoduleUpdate}
+                    onSync={onSubmoduleSync}
                   />
                 {/if}
               </CardContent>

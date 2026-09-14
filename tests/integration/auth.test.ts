@@ -345,9 +345,10 @@ describe("authorization and request shape", () => {
   });
 
   it("answers 501 for a mutation no effect implements, never a fake 202", async () => {
-    // Prevents: the UI believing a worktree was created when this build has no
-    // code that could run it. (Staging, branches/remotes/network and stash/tags
-    // have effects now; the worktree and merge operations still do not.)
+    // Prevents: the UI believing a repository was created when this build has no
+    // code that could run it. (Staging, branches/remotes/network, stash/tags and
+    // worktree/submodule operations have effects now; creating a repository and
+    // the merge operations still do not.)
     const response = await service.fetch("/api/v1/operations", {
       method: "POST",
       token,
@@ -355,15 +356,11 @@ describe("authorization and request shape", () => {
       body: JSON.stringify({
         clientRequestId: "req-1",
         target: {
-          kind: "repository",
-          repositoryId: service.repositoryId,
-          expectedSnapshotId: "snap_unknown",
+          kind: "workspace",
+          allowedRootId: service.allowedRootId,
+          relativeDestination: "not-implemented-yet",
         },
-        operation: {
-          kind: "lockWorktree",
-          worktreeId: "wt_unknown",
-          reason: null,
-        },
+        operation: { kind: "initRepository", initialBranch: null },
       }),
     });
     expect(response.status).toBe(501);

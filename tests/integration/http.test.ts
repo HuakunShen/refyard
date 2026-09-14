@@ -194,8 +194,9 @@ describe("git client", () => {
     );
     expect(kinds).toContain("createBranch");
     expect(kinds).toContain("createStash");
+    expect(kinds).toContain("createWorktree");
     // A kind with no effect must stay absent until one exists.
-    expect(kinds).not.toContain("lockWorktree");
+    expect(kinds).not.toContain("abortMerge");
     expect(capabilities.reads).toContain("status");
   });
 
@@ -275,17 +276,17 @@ describe("git client", () => {
         service.fetch(String(input).replace(service.baseUrl, ""), init ?? {}),
       token: () => token,
     });
-    // `lockWorktree` has no effect in this build; the client surfaces the closed
+    // `initRepository` has no effect in this build; the client surfaces the closed
     // code instead of a generic failure.
     await expect(
       mutations.submit({
         clientRequestId: "http-501-1",
         target: {
-          kind: "repository",
-          repositoryId: service.repositoryId,
-          expectedSnapshotId: "snap_x",
+          kind: "workspace",
+          allowedRootId: service.allowedRootId,
+          relativeDestination: "not-implemented-yet",
         },
-        operation: { kind: "lockWorktree", worktreeId: "wt_x", reason: null },
+        operation: { kind: "initRepository", initialBranch: null },
       }),
     ).rejects.toMatchObject({ code: "UnsupportedOperation", status: 501 });
   });

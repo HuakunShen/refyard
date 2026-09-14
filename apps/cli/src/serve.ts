@@ -45,6 +45,7 @@ import {
   createStagingEffects,
   createStashTagEffects,
   createTextCodec,
+  createWorktreeEffects,
   createWorktreeRegistry,
   DEFAULT_RETENTION,
   runDoctor,
@@ -224,6 +225,12 @@ export async function assembleService(
     engine,
     repositories,
   });
+  const worktreeEffects = createWorktreeEffects({
+    engine,
+    repositories,
+    roots,
+    paths,
+  });
 
   const mutations = createMutationCoordinator({
     journal,
@@ -237,6 +244,7 @@ export async function assembleService(
       ...stagingEffects,
       ...repositoryEffects,
       ...stashTagEffects,
+      ...worktreeEffects,
     ],
     nextOperationId: () => `op_${randomBytes(9).toString("base64url")}`,
     nextSequence: () => (sequence += 1),
