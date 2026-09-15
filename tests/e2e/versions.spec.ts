@@ -11,13 +11,8 @@
  * *same address*, reload, and require the page to notice and ask for a new pairing.
  */
 import { expect, test } from "@playwright/test";
-import { spawn } from "node:child_process";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { createRepo, type GitFixtureRepo } from "../support/repo.js";
-
-const REPO_ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
-const CLI_BUNDLE = join(REPO_ROOT, ".refyard-dev", "cli.mjs");
+import { startE2eService } from "../support/e2e-service.js";
 
 interface RunningService {
   readonly pairingUrl: string;
@@ -33,7 +28,7 @@ test.describe("a service that is not the one we paired with", () => {
 
   test.beforeEach(async () => {
     repo = await createRepo({ initialCommit: true });
-    first = await startService(repo.root, 0);
+    first = await startService(repo, 0);
   });
 
   test.afterEach(async () => {
@@ -55,7 +50,7 @@ test.describe("a service that is not the one we paired with", () => {
     // Same address, different service: the first one is gone and a second copy of
     // refyard is answering on the port its bookmark names.
     await first.stop();
-    const second = await startService(repo.root, first.port);
+    const second = await startService(repo, first.port);
     try {
       expect(second.instanceId).not.toEqual(first.instanceId);
       await page.reload();
@@ -85,95 +80,10 @@ test.describe("a service that is not the one we paired with", () => {
 });
 
 /** Start the CLI bundle against one repository; `port` 0 asks the OS for a free one. */
+/** The service for this spec's fixture, on the fixture's own environment. */
 async function startService(
-  repositoryPath: string,
+  fixture: GitFixtureRepo,
   port: number,
 ): Promise<RunningService> {
-  const child = spawn(
-    process.execPath,
-    [
-      CLI_BUNDLE,
-      "serve",
-      "--no-open",
-      "--port",
-      String(port),
-      "--repo",
-      repositoryPath,
-      "--json",
-    ],
-    {
-      cwd: REPO_ROOT,
-      env: { ...process.env, NO_COLOR: "1" },
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
-
-  let stdout = "";
-  const collect = (chunk: Buffer): void => {
-    stdout += chunk.toString("utf8");
-  };
-  child.stdout.on("data", collect);
-
-  const deadline = Date.now() + 30_000;
-  for (;;) {
-    const line = stdout
-      .split("\n")
-      .find((candidate) => candidate.trim().startsWith("{"));
-    if (line !== undefined) {
-      const ready = JSON.parse(line) as {
-        serviceInstanceId: string;
-        port: number;
-        url: string;
-      };
-      // The pairing URL is on stderr in `--json` mode; read it from the human channel
-      // rather than inventing one for the test.
-      const ticket = await pairingTicket(child);
-      return {
-        pairingUrl: `${ready.url}/?pair=${ticket}`,
-        origin: ready.url,
-        port: ready.port,
-        instanceId: ready.serviceInstanceId,
-        async stop(): Promise<void> {
-          if (child.exitCode !== null || child.signalCode !== null) {
-            return;
-          }
-          const exited = new Promise<void>((resolve) => {
-            child.once("exit", () => {
-              resolve();
-            });
-          });
-          child.kill("SIGTERM");
-          await exited;
-        },
-      };
-    }
-    if (child.exitCode !== null) {
-      throw new Error(`the service exited with ${child.exitCode}`);
-    }
-    if (Date.now() > deadline) {
-      throw new Error(
-        `the service never printed its readiness object:\n${stdout}`,
-      );
-    }
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-}
-
-/** The pairing URL the service wrote to stderr, by the time readiness is printed. */
-async function pairingTicket(child: ReturnType<typeof spawn>): Promise<string> {
-  let stderr = "";
-  child.stderr?.on("data", (chunk: Buffer) => {
-    stderr += chunk.toString("utf8");
-  });
-  const deadline = Date.now() + 30_000;
-  for (;;) {
-    const match = /pair=([A-Za-z0-9_-]+)/.exec(stderr);
-    if (match !== null && match[1] !== undefined) {
-      return match[1];
-    }
-    if (Date.now() > deadline) {
-      throw new Error(`the service never printed a pairing URL:\n${stderr}`);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
+  return startE2eService({ repo: fixture, port });
 }

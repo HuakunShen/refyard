@@ -12,13 +12,8 @@
  * page says which repository state resulted rather than trusting its own request.
  */
 import { expect, test } from "@playwright/test";
-import { spawn } from "node:child_process";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { createRepo, type GitFixtureRepo } from "../support/repo.js";
-
-const REPO_ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
-const CLI_BUNDLE = join(REPO_ROOT, ".refyard-dev", "cli.mjs");
+import { startE2eService } from "../support/e2e-service.js";
 
 interface RunningService {
   readonly origin: string;
@@ -34,7 +29,7 @@ test.describe("staging workbench", () => {
   // case must not inherit another's commits.
   test.beforeEach(async () => {
     repo = await createRepo({ initialCommit: true });
-    service = await startService(repo.root);
+    service = await startService(repo);
   });
 
   test.afterEach(async () => {
@@ -130,51 +125,7 @@ test.describe("staging workbench", () => {
 });
 
 /** Start the CLI bundle against one repository and wait for the pairing URL it prints. */
-async function startService(repositoryPath: string): Promise<RunningService> {
-  const child = spawn(
-    process.execPath,
-    [CLI_BUNDLE, "serve", "--no-open", "--port", "0", "--repo", repositoryPath],
-    {
-      cwd: REPO_ROOT,
-      env: { ...process.env, NO_COLOR: "1" },
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
-
-  let output = "";
-  const collect = (chunk: Buffer): void => {
-    output += chunk.toString("utf8");
-  };
-  child.stdout.on("data", collect);
-  child.stderr.on("data", collect);
-
-  const deadline = Date.now() + 30_000;
-  for (;;) {
-    const match = /http:\/\/127\.0\.0\.1:\d+\/[?#]pair=[A-Za-z0-9_-]+/.exec(
-      output,
-    );
-    if (match !== null) {
-      const pairingUrl = match[0];
-      return {
-        pairingUrl,
-        origin: new URL(pairingUrl).origin,
-        async stop(): Promise<void> {
-          if (child.exitCode !== null || child.signalCode !== null) {
-            return;
-          }
-          const exited = new Promise<void>((resolve) => {
-            child.once("exit", () => {
-              resolve();
-            });
-          });
-          child.kill("SIGTERM");
-          await exited;
-        },
-      };
-    }
-    if (Date.now() > deadline) {
-      throw new Error(`the service never printed a pairing URL:\n${output}`);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
+/** The service for this spec's fixture, on the fixture's own environment. */
+async function startService(fixture: GitFixtureRepo): Promise<RunningService> {
+  return startE2eService({ repo: fixture });
 }
