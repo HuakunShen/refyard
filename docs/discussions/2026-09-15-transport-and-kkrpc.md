@@ -123,6 +123,17 @@ UI only when the UI itself reads again. The design prescribes the cadence (2 s v
 prescribed polling is small, needs no new transport, and closes the visible gap; a watcher can follow
 if polling proves too slow on real repositories, with `fsmonitor` left alone.
 
+## 4a. Update (same day, later): the gap is closed
+
+The polling cadence this record said was missing now exists:
+`apps/web/src/lib/background-poll.ts` implements the design's numbers (visible 2 s, hidden
+15 s, 30 s for a slow repository), the background queries in the app carry it, and
+`tests/e2e/live-updates.spec.ts` writes a file with nothing but `fs` and asserts the
+workbench shows it and can stage it — the path id it stages with was minted by the polled
+read, so a UI that had not re-read could not have done it. Deliberately still absent: a
+watcher, and any polling of diffs or preview fingerprints (the design says not to hash the
+repository to notice background change).
+
 ## 5. What would change the answer
 
 - If the host must **invoke** UI capabilities (ask the user something mid-operation, drive a panel),

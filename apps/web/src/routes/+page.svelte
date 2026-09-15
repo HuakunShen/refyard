@@ -82,6 +82,11 @@
   } from "$lib/connection.js";
   import { followOperation } from "$lib/operation-follow.js";
   import {
+    backgroundRead,
+    createReadTimer,
+    timedRead,
+  } from "$lib/background-poll.js";
+  import {
     clearStoredSession,
     readStoredAccent,
     readStoredBackground,
@@ -229,16 +234,65 @@
   /* ------------------------------------------------------------------- reads */
 
   const enabled = $derived(token !== null);
+  /**
+   * The last successful duration of each background read, which is what decides whether a
+   * repository is paced at 2 s or at 30 s (see `$lib/background-poll.ts`).
+   */
+  const readTimer = createReadTimer();
+
+  /**
+   * Re-read the background queries the moment the tab becomes visible again.
+   *
+   * Hidden tabs poll every 15 s, so without this a user who comes back after an hour could
+   * look at up to 15 seconds of stale repository. Only the background keys are refreshed —
+   * a selected diff or path preview is read for the thing the user is looking at, and
+   * re-reading all of them on every tab switch would be work nobody asked for.
+   */
+  $effect(() => {
+    if (!browser) {
+      return;
+    }
+    const onVisibility = (): void => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+      for (const prefix of [
+        "repositories",
+        "status",
+        "refs",
+        "stashes",
+        "worktrees",
+        "submodules",
+        "history",
+      ]) {
+        void queryClient.invalidateQueries({ queryKey: [prefix] });
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  });
+  /** The cadence options a background read carries, for one query key. */
+  const polled = (key: readonly unknown[]) =>
+    backgroundRead({ key, timer: readTimer });
+
   const capabilities = createQuery(() => ({
     queryKey: ["capabilities", baseUrl, token],
     queryFn: () => client.capabilities(),
     enabled,
   }));
-  const repositories = createQuery(() => ({
-    queryKey: ["repositories", baseUrl, token],
-    queryFn: () => client.repositories(),
-    enabled,
-  }));
+  const repositories = createQuery(() => {
+    const key = ["repositories", baseUrl, token];
+    return {
+      queryKey: key,
+      queryFn: timedRead({
+        key,
+        timer: readTimer,
+        run: () => client.repositories(),
+      }),
+      enabled,
+      ...polled(key),
+    };
+  });
 
   let selectedRepositoryId = $state<string | null>(null);
   let selectedOid = $state<string | null>(null);
@@ -290,34 +344,66 @@
     }
   });
 
-  const status = createQuery(() => ({
-    queryKey: ["status", baseUrl, token, selectedRepositoryId],
-    queryFn: () =>
-      client.status({
-        repositoryId: selectedRepositoryId ?? "",
-        worktreeId: repository?.primaryWorktreeId,
+  const status = createQuery(() => {
+    const key = ["status", baseUrl, token, selectedRepositoryId];
+    return {
+      queryKey: key,
+      queryFn: timedRead({
+        key,
+        timer: readTimer,
+        run: () =>
+          client.status({
+            repositoryId: selectedRepositoryId ?? "",
+            worktreeId: repository?.primaryWorktreeId,
+          }),
       }),
-    enabled: enabled && selectedRepositoryId !== null,
-  }));
+      enabled: enabled && selectedRepositoryId !== null,
+      ...polled(key),
+    };
+  });
 
-  const refs = createQuery(() => ({
-    queryKey: ["refs", baseUrl, token, selectedRepositoryId],
-    queryFn: () => client.refs({ repositoryId: selectedRepositoryId ?? "" }),
-    enabled: enabled && selectedRepositoryId !== null,
-  }));
+  const refs = createQuery(() => {
+    const key = ["refs", baseUrl, token, selectedRepositoryId];
+    return {
+      queryKey: key,
+      queryFn: timedRead({
+        key,
+        timer: readTimer,
+        run: () => client.refs({ repositoryId: selectedRepositoryId ?? "" }),
+      }),
+      enabled: enabled && selectedRepositoryId !== null,
+      ...polled(key),
+    };
+  });
 
-  const stashes = createQuery(() => ({
-    queryKey: ["stashes", baseUrl, token, selectedRepositoryId],
-    queryFn: () => client.stashes({ repositoryId: selectedRepositoryId ?? "" }),
-    enabled: enabled && selectedRepositoryId !== null,
-  }));
+  const stashes = createQuery(() => {
+    const key = ["stashes", baseUrl, token, selectedRepositoryId];
+    return {
+      queryKey: key,
+      queryFn: timedRead({
+        key,
+        timer: readTimer,
+        run: () => client.stashes({ repositoryId: selectedRepositoryId ?? "" }),
+      }),
+      enabled: enabled && selectedRepositoryId !== null,
+      ...polled(key),
+    };
+  });
 
-  const worktrees = createQuery(() => ({
-    queryKey: ["worktrees", baseUrl, token, selectedRepositoryId],
-    queryFn: () =>
-      client.worktrees({ repositoryId: selectedRepositoryId ?? "" }),
-    enabled: enabled && selectedRepositoryId !== null,
-  }));
+  const worktrees = createQuery(() => {
+    const key = ["worktrees", baseUrl, token, selectedRepositoryId];
+    return {
+      queryKey: key,
+      queryFn: timedRead({
+        key,
+        timer: readTimer,
+        run: () =>
+          client.worktrees({ repositoryId: selectedRepositoryId ?? "" }),
+      }),
+      enabled: enabled && selectedRepositoryId !== null,
+      ...polled(key),
+    };
+  });
 
   /**
    * Submodule state of the primary worktree.
@@ -327,36 +413,51 @@
    */
   const submodules = createQuery(() => {
     const worktreeId = repository?.primaryWorktreeId;
+    const key = [
+      "submodules",
+      baseUrl,
+      token,
+      selectedRepositoryId,
+      worktreeId,
+    ];
     return {
-      queryKey: [
-        "submodules",
-        baseUrl,
-        token,
-        selectedRepositoryId,
-        worktreeId,
-      ],
-      queryFn: () =>
-        client.submodules({
-          repositoryId: selectedRepositoryId ?? "",
-          worktreeId: worktreeId ?? "",
-        }),
+      queryKey: key,
+      queryFn: timedRead({
+        key,
+        timer: readTimer,
+        run: () =>
+          client.submodules({
+            repositoryId: selectedRepositoryId ?? "",
+            worktreeId: worktreeId ?? "",
+          }),
+      }),
       enabled:
         enabled && selectedRepositoryId !== null && worktreeId !== undefined,
+      ...polled(key),
     };
   });
 
-  const history = createInfiniteQuery(() => ({
-    queryKey: ["history", baseUrl, token, selectedRepositoryId],
-    queryFn: ({ pageParam }) =>
-      client.history({
-        repositoryId: selectedRepositoryId ?? "",
-        limit: HISTORY_PAGE_SIZE,
-        ...(pageParam === null ? {} : { cursor: pageParam }),
-      }),
-    initialPageParam: null as string | null,
-    getNextPageParam: (lastPage) => lastPage.nextCursor,
-    enabled: enabled && selectedRepositoryId !== null,
-  }));
+  const history = createInfiniteQuery(() => {
+    const key = ["history", baseUrl, token, selectedRepositoryId];
+    return {
+      queryKey: key,
+      queryFn: ({ pageParam }) =>
+        timedRead({
+          key: [...key, pageParam],
+          timer: readTimer,
+          run: () =>
+            client.history({
+              repositoryId: selectedRepositoryId ?? "",
+              limit: HISTORY_PAGE_SIZE,
+              ...(pageParam === null ? {} : { cursor: pageParam }),
+            }),
+        })(),
+      initialPageParam: null as string | null,
+      getNextPageParam: (lastPage) => lastPage.nextCursor,
+      enabled: enabled && selectedRepositoryId !== null,
+      ...polled(key),
+    };
+  });
 
   const historyPages = $derived(history.data?.pages ?? []);
   const commits = $derived(historyPages.flatMap((page) => page.commits));
