@@ -34,6 +34,8 @@ import {
   createTextCodec,
   createWorktreeEffects,
   createWorktreeRegistry,
+  kindsBlockedByGitFeatures,
+  unavailableForGitFeatures,
   unavailableMutations,
   DEFAULT_RETENTION,
   startHttpHost,
@@ -103,6 +105,22 @@ export interface StartTestServiceOptions {
    * pointed at them rather than at `repo.root`. Defaults to the fixture's checkout.
    */
   readonly subjectPath?: string;
+  /**
+   * What `refyard doctor` probed on this machine's Git.
+   *
+   * Defaults to a Git that has every porcelain this build uses, which is what the
+   * developer's machine and CI have. A case passes a narrower answer to exercise the
+   * feature gating — the wiring that keeps an operation off the capability list when the
+   * Git under it cannot report what moved.
+   */
+  readonly gitFeatures?: {
+    readonly porcelainV2Status: boolean;
+    readonly worktreeListZ: boolean;
+    readonly catFileBatch: boolean;
+    readonly pushPorcelain: boolean;
+    readonly fetchPorcelain: boolean;
+    readonly objectFormats: ("sha1" | "sha256")[];
+  };
   /**
    * Reuse a state root, which is how a restart test sees the previous journal.
    */
@@ -188,10 +206,19 @@ export async function startTestService(
   const events = createEventRing();
   let sequence = 0;
 
+  const features = options.gitFeatures ?? {
+    porcelainV2Status: true,
+    worktreeListZ: true,
+    catFileBatch: true,
+    pushPorcelain: true,
+    fetchPorcelain: true,
+    objectFormats: ["sha1", "sha256"],
+  };
+
   // The real product wiring: the T08 staging effects, exactly as the CLI registers
   // them, so a passing test is evidence about the product. A test passes `effects`
   // only to install a controlled stub.
-  const effects: readonly MutationEffect[] = options.effects ?? [
+  const registered: readonly MutationEffect[] = options.effects ?? [
     ...createStagingEffects({
       engine,
       repositories,
@@ -206,6 +233,11 @@ export async function startTestService(
     ...createWorktreeEffects({ engine, repositories, roots, paths }),
     ...createMergeEffects({ engine, repositories }),
   ];
+
+  // The same feature gate the CLI applies: an operation whose porcelain this machine's
+  // Git lacks is not registered at all, so a click cannot reach a command Git refuses.
+  const blocked = kindsBlockedByGitFeatures(features);
+  const effects = registered.filter((effect) => !blocked.has(effect.kind));
 
   const mutations = createMutationCoordinator({
     journal,
@@ -234,17 +266,15 @@ export async function startTestService(
     contractVersion: CONTRACT_VERSION,
     gitPath: fixtureGitPath(),
     gitVersion: "2.50.1",
-    gitFeatures: {
-      porcelainV2Status: true,
-      worktreeListZ: true,
-      catFileBatch: true,
-      pushPorcelain: true,
-      fetchPorcelain: true,
-      objectFormats: ["sha1", "sha256"],
-    },
+    gitFeatures: features,
     // Derived from this host's own registry, exactly as the CLI derives it: a
     // harness that hardcoded an empty list could not exercise the 501 path at all.
-    unavailable: unavailableMutations(mutations.implementedKinds()),
+    unavailable: [
+      ...unavailableMutations(mutations.implementedKinds(), {
+        accountedFor: blocked,
+      }),
+      ...unavailableForGitFeatures(features),
+    ],
     reads: [
       "capabilities",
       "repositories",

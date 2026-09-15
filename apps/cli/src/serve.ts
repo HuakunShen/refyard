@@ -47,6 +47,8 @@ import {
   createMergeEffects,
   createTextCodec,
   createWorktreeEffects,
+  kindsBlockedByGitFeatures,
+  unavailableForGitFeatures,
   unavailableMutations,
   createWorktreeRegistry,
   DEFAULT_RETENTION,
@@ -238,6 +240,26 @@ export async function assembleService(
     paths,
   });
 
+  // The doctor's probes decide which effects are registered, not just what the UI is
+  // told: an operation built on a porcelain this machine's Git does not have is not
+  // offered at all, so a click cannot reach a command Git will refuse.
+  const features = doctor?.features ?? {
+    porcelainV2Status: false,
+    worktreeListZ: false,
+    catFileBatch: false,
+    pushPorcelain: false,
+    fetchPorcelain: false,
+    objectFormats: [],
+  };
+  const blocked = kindsBlockedByGitFeatures(features);
+  const availableEffects = [
+    ...stagingEffects,
+    ...repositoryEffects,
+    ...stashTagEffects,
+    ...worktreeEffects,
+    ...mergeEffects,
+  ].filter((effect) => !blocked.has(effect.kind));
+
   const mutations = createMutationCoordinator({
     journal,
     repositories,
@@ -246,13 +268,7 @@ export async function assembleService(
     recovery,
     snapshots,
     events,
-    effects: [
-      ...stagingEffects,
-      ...repositoryEffects,
-      ...stashTagEffects,
-      ...worktreeEffects,
-      ...mergeEffects,
-    ],
+    effects: availableEffects,
     nextOperationId: () => `op_${randomBytes(9).toString("base64url")}`,
     nextSequence: () => (sequence += 1),
   });
@@ -260,9 +276,12 @@ export async function assembleService(
   // What the contract defines and this build does not implement — derived from the
   // coordinator's own registry by the shared rule, so the CLI and the test harness
   // cannot drift apart on what "unavailable" means.
-  const unavailable: UnavailableReason[] = unavailableMutations(
-    mutations.implementedKinds(),
-  );
+  const unavailable: UnavailableReason[] = [
+    ...unavailableMutations(mutations.implementedKinds(), {
+      accountedFor: blocked,
+    }),
+    ...unavailableForGitFeatures(features),
+  ];
 
   const read = createReadService({
     engine,
@@ -278,14 +297,7 @@ export async function assembleService(
     contractVersion: CONTRACT_VERSION,
     gitPath: options.gitPath,
     gitVersion: doctor?.gitVersion ?? "unknown",
-    gitFeatures: doctor?.features ?? {
-      porcelainV2Status: false,
-      worktreeListZ: false,
-      catFileBatch: false,
-      pushPorcelain: false,
-      fetchPorcelain: false,
-      objectFormats: [],
-    },
+    gitFeatures: features,
     unavailable,
     reads,
     // The registry is the single source: a kind is advertised exactly when an
@@ -308,14 +320,7 @@ export async function assembleService(
     allowedRootId: root.allowedRootId,
     gitPath: options.gitPath,
     gitVersion: doctor?.gitVersion ?? "unknown",
-    features: doctor?.features ?? {
-      porcelainV2Status: false,
-      worktreeListZ: false,
-      catFileBatch: false,
-      pushPorcelain: false,
-      fetchPorcelain: false,
-      objectFormats: [],
-    },
+    features,
   };
 }
 

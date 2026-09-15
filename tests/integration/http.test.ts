@@ -26,6 +26,7 @@ import {
   createMutationClient,
   GitClientError,
 } from "@refyard/git-client";
+import { capabilitiesResponseSchema } from "@refyard/git-contract";
 import { createRepo, type GitFixtureRepo } from "../support/repo.js";
 import {
   startTestService,
@@ -217,6 +218,61 @@ describe("static assets", () => {
       expect(asset.status).toBe(404);
     } finally {
       await bare.close();
+    }
+  });
+});
+
+describe("a machine whose Git is older than the baseline", () => {
+  it("does not offer an operation whose porcelain this Git lacks", async () => {
+    // Prevents: offering `fetch` on a Git older than 2.41, where `git fetch --porcelain`
+    // exits with "unknown option". The doctor probes for it; this is the other half of the
+    // rule — the operation is not registered, so it is absent from `operations` and named
+    // in `unavailable` with the reason. A capability that says "available" and then fails
+    // when clicked is the lie the capability list exists to prevent.
+    const repo = await createRepo({ initialCommit: true });
+    const service = await startTestService({
+      repo,
+      gitFeatures: {
+        porcelainV2Status: true,
+        worktreeListZ: true,
+        catFileBatch: true,
+        pushPorcelain: true,
+        fetchPorcelain: false,
+        objectFormats: ["sha1", "sha256"],
+      },
+    });
+    try {
+      const token = await service.pair();
+      const response = await service.fetch("/api/v1/capabilities", { token });
+      expect(response.status).toBe(200);
+      const capabilities = capabilitiesResponseSchema.parse(
+        await response.json(),
+      );
+      const kinds = capabilities.operations.map((entry) => entry.kind);
+      expect(kinds).not.toContain("fetch");
+      expect(kinds).not.toContain("pull");
+      // Everything else stays: the gate is per porcelain, not a blanket downgrade.
+      expect(kinds).toContain("push");
+      expect(kinds).toContain("commit");
+      const reason = capabilities.unavailable.find(
+        (entry) => entry.code === "git-too-old",
+      );
+      expect(reason?.message).toContain("fetch --porcelain");
+      expect(reason?.operations).toContain("fetch");
+      expect(reason?.operations).toContain("pull");
+      // And the *other* reason does not claim them: "this build does not implement
+      // fetch" would be a false statement about the build, made by a machine whose Git
+      // is the reason.
+      const notImplemented = capabilities.unavailable.find(
+        (entry) => entry.code === "not-implemented",
+      );
+      expect(notImplemented?.operations ?? []).not.toContain("fetch");
+      expect(notImplemented?.operations ?? []).not.toContain("pull");
+      // And Git's own report says what is missing, so the reader can act on it.
+      expect(capabilities.git.features.fetchPorcelain).toBe(false);
+    } finally {
+      await service.close();
+      await repo.dispose();
     }
   });
 });

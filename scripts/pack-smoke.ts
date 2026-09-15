@@ -245,7 +245,10 @@ const serving = spawn(
     repository,
     "--json",
   ],
-  { cwd: consumer, env, stdio: ["ignore", "pipe", "pipe"] },
+  // Its own process group, so the smoke can send the signal a terminal's Ctrl+C sends:
+  // the whole foreground group. Signalling only the wrapper is a different test, and one
+  // where Linux keeps the service alive (see the evidence file).
+  { cwd: consumer, env, stdio: ["ignore", "pipe", "pipe"], detached: true },
 );
 let stdout = "";
 let stderr = "";
@@ -297,6 +300,14 @@ await step(
         `the machine-readable stdout carried a pairing URL:\n${stdout}`,
       );
     }
+    // The ready object is written to stdout first and the pairing URL a moment later, so
+    // this waits for it instead of reading stderr once. The difference is not cosmetic: on
+    // a loaded machine the one-shot check failed with "the pairing URL did not go to
+    // stderr", which reads exactly like a product defect and is a race in this harness.
+    const deadline = Date.now() + 10_000;
+    while (!stderr.includes("pair=") && Date.now() < deadline) {
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 50));
+    }
     if (!stderr.includes("pair=")) {
       throw new Error(
         "the pairing URL did not go to stderr, where the user can still read it",
@@ -328,24 +339,61 @@ await step(
   },
 );
 
-await step("SIGTERM stops the service cleanly", "kill -TERM", async () => {
-  const exited = new Promise<void>((resolvePromise) => {
-    serving.once("exit", () => resolvePromise());
-  });
-  serving.kill("SIGTERM");
-  const timeout = new Promise<never>((_, reject) =>
-    setTimeout(
-      () => reject(new Error("the service did not exit within 15s")),
-      15_000,
-    ),
-  );
-  await Promise.race([exited, timeout]);
-  if (serving.exitCode !== 0) {
-    throw new Error(
-      `the service exited with ${serving.exitCode} after SIGTERM`,
+await step(
+  "SIGTERM stops the service cleanly",
+  "kill -TERM, then the address must stop answering",
+  async () => {
+    // What this asserts is the *service*, not npm's exit status. The service here is a
+    // grandchild — `npm exec` spawns it — and the status the wrapper reports after the
+    // signal is npm's business: on Linux npm dies by the signal itself, on macOS it has
+    // exited 0, and neither answer says whether refyard stopped. What a user can observe is
+    // the address: after Ctrl+C (or a supervisor's SIGTERM) it must stop answering.
+    const exited = new Promise<void>((resolvePromise) => {
+      serving.once("exit", () => resolvePromise());
+    });
+    // The group, not the wrapper: `npm exec` spawns the service as a grandchild, and a
+    // signal aimed at npm alone is not what a user's Ctrl+C or a shell's job control does.
+    if (serving.pid === undefined) {
+      throw new Error("the service wrapper has no pid");
+    }
+    process.kill(-serving.pid, "SIGTERM");
+
+    const deadline = Date.now() + 15_000;
+    for (;;) {
+      let answered = false;
+      try {
+        const response = await fetch(`${ready.url}/`, {
+          signal: AbortSignal.timeout(2_000),
+        });
+        answered = response.status > 0;
+      } catch {
+        answered = false;
+      }
+      if (!answered) {
+        break;
+      }
+      if (Date.now() > deadline) {
+        throw new Error(
+          "the address still answered 15s after SIGTERM; the service did not stop",
+        );
+      }
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));
+    }
+
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error("the wrapper did not exit within 15s")),
+        15_000,
+      ),
     );
-  }
-});
+    await Promise.race([exited, timeout]);
+    // A death by signal is npm's own exit path — the address is already gone, which is the
+    // claim this step makes. What must not happen is an unexplained non-zero code.
+    if (serving.signalCode === null && serving.exitCode !== 0) {
+      throw new Error(`the wrapper exited with ${serving.exitCode}`);
+    }
+  },
+);
 
 // 3. The failure a user is most likely to hit: two servers, one port.
 const portHolder = spawn(

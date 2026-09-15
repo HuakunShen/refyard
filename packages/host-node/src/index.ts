@@ -274,7 +274,11 @@ export {
   MERGE_MUTATION_KINDS,
   type MergeEffectsOptions,
 } from "./coordinator/merge-effects.js";
-export { unavailableMutations } from "./coordinator/capabilities.js";
+export {
+  kindsBlockedByGitFeatures,
+  unavailableForGitFeatures,
+  unavailableMutations,
+} from "./coordinator/capabilities.js";
 export {
   createMutationCoordinator,
   currentIndexKey,
