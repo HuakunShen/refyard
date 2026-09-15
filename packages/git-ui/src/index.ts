@@ -117,6 +117,12 @@ export { default as DiffPanel } from "./components/DiffPanel.svelte";
 export { default as RefsPanel } from "./components/RefsPanel.svelte";
 export { default as RemotePanel } from "./components/RemotePanel.svelte";
 export { default as RepositoryList } from "./components/RepositoryList.svelte";
+export { default as RepositoryPanel } from "./components/RepositoryPanel.svelte";
+export type {
+  CloneRequest as RepositoryCloneRequest,
+  InitRequest as RepositoryInitRequest,
+  WorkspaceRoot,
+} from "./components/RepositoryPanel.svelte";
 export { default as StagingPanel } from "./components/StagingPanel.svelte";
 export { default as StashPanel } from "./components/StashPanel.svelte";
 export {

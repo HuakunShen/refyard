@@ -170,9 +170,15 @@ test.describe("read-only workbench", () => {
     await expect(page.getByTestId("build-badge")).toBeVisible();
 
     // The badge states what is implemented, and the controls on screen match it: every
-    // surface whose operations have effects is mounted, and a kind this build has no
-    // effect for — cloning needs a workspace root this build cannot approve yet —
-    // offers no control at all.
+    // surface whose operations have effects is mounted. This case used to end with the
+    // negative half — "cloning needs a workspace root this build cannot approve, so no
+    // clone control exists" — and that is no longer true: every mutation in the contract
+    // has an effect now, so there is no unimplemented operation left to point at. The
+    // property itself is still asserted, one layer down and against a host that *can* be
+    // reduced: `tests/integration/http.test.ts` pairs with a service that has no effects
+    // and checks that nothing is advertised and every kind is named as missing, and
+    // `tests/integration/cli.test.ts` checks the opposite end — the built CLI advertises
+    // all of them and names none as missing.
     await expect(page.getByText(/write operations/)).toBeVisible();
     for (const panel of [
       "staging-panel",
@@ -181,10 +187,10 @@ test.describe("read-only workbench", () => {
       "worktree-panel",
       "submodule-panel",
       "branch-panel",
+      "repository-panel",
     ]) {
       await expect(page.getByTestId(panel)).toBeVisible();
     }
-    await expect(page.getByRole("button", { name: /^clone/i })).toHaveCount(0);
   });
 
   test("reports a bad ticket instead of pairing", async ({ page }) => {

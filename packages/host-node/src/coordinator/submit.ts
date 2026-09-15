@@ -81,15 +81,29 @@ export interface MutationCoordinator {
  * minted `repositoryId`, so a log line or a stored key says which kind of resource it
  * names without a second field.
  */
+export const WORKSPACE_WRITE_KEY_PREFIX = "root:";
+
 export function writeKeyOfTarget(
   target: ParsedMutationRequest["target"],
 ): string | null {
   if (target.kind === "workspace") {
     return target.allowedRootId.length === 0
       ? null
-      : `root:${target.allowedRootId}`;
+      : `${WORKSPACE_WRITE_KEY_PREFIX}${target.allowedRootId}`;
   }
   return target.repositoryId;
+}
+
+/**
+ * True when a write key names a repository rather than an approved root.
+ *
+ * The distinction is not cosmetic: a `repositoryChanged` event carries a repository id
+ * and the contract validates it as one, so publishing a root key in that field throws —
+ * and it did, taking the service process down with a `ZodError` the first time a
+ * workspace operation ran end to end.
+ */
+export function isRepositoryWriteKey(key: string): boolean {
+  return !key.startsWith(WORKSPACE_WRITE_KEY_PREFIX);
 }
 
 export function repositoryIdOfTarget(
@@ -279,6 +293,15 @@ export function createMutationCoordinator(
           kind: "operation",
           operation: event.operation,
         });
+        return;
+      }
+      if (!isRepositoryWriteKey(event.repositoryId)) {
+        // A workspace operation's key names the approved root it wrote into, and the
+        // wire has no "a root changed" payload — `repositoryChanged` carries a
+        // repository id. So nothing is published for the directory transition: the
+        // client learns about the new repository from its own re-read of the list,
+        // which is what the panel does after a create succeeds. Recorded as a gap
+        // rather than papered over with a key that is not a repository id.
         return;
       }
       options.events.publish({

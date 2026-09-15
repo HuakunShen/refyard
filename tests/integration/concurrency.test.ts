@@ -319,6 +319,43 @@ describe("event ring and stream", () => {
     ).toHaveProperty("sequence", 7);
   });
 
+  it("drops a payload the contract refuses instead of taking the service down", () => {
+    // Prevents: a malformed hint killing the process. A workspace operation's write key
+    // (`root:…`) reached `repositoryChanged`'s repository-id field, the ring's own
+    // validation threw inside a journal transition, and the CLI exited with a ZodError
+    // while a mutation was in flight. A hint is never the source of truth, so dropping
+    // it — loudly, through the callback — is the correct behaviour; crashing is not.
+    const dropped: string[] = [];
+    const ring = createEventRing({
+      onInvalidPayload: (error, payload) => {
+        dropped.push(`${String(error).slice(0, 40)}:${payload.kind}`);
+      },
+    });
+    const seen: number[] = [];
+    ring.subscribe((envelope) => {
+      seen.push(envelope.sequence);
+    });
+
+    const published = ring.publish({
+      kind: "repositoryChanged",
+      // Not a repository id: exactly the shape that used to throw.
+      repositoryId: "root:root_1",
+      worktreeIds: [],
+      snapshotInvalidated: true,
+    });
+
+    expect(published).toBeNull();
+    expect(dropped).toHaveLength(1);
+    expect(seen).toEqual([]);
+    // The refused payload spent no sequence: the next real event is still the first one,
+    // so a client resuming from its cursor sees no phantom gap.
+    expect(ring.latestSequence()).toBe(0);
+    expect(
+      ring.publish({ kind: "session", expiresAt: "2026-09-15T08:00:00.000Z" })
+        ?.sequence,
+    ).toBe(1);
+  });
+
   it("delivers live events to a subscriber", () => {
     const ring = createEventRing();
     const seen: number[] = [];

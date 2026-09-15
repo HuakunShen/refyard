@@ -43,6 +43,7 @@
     RefyardLogo,
     RemotePanel,
     RepositoryList,
+    RepositoryPanel,
     SectionCard,
     Separator,
     StagingPanel,
@@ -54,6 +55,8 @@
     WorktreePanel,
     cn,
     shortOid,
+    type RepositoryCloneRequest,
+    type RepositoryInitRequest,
   } from "@refyard/git-ui";
   import {
     Archive,
@@ -250,6 +253,23 @@
   let selectedDiffPathId = $state<string | null>(null);
 
   const repositoryList = $derived(repositories.data?.repositories ?? []);
+
+  /**
+   * The approved roots this session may create a repository in.
+   *
+   * A workspace target needs a root id, and the service reports one per repository it
+   * knows — so the roots are read from there rather than invented or typed by hand. A
+   * root the service never approved cannot be addressed, and a UI that offered one
+   * would be offering a request that is refused every time.
+   */
+  const workspaceRoots = $derived([
+    ...new Map(
+      repositoryList.map((entry) => [
+        entry.allowedRootId,
+        { allowedRootId: entry.allowedRootId, displayPath: entry.displayPath },
+      ]),
+    ).values(),
+  ]);
   const repository = $derived(
     repositoryList.find(
       (entry) => entry.repositoryId === selectedRepositoryId,
@@ -470,6 +490,8 @@
   );
 
   let mutationBusy = $state(false);
+  /** What the last create/clone reported, in the host's words; null when nothing is wrong. */
+  let repositoryMessage: string | null = $state(null);
   let stagingMessage = $state<string | null>(null);
   let commitResult = $state<string | null>(null);
   let branchMessage = $state<string | null>(null);
@@ -553,6 +575,10 @@
   const stashAvailable = $derived(implementedKinds.has("createStash"));
   const tagAvailable = $derived(implementedKinds.has("createTag"));
   const worktreeAvailable = $derived(implementedKinds.has("createWorktree"));
+  const repositoryCreationAvailable = $derived({
+    init: implementedKinds.has("initRepository"),
+    clone: implementedKinds.has("cloneRepository"),
+  });
   const submoduleAvailable = $derived(implementedKinds.has("addSubmodule"));
   const mergeAvailable = $derived(implementedKinds.has("merge"));
   /** The operation Git reports as unfinished, straight from the status read. */
@@ -675,6 +701,89 @@
     } finally {
       mutationBusy = false;
     }
+  }
+
+  /**
+   * Create a repository: the one write whose target is a workspace.
+   *
+   * There is no repository to plan against yet and no snapshot to be stale — the
+   * operation is what brings the repository into being — so this does not go through
+   * `performWrite`. What it shares with it is the part that matters: an offline or
+   * unpaired page sends nothing and queues nothing, the 202 is followed to its
+   * terminal state instead of being read as success, and a failure is reported in the
+   * host's own words (Git's diagnostic for a refusal).
+   *
+   * On success the list is refetched and the new repository selected, because "create
+   * a repository" means "and then work in it", not "and then find it in a list".
+   */
+  async function createRepository(
+    label: string,
+    operation: ParsedMutationRequest["operation"],
+    allowedRootId: string,
+    relativeDestination: string,
+  ): Promise<void> {
+    mutationBusy = true;
+    repositoryMessage = null;
+    try {
+      if (!writesAllowed) {
+        throw new Error(
+          !browserOnline
+            ? "this browser is offline; nothing was sent and nothing will be retried"
+            : negotiation.kind === "ok"
+              ? "not paired with the service; pair before writing"
+              : negotiation.message,
+        );
+      }
+      const submitted = await mutations.submit({
+        clientRequestId: `${label}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+        target: { kind: "workspace", allowedRootId, relativeDestination },
+        operation,
+      });
+      const operationId =
+        submitted.kind === "accepted"
+          ? submitted.accepted.operationId
+          : submitted.record.operationId;
+      repositoryMessage = await awaitOperation(operationId);
+
+      const refreshed = await repositories.refetch();
+      const created = (refreshed.data?.repositories ?? []).find((entry) =>
+        entry.displayPath.endsWith(relativeDestination),
+      );
+      if (created !== undefined) {
+        selectedRepositoryId = created.repositoryId;
+        selectedOid = null;
+        selectedPath = null;
+        await queryClient.invalidateQueries({ queryKey: ["status"] });
+        await queryClient.invalidateQueries({ queryKey: ["refs"] });
+      }
+    } catch (error) {
+      repositoryMessage = describeProblem(error);
+    } finally {
+      mutationBusy = false;
+    }
+  }
+
+  function onRepositoryInit(request: RepositoryInitRequest): void {
+    void createRepository(
+      "init-repository",
+      { kind: "initRepository", initialBranch: request.initialBranch },
+      request.allowedRootId,
+      request.relativeDestination,
+    );
+  }
+
+  function onRepositoryClone(request: RepositoryCloneRequest): void {
+    void createRepository(
+      "clone-repository",
+      {
+        kind: "cloneRepository",
+        remoteUrl: request.remoteUrl,
+        relativeDestination: request.relativeDestination,
+        initializeSubmodules: request.initializeSubmodules,
+      },
+      request.allowedRootId,
+      request.relativeDestination,
+    );
   }
 
   /** Preview tokens for a selection, positionally aligned with the path ids. */
@@ -1538,6 +1647,17 @@
                 }}
               />
             {/if}
+            {#if writesAllowed}
+              <Separator />
+              <RepositoryPanel
+                roots={workspaceRoots}
+                available={repositoryCreationAvailable}
+                busy={mutationBusy}
+                message={repositoryMessage}
+                onInit={onRepositoryInit}
+                onClone={onRepositoryClone}
+              />
+            {/if}
           </div>
         </SectionCard>
 
@@ -1956,7 +2076,9 @@
         {/if}
       </section>
 
-      <section class="flex min-h-0 flex-col border-l border-border bg-canvas/30">
+      <section
+        class="flex min-h-0 flex-col border-l border-border bg-canvas/30"
+      >
         {#if selectedPath !== null && selectedPath.kind === "ignored"}
           <div class="p-3">
             <StateBanner
@@ -1966,13 +2088,20 @@
             />
           </div>
         {:else if diffRequest === null}
-          <div class="flex flex-1 flex-col items-center justify-center p-6 text-center">
-            <div class="mb-3 flex size-12 items-center justify-center rounded-2xl bg-muted/60 text-muted-foreground shadow-2xs border border-border/50">
+          <div
+            class="flex flex-1 flex-col items-center justify-center p-6 text-center"
+          >
+            <div
+              class="mb-3 flex size-12 items-center justify-center rounded-2xl bg-muted/60 text-muted-foreground shadow-2xs border border-border/50"
+            >
               <FileDiff class="size-6 text-primary/70" />
             </div>
-            <h3 class="text-sm font-medium text-foreground">No diff selected</h3>
+            <h3 class="text-sm font-medium text-foreground">
+              No diff selected
+            </h3>
             <p class="mt-1 max-w-xs text-xs text-muted-foreground">
-              Select a commit in History or a modified file in Changes to inspect the diff.
+              Select a commit in History or a modified file in Changes to
+              inspect the diff.
             </p>
             <div class="mt-4 w-full max-w-xs">
               <StateBanner

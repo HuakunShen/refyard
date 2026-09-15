@@ -29,10 +29,23 @@ export interface EventRingOptions {
   readonly maxEvents?: number;
   readonly maxBytes?: number;
   readonly now?: () => number;
+  /**
+   * Called when a payload the contract refuses is dropped.
+   *
+   * The reason belongs in the host's log: a dropped hint is survivable, a silent one is
+   * not — a UI that stops updating needs a record somewhere of why.
+   */
+  readonly onInvalidPayload?: (error: unknown, payload: EventPayload) => void;
 }
 
 export interface EventRing {
-  publish(payload: EventPayload): EventEnvelope;
+  /**
+   * Publish one hint, or drop it and answer null when the contract refuses the payload.
+   *
+   * Null rather than a throw: see the comment in the implementation — a validation error
+   * raised inside a journal transition used to end the service process.
+   */
+  publish(payload: EventPayload): EventEnvelope | null;
   /** Events after `since`, or a gap notice when the ring no longer holds that point. */
   replay(since: number | undefined): readonly EventEnvelope[];
   subscribe(listener: (envelope: EventEnvelope) => void): () => void;
@@ -65,23 +78,31 @@ export function createEventRing(options: EventRingOptions = {}): EventRing {
   }
 
   return {
-    publish(payload): EventEnvelope {
-      sequence += 1;
-      const envelope: EventEnvelope = {
-        sequence,
+    publish(payload): EventEnvelope | null {
+      const candidate: EventEnvelope = {
+        sequence: sequence + 1,
         emittedAt: new Date(now()).toISOString(),
         payload,
       };
-      // Validate here as well: an event that breaks the contract would break every
-      // client at once, and this is the only place it can be caught cheaply.
-      const validated = eventEnvelopeSchema.parse(envelope);
-      events.push(validated);
-      bytes += sizeOf(validated);
+      // Validated before the sequence is spent: an event that breaks the contract would
+      // break every client at once. A refused payload is *dropped*, not thrown — it is a
+      // hint, never a source of truth, and a thrown validation error inside a journal
+      // transition kills the service process. (It did: a workspace operation's write key
+      // reached `repositoryChanged`'s repository-id field, and the CLI exited with a
+      // `ZodError` while a mutation was in flight.)
+      const validated = eventEnvelopeSchema.safeParse(candidate);
+      if (!validated.success) {
+        options.onInvalidPayload?.(validated.error, payload);
+        return null;
+      }
+      sequence += 1;
+      events.push(validated.data);
+      bytes += sizeOf(validated.data);
       trim();
       for (const listener of listeners) {
-        listener(validated);
+        listener(validated.data);
       }
-      return validated;
+      return validated.data;
     },
 
     replay(since): readonly EventEnvelope[] {
