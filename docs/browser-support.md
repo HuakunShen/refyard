@@ -44,20 +44,51 @@ two answers cannot collapse back into one.
 
 ### One failure that is not explained yet
 
-A later run of the same 90 cases — after the container and asset-root work — came back **89
-passed, 1 failed**: Firefox, `workspace.spec.ts:86` ("clones a local bare remote and shows what
-Git said when it refuses"), `Test timeout of 60000ms exceeded` while waiting for
-`repository-remote-url`. The page snapshot at the timeout shows the panel with its capabilities
-already loaded ("35 write operations") and **every read failing with `NetworkError when
-attempting to fetch resource`** — the service had become unreachable mid-spec. Re-running that
-spec alone in Firefox passes in 7.2 s.
+The clone case in `workspace.spec.ts` has failed twice, in two different engines, always the
+same case and never reproducibly. Both runs are **89 passed, 1 failed**; the same case passes
+alone in seconds, and the 90 of 90 runs on either side of them include that case. Neither is
+counted as a browser defect, and neither is written off: they are the same open question, and
+they failed the same way.
 
-What is not known: why the service went away, and whether it exited, crashed, or was killed. The
-harness did not keep its stderr after readiness, so a mid-run crash was invisible; it now prints
-the service's stderr when it exits before the spec stopped it, which is what the next occurrence
-needs to explain itself. Until then the row stays verified — 89 of 90 in that run, 90 of 90
-before it, and the case passes on re-run — with this noted as an open question rather than
-counted as a browser defect.
+- **Firefox** (`workspace.spec.ts:86`, "clones a local bare remote and shows what Git said when
+  it refuses"). `Error: locator.fill: Test timeout of 60000ms exceeded`, waiting for
+  `getByTestId('repository-remote-url')` at line 99 — the line after the spec clicked
+  `repository-mode-clone` and filled the destination. The page snapshot at the timeout shows
+  the panel with its capabilities already loaded ("35 write operations"), every read failing
+  with `NetworkError when attempting to fetch resource`, and **no clone form**.
+- **WebKit** (the same case, under Node 22.23.2). The snapshot shows the panel still in
+  **"Create new"** mode with its Retry buttons, capabilities loaded, and again no clone form.
+  Alone in WebKit: 2 passed in 14.4 s.
+
+A **third** run of the 90 — the full gate list on Node 22.23.2 — failed one case as well, and
+that one says only "one case": the runner that drove the gates printed a summary line instead of
+the log, so the failure was thrown away with it. The same revision re-ran immediately afterwards
+and came back **90 passed in 10.6 m**, on the harness this revision ships. It is recorded because
+a failure that cannot be described is still a failure, and because it is the reason the harness
+keeps its output now.
+
+In both described occurrences, the mode toggle had been clicked and the form it reveals was not
+there when the spec looked. Two candidates, and they are testable rather than mysterious:
+
+- **The service went away.** The harness kept the service's stderr only until readiness and
+  then dropped it, so a crash or a refused connection mid-spec was invisible — which is exactly
+  why the Firefox occurrence could not be explained. It now prints the service's output (both
+  streams, last 4 KB each) when its test fails, and still prints stderr if the service exits
+  before the spec stopped it.
+- **The panel remounted and reset its own mode.** `<RepositoryPanel>` is mounted behind
+  `{#if writesAllowed}` (`apps/web/src/routes/+page.svelte:1776`) and keeps the mode it is in
+  as component state (`packages/git-ui/src/components/RepositoryPanel.svelte:83`, `$state`,
+  not a prop). `writesAllowed` is derived from the capabilities read, so if that read resolves
+  after the first paint the panel is created, destroyed and created again — and the second
+  instance starts in `init`. A reader of the app, not just of the spec, sees that as: choose
+  "Clone", and a moment later the choice is back to "Create new". That is a small real defect
+  in the panel's lifecycle, in files owned by the UI work; nothing there was changed for this
+  note, and it is written down so the next occurrence — and the UI pass — starts from the
+  evidence instead of the symptom.
+
+The two are not mutually exclusive: a page whose reads are all failing with `NetworkError` has
+answered the capabilities read with a failure, which is one more way for `writesAllowed` to
+change under the panel.
 
 ## What the app needs
 

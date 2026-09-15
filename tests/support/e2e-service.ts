@@ -14,6 +14,7 @@
  *   parsed out of prose. The ticket stays single-use: one service per spec.
  */
 import { spawn } from "node:child_process";
+import { test } from "@playwright/test";
 import { realpath } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,6 +22,34 @@ import type { GitFixtureRepo } from "./repo.js";
 
 const REPO_ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const CLI_BUNDLE = join(REPO_ROOT, ".refyard-dev", "cli.mjs");
+
+/**
+ * Every service started during the current test, with what it printed.
+ *
+ * Two e2e failures so far — one in Firefox, one in WebKit, the same case both times —
+ * left the question "was the service unreachable, or was it the page?" unanswerable:
+ * the harness kept the service's stderr for its own readiness check and then dropped it,
+ * so a spec that failed on a `NetworkError` said nothing about whether the request ever
+ * reached the service. The output survives the service now, and a failing test prints it.
+ */
+const started = new Set<{
+  readonly label: string;
+  output(): string;
+}>();
+
+/** Registers a Playwright hook in every spec file that imports this module. */
+test.afterEach(async ({}, testInfo) => {
+  if (testInfo.status === testInfo.expectedStatus) {
+    started.clear();
+    return;
+  }
+  for (const service of started) {
+    console.error(
+      `\n--- ${service.label} output (test ${testInfo.status}) ---\n${service.output()}`,
+    );
+  }
+  started.clear();
+});
 
 export interface E2eService {
   /** The URL to open: the service origin with its single-use ticket. */
@@ -113,7 +142,7 @@ export async function startE2eService(
             "run `pnpm build && bun scripts/bundle-cli.ts` first",
         );
       }
-      return {
+      const handle: E2eService = {
         pairingUrl: `${ready.url}/?pair=${ticket}`,
         origin: ready.url,
         port: ready.port,
@@ -132,6 +161,12 @@ export async function startE2eService(
           await exited;
         },
       };
+      started.add({
+        label: `service on port ${ready.port} for ${options.repo.root}`,
+        output: () =>
+          `stdout:\n${stdout.slice(-4000)}\nstderr:\n${stderr.slice(-4000)}`,
+      });
+      return handle;
     }
     if (child.exitCode !== null) {
       throw new Error(
