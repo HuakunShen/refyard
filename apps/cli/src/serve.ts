@@ -198,18 +198,6 @@ export async function assembleService(
     // it; failing the whole startup over it would hide the service itself.
   }
 
-  // Every mutation the contract defines is listed as unavailable, derived from the
-  // contract itself so this list cannot drift: a capability the service does not
-  // implement is named here rather than silently missing from `operations`.
-  const unavailable: UnavailableReason[] = [
-    {
-      code: "read-only-build",
-      message:
-        "this build implements reads only; no Git mutation is enabled, and none is reported as available",
-      operations: [...MUTATION_KINDS],
-    },
-  ];
-
   const reads: readonly ReadKind[] = [
     "capabilities",
     "repositories",
@@ -260,6 +248,22 @@ export async function assembleService(
     nextOperationId: () => `op_${randomBytes(9).toString("base64url")}`,
     nextSequence: () => (sequence += 1),
   });
+
+  // What the contract defines and this build does not implement, named rather than
+  // silently absent — and derived from the coordinator's own registry, so adding an
+  // effect moves a kind out of this list and the message cannot outlive the fact.
+  const implemented = new Set(mutations.implementedKinds());
+  const missing = MUTATION_KINDS.filter((kind) => !implemented.has(kind));
+  const unavailable: UnavailableReason[] =
+    missing.length === 0
+      ? []
+      : [
+          {
+            code: "not-implemented",
+            message: `this build does not implement ${missing.length} of the contract's mutations; each is named here and none of them is reported as available`,
+            operations: [...missing],
+          },
+        ];
 
   const read = createReadService({
     engine,

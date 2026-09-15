@@ -19,6 +19,10 @@ import {
 } from "../../apps/cli/src/browser.js";
 import { runService } from "../../apps/cli/src/serve.js";
 import {
+  MUTATION_KINDS,
+  capabilitiesResponseSchema,
+} from "@refyard/git-contract";
+import {
   createRepo,
   fixtureGitPath,
   type GitFixtureRepo,
@@ -407,6 +411,71 @@ describe("serving a repository", () => {
     const idleStarted = Date.now();
     await idle.close();
     expect(Date.now() - idleStarted).toBeLessThan(1_000);
+  });
+
+  it("names every contract mutation as available or unavailable, never both", async () => {
+    // Prevents: a capabilities report that contradicts itself. The build once said
+    // "this build implements reads only; no Git mutation is enabled" while listing 33
+    // available mutations, because the message was written when that was true and
+    // nothing tied it to what the coordinator actually registers. The invariant that
+    // cannot drift is set arithmetic: every kind in the contract is either implemented
+    // or named as missing, and no kind is both.
+    const io = collect();
+    const running = await runService({
+      repositoryPath: repo.root,
+      gitPath: fixtureGitPath(),
+      port: 0,
+      openBrowser: false,
+      ticketTtlSeconds: 60,
+      webRoot: null,
+      allowRoot: false,
+      installSignalHandlers: false,
+      write: io.write,
+    });
+    try {
+      const origin = `http://127.0.0.1:${running.http.port}`;
+      const exchanged = await fetch(`${origin}/api/v1/session/exchange`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin },
+        body: JSON.stringify({ ticket: ticketFrom(running.pairingUrl) }),
+      });
+      const { token } = (await exchanged.json()) as { token: string };
+      const response = await fetch(`${origin}/api/v1/capabilities`, {
+        headers: { authorization: `Bearer ${token}`, origin },
+      });
+      const capabilities = capabilitiesResponseSchema.parse(
+        await response.json(),
+      );
+
+      const available = new Set(
+        capabilities.operations.map((operation) => operation.kind),
+      );
+      const unavailable = new Set(
+        capabilities.unavailable.flatMap((reason) => reason.operations),
+      );
+
+      // Nothing is in both lists.
+      for (const kind of available) {
+        expect(unavailable.has(kind)).toBe(false);
+      }
+      // Nothing is in neither: a kind the contract defines is either implemented or
+      // named as missing, so a reader never has to guess which.
+      for (const kind of MUTATION_KINDS) {
+        expect(available.has(kind) || unavailable.has(kind)).toBe(true);
+      }
+      // The two mutations this build does not implement are the ones named, and they
+      // are not advertised as available.
+      expect(available.has("initRepository")).toBe(false);
+      expect(available.has("cloneRepository")).toBe(false);
+      expect(unavailable.has("initRepository")).toBe(true);
+      expect(unavailable.has("cloneRepository")).toBe(true);
+      // And what is advertised is what this build can do: a mutation the user can see
+      // in the contract and drive from the UI.
+      expect(available.has("commit")).toBe(true);
+      expect(available.has("merge")).toBe(true);
+    } finally {
+      await running.close();
+    }
   });
 
   it("reports the version of the installation, not of the source tree", async () => {
