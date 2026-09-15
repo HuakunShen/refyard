@@ -1,6 +1,10 @@
 # Plan 0003 — Refyard v2, M2 closure: init/clone, and diff-scale evidence
 
-> Status: **active plan, revision 0** — written 2026-09-15.
+> Status: **completed, revision 1** — written 2026-09-15, closed the same day. R1 and R2 both
+> landed; `docs/evidence/m2-writes.md` revision 1 records what they produced, and the rows they
+> touched in `release-matrix.md` moved off "unverified" (init/clone) or gained the diff-scale
+> numbers (SHA-256 aside, the shapes below). Nothing in this plan was left half-done; what it
+> named as out of scope stays named below.
 > Implements: `docs/goals/2026-09-15-m2-closure.md`.
 > Carries no reference task number. The delivered package numbers T01–T18, of which T01–T15 are
 > done (plans 0001 and 0002) and T16–T18 stay closed until the standalone V1 ships
@@ -100,13 +104,13 @@ bound cannot serve, which is a different statement from "a diff took a while".
 **Findings from running it (2026-09-15), all recorded rather than smoothed over:**
 
 1. **The `oversize` bullet above was written on a wrong assumption.** `oversize` is a kind of the
-   *untracked-synthesis* path; a tracked file whose patch crosses the bound stays `kind: "text"` and
+   _untracked-synthesis_ path; a tracked file whose patch crosses the bound stays `kind: "text"` and
    is cut by the per-file line bound, and only the response's `truncated` flag says so. The report
    therefore measures that bounded answer instead: lines delivered against lines expected, the
    payload against the patch `git diff` produces unbounded (3.2 MB for that path), and both
    directions of the flag asserted — false for the complete patch, true for the bounded one. A run
    where either assertion fails writes no report.
-2. **The bound is unnameable on the wire.** The string that says *which* limit was reached is built
+2. **The bound is unnameable on the wire.** The string that says _which_ limit was reached is built
    (`packages/git-core/src/workflows/diff.ts` pushes into `limitations`; the coordinator adds the
    path-list case in `coordinator/reads.ts`) and then dropped: no response field carries it, so a
    client learns "something was cut" and not what. The report says so next to the measurement
