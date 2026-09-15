@@ -27,8 +27,10 @@ import {
   operationAcceptedSchema,
   operationsListQuerySchema,
   previewsRequestSchema,
+  registerRepositoryRequestSchema,
   repositoriesQuerySchema,
   repositoryQuerySchema,
+  revokeRepositoryRequestSchema,
   targetKindsOf,
   validateMutationRequest,
   worktreeQuerySchema,
@@ -38,11 +40,25 @@ import type { ReadService } from "../coordinator/reads.js";
 import { ReadProblem } from "../coordinator/reads.js";
 import type { Session } from "./auth.js";
 import type { MutationCoordinator } from "../coordinator/submit.js";
+import type {
+  RepositoryApproval,
+  RepositoryApprovalManager,
+  RepositoryRevocationResult,
+} from "../registry/managed.js";
 
 /** What a route handler may use. The engine is absent in a read-only host. */
 export interface RouteServices {
   readonly read: ReadService;
   readonly mutations?: MutationCoordinator | undefined;
+  readonly repositoryManagement?: RepositoryApprovalManager | undefined;
+  readonly onRepositoryRegistered?: (input: {
+    readonly sessionId: string;
+    readonly approval: RepositoryApproval;
+  }) => void;
+  readonly onRepositoryRevoked?: (input: {
+    readonly sessionId: string;
+    readonly result: Extract<RepositoryRevocationResult, { readonly ok: true }>;
+  }) => void;
 }
 
 export interface RouteDefinition {
@@ -283,12 +299,16 @@ function isZodIssue(value: unknown): value is z.core.$ZodIssue {
 function actionRoute<Schema extends z.ZodType<unknown>>(
   path: string,
   schema: Schema,
-  run: (body: z.infer<Schema>, services: RouteServices) => Promise<unknown>,
+  run: (
+    body: z.infer<Schema>,
+    services: RouteServices,
+    session: Session,
+  ) => Promise<unknown>,
 ): RouteDefinition {
   return {
     method: "POST",
     path,
-    async handle({ body, services }) {
+    async handle({ body, services, session }) {
       const parsed = schema.safeParse(body);
       if (!parsed.success) {
         throw new ReadProblem({
@@ -297,13 +317,69 @@ function actionRoute<Schema extends z.ZodType<unknown>>(
           details: { issues: parsed.error.issues.length },
         });
       }
-      return run(parsed.data, services);
+      return run(parsed.data, services, session);
     },
   };
 }
 
 export function mutationRoutes(): readonly RouteDefinition[] {
   return [
+    actionRoute(
+      "/api/v1/repositories/register",
+      registerRepositoryRequestSchema,
+      async (body, services, session) => {
+        const management = services.repositoryManagement;
+        if (management === undefined) {
+          throw new ReadProblem({
+            code: "UnsupportedOperation",
+            message: "this host has no repository approval manager",
+          });
+        }
+        const result = await management.register({
+          path: body.path,
+          actor: session.actor,
+        });
+        if (!result.ok) {
+          throw new ReadProblem({
+            code: result.code,
+            message: result.message,
+          });
+        }
+        services.onRepositoryRegistered?.({
+          sessionId: session.sessionId,
+          approval: result.approval,
+        });
+        return services.read.repositories();
+      },
+    ),
+    actionRoute(
+      "/api/v1/repositories/revoke",
+      revokeRepositoryRequestSchema,
+      async (body, services, session) => {
+        const management = services.repositoryManagement;
+        if (management === undefined) {
+          throw new ReadProblem({
+            code: "UnsupportedOperation",
+            message: "this host has no repository approval manager",
+          });
+        }
+        const result = await management.revoke({
+          repositoryId: body.repositoryId,
+          actor: session.actor,
+        });
+        if (!result.ok) {
+          throw new ReadProblem({
+            code: result.code,
+            message: result.message,
+          });
+        }
+        services.onRepositoryRevoked?.({
+          sessionId: session.sessionId,
+          result,
+        });
+        return services.read.repositories();
+      },
+    ),
     {
       ...actionRoute(
         "/api/v1/operations",
@@ -413,9 +489,7 @@ export function mutationRoutes(): readonly RouteDefinition[] {
 export const SERVICES_ACTOR = "local-user";
 
 /** Known paths this build does not implement, so a client learns that clearly. */
-export const UNIMPLEMENTED_PATHS: readonly string[] = [
-  "/api/v1/repositories/register",
-];
+export const UNIMPLEMENTED_PATHS: readonly string[] = [];
 
 export function unsupportedProblem(path: string): Problem {
   return {

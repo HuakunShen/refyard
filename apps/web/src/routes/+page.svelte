@@ -41,6 +41,7 @@
     ModeToggle,
     RefsPanel,
     RefyardLogo,
+    RepositoryAccessPanel,
     RemotePanel,
     RepositoryList,
     RepositoryPanel,
@@ -605,6 +606,7 @@
   let mutationBusy = $state(false);
   /** What the last create/clone reported, in the host's words; null when nothing is wrong. */
   let repositoryMessage: string | null = $state(null);
+  let repositoryAccessMessage: string | null = $state(null);
   let stagingMessage = $state<string | null>(null);
   let commitResult = $state<string | null>(null);
   let branchMessage = $state<string | null>(null);
@@ -910,6 +912,65 @@
       request.allowedRootId,
       request.relativeDestination,
     );
+  }
+
+  async function registerRepository(path: string): Promise<void> {
+    mutationBusy = true;
+    repositoryAccessMessage = null;
+    try {
+      if (!writesAllowed) {
+        throw new Error(
+          !browserOnline
+            ? "this browser is offline; nothing was sent and nothing will be retried"
+            : negotiation.kind === "ok"
+              ? "not paired with the service; pair before changing repository access"
+              : negotiation.message,
+        );
+      }
+      const result = await client.registerRepository(path);
+      repositoryAccessMessage = `approved ${path}`;
+      await repositories.refetch();
+      const added = result.repositories.find(
+        (entry) => entry.displayPath === path,
+      );
+      if (added !== undefined) {
+        selectedRepositoryId = added.repositoryId;
+        selectedOid = null;
+        selectedPath = null;
+      }
+    } catch (error) {
+      repositoryAccessMessage = describeProblem(error);
+    } finally {
+      mutationBusy = false;
+    }
+  }
+
+  async function revokeRepository(repositoryId: string): Promise<void> {
+    mutationBusy = true;
+    repositoryAccessMessage = null;
+    try {
+      if (!writesAllowed) {
+        throw new Error(
+          !browserOnline
+            ? "this browser is offline; nothing was sent and nothing will be retried"
+            : negotiation.kind === "ok"
+              ? "not paired with the service; pair before changing repository access"
+              : negotiation.message,
+        );
+      }
+      await client.revokeRepository(repositoryId);
+      repositoryAccessMessage = `revoked ${repositoryId}`;
+      if (selectedRepositoryId === repositoryId) {
+        selectedRepositoryId = null;
+        selectedOid = null;
+        selectedPath = null;
+      }
+      await repositories.refetch();
+    } catch (error) {
+      repositoryAccessMessage = describeProblem(error);
+    } finally {
+      mutationBusy = false;
+    }
   }
 
   /** Preview tokens for a selection, positionally aligned with the path ids. */
@@ -1783,6 +1844,15 @@
                 message={repositoryMessage}
                 onInit={onRepositoryInit}
                 onClone={onRepositoryClone}
+              />
+              <Separator />
+              <RepositoryAccessPanel
+                repositories={repositoryList}
+                disabled={!writesAllowed}
+                busy={mutationBusy}
+                message={repositoryAccessMessage}
+                onRegister={(path) => void registerRepository(path)}
+                onRevoke={(repositoryId) => void revokeRepository(repositoryId)}
               />
             {/if}
           </div>

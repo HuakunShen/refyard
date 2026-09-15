@@ -586,25 +586,25 @@
           "$ref": "#/$defs/RepositoryId"
         },
         "worktreeId": {
-          "$ref": "#/$defs/__schema303"
-        },
-        "kind": {
           "$ref": "#/$defs/__schema304"
         },
-        "oid": {
+        "kind": {
           "$ref": "#/$defs/__schema305"
         },
-        "from": {
+        "oid": {
           "$ref": "#/$defs/__schema306"
         },
-        "to": {
+        "from": {
           "$ref": "#/$defs/__schema307"
         },
-        "pathId": {
+        "to": {
           "$ref": "#/$defs/__schema308"
         },
-        "maxBytes": {
+        "pathId": {
           "$ref": "#/$defs/__schema309"
+        },
+        "maxBytes": {
+          "$ref": "#/$defs/__schema310"
         }
       },
       "required": [
@@ -748,7 +748,7 @@
       "type": "object",
       "properties": {
         "since": {
-          "$ref": "#/$defs/__schema312"
+          "$ref": "#/$defs/__schema313"
         }
       },
       "additionalProperties": false,
@@ -941,19 +941,19 @@
           "$ref": "#/$defs/RepositoryId"
         },
         "worktreeId": {
-          "$ref": "#/$defs/__schema298"
-        },
-        "cursor": {
           "$ref": "#/$defs/__schema299"
         },
-        "limit": {
+        "cursor": {
           "$ref": "#/$defs/__schema300"
         },
-        "detailOid": {
+        "limit": {
           "$ref": "#/$defs/__schema301"
         },
-        "firstParentOnly": {
+        "detailOid": {
           "$ref": "#/$defs/__schema302"
+        },
+        "firstParentOnly": {
+          "$ref": "#/$defs/__schema303"
         }
       },
       "required": [
@@ -1300,10 +1300,10 @@
       "type": "object",
       "properties": {
         "operationId": {
-          "$ref": "#/$defs/__schema310"
+          "$ref": "#/$defs/__schema311"
         },
         "limit": {
-          "$ref": "#/$defs/__schema311"
+          "$ref": "#/$defs/__schema312"
         }
       },
       "additionalProperties": false,
@@ -1739,6 +1739,19 @@
       "additionalProperties": false,
       "description": "Branches, remote-tracking refs, tags and remotes in one read. URLs are redacted for display; the host never returns a credential."
     },
+    "RegisterRepositoryRequest": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/__schema297"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false,
+      "description": "The exact absolute path a person selected for runtime approval. The host checks repository-ness and containment; it never scans for candidates."
+    },
     "RelativeDestination": {
       "type": "string",
       "minLength": 1,
@@ -1953,6 +1966,19 @@
       ],
       "additionalProperties": false,
       "description": "A repository-level change: refs, remotes, tags, worktrees, submodule wiring."
+    },
+    "RevokeRepositoryRequest": {
+      "type": "object",
+      "properties": {
+        "repositoryId": {
+          "$ref": "#/$defs/RepositoryId"
+        }
+      },
+      "required": [
+        "repositoryId"
+      ],
+      "additionalProperties": false,
+      "description": "Revokes one registered repository. The access audit is written before the live registry entry disappears."
     },
     "RuntimeLimits": {
       "type": "object",
@@ -2706,7 +2732,7 @@
           "$ref": "#/$defs/RepositoryId"
         },
         "worktreeId": {
-          "$ref": "#/$defs/__schema297"
+          "$ref": "#/$defs/__schema298"
         }
       },
       "required": [
@@ -4961,13 +4987,15 @@
       "maximum": 9007199254740991
     },
     "__schema297": {
-      "$ref": "#/$defs/WorktreeId"
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
     },
     "__schema298": {
       "$ref": "#/$defs/WorktreeId"
     },
     "__schema299": {
-      "$ref": "#/$defs/Cursor"
+      "$ref": "#/$defs/WorktreeId"
     },
     "__schema3": {
       "type": "integer",
@@ -4979,20 +5007,23 @@
       "const": "cloneRepository"
     },
     "__schema300": {
+      "$ref": "#/$defs/Cursor"
+    },
+    "__schema301": {
       "type": "integer",
       "exclusiveMinimum": 0,
       "maximum": 500
     },
-    "__schema301": {
+    "__schema302": {
       "$ref": "#/$defs/ObjectId"
     },
-    "__schema302": {
+    "__schema303": {
       "type": "boolean"
     },
-    "__schema303": {
+    "__schema304": {
       "$ref": "#/$defs/WorktreeId"
     },
-    "__schema304": {
+    "__schema305": {
       "type": "string",
       "enum": [
         "unstaged",
@@ -5002,9 +5033,6 @@
         "range"
       ]
     },
-    "__schema305": {
-      "$ref": "#/$defs/ObjectId"
-    },
     "__schema306": {
       "$ref": "#/$defs/ObjectId"
     },
@@ -5012,25 +5040,28 @@
       "$ref": "#/$defs/ObjectId"
     },
     "__schema308": {
-      "$ref": "#/$defs/PathId"
+      "$ref": "#/$defs/ObjectId"
     },
     "__schema309": {
-      "type": "integer",
-      "exclusiveMinimum": 0,
-      "maximum": 2097152
+      "$ref": "#/$defs/PathId"
     },
     "__schema31": {
       "type": "boolean"
     },
     "__schema310": {
-      "$ref": "#/$defs/OperationId"
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 2097152
     },
     "__schema311": {
+      "$ref": "#/$defs/OperationId"
+    },
+    "__schema312": {
       "type": "integer",
       "exclusiveMinimum": 0,
       "maximum": 2000
     },
-    "__schema312": {
+    "__schema313": {
       "type": "integer",
       "minimum": 0,
       "maximum": 9007199254740991

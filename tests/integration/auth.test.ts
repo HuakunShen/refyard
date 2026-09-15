@@ -334,16 +334,15 @@ describe("authorization and request shape", () => {
     expect(body.problem.code).toBe("NotFound");
   });
 
-  it("answers 501 for a path this build does not implement", async () => {
-    // Prevents: an unimplemented path being answered with a plausible empty success,
-    // which a UI would then render as "nothing to see". (Previews became a real
-    // route when mutations arrived; repository registration never did.)
+  it("answers a JSON 404 for the wrong method on a repository-management route", async () => {
+    // Prevents: a GET request being mistaken for the approval action, or a stale
+    // unimplemented-path marker claiming that the POST route is still absent.
     const response = await service.fetch("/api/v1/repositories/register", {
       token,
     });
-    expect(response.status).toBe(501);
+    expect(response.status).toBe(404);
     const body = (await response.json()) as { problem: { code: string } };
-    expect(body.problem.code).toBe("UnsupportedOperation");
+    expect(body.problem.code).toBe("NotFound");
   });
 
   it("answers 501 for a mutation no effect implements, never a fake 202", async () => {

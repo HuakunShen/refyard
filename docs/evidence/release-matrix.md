@@ -248,6 +248,18 @@ still open, and this is what is known about it:
   "records why a refusal happened, not only its status"), and a stale root self-heals on the
   next request. If it recurs, the log line names which check refused and the path it resolved.
 
+## Managed workspace form
+
+Runtime repository approval and revocation are verified in the isolated CLI/HTTP fixture and in
+the Chromium UI flow. The current service grants every named path explicitly, records changes in
+`access.jsonl`, and removes a revoked repository from the live session. The detailed case table is
+in `docs/evidence/form2-managed-workspaces.md`. No multi-user or deployed hosted evidence is
+implied by this row.
+
+| Surface | Status | Evidence |
+| --- | --- | --- |
+| `POST /api/v1/repositories/register` and `/revoke` | verified | R4 integration and Chromium UI cases; exact paths, refusals, revocation and restart audit |
+
 ## Published releases
 
 Both releases were published by the project's owner and then checked against the registry — a

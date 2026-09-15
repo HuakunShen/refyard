@@ -45,6 +45,7 @@ import {
   readRoutes,
   unsupportedProblem,
 } from "./router.js";
+import type { RepositoryApprovalManager } from "../registry/managed.js";
 import {
   createAuthStore,
   type AuthStore,
@@ -130,6 +131,8 @@ export interface HttpHostOptions {
    * client cannot read back without a restart.
    */
   readonly repositoryRootOf?: (repositoryId: string) => string | null;
+  /** Runtime repository approval/revocation, when form 2 is enabled. */
+  readonly repositoryManagement?: RepositoryApprovalManager;
   readonly actor?: string;
   /**
    * Pairing-ticket lifetime in seconds. The 60-second default is the design; widening it
@@ -186,11 +189,43 @@ export async function startHttpHost(
   const now = options.now ?? Date.now;
   const routes = [...readRoutes(), ...mutationRoutes()];
   const events = options.events ?? createEventRing();
+  let currentGrants = copyGrants(options.grants);
   const services = {
     read: options.read,
     ...(options.mutations === undefined
       ? {}
       : { mutations: options.mutations }),
+    ...(options.repositoryManagement === undefined
+      ? {}
+      : {
+          repositoryManagement: options.repositoryManagement,
+          onRepositoryRegistered(input: {
+            readonly sessionId: string;
+            readonly approval: {
+              readonly allowedRootId: string;
+              readonly repositoryId: string;
+            };
+          }): void {
+            currentGrants = addGrant(currentGrants, input.approval);
+            auth.grant(input.sessionId, input.approval);
+          },
+          onRepositoryRevoked(input: {
+            readonly sessionId: string;
+            readonly result: {
+              readonly repositoryId: string;
+              readonly allowedRootId: string;
+              readonly rootHasRepositories: boolean;
+            };
+          }): void {
+            void input.sessionId;
+            currentGrants = removeGrant(currentGrants, input.result);
+            auth.revokeRepository(
+              input.result.repositoryId,
+              input.result.allowedRootId,
+              input.result.rootHasRepositories,
+            );
+          },
+        }),
   };
   let originPolicy: OriginPolicy | null = null;
 
@@ -733,7 +768,7 @@ export async function startHttpHost(
       const ticket = auth.mintTicket({
         origin,
         actor: options.actor ?? "cli",
-        grants: options.grants,
+        grants: currentGrants,
       });
       // The ticket rides in the query string (the user's 2026-09-15 direction, after a
       // browser flow was observed dropping the fragment). That is safe here because this
@@ -752,6 +787,48 @@ export async function startHttpHost(
           : { graceMs: options.shutdownGraceMs }),
       });
     },
+  };
+}
+
+function copyGrants(grants: SessionGrants): SessionGrants {
+  return {
+    allowedRootIds: [...grants.allowedRootIds],
+    repositoryIds: [...grants.repositoryIds],
+    scopes: [...grants.scopes],
+  };
+}
+
+function addGrant(
+  grants: SessionGrants,
+  input: { readonly allowedRootId: string; readonly repositoryId: string },
+): SessionGrants {
+  return {
+    allowedRootIds: grants.allowedRootIds.includes(input.allowedRootId)
+      ? [...grants.allowedRootIds]
+      : [...grants.allowedRootIds, input.allowedRootId],
+    repositoryIds: grants.repositoryIds.includes(input.repositoryId)
+      ? [...grants.repositoryIds]
+      : [...grants.repositoryIds, input.repositoryId],
+    scopes: [...grants.scopes],
+  };
+}
+
+function removeGrant(
+  grants: SessionGrants,
+  input: {
+    readonly allowedRootId: string;
+    readonly repositoryId: string;
+    readonly rootHasRepositories: boolean;
+  },
+): SessionGrants {
+  return {
+    allowedRootIds: input.rootHasRepositories
+      ? [...grants.allowedRootIds]
+      : grants.allowedRootIds.filter((id) => id !== input.allowedRootId),
+    repositoryIds: grants.repositoryIds.filter(
+      (id) => id !== input.repositoryId,
+    ),
+    scopes: [...grants.scopes],
   };
 }
 

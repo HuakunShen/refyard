@@ -226,6 +226,28 @@ export const repositoriesResponseSchema = z
       "Registered repositories and the roots they were approved under. Registration is explicit; nothing is discovered by scanning the disk.",
   });
 
+/** A person-chosen absolute path for runtime repository approval. */
+export const registerRepositoryRequestSchema = z
+  .strictObject({
+    path: z.string().min(1).max(4096),
+  })
+  .meta({
+    id: "RegisterRepositoryRequest",
+    description:
+      "The exact absolute path a person selected for runtime approval. The host checks repository-ness and containment; it never scans for candidates.",
+  });
+
+/** The registered repository to remove from this service's live grant. */
+export const revokeRepositoryRequestSchema = z
+  .strictObject({
+    repositoryId: repositoryIdSchema,
+  })
+  .meta({
+    id: "RevokeRepositoryRequest",
+    description:
+      "Revokes one registered repository. The access audit is written before the live registry entry disappears.",
+  });
+
 /* -------------------------------------------------------------------- status */
 
 export const pathEncodingSchema = z.enum(["utf8", "unrepresentable"]).meta({

@@ -102,6 +102,20 @@ export interface AuthStore {
    * granted a root must not be able to create anything inside it.
    */
   allowsRoot(session: Session, allowedRootId: string): boolean;
+  /** Add a newly approved root/repository to one live session. */
+  grant(
+    sessionId: string,
+    input: {
+      readonly allowedRootId: string;
+      readonly repositoryId: string;
+    },
+  ): boolean;
+  /** Remove a revoked repository from every live session. */
+  revokeRepository(
+    repositoryId: string,
+    allowedRootId: string,
+    rootHasRepositories: boolean,
+  ): void;
   revoke(sessionId: string): boolean;
   sessionCount(): number;
   ticketCount(): number;
@@ -174,7 +188,7 @@ export function createAuthStore(options: AuthStoreOptions): AuthStore {
         serviceInstanceId: options.serviceInstanceId,
         origin: input.origin,
         actor: input.actor,
-        grants: input.grants,
+        grants: copyGrants(input.grants),
         expiresAtMs: now() + ticketTtlMs,
       };
       tickets.set(record.ticket, record);
@@ -233,7 +247,7 @@ export function createAuthStore(options: AuthStoreOptions): AuthStore {
         token: `rfs_${randomBytes(32).toString("base64url")}`,
         sessionId: `sess_${randomBytes(12).toString("base64url")}`,
         actor: record.actor,
-        grants: record.grants,
+        grants: copyGrants(record.grants),
         serviceInstanceId: options.serviceInstanceId,
         issuedAtMs: now(),
         expiresAtMs: now() + sessionTtlMs,
@@ -307,6 +321,51 @@ export function createAuthStore(options: AuthStoreOptions): AuthStore {
       return session.grants.allowedRootIds.includes(allowedRootId);
     },
 
+    grant(sessionId, input): boolean {
+      for (const [token, session] of sessions) {
+        if (session.sessionId !== sessionId) {
+          continue;
+        }
+        sessions.set(token, {
+          ...session,
+          grants: {
+            allowedRootIds: session.grants.allowedRootIds.includes(
+              input.allowedRootId,
+            )
+              ? [...session.grants.allowedRootIds]
+              : [...session.grants.allowedRootIds, input.allowedRootId],
+            repositoryIds: session.grants.repositoryIds.includes(
+              input.repositoryId,
+            )
+              ? [...session.grants.repositoryIds]
+              : [...session.grants.repositoryIds, input.repositoryId],
+            scopes: [...session.grants.scopes],
+          },
+        });
+        return true;
+      }
+      return false;
+    },
+
+    revokeRepository(repositoryId, allowedRootId, rootHasRepositories): void {
+      for (const [token, session] of sessions) {
+        sessions.set(token, {
+          ...session,
+          grants: {
+            allowedRootIds: rootHasRepositories
+              ? [...session.grants.allowedRootIds]
+              : session.grants.allowedRootIds.filter(
+                  (id) => id !== allowedRootId,
+                ),
+            repositoryIds: session.grants.repositoryIds.filter(
+              (id) => id !== repositoryId,
+            ),
+            scopes: [...session.grants.scopes],
+          },
+        });
+      }
+    },
+
     revoke(sessionId): boolean {
       for (const [token, session] of sessions) {
         if (session.sessionId === sessionId) {
@@ -344,5 +403,13 @@ export function createAuthStore(options: AuthStoreOptions): AuthStore {
       }
     }
     return undefined;
+  }
+
+  function copyGrants(grants: SessionGrants): SessionGrants {
+    return {
+      allowedRootIds: [...grants.allowedRootIds],
+      repositoryIds: [...grants.repositoryIds],
+      scopes: [...grants.scopes],
+    };
   }
 }

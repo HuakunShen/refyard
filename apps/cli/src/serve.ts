@@ -29,6 +29,7 @@ import { realpath, stat } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import {
   createEventRing,
+  createAccessJournal,
   createGitHost,
   createHandleRegistry,
   createJournalStore,
@@ -39,6 +40,7 @@ import {
   createRecovery,
   createRecoveryStore,
   createRepositoryEffects,
+  createRepositoryApprovalManager,
   createRepositoryRegistry,
   createRootRegistry,
   createSnapshotStore,
@@ -63,6 +65,8 @@ import {
   type ReadService,
   type RepositoryRegistry,
   type RootRegistry,
+  type RepositoryApprovalManager,
+  type AccessJournal,
 } from "@refyard/host-node";
 import { createHostEngine, type GitEngine } from "@refyard/git-core";
 import {
@@ -94,6 +98,8 @@ export interface ServiceAssembly {
   readonly serviceInstanceId: string;
   readonly repositories: RepositoryRegistry;
   readonly roots: RootRegistry;
+  readonly repositoryManagement: RepositoryApprovalManager;
+  readonly accessJournal: AccessJournal;
   readonly repositoryPaths: readonly string[];
   readonly repositoryIds: readonly string[];
   readonly allowedRootIds: readonly string[];
@@ -119,6 +125,8 @@ export interface AssembleOptions {
    * this, the pairing URL would have to go to stdout and stop being machine-readable.
    */
   readonly writeError?: (line: string) => void;
+  /** Private state override used by isolated integration fixtures. */
+  readonly stateRootPath?: string;
   /** Injected in tests so no real Git process is probed twice. */
   readonly skipDoctor?: boolean;
 }
@@ -144,7 +152,13 @@ export async function assembleService(
 
   const codec = createTextCodec();
   const handles = createHandleRegistry();
-  const roots = createRootRegistry({ handles, codec });
+  const roots = createRootRegistry({
+    handles,
+    codec,
+    ...(options.stateRootPath === undefined
+      ? {}
+      : { stateRootPath: options.stateRootPath }),
+  });
   let counter = 0;
   let sequence = 0;
   const paths = createPathRegistry({
@@ -181,6 +195,8 @@ export async function assembleService(
     retention: DEFAULT_RETENTION,
   });
   await journal.load();
+  const accessJournal = createAccessJournal({ stateRoot });
+  await accessJournal.load();
   const recovery = createRecovery({ journal });
   await recovery.run();
   const events = createEventRing();
@@ -232,6 +248,12 @@ export async function assembleService(
   if (firstRegistration === undefined) {
     throw new Error("at least one repository registration is required");
   }
+  const repositoryManagement = createRepositoryApprovalManager({
+    roots,
+    repositories,
+    handles,
+    journal: accessJournal,
+  });
 
   const reads: readonly ReadKind[] = [
     "capabilities",
@@ -346,6 +368,8 @@ export async function assembleService(
     serviceInstanceId,
     repositories,
     roots,
+    repositoryManagement,
+    accessJournal,
     repositoryPaths,
     repositoryIds: registrations.map(({ record }) => record.repositoryId),
     allowedRootIds: registrations.map(({ root }) => root.allowedRootId),
@@ -421,6 +445,7 @@ export async function runService(
     ticketTtlSeconds: options.ticketTtlSeconds,
     webRoot: options.webRoot,
     inlineDocument: MINIMAL_PAGE,
+    repositoryManagement: assembly.repositoryManagement,
     ...(options.shutdownGraceMs === undefined
       ? {}
       : { shutdownGraceMs: options.shutdownGraceMs }),

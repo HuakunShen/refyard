@@ -56,6 +56,16 @@ on time, a widened TTL is honoured, and a ticket is consumed whether or not the 
 | "refuses a write with Git's diagnostic and leaves the lock file alone" | deleting or ignoring `.git/index.lock` to "make it work"                                                                                                                                             |
 | "refuses to start rather than attaching to the listener it found"      | a second instance attaching to a port another program already owns                                                                                                                                   |
 
+### Managed workspace access — `tests/integration/managed-workspaces.test.ts`, `tests/e2e/workspace.spec.ts`
+
+| Case | What it prevents |
+| --- | --- |
+| "approves exact paths, revokes access, and preserves the audit after restart" | a browser inventing a repository, silently widening a root, retaining access after revocation, or losing the access record on restart |
+| "approves and revokes a repository from the managed-access panel" | a UI changing the live grant without a visible approval action, or presenting a revoked row as still available |
+
+These cases run against isolated temporary repositories on the current macOS machine. They do not
+prove multi-user isolation, a hostile remote server, or a deployed tunnel.
+
 ### Bounds and refusals elsewhere in the suite
 
 - **Approved roots**: handle resolution refuses relative escapes, handles whose directory became a
@@ -106,7 +116,8 @@ Stated plainly, because a release page must not imply otherwise:
 | No adversarial run on Windows or Linux                                     | the negative cases ran on macOS only                                                                          |
 | No browser other than Chromium                                             | origin/CSP/service-worker behavior in Firefox, WebKit, and mobile browsers is unverified                      |
 | No hostile-remote testing (malicious servers, huge/odd protocol responses) | remote error handling is exercised with local path remotes and crafted failures, not a real adversary         |
-| No multi-user or hosted deployment model                                   | the trust model assumes one user on one machine, loopback-only                                                |
+| No multi-user deployment model                                             | the trust model still assumes one OS user on one machine                                                   |
+| No deployed hosted UI or tunnel                                            | the exact-origin runtime path is implemented and locally exercised, but no Cloudflare account/domain/tunnel was used here |
 | No credential or SSH-agent testing                                         | hooks, signing and host verification were deliberately left untouched; that also means they are untested here |
 | No resource-exhaustion campaign                                            | request bodies, job counts, and read sizes are bounded in the contract, but no sustained load was applied     |
 

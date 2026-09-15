@@ -102,6 +102,14 @@ export {
   type RootRegistryOptions,
 } from "./registry/roots.js";
 export {
+  createRepositoryApprovalManager,
+  type RepositoryApproval,
+  type RepositoryApprovalManager,
+  type RepositoryApprovalManagerOptions,
+  type RepositoryApprovalResult,
+  type RepositoryRevocationResult,
+} from "./registry/managed.js";
+export {
   createDirectoryPins,
   DEFAULT_PIN_BUDGET,
   type DirectoryPin,
@@ -229,6 +237,13 @@ export {
   type RecoveryReport,
   type WriteBlock,
 } from "./journal/recovery.js";
+export {
+  createAccessJournal,
+  type AccessAction,
+  type AccessJournal,
+  type AccessJournalEntry,
+  type AccessJournalOptions,
+} from "./journal/access.js";
 export {
   createQueue,
   DEFAULT_QUEUE_LIMITS,

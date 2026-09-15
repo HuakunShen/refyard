@@ -11,7 +11,7 @@
  * other specs do, so a run cannot inherit another run's registry.
  */
 import { expect, test } from "@playwright/test";
-import { stat } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import { join } from "node:path";
 import {
   createBareRemote,
@@ -146,5 +146,35 @@ test.describe("repository creation", () => {
     await expect(page.getByTestId("repository-remote-url")).toHaveValue(
       "/tmp/example.git",
     );
+  });
+
+  test("approves and revokes a repository from the managed-access panel", async ({
+    page,
+  }) => {
+    const second = await createRepo({ initialCommit: true });
+    try {
+      const secondPath = await realpath(second.root);
+      // Prevents: the UI inventing candidates or changing a live grant without an
+      // explicit path approval, and prevents revocation from leaving the row readable.
+      await page.goto(service.pairingUrl);
+      await expect(page.getByTestId("repository-access-panel")).toBeVisible();
+      await page.getByTestId("repository-register-path").fill(secondPath);
+      await page.getByTestId("repository-register").click();
+      await expect(page.getByTestId("repository-access-message")).toContainText(
+        /approved/,
+      );
+
+      const row = page
+        .locator('[data-testid^="repository-access-row-"]')
+        .filter({ hasText: secondPath });
+      await expect(row).toBeVisible();
+      await row.getByRole("button", { name: "Revoke" }).click();
+      await expect(page.getByTestId("repository-access-message")).toContainText(
+        /revoked/,
+      );
+      await expect(row).toHaveCount(0);
+    } finally {
+      await second.dispose();
+    }
   });
 });

@@ -101,6 +101,8 @@ export interface GitClient {
   health(): Promise<HealthResponse>;
   capabilities(): Promise<CapabilitiesResponse>;
   repositories(): Promise<RepositoriesResponse>;
+  registerRepository(path: string): Promise<RepositoriesResponse>;
+  revokeRepository(repositoryId: string): Promise<RepositoriesResponse>;
   status(query: {
     readonly repositoryId: string;
     readonly worktreeId?: string;
@@ -251,6 +253,19 @@ export function createGitClient(options: GitClientOptions): GitClient {
       send("GET", "/api/v1/capabilities", capabilitiesResponseSchema),
     repositories: () =>
       send("GET", "/api/v1/repositories", repositoriesResponseSchema),
+
+    registerRepository: (path) =>
+      send(
+        "POST",
+        "/api/v1/repositories/register",
+        repositoriesResponseSchema,
+        { path },
+      ),
+
+    revokeRepository: (repositoryId) =>
+      send("POST", "/api/v1/repositories/revoke", repositoriesResponseSchema, {
+        repositoryId,
+      }),
 
     status: (query) =>
       send(
