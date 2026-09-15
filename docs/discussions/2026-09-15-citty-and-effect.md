@@ -4,7 +4,9 @@
 > instead of the hand-written parser, and should the CLI's underpinnings move to Effect?).
 > The parser half was adopted the same day; Effect was decided against for V1 with explicit
 > revisit triggers. Status: **decision recorded; the parser decision is implemented
-> (`apps/cli/src/args.ts`), the Effect decision is a commitment not to act yet.**
+> (`apps/cli/src/args.ts`), the Effect decision is a commitment not to act yet.** The same
+> question came back the same day, narrower — is the *polling* the part that should have been
+> Effect? — and is answered at the end of this file.
 
 ## The parser: adopted (citty 0.2.2)
 
@@ -53,3 +55,52 @@ Effect" as its own task, before more orchestration is written on top of the curr
 If adopted later, the boundaries hold: core stays plain; Hono stays the HTTP adapter; Zod
 stays the contract; the application layer is Effect-native inside itself with `runPromise`
 only at its edges; and the version is pinned exactly, upgraded in its own change.
+
+## Later the same day — is the polling the piece that should have been Effect?
+
+The question came back narrower: the background polling had just landed, and "Effect has that
+built in", so would it be better there? Re-asking it was the right instinct — a cadence, an
+admission-control queue and a supervised process tree are all things Effect has an answer for
+— so the honest way to answer is to price *this* code, not to restate the earlier decision.
+
+**Nothing has been renamed to Effect, and the reason is what the pieces turn out to be.**
+
+The polling itself is not Effect-shaped at all. `apps/web/src/lib/background-poll.ts` is 129
+lines of arithmetic — which interval for a visible page, which for a hidden one, which for a
+repository whose reads take longer than the interval — plus a map from query key to last read
+duration. Effect's `Schedule`, `Stream.tick` or a repeating fiber would replace the timer and
+none of the rules; and adopting it in the browser means shipping the Effect runtime into the
+SPA, next to TanStack Query, which is the thing that actually owns the cadence, the cache, the
+deduplication of simultaneous readers and the invalidate-on-event refresh. Two schedulers for
+one cache is strictly worse than one, whatever the second one is written in.
+
+The server-side substrate is the same story with more lines. Measured in this tree: admission
+control is `packages/host-node/src/coordinator/queue.ts` (252 lines, three counters and a
+writer set); the job lifecycle is `jobs.ts` (598 lines) where the ordering that matters is
+*append to the journal first, then say the state changed* (`jobs.ts:208-262` — a transition
+whose append fails is reported as `unknown`, never as done); timeouts live only in the process
+runner (`process/runner.ts:45-51`, 285 lines, 19 unit tests including the single-settlement
+race); and the event ring is a bounded array plus a listener set (`http/events.ts`, 246 lines).
+There are **no retries anywhere** in the host, by rule (`jobs.ts:21`, `runner.ts:23`) — an
+uncertain write is reported as unknown, never replayed — so the `Schedule`-shaped code that
+Effect would delete does not exist. The one backoff in the workspace is the SSE reconnect in
+the browser client (`packages/git-client/src/events.ts:94-96`, ten lines with an injectable
+clock and six tests), and it is client-side.
+
+What Effect would actually add is *interruption*: a fiber tree where a parent's cancellation
+reaches every child, with finalizers that run in order. That is the one thing this codebase
+does not have — there is no `AbortSignal` anywhere in `packages/host-node`, and a running
+mutation cannot be cancelled at all (`jobs.ts:511` refuses it deliberately). That gap is
+not an oversight Effect could close for free: interrupting a Git process group mid-write is
+exactly the situation the safety rules classify as `unknown`, which is why cancellation is
+queued-only and why the shutdown path lets in-flight work finish
+(`http/server.ts:828-844`) instead of killing it. Buying a fiber tree to then forbid its
+central operation would be paying for the feature we must not use.
+
+So the earlier decision stands, and trigger 1 is explicitly **not** fired by T08: the mutation
+engine was built, and it wanted the journal, the queue and the ring — all three of which
+already existed — not a scheduler. What would fire it: a round that needs cancellation of
+*running* work with progress reporting (a long `fetch`/`push` the user can stop and then
+reconcile), or a persistent daemon with supervised background work. Either would be scheduled
+as its own task, scoped to `packages/host-node`, with `runPromise` at the edges, core plain,
+Zod still the contract — and the version pinned exactly, upgraded in its own change.
