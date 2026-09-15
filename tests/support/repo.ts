@@ -278,7 +278,16 @@ export async function createRepo(
       return new TextDecoder().decode(bytes).trim();
     },
     async dispose() {
-      await rm(scratchRoot, { recursive: true, force: true });
+      // Windows refuses to remove a directory while any handle inside it is open, and
+      // the service a spec just stopped can still be closing its last one. `rm` retries
+      // EBUSY/EPERM/ENOTEMPTY when asked, which is what turns "1 failed" runs that end
+      // in `EBUSY: resource busy or locked, rmdir` into clean teardown.
+      await rm(scratchRoot, {
+        recursive: true,
+        force: true,
+        maxRetries: 10,
+        retryDelay: 50,
+      });
     },
   };
 
@@ -321,7 +330,16 @@ export async function createBareRemote(): Promise<BareRemoteFixture> {
     git,
     gitResult,
     async dispose() {
-      await rm(scratchRoot, { recursive: true, force: true });
+      // Windows refuses to remove a directory while any handle inside it is open, and
+      // the service a spec just stopped can still be closing its last one. `rm` retries
+      // EBUSY/EPERM/ENOTEMPTY when asked, which is what turns "1 failed" runs that end
+      // in `EBUSY: resource busy or locked, rmdir` into clean teardown.
+      await rm(scratchRoot, {
+        recursive: true,
+        force: true,
+        maxRetries: 10,
+        retryDelay: 50,
+      });
     },
   };
 }

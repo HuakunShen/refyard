@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { open, readFile } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { createBareRemote, createRepo } from "../support/repo.ts";
 
@@ -39,6 +39,22 @@ describe("the repository fixture", () => {
       expect(repo.env["GIT_INDEX_FILE"]).toBeUndefined();
     } finally {
       await repo.dispose();
+    }
+  });
+
+  it("removes its scratch directory even while a handle inside it is open", async () => {
+    // Prevents: the one failure that survived a whole-platform Windows run — a test
+    // whose assertions all passed, reported as failed by `EBUSY: resource busy or
+    // locked, rmdir`, because the service the spec had just stopped was still closing
+    // a file inside the fixture. POSIX lets a directory go while a handle is open;
+    // Windows does not, so teardown retries instead of declaring the spec broken.
+    const repo = await createRepo({ initialCommit: true });
+    const held = await open(join(repo.root, "a.txt"), "r");
+    try {
+      await repo.dispose();
+      expect(existsSync(repo.scratchRoot)).toBe(false);
+    } finally {
+      await held.close();
     }
   });
 
