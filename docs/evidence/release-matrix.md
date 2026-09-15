@@ -248,6 +248,28 @@ still open, and this is what is known about it:
   "records why a refusal happened, not only its status"), and a stale root self-heals on the
   next request. If it recurs, the log line names which check refused and the path it resolved.
 
+## Published releases
+
+Both releases were published by the project's owner and then checked against the registry — a
+distinct step from the gates above, because it is the only one that looks at what a user actually
+installs.
+
+| Version | First available (UTC)            | `dist.integrity` (sha512)                  | Verified after publishing                                                                                                                                                                                                                                        |
+| ------- | -------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0.1.0   | 2026-09-15T19:40:39Z             | `8IbSWpd921gnt…K0+zO18aqUPyA==`            | `refyard doctor --json` from the registry install; the full lifecycle probe (serve, pair, capabilities, status, history, refs, the packaged UI, a preview token, `stagePaths`, `git diff --cached`) on Node 26.8.2 and 22.23.2 — identical to the locally built tarball |
+| 0.1.1   | 2026-09-15T21:24Z (`PUT 202`)    | `zMNGWNvozu9Nk…QVVc+gPIGeH4Q==`            | the same lifecycle probe on the same two Node lines, and the check this release exists for: with `core.autocrlf=true` in the session's global config the discard operation writes `base\r\n`, with an empty config it writes `base\n`                                              |
+
+Each `dist.integrity` was compared against the dry run made before publishing, byte for byte, and
+the tarball's own `dist/build-info.json` was read back (`0.1.1`: version 0.1.1, engines `>=22 <27`,
+`gitCommit 3327119`) — so the artifact on the registry is the one that was measured, not simply one
+with the same version number.
+
+Two things worth knowing before publishing the next one. npm returns `PUT 401`, opens a browser
+for re-authentication and then succeeds; the exit code is still 0, so the publish worked. And the
+version can take a few minutes to become installable: right after the `202`, `npm view` and
+`npm exec --package refyard@0.1.1` can both report "no matching version" from a stale local
+cache — `npm_config_prefer_online=true npm exec …` revalidates it and works.
+
 ## Deliberately absent from this release
 
 These are not gaps in testing; they are decisions, and a release page must not present them as
