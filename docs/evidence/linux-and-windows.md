@@ -66,6 +66,15 @@ service cleanly". Windows has no signals — `process.kill` there is `TerminateP
 no process group to signal — so the graceful-shutdown path that step is about does not exist on
 that platform. The service is terminated at the end of the run instead of left behind.
 
+Both machines had the same quiet problem, and it is worth naming before the findings because it
+explains why the local runs looked better than they were: the dev CLI finds its web build in
+`.refyard-dev/web`, and on both machines that was a **symlink somebody had created by hand**
+(`→ apps/web/build`) rather than anything the repository produces. Every local e2e pass therefore
+depended on it, and the first CI run — where no such symlink exists — failed all thirty specs on a
+missing panel. `bundle-cli.ts` stages the built SPA there now; on the Ubuntu machine, with the
+symlink deleted and only `pnpm build && bun scripts/bundle-cli.ts` run, the chromium suite passed
+30 of 30 again.
+
 ## What the runs found
 
 Five defects, in the order they were found. Each is fixed, and each fix has a case that fails
@@ -138,6 +147,9 @@ Named plainly, because a matrix row is only as good as its status word:
 
 - **Windows e2e**: the Playwright suite was not run there. The browser rows for Windows are
   unverified, and the product's behaviour in a browser on Windows is unverified with them.
+- **`bench:runtime` on Windows**: still running when this file was written — the 100,000-commit
+  fixture takes far longer to build on NTFS than in the same run on the other two machines. The
+  gate's exit status on Windows is therefore **unverified** here, unlike the other nine.
 - **Linux Firefox and WebKit**: not run — only chromium was installed on that machine.
 - **CI on Windows**: the workflow runs `ubuntu-latest` and `macos-latest`. Windows is not in the
   matrix, so the Windows rows above rest on the manual run on this one machine.
