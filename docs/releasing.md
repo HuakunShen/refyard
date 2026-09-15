@@ -23,18 +23,18 @@ registry is the one whose checks ran, not a rebuild on a release machine.
   npm notice total files: 191       npm notice shasum: 6a9a4e468ad5037022ae56c81a7da868cda1db72
   ```
 
-  `npm publish --dry-run` prints what would be uploaded and contacts nothing. What it does *not*
+  `npm publish --dry-run` prints what would be uploaded and contacts nothing. What it does _not_
   prove is the step after it — the real `npm publish` — which stays the publisher's.
 
 ## Decisions that are not mine to make
 
-| Decision    | Where                                | State today                                                                                                                        |
-| ----------- | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Name        | `packages/npm-dist/package.json`     | `refyard`. Checked against the registry on 2026-09-15: **unclaimed** (`404`). Publishing claims it, permanently, for this account. |
-| Version     | same                                 | `0.0.0`, a placeholder. `0.1.0` is the conventional first release; a published version can never be reused or edited.              |
-| License     | same                                 | `UNLICENSED`. On a public package that means "no license granted" — legal to publish, and a decision nobody else can make.        |
-| Description | same                                 | Reads "Not published; install from a locally built tarball." — true until the moment it is published, then it is the registry text. |
-| Public      | the publish command                  | `refyard` is unscoped, so a plain `npm publish` publishes it **publicly**. `npm publish --access restricted` refuses rather than silently restricting nothing. |
+| Decision    | Where                            | State today                                                                                                                                                    |
+| ----------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Name        | `packages/npm-dist/package.json` | `refyard`. Checked against the registry on 2026-09-15: **unclaimed** (`404`). Publishing claims it, permanently, for this account.                             |
+| Version     | same                             | `0.0.0`, a placeholder. `0.1.0` is the conventional first release; a published version can never be reused or edited.                                          |
+| License     | same                             | `UNLICENSED`. On a public package that means "no license granted" — legal to publish, and a decision nobody else can make.                                     |
+| Description | same                             | Reads "Not published; install from a locally built tarball." — true until the moment it is published, then it is the registry text.                            |
+| Public      | the publish command              | `refyard` is unscoped, so a plain `npm publish` publishes it **publicly**. `npm publish --access restricted` refuses rather than silently restricting nothing. |
 
 Two mechanical facts: `"private": true` must be removed from that manifest or `npm publish` refuses
 (it is `true` today, deliberately, so no accident can publish it), and the repository is
@@ -79,7 +79,7 @@ exactly why every other test uses locally built tarballs.
   terminal, no plugin host, and the write operations listed in `GET /api/v1/capabilities` are the
   complete set.
 - The verification status of the platforms it will run on — `docs/evidence/release-matrix.md` and
-  `docs/evidence/linux-and-windows.md` are the source, including the rows that say *unverified*.
+  `docs/evidence/linux-and-windows.md` are the source, including the rows that say _unverified_.
 - That the service is loopback-only and authenticated, and that it runs the machine's own `git`
   (hooks, filters and credential helpers included) against approved directories.
 
@@ -90,5 +90,6 @@ exactly why every other test uses locally built tarballs.
   breaks somebody's lockfile).
 - The `packageManager` pin (`pnpm@11.25.0`) and `.nvmrc` (Node 26.8.2) are the toolchain the
   release was tested with; a publish from a different toolchain should say so.
-- `.github/workflows/ci.yml` runs the same gate list on `ubuntu-latest` and `macos-latest`. It has
-  not run yet at the time of writing; a release whose CI never ran should say that too.
+- `.github/workflows/ci.yml` runs the same gate list on `ubuntu-latest` and `macos-latest`, three
+  browsers included. The first green run was `34984950591` on 2026-09-15 (revision `f7be568`); the
+  release notes can cite it, and a later release should cite its own run rather than that one.
