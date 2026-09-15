@@ -202,15 +202,16 @@ existing auth/origin/SSE/static tests pass unchanged.
 
 ## 8. Decision log
 
-| Date       | Decision                                                                                                        |
-| ---------- | --------------------------------------------------------------------------------------------------------------- |
-| 2026-09-14 | One runtime for V1: Node 26.x. No Rust/Bun/second engine in the shipped service.                                |
-| 2026-09-14 | Public contract is Zod-first (`packages/git-contract`), exported as JSON Schema.                                |
-| 2026-09-15 | Four usage forms are supported targets; form 1 is the default and the only one shipped so far.                  |
-| 2026-09-15 | Multi-repository management (form 2) is a first-class goal, by explicit approval — never scanning.              |
-| 2026-09-15 | Hosted UI (form 3) is opt-in, password-gated, origin-allowlisted, and never the first place a mutation appears. |
-| 2026-09-15 | Core stays dependency-free so a native host can embed it (form 4); bundle growth is a decision.                 |
-| 2026-09-15 | HTTP layer moves to Hono with `hono-openapi` + Scalar; MCP via `@hono/mcp` (read tools first).                  |
+| Date       | Decision                                                                                                                                                                                                                                                                                                                                                     |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 2026-09-14 | One runtime for V1: Node 26.x. No Rust/Bun/second engine in the shipped service.                                                                                                                                                                                                                                                                             |
+| 2026-09-14 | Public contract is Zod-first (`packages/git-contract`), exported as JSON Schema.                                                                                                                                                                                                                                                                             |
+| 2026-09-15 | Four usage forms are supported targets; form 1 is the default and the only one shipped so far.                                                                                                                                                                                                                                                               |
+| 2026-09-15 | Multi-repository management (form 2) is a first-class goal, by explicit approval — never scanning.                                                                                                                                                                                                                                                           |
+| 2026-09-15 | Hosted UI (form 3) is opt-in, password-gated, origin-allowlisted, and never the first place a mutation appears.                                                                                                                                                                                                                                              |
+| 2026-09-15 | Core stays dependency-free so a native host can embed it (form 4); bundle growth is a decision.                                                                                                                                                                                                                                                              |
+| 2026-09-15 | HTTP layer moves to Hono with `hono-openapi` + Scalar; MCP via `@hono/mcp` (read tools first).                                                                                                                                                                                                                                                               |
+| 2026-09-15 | Parsing placement: argv, state truth and write permission stay in core; display parsing stays server-side **because it is bounded**, with typed degradation; no browser parsing Worker until the UI parses something heavy. Reopening needs measurements naming a shape the bound cannot serve (`docs/discussions/2026-09-15-frontend-parsing-boundary.md`). |
 
 ## 9. What this file forbids
 
