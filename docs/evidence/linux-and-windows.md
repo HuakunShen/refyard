@@ -73,7 +73,7 @@ explains why the local runs looked better than they were: the dev CLI finds its 
 depended on it, and the first CI run — where no such symlink exists — failed all thirty specs on a
 missing panel. `bundle-cli.ts` stages the built SPA there now; on the Ubuntu machine, with the
 symlink deleted and only `pnpm build && bun scripts/bundle-cli.ts` run, the chromium suite passed
-30 of 30 again.
+30 of 30 again (revision `575edc6`).
 
 ## What the runs found
 
