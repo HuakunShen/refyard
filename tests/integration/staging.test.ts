@@ -1002,7 +1002,14 @@ describe("repository shapes the write path meets", () => {
     // different path than the one the user selected, and the diff would describe a file
     // nobody asked about. The names here are the three that break naive handling.
     const repo = await createRepo({ initialCommit: true });
-    const names = ["moved 新\tname.txt", "plain space.txt", "mix 混合\tx.txt"];
+    // A tab cannot exist in a Windows file name, so the two tab-bearing shapes are
+    // spaces there: the property under test (a name that survives the trip to
+    // `git add` byte for byte) is unchanged, and the characters Windows cannot hold
+    // are unreachable on it rather than untested by choice.
+    const names =
+      process.platform === "win32"
+        ? ["moved 新 name.txt", "plain space.txt", "mix 混合 x.txt"]
+        : ["moved 新\tname.txt", "plain space.txt", "mix 混合\tx.txt"];
     for (const name of names) {
       await repo.write(name, `content of ${name}\n`);
     }
@@ -1048,7 +1055,9 @@ describe("repository shapes the write path meets", () => {
       expect(committedNames).toEqual([...names, "a.txt"].sort());
       // And the bytes match, so nothing was normalised on the way through: not the
       // tab, not the multi-byte characters, and not the space.
-      expect(committedNames.join("\n")).toEqual([...names, "a.txt"].sort().join("\n"));
+      expect(committedNames.join("\n")).toEqual(
+        [...names, "a.txt"].sort().join("\n"),
+      );
     } finally {
       await service.close();
       await repo.dispose();
@@ -1164,11 +1173,16 @@ describe("repository shapes the write path meets", () => {
         operation: { kind: "commit", message: "cannot work\n" },
       });
       if (!request.ok) {
-        throw new Error(`the fixture request did not validate: ${request.problems[0]?.message ?? ""}`);
+        throw new Error(
+          `the fixture request did not validate: ${request.problems[0]?.message ?? ""}`,
+        );
       }
       // HEAD becomes a directory: the Git directory is still there, so the registry's
       // own check passes, and Git is what fails.
-      await rm(join(repo.root, ".git", "HEAD"), { recursive: true, force: true });
+      await rm(join(repo.root, ".git", "HEAD"), {
+        recursive: true,
+        force: true,
+      });
       await mkdir(join(repo.root, ".git", "HEAD"), { recursive: true });
 
       const effect = service.effects.find((entry) => entry.kind === "commit");
@@ -1185,7 +1199,9 @@ describe("repository shapes the write path meets", () => {
       }
       expect(outcome.problem.code).toBe("GitCommandFailed");
       // Git's own words, not a rewritten cause.
-      expect(outcome.problem.message).toMatch(/HEAD|not a git repository|status/i);
+      expect(outcome.problem.message).toMatch(
+        /HEAD|not a git repository|status/i,
+      );
     } finally {
       await service.close();
       await repo.dispose();

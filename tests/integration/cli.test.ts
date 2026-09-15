@@ -10,7 +10,7 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   EXIT_FAILED,
@@ -79,10 +79,13 @@ async function holdDefaultPort(): Promise<Server> {
 
 describe("argument parsing", () => {
   it("treats a bare path as `open`", () => {
-    const parsed = parseArgs(["/tmp/repo"], "/tmp");
+    // Absolute in the form this platform writes: `/tmp/repo` and `C:\\tmp\\repo` are
+    // both absolute, and only one of them exists off POSIX.
+    const directory = resolve("/tmp/repo");
+    const parsed = parseArgs([directory], resolve("/tmp"));
     expect(parsed.ok).toBe(true);
     if (parsed.ok && parsed.command.kind === "open") {
-      expect(parsed.command.path).toBe("/tmp/repo");
+      expect(parsed.command.path).toBe(directory);
       expect(parsed.command.port).toBe(DEFAULT_PORT);
       // The documented default, asserted here as a value as well as through the constant:
       // it appears in the help text, the installation guide and a bookmark someone may
@@ -94,10 +97,11 @@ describe("argument parsing", () => {
   });
 
   it("resolves a relative path against the caller's directory, not core's", () => {
-    const parsed = parseArgs(["./project"], "/home/someone/work");
+    const caller = resolve("/home/someone/work");
+    const parsed = parseArgs(["./project"], caller);
     expect(parsed.ok).toBe(true);
     if (parsed.ok && parsed.command.kind === "open") {
-      expect(parsed.command.path).toBe("/home/someone/work/project");
+      expect(parsed.command.path).toBe(join(caller, "project"));
     }
   });
 

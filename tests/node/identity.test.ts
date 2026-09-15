@@ -110,7 +110,12 @@ describe("directory identity", () => {
     pin.release();
   });
 
-  it("counts one descriptor per pin, and gives it back on release", async () => {
+  it("counts one descriptor per pin, and gives it back on release", async (context) => {
+    // Windows never holds a descriptor — a directory there cannot be deleted while
+    // one is open, so pinning would turn "delete this repository" into a failure.
+    // The count is a POSIX property, and the numbers-only comparison Windows keeps
+    // is covered by the replacement cases above.
+    context.skip(process.platform === "win32");
     // Prevents: a service that unregisters repositories in a loop exhausting its own
     // descriptor budget (a double release counting a slot twice, or a pin that is
     // never released), whose failure would show up as a Git process that cannot be

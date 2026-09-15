@@ -116,12 +116,19 @@ describe("runGit termination", () => {
   it("reports a signal as a signal rather than as an exit code", async () => {
     // Prevents: `process.kill` (or an operator's Ctrl-C) being recorded as a
     // normal completion because the close event also carries a code.
+    //
+    // Windows has no signals to report: `process.kill` there is TerminateProcess and
+    // Node reports the child as exited, so the signal *shape* of this case is only
+    // verifiable on POSIX. What is asserted everywhere is the part a user is
+    // promised — a terminated process is not a clean exit.
     const outcome = await runGit(
       nodeScriptSpec("process.kill(process.pid, 'SIGTERM')"),
       { runId: "t6" },
       options(),
     );
-    expect(outcome.termination).toBe("signal");
+    if (process.platform !== "win32") {
+      expect(outcome.termination).toBe("signal");
+    }
     expect(isCleanExit(outcome)).toBe(false);
   });
 

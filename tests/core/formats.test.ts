@@ -596,7 +596,12 @@ describe("the same parsers, against repositories built now", () => {
     const repo = await createRepo({ initialCommit: true });
     try {
       await repo.write("space 中文.txt", "one\n");
-      await repo.write("line\nbreak.txt", "two\n");
+      // NTFS has no way to hold a newline in a name, so the second awkward shape is
+      // a leading dash there: still a path the planners must pass through
+      // literally, and one a careless argv builder would read as a switch.
+      const awkward =
+        process.platform === "win32" ? "-line break.txt" : "line\nbreak.txt";
+      await repo.write(awkward, "two\n");
       await repo.commitAll("paths");
       await repo.write("space 中文.txt", "changed\n");
 
@@ -625,7 +630,12 @@ describe("the same parsers, against repositories built now", () => {
     try {
       await repo.write("before 名字.txt", "content\n");
       await repo.commitAll("add");
-      await repo.git(["mv", "before 名字.txt", "after\t名字.txt"]);
+      // A tab cannot exist in a Windows file name, so the byte-level shape the case
+      // is about (a path the shell would have quoted) is a space there; the tab
+      // itself is verified only on filesystems that can hold one.
+      const renamed =
+        process.platform === "win32" ? "after 名字.txt" : "after\t名字.txt";
+      await repo.git(["mv", "before 名字.txt", renamed]);
 
       const nameStatus = parseNameStatus(
         await repo.git(planDiffNameStatus(context, { cached: true }).argv),
@@ -634,16 +644,12 @@ describe("the same parsers, against repositories built now", () => {
       expect(decode(nameStatus[0]?.originalPath ?? new Uint8Array())).toBe(
         "before 名字.txt",
       );
-      expect(decode(nameStatus[0]?.path ?? new Uint8Array())).toBe(
-        "after\t名字.txt",
-      );
+      expect(decode(nameStatus[0]?.path ?? new Uint8Array())).toBe(renamed);
 
       const numstat = parseNumstat(
         await repo.git(planDiffNumstat(context, { cached: true }).argv),
       );
-      expect(decode(numstat[0]?.path ?? new Uint8Array())).toBe(
-        "after\t名字.txt",
-      );
+      expect(decode(numstat[0]?.path ?? new Uint8Array())).toBe(renamed);
     } finally {
       await repo.dispose();
     }
@@ -730,8 +736,9 @@ describe("the same parsers, against repositories built now", () => {
         .trim()
         .split("\n");
       // Git resolves symlinks in the paths it reports (`/var` is `/private/var` on
-      // macOS), so the comparison is against the resolved fixture path.
-      const resolvedRoot = realpathSync(repo.root);
+      // macOS) and separates with forward slashes everywhere, including a Windows
+      // `C:/Users/...`, so both sides are compared in that convention.
+      const resolvedRoot = realpathSync(repo.root).replaceAll("\\", "/");
       expect(layout[0]).toBe(`${resolvedRoot}/.git`);
       expect(layout[1]).toBe(`${resolvedRoot}/.git`);
       expect(layout[2]).toBe(resolvedRoot);

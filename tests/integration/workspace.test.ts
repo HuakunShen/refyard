@@ -91,8 +91,10 @@ describe("initRepository", () => {
       // cannot read is not a result anyone can act on.
       const after = await listRepositories(service);
       expect(after.length).toBe(before.length + 1);
+      // The display path is the real path, so it is separated the way this platform
+      // separates: a `nested/created` suffix is only a suffix on POSIX.
       const registered = after.find((entry) =>
-        entry.displayPath.endsWith("nested/created"),
+        entry.displayPath.endsWith(join("nested", "created")),
       );
       expect(registered).toBeDefined();
       const status = await service.fetch(
@@ -138,7 +140,9 @@ describe("initRepository", () => {
       const direct = join(repo.scratchRoot, "direct");
       await repo.git(["init", "--quiet", direct]);
       const expected = decoder
-        .decode(await repo.git(["-C", direct, "symbolic-ref", "--short", "HEAD"]))
+        .decode(
+          await repo.git(["-C", direct, "symbolic-ref", "--short", "HEAD"]),
+        )
         .trim();
       expect(head).toBe(expected);
     } finally {

@@ -370,7 +370,11 @@ describe("status reads", () => {
   });
 
   it("keeps a path's raw bytes when the file name is not ASCII", async () => {
-    await repo.write("moved 新\tname.txt", "content\n");
+    // A tab is a control character, and Windows forbids those in a file name, so the
+    // awkward shape there is a space between the non-ASCII characters instead.
+    const name =
+      process.platform === "win32" ? "moved 新 name.txt" : "moved 新\tname.txt";
+    await repo.write(name, "content\n");
     const status = await harness.service.status({
       repositoryId: harness.repositoryId,
     });
@@ -1066,7 +1070,9 @@ describe("a shallow clone", () => {
     expect(boundary?.parents).toHaveLength(1);
     const missing = boundary?.parents[0] ?? "";
     expect(boundary?.missingParents).toEqual([missing]);
-    expect(history.commits.some((commit) => commit.oid === missing)).toBe(false);
+    expect(history.commits.some((commit) => commit.oid === missing)).toBe(
+      false,
+    );
 
     // The source repository has that commit, so the boundary is not the real root.
     const sourceCommit = await source.headOid();

@@ -10,6 +10,7 @@
 import { describe, expect, it } from "vitest";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { isAbsolute, join } from "node:path";
 import { createBareRemote, createRepo } from "../support/repo.ts";
 
 describe("the repository fixture", () => {
@@ -29,7 +30,7 @@ describe("the repository fixture", () => {
       ).toContain("[fixture]");
       expect(repo.home.startsWith(repo.scratchRoot)).toBe(true);
       expect(repo.home === process.env["HOME"]).toBe(false);
-      expect(repo.env["GIT_CONFIG_GLOBAL"]).toBe(`${repo.home}/.gitconfig`);
+      expect(repo.env["GIT_CONFIG_GLOBAL"]).toBe(join(repo.home, ".gitconfig"));
       expect(repo.env["GIT_TERMINAL_PROMPT"]).toBe("0");
       expect(repo.env["GIT_CONFIG_NOSYSTEM"]).toBe("1");
       // A stray GIT_DIR or GIT_WORK_TREE in the caller's shell must not survive.
@@ -81,8 +82,13 @@ describe("the repository fixture", () => {
     try {
       // These are the path shapes the byte parsers must survive, so the fixture
       // must be able to create them in the first place.
+      // A tab is a control character, and Windows forbids those in a file name, so
+      // the third shape is a leading dash there — still a name the tooling must
+      // keep as bytes, and one an argv builder could mistake for a switch.
+      const awkward =
+        process.platform === "win32" ? "-dash name.txt" : "tab\tname.txt";
       await repo.write("space 中文.txt", "one\n");
-      await repo.write("tab\tname.txt", "two\n");
+      await repo.write(awkward, "two\n");
       await repo.write("dir with space/nested 文件.txt", "three\n");
       const oid = await repo.commitAll("paths");
       expect(oid).toMatch(/^[0-9a-f]{40}$/);
@@ -90,7 +96,7 @@ describe("the repository fixture", () => {
         await repo.git(["ls-files", "-z"]),
       );
       expect(listed).toContain("space 中文.txt");
-      expect(listed).toContain("tab\tname.txt");
+      expect(listed).toContain(awkward);
       expect(listed).toContain("dir with space/nested 文件.txt");
     } finally {
       await repo.dispose();
@@ -126,7 +132,8 @@ describe("the repository fixture", () => {
         await remote.git(["for-each-ref", "--format=%(refname)", "refs/heads"]),
       );
       expect(heads.trim()).toBe("refs/heads/main");
-      expect(remote.path.startsWith("/")).toBe(true);
+      // Absolute, in this platform's own form: `C:\...` is as absolute as `/...`.
+      expect(isAbsolute(remote.path)).toBe(true);
       expect(remote.path).toContain("refyard-remote-");
     } finally {
       await repo.dispose();

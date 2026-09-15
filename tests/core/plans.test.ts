@@ -86,7 +86,10 @@ function allSpecs(): GitCommandSpec[] {
       destination: "/root/new",
       initialBranch: "trunk",
     }),
-    planRepositoryInit(context, { destination: "/root/new", initialBranch: null }),
+    planRepositoryInit(context, {
+      destination: "/root/new",
+      initialBranch: null,
+    }),
     planRepositoryClone(context, {
       remoteUrl: "/remote/repo.git",
       destination: "/root/cloned",
@@ -192,28 +195,40 @@ describe("path-safe staging and unstaging", () => {
     try {
       // `:(glob)**` would expand to every path if it were interpreted as a
       // pathspec; `-n` would be read as a switch by a careless `git add`.
-      for (const name of [":(glob)**", "-n", "*"]) {
+      const wildcardName = "*";
+      // Windows cannot hold a `:` or a `*` in a file name at all, so those two names
+      // are only exercised where the filesystem allows them. The option-looking
+      // name and the literal-bytes rule run everywhere.
+      const names =
+        process.platform === "win32"
+          ? ["-n"]
+          : [":(glob)**", "-n", wildcardName];
+      for (const name of names) {
         await repo.write(`dir/${name}`, `content of ${name}\n`);
       }
-      const selected = [bytes("dir/:(glob)**"), bytes("dir/-n")];
+      const selected = names
+        .filter((name) => name !== wildcardName)
+        .map((name) => bytes(`dir/${name}`));
       const spec = planStage(context, selected);
       await repo.git(spec.argv, { stdin: spec.stdin });
 
       const cached = decoder.decode(
         await repo.git(["diff", "--cached", "--name-only", "-z"]),
       );
-      // Exactly the two selected paths, in Git's sort order — the `*` file is
-      // untracked and must not have been swept in by a pathspec expansion.
+      // Exactly the selected paths, in Git's sort order — a name that looks like
+      // pathspec magic must not have been expanded into the repository.
       expect(
         cached.split("\u0000").filter((entry) => entry.length > 0),
-      ).toEqual(["dir/-n", "dir/:(glob)**"]);
-      // `*` exists in the working tree and must NOT have been staged.
-      const status = parseStatus(await repo.git(planStatus(context).argv));
-      expect(
-        status.records.some(
-          (record) => decoder.decode(record.path) === "dir/*",
-        ),
-      ).toBe(true);
+      ).toEqual(selected.map((name) => decoder.decode(name)).sort());
+      // The wildcard file exists in the working tree and must NOT have been staged.
+      if (names.includes(wildcardName)) {
+        const status = parseStatus(await repo.git(planStatus(context).argv));
+        expect(
+          status.records.some(
+            (record) => decoder.decode(record.path) === `dir/${wildcardName}`,
+          ),
+        ).toBe(true);
+      }
     } finally {
       await repo.dispose();
     }

@@ -400,7 +400,28 @@ describe("terminal and document injection", () => {
     // A file name with a bell and an escape: legal on this filesystem, and a way to
     // make a terminal beep, move the cursor or rewrite the line it is printed on.
     const hostile = "hostile\u0001\u001b[31mname.txt";
-    await repo.write(hostile, "content\n");
+    if (process.platform === "win32") {
+      // NTFS forbids control characters in a name, so the path is put in the index
+      // instead of on disk. That is not a workaround for the test's sake: an index
+      // written elsewhere, a checkout of a repository made on Linux, or a tool that
+      // edits paths directly all produce exactly this, and the service reports index
+      // paths as bytes on every platform.
+      const blob = new TextDecoder()
+        .decode(
+          await repo.git(["hash-object", "-w", "--stdin"], {
+            stdin: new TextEncoder().encode("content\n"),
+          }),
+        )
+        .trim();
+      await repo.git([
+        "update-index",
+        "--add",
+        "--cacheinfo",
+        `100644,${blob},${hostile}`,
+      ]);
+    } else {
+      await repo.write(hostile, "content\n");
+    }
     const service = await startService(repo);
     try {
       const response = await service.fetch(
