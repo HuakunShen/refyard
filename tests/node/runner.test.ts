@@ -313,6 +313,77 @@ describe("runGit environment", () => {
     }
   });
 
+  it("passes the variables that choose which Git configuration file is read", async () => {
+    // Prevents: the service running Git with a different configuration than the user's
+    // own `git`. `GIT_CONFIG_GLOBAL` and `GIT_CONFIG_SYSTEM` name the global and system
+    // config files, and `GIT_CONFIG_NOSYSTEM` decides whether the second is read at all;
+    // a session that set them — a test fixture isolating its scratch config, a CI job, a
+    // wrapper script, or a Windows install whose system config sets `core.autocrlf` — got
+    // the default files instead. Found by the first end-to-end run on Windows: the
+    // service wrote CRLF into the working tree because Git for Windows' system config
+    // says `core.autocrlf=true`, while the fixture's own Git, which did see the
+    // variables, wrote LF — and fifteen cases compared the two.
+    const names = [
+      "GIT_CONFIG_GLOBAL",
+      "GIT_CONFIG_SYSTEM",
+      "GIT_CONFIG_NOSYSTEM",
+    ] as const;
+    const saved = names.map((name) => [name, process.env[name]] as const);
+    process.env["GIT_CONFIG_GLOBAL"] = "/tmp/refyard-alternate-gitconfig";
+    process.env["GIT_CONFIG_SYSTEM"] = "/tmp/refyard-alternate-system-config";
+    process.env["GIT_CONFIG_NOSYSTEM"] = "1";
+    try {
+      const outcome = await runGit(
+        nodeScriptSpec(
+          "process.stdout.write(JSON.stringify({ global: process.env['GIT_CONFIG_GLOBAL'] ?? null, system: process.env['GIT_CONFIG_SYSTEM'] ?? null, nosystem: process.env['GIT_CONFIG_NOSYSTEM'] ?? null }))",
+        ),
+        { runId: "t18" },
+        options(),
+      );
+      expect(JSON.parse(new TextDecoder().decode(outcome.stdout))).toEqual({
+        global: "/tmp/refyard-alternate-gitconfig",
+        system: "/tmp/refyard-alternate-system-config",
+        nosystem: "1",
+      });
+    } finally {
+      for (const [name, value] of saved) {
+        if (value === undefined) {
+          delete process.env[name];
+        } else {
+          process.env[name] = value;
+        }
+      }
+    }
+  });
+
+  it("still refuses the config variables that replace the whole configuration", async () => {
+    // The allow-list above admits the two *file* names, so this case pins the line
+    // between them: `GIT_CONFIG` makes Git ignore every other source including the
+    // repository's own config, and `GIT_CONFIG_PARAMETERS`/`GIT_CONFIG_COUNT` are `-c`
+    // on the environment, which can name a hook, a filter or a credential helper to run.
+    const outcome = await runGit(
+      nodeScriptSpec(
+        "process.stdout.write(JSON.stringify({ file: process.env['GIT_CONFIG'] ?? null, count: process.env['GIT_CONFIG_COUNT'] ?? null, params: process.env['GIT_CONFIG_PARAMETERS'] ?? null, key: process.env['GIT_CONFIG_KEY_0'] ?? null }))",
+      ),
+      { runId: "t19" },
+      options({
+        env: {
+          GIT_CONFIG: "/tmp/refyard-only-config",
+          GIT_CONFIG_COUNT: "1",
+          GIT_CONFIG_KEY_0: "core.hooksPath",
+          GIT_CONFIG_VALUE_0: "/tmp/refyard-hooks",
+          GIT_CONFIG_PARAMETERS: "'core.autocrlf'='true'",
+        },
+      }),
+    );
+    expect(JSON.parse(new TextDecoder().decode(outcome.stdout))).toEqual({
+      file: null,
+      count: null,
+      params: null,
+      key: null,
+    });
+  });
+
   it("leaves an ambient variable out unless it is on the allow-list", async () => {
     // Prevents: credentials and tokens a developer happened to export being handed
     // to every Git process, where a hook could read and leak them.

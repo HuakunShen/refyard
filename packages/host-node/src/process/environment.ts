@@ -53,6 +53,16 @@ export const INHERITED_ENV_VARS: readonly string[] = [
   "GIT_COMMITTER_NAME",
   "GIT_COMMITTER_EMAIL",
   "GIT_COMMITTER_DATE",
+  // Which configuration files Git reads, named by the same variables the user's own
+  // shell would set. A test fixture isolating its scratch config, a CI job, a wrapper
+  // script, or an installation that skips its system config all say so here; ignoring
+  // them means running Git with a configuration the user did not choose. The first
+  // Windows end-to-end run found exactly that: Git for Windows' system config sets
+  // `core.autocrlf=true`, so the service wrote CRLF while the caller's own `git`, which
+  // did see `GIT_CONFIG_NOSYSTEM`, wrote LF — fifteen cases compared the two.
+  "GIT_CONFIG_GLOBAL",
+  "GIT_CONFIG_SYSTEM",
+  "GIT_CONFIG_NOSYSTEM",
   // Signing and SSH, so the user's existing setup keeps working.
   "SSH_AUTH_SOCK",
   "SSH_AGENT_PID",
@@ -174,6 +184,15 @@ export function buildGitEnvironment(
   // `extra` — gets to put one back and make a scoped command act elsewhere.
   for (const name of BLOCKED_ENV_VARS) {
     delete env[name];
+  }
+  // The numbered half of the `-c`-on-the-environment pair (`GIT_CONFIG_COUNT` above,
+  // with `GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n` as its entries) cannot be listed by
+  // name, so it is matched by shape. A pair whose count is gone is inert to Git, and
+  // this keeps that from depending on the count staying blocked.
+  for (const name of Object.keys(env)) {
+    if (/^GIT_CONFIG_(?:KEY|VALUE)_\d+$/.test(name)) {
+      delete env[name];
+    }
   }
 
   return env;
