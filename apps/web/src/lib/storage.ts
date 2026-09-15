@@ -1,126 +1,61 @@
 /**
- * The two pieces of browser state the app keeps.
+ * The browser's two stores, handed to the policy that decides what goes where.
  *
- * They are stored in different places on purpose, because they are different kinds of
- * thing:
- *
- * - the **session token** is a credential, so it lives in `sessionStorage`: it survives a
- *   reload (which is otherwise a dead end — the pairing ticket is single use) and dies with
- *   the tab. It is never in `localStorage`, where it would outlive the service process.
- * - the **service address** is a preference, so it lives in `localStorage`.
- *
- * Both are wrapped because a browser can throw on storage access (private modes, blocked
- * site data), and a workbench that fails to start because a preference could not be read
- * is worse than one that forgets the preference.
+ * Everything interesting — which key lives in which store, and the rule that a token never
+ * goes to `localStorage` — is in `storage-policy.ts`, where it can be tested without a
+ * browser. This file only finds `window.sessionStorage` and `window.localStorage` and
+ * passes them along, and it tolerates a browser that has neither.
  */
+import {
+  createBrowserStorage,
+  type BrowserStorage,
+  type StorageLike,
+} from "./storage-policy.js";
 
-const TOKEN_KEY = "refyard.session.token";
-const BASE_URL_KEY = "refyard.baseUrl";
-/**
- * The service instance the stored token belongs to.
- *
- * Kept beside the token because the two are only meaningful together: a token without
- * its instance is a credential for a service that may not be there any more, and the
- * page needs to notice that rather than retry against a stranger.
- */
-const INSTANCE_KEY = "refyard.session.instance";
+const NO_STORAGE: StorageLike = {
+  getItem: () => null,
+  setItem: () => {},
+  removeItem: () => {},
+};
 
-export function readStoredToken(): string | null {
-  return readSession(TOKEN_KEY) ?? readLocal(TOKEN_KEY);
-}
-
-export function storeToken(token: string | null): void {
-  writeSession(TOKEN_KEY, token);
-  writeLocal(TOKEN_KEY, token);
-}
-
-export function readStoredBaseUrl(): string | null {
-  return readLocal(BASE_URL_KEY);
-}
-
-export function storeBaseUrl(baseUrl: string | null): void {
-  writeLocal(BASE_URL_KEY, baseUrl);
-}
-
-export function readStoredInstance(): string | null {
-  return readSession(INSTANCE_KEY) ?? readLocal(INSTANCE_KEY);
-}
-
-export function storeInstance(instanceId: string | null): void {
-  writeSession(INSTANCE_KEY, instanceId);
-  writeLocal(INSTANCE_KEY, instanceId);
-}
-
-/** Forget the whole session: used when the service is not the one we paired with or user disconnects. */
-export function clearStoredSession(): void {
-  storeToken(null);
-  storeInstance(null);
-}
-
-const ACCENT_KEY = "refyard.theme.accent";
-const BG_KEY = "refyard.theme.background";
-const GLASS_KEY = "refyard.theme.glass";
-
-export function readStoredAccent(): string {
-  return readLocal(ACCENT_KEY) ?? "default";
-}
-
-export function storeAccent(accent: string | null): void {
-  writeLocal(ACCENT_KEY, accent);
-}
-
-export function readStoredBackground(): string {
-  return readLocal(BG_KEY) ?? "none";
-}
-
-export function storeBackground(background: string | null): void {
-  writeLocal(BG_KEY, background);
-}
-
-export function readStoredGlass(): boolean {
-  return readLocal(GLASS_KEY) === "true";
-}
-
-export function storeGlass(enabled: boolean): void {
-  writeLocal(GLASS_KEY, enabled ? "true" : "false");
-}
-
-function readSession(key: string): string | null {
-  try {
-    return window.sessionStorage.getItem(key);
-  } catch {
-    return null;
+function storageFrom(name: "sessionStorage" | "localStorage"): StorageLike {
+  const candidate = window[name];
+  if (
+    candidate === undefined ||
+    candidate === null ||
+    typeof candidate.getItem !== "function" ||
+    typeof candidate.setItem !== "function" ||
+    typeof candidate.removeItem !== "function"
+  ) {
+    return NO_STORAGE;
   }
+  return candidate;
 }
 
-function writeSession(key: string, value: string | null): void {
-  try {
-    if (value === null) {
-      window.sessionStorage.removeItem(key);
-    } else {
-      window.sessionStorage.setItem(key, value);
-    }
-  } catch {
-    // Storage being unavailable changes nothing about the session that is already open.
-  }
-}
+const storage: BrowserStorage = createBrowserStorage({
+  session: storageFrom("sessionStorage"),
+  local: storageFrom("localStorage"),
+});
 
-function readLocal(key: string): string | null {
-  try {
-    return window.localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function writeLocal(key: string, value: string | null): void {
-  try {
-    if (value === null) {
-      window.localStorage.removeItem(key);
-    } else {
-      window.localStorage.setItem(key, value);
-    }
-  } catch {
-    // Same as above: a preference is not worth failing over.
-  }
-}
+export const readStoredToken = (): string | null => storage.readStoredToken();
+export const storeToken = (token: string | null): void =>
+  storage.storeToken(token);
+export const readStoredBaseUrl = (): string | null =>
+  storage.readStoredBaseUrl();
+export const storeBaseUrl = (baseUrl: string | null): void =>
+  storage.storeBaseUrl(baseUrl);
+export const readStoredInstance = (): string | null =>
+  storage.readStoredInstance();
+export const storeInstance = (instanceId: string | null): void =>
+  storage.storeInstance(instanceId);
+export const clearStoredSession = (): void => storage.clearStoredSession();
+export const readStoredAccent = (): string => storage.readStoredAccent();
+export const storeAccent = (accent: string | null): void =>
+  storage.storeAccent(accent);
+export const readStoredBackground = (): string =>
+  storage.readStoredBackground();
+export const storeBackground = (background: string | null): void =>
+  storage.storeBackground(background);
+export const readStoredGlass = (): boolean => storage.readStoredGlass();
+export const storeGlass = (enabled: boolean): void =>
+  storage.storeGlass(enabled);

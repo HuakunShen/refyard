@@ -89,6 +89,34 @@ test.describe("read-only workbench", () => {
     await expect(page.getByText("metadata only")).toHaveCount(0);
   });
 
+  test("survives a reload without leaving the token in localStorage", async ({
+    page,
+  }) => {
+    // Two things at once, and they are the same rule seen from both sides. The session
+    // survives a reload — which is what a token in sessionStorage is for, since a pairing
+    // ticket is single use — and it does so *without* a copy in localStorage, where a
+    // bearer would outlive the service process. A shipped build wrote it to both stores,
+    // so this asserts the browser's real answer rather than the module's intent.
+    await page.goto(service.pairingUrl);
+    await expect(page.getByTestId("build-badge")).toBeVisible();
+
+    await page.reload();
+    // Still paired after a reload: the token came back, and it can only have come from
+    // sessionStorage — a pairing ticket is spent.
+    await expect(page.getByTestId("build-badge")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "History" })).toBeVisible();
+
+    // Playwright reports the context's durable storage (cookies and localStorage). The
+    // session keys must not be in either half of it.
+    const state = await page.context().storageState();
+    const durableKeys = state.origins.flatMap((origin) =>
+      origin.localStorage.map((entry) => entry.name),
+    );
+    expect(durableKeys).not.toContain("refyard.session.token");
+    expect(durableKeys).not.toContain("refyard.session.instance");
+    expect(state.cookies).toEqual([]);
+  });
+
   test("removes the spent ticket from the address bar", async ({ page }) => {
     await page.goto(service.pairingUrl);
     await expect(page.getByTestId("build-badge")).toBeVisible();
