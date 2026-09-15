@@ -141,22 +141,132 @@ Windows also changed how two gates run, and neither is a product difference:
   by npm from the same tarball. `npm.cmd` also cannot be spawned without a shell there — Node
   refuses with `EINVAL` — so the wrapper goes through `cmd.exe` with the arguments quoted.
 
+## Round two — the browser suite on both machines
+
+The first round left two rows unstated rather than guessed: no engine other than chromium had ever
+run on the Linux machine, and the e2e suite had never run on Windows at all. Both were closed on
+2026-09-16, after the first release.
+
+### Ubuntu: Firefox, and WebKit blocked by one apt package
+
+`pnpm exec playwright install firefox webkit` succeeded — no root needed for the browsers
+themselves — and `pnpm test:e2e` at revision `8a7664f` came back:
+
+| Engine   | Result                                                                                                        |
+| -------- | ------------------------------------------------------------------------------------------------------------- |
+| Chromium | **30 of 30 pass**                                                                                             |
+| Firefox  | **30 of 30 pass** — the first time this engine has run on Linux                                              |
+| WebKit   | **30 of 30 fail to launch**: `Host system is missing dependencies to run browsers … sudo apt-get install libavif16` |
+
+The WebKit failures are instant (~175 ms each) and the service side of each one is healthy — the
+harness's failure dump shows the service serving its UI and printing a pairing URL before the
+browser is asked for anything. The engine needs `libavif16`, and installing it needs root on that
+machine, which this run did not have; the row stays **unverified** rather than assumed. The fix is
+one command, written here so the next attempt starts with it:
+`sudo pnpm exec playwright install-deps` (or `sudo apt-get install libavif16`).
+
+After the environment fix below was in place, chromium and Firefox were re-run at revision
+`ef5a6f8` on that machine: **60 passed in 6.1 m, exit 0** — a regression check on the change, not a
+re-measurement of the rows above.
+
+### Windows: the first browser run, and the defect it found
+
+The first `pnpm test:e2e` ever executed on Windows (revision `8a7664f`) came back **74 passed, 16
+failed**, and fifteen of the sixteen were the same thing in three engines:
+
+```
+- Expected  - 0
++ Received  + 1
+  Uint8Array [ 98, 97, 115, 101, + 13, 10 ]      // "base\r\n" where the fixture wrote "base\n"
+```
+
+`staging.spec.ts` (discard restores the file), `stash.spec.ts`, `workflows.spec.ts` (merge abort),
+`workspace.spec.ts` (clone) and `worktree.spec.ts` all failed this way — every one of them a place
+where **Git writes a working-tree file**, and every one of them comparing bytes. The cause was in
+the product, not the test:
+
+6. **The service ran Git with a configuration the session did not choose.**
+   The environment handed to Git is built from an allow-list, and `GIT_CONFIG_GLOBAL`,
+   `GIT_CONFIG_SYSTEM` and `GIT_CONFIG_NOSYSTEM` were not on it. Those three do not redirect Git at
+   anything or make it run anything — they name *which config files are read* — and dropping them
+   means the service reads the default files no matter what the caller's environment says. On that
+   Windows machine the difference is visible in bytes: Git for Windows' installer sets
+   `core.autocrlf=true` in `C:/Program Files/Git/etc/gitconfig`, so the service wrote CRLF while the
+   fixture's own Git — which does see those variables — wrote LF, and the suite compared the two.
+   Measured on the machine, both directions: `git config --show-origin --get core.autocrlf` →
+   `file:C:/Program Files/Git/etc/gitconfig true`, and with the fixture's own environment → unset.
+   The same hole had a second, quieter effect on every platform: a user (or a CI job) pointing
+   `GIT_CONFIG_GLOBAL` at an alternate profile was silently ignored.
+   Fixed in `packages/host-node/src/process/environment.ts`; cases in `tests/node/runner.test.ts`
+   (the three names reach the child; the `-c`-equivalent ones still do not) and
+   `tests/node/git-environment.test.ts` (a real checkout through a host built the way `refyard serve`
+   builds one writes the line endings the session's config asks for, with the fixture's own Git as
+   the control). Both fail before the change.
+
+With that fix (revision `ef5a6f8`) the same suite came back **89 passed, 1 failed**, and the
+remaining failure had no failing assertion in it:
+
+7. **Teardown on Windows failed on a directory another handle still held.**
+   `EBUSY: resource busy or locked, rmdir '…\refyard-fixture-…\repo'` was thrown by the fixture's
+   own disposal, after the spec's assertions had all passed — the service a spec had just stopped
+   can still be closing its last file handle, and Windows refuses to remove a directory while one is
+   open (POSIX removes it happily, which is why this never appeared on macOS or Linux). `rm` retries
+   `EBUSY`/`EPERM`/`ENOTEMPTY` when asked; teardown now asks, with a case that holds a handle open
+   across `dispose()` — deterministic on Windows, trivially true elsewhere, and said that way in the
+   test.
+
+At revision `1464a1b`, Windows ran the whole suite clean: **90 passed in 4.9 m, three engines** —
+the first complete browser run on that machine.
+
+### Windows: `bench:runtime`, and why it never completed
+
+The first round left this gate as "did not complete, cause not diagnosed". The cause was in the
+tool, and the diagnosis is now measured rather than inferred:
+
+8. **The benchmark measured memory by running `ps`, which does not exist on Windows.**
+   `rssOf()` spawned `ps -o rss= -p <pid>`, and on Windows that spawn fails. The promise resolved on
+   the child's `exit` event, which never arrives for a process that never started, so the gate waited
+   forever: the 100,000-commit fixture had been built in seconds, the service was up and answering
+   HTTP 200, and nothing else happened — which is exactly what the first round observed and could
+   not explain. It also threw `ENOENT` as an unhandled `error` event in the attempt that streamed
+   its output. `rssOf()` now asks Windows through PowerShell (`WorkingSet64`, in bytes, converted to
+   KiB so both platforms report the same unit), reports `null` — "unknown" — when a platform cannot
+   be asked at all, and never leaves the promise pending.
+
+With that fix the gate completes on Windows at full size: 100,000 commits, three lifecycle runs,
+exit 0. The numbers are not comparable across platforms without care — the same fixture, the same
+packaged CLI, the same three runs:
+
+| Measurement                         | macOS (this machine) | Windows 10.0.26200 |
+| ----------------------------------- | -------------------- | ------------------ |
+| `cold-start-to-ready`               | 0.497 s              | 0.97 s             |
+| `status-read-throughput`            | 189 reads/second     | 104 reads/second   |
+| `history-first-page`                | 414 ms               | 547 ms             |
+| `service-rss-after-start`           | 87 MiB               | 70 MiB             |
+| `service-rss-after-reads`           | 93 MiB               | 74 MiB             |
+| `diff-service-rss-after-start`      | 88 MiB               | 71 MiB             |
+| `diff-service-rss-after-batch`      | 192 MiB              | 137 MiB            |
+| `status-after-switching-services`   | 18 ms                | 36 ms              |
+| `graceful-shutdown`                 | 5 ms                 | 7 ms — see below   |
+
+One measurement does **not** mean the same thing on both platforms: `graceful-shutdown`. Windows has
+no signals, so stopping the service there is `TerminateProcess`, not a drain; the 7 ms is how long
+that takes, not evidence that a bounded drain happened. The drain path is exercised on macOS, on
+Linux and in CI, and `pack:smoke` records its Windows SIGTERM step as skipped for the same reason.
+
 ## What is still unverified
 
 Named plainly, because a matrix row is only as good as its status word:
 
-- **Windows e2e**: the Playwright suite was not run there. The browser rows for Windows are
-  unverified, and the product's behaviour in a browser on Windows is unverified with them.
-- **`bench:runtime` on Windows**: **did not complete**, and the cause was not diagnosed. What was
-  observed, after roughly ninety minutes: the 100,000-commit fixture had been built (`git rev-list
---count HEAD` → 100000), a service started from the packaged CLI was alive and answering (`HTTP
-200` on `/`), and the benchmark process sat at 0.6 s of CPU — waiting for something that never
-  arrived. Its readiness wait has a 60 s deadline and its lifecycle stops await an exit, so the wait
-  is somewhere this round did not identify. The same gate passes on macOS, on the Ubuntu machine, in
-  the container and in CI; this row is about Windows only. A next attempt should run the benchmark
-  there with its output streaming somewhere readable — the gate's own redirection buffers through
-  `Out-String` until the process exits, which is part of why the wait was invisible.
-- **Linux Firefox and WebKit**: not run — only chromium was installed on that machine.
+- **Windows e2e** — closed in round two: **90 of 90 in three engines**, revision `1464a1b`. What
+  stays unverified there is what the suite does not reach; see the interop list below.
+- **`bench:runtime` on Windows** — closed in round two: the gate completes at full size (100,000
+  commits, three lifecycles, exit 0). The first round's non-completion was diagnosed and fixed: the
+  benchmark measured memory with `ps`, which does not exist there. The one number that does not
+  transfer is `graceful-shutdown`, because Windows has no signals — that path is untested there.
+- **Linux WebKit** — **blocked, not failed**: the engine needs `libavif16` on that machine, which
+  needs root (`sudo pnpm exec playwright install-deps`). Chromium and Firefox both pass there; this
+  row stays unverified until someone runs that command.
 - **CI on Windows**: the workflow runs `ubuntu-latest` and `macos-latest`. Windows is not in the
   matrix, so the Windows rows above rest on the manual run on this one machine.
 - **Safari, iOS, Android, assistive technology**: unchanged from `release-matrix.md`.

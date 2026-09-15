@@ -556,18 +556,42 @@ interface RunSamples {
   readonly diff: DiffSamples;
 }
 
+/**
+ * Resident memory of one process in KiB, or `null` when it cannot be measured.
+ *
+ * `ps` does not exist on Windows, where that spawn fails — and the promise used to wait
+ * for an `exit` that never came, so the gate looked like a hang while the service answered
+ * happily on its port. Windows is asked through PowerShell instead, with `WorkingSet64`
+ * (bytes) converted so both platforms report the same unit, and any failure to ask is
+ * reported as unknown rather than blocking.
+ */
 function rssOf(pid: number | undefined): Promise<number | null> {
+  if (pid === undefined) {
+    return Promise.resolve(null);
+  }
+  const windows = process.platform === "win32";
+  const command = windows ? "powershell" : "ps";
+  const args = windows
+    ? ["-NoProfile", "-Command", `(Get-Process -Id ${pid}).WorkingSet64`]
+    : ["-o", "rss=", "-p", String(pid)];
   return new Promise<number | null>((resolvePromise) => {
-    const ps = spawn("ps", ["-o", "rss=", "-p", String(pid ?? 0)], {
+    const ps = spawn(command, args, {
       stdio: ["ignore", "pipe", "ignore"],
     });
     let out = "";
     ps.stdout.on("data", (chunk: Buffer) => {
       out += chunk.toString("utf8");
     });
+    ps.on("error", () => {
+      resolvePromise(null);
+    });
     ps.on("exit", () => {
       const parsed = Number.parseInt(out.trim(), 10);
-      resolvePromise(Number.isFinite(parsed) ? parsed : null);
+      if (!Number.isFinite(parsed)) {
+        resolvePromise(null);
+        return;
+      }
+      resolvePromise(windows ? Math.round(parsed / 1024) : parsed);
     });
   });
 }
