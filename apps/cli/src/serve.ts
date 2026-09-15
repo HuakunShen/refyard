@@ -373,7 +373,7 @@ export async function runService(
       ? {}
       : { shutdownGraceMs: options.shutdownGraceMs }),
     repositoryRootOf: (repositoryId) =>
-      repositories.get(repositoryId)?.allowedRootId ?? null,
+      assembly.repositories.get(repositoryId)?.allowedRootId ?? null,
     grants: {
       allowedRootIds: [assembly.allowedRootId],
       repositoryIds: [assembly.repositoryId],
