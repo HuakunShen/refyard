@@ -26,6 +26,7 @@ import {
   encodeExecutionPath,
   type createTextCodec,
 } from "../filesystem/codec.js";
+import { createDirectoryPins, type DirectoryPin } from "./identity.js";
 
 export interface RegisterRootOptions {
   readonly path: string;
@@ -75,7 +76,14 @@ export interface RootRegistryOptions {
 }
 
 export function createRootRegistry(options: RootRegistryOptions): RootRegistry {
-  const records = new Map<string, RootRecord>();
+  const pinner = createDirectoryPins();
+  // The record is what callers see, the pin is what keeps its identity provable
+  // after the directory is gone; keeping them in one entry means an approval can
+  // never be listed without the check that backs it.
+  const approvals = new Map<
+    string,
+    { readonly record: RootRecord; readonly pin: DirectoryPin }
+  >();
   const now = options.now ?? Date.now;
   let counter = 0;
   const nextRootId =
@@ -108,56 +116,48 @@ export function createRootRegistry(options: RootRegistryOptions): RootRegistry {
       const display = options.codec.toDisplayPath(
         new TextEncoder().encode(resolved),
       );
+      const pin = await pinner.pin(resolved, info);
       const record: RootRecord = {
         allowedRootId,
         path: resolved,
         displayPath: display,
         executionTrusted: input.executionTrusted === true,
         repositoryIds: [],
-        identity: { dev: Number(info.dev), ino: Number(info.ino) },
+        identity: { dev: pin.dev, ino: pin.ino },
         approvedAtMs: now(),
       };
-      records.set(allowedRootId, record);
+      approvals.set(allowedRootId, { record, pin });
       return record;
     },
 
     list(): readonly RootRecord[] {
-      return [...records.values()];
+      return [...approvals.values()].map((approval) => approval.record);
     },
 
     get(allowedRootId): RootRecord | null {
-      return records.get(allowedRootId) ?? null;
+      return approvals.get(allowedRootId)?.record ?? null;
     },
 
     async requireIntact(allowedRootId): Promise<RootRecord> {
-      const record = records.get(allowedRootId);
-      if (record === undefined) {
+      const approval = approvals.get(allowedRootId);
+      if (approval === undefined) {
         throw new HandleError(
           "Forbidden",
           `unknown approved root ${allowedRootId}`,
         );
       }
-      let info;
-      try {
-        info = await stat(record.path);
-      } catch {
+      const { record } = approval;
+      const state = await approval.pin.check();
+      if (state === "missing") {
         throw new HandleError(
           "NotFound",
           `the approved root ${record.path} no longer exists`,
         );
       }
-      if (!info.isDirectory()) {
-        throw new HandleError(
-          "NotFound",
-          `the approved root ${record.path} is no longer a directory`,
-        );
-      }
-      if (
-        Number(info.dev) !== record.identity.dev ||
-        Number(info.ino) !== record.identity.ino
-      ) {
-        // The path exists but is a different directory: a grant must not survive
-        // delete-and-recreate, because the new directory was never approved.
+      if (state === "replaced") {
+        // The path exists but is not the directory that was approved: a grant must
+        // not survive delete-and-recreate, because the new directory was never
+        // approved.
         throw new HandleError(
           "Forbidden",
           `the approved root ${record.path} was replaced; approve the directory again`,
@@ -167,26 +167,36 @@ export function createRootRegistry(options: RootRegistryOptions): RootRegistry {
     },
 
     attachRepository(allowedRootId, repositoryId): void {
-      const record = records.get(allowedRootId);
-      if (record === undefined) {
+      const approval = approvals.get(allowedRootId);
+      if (approval === undefined) {
         return;
       }
+      const { record } = approval;
       if (!record.repositoryIds.includes(repositoryId)) {
-        records.set(allowedRootId, {
-          ...record,
-          repositoryIds: [...record.repositoryIds, repositoryId],
+        approvals.set(allowedRootId, {
+          record: {
+            ...record,
+            repositoryIds: [...record.repositoryIds, repositoryId],
+          },
+          pin: approval.pin,
         });
       }
     },
 
     detachRepository(allowedRootId, repositoryId): void {
-      const record = records.get(allowedRootId);
-      if (record === undefined) {
+      const approval = approvals.get(allowedRootId);
+      if (approval === undefined) {
         return;
       }
-      records.set(allowedRootId, {
-        ...record,
-        repositoryIds: record.repositoryIds.filter((id) => id !== repositoryId),
+      const { record } = approval;
+      approvals.set(allowedRootId, {
+        record: {
+          ...record,
+          repositoryIds: record.repositoryIds.filter(
+            (id) => id !== repositoryId,
+          ),
+        },
+        pin: approval.pin,
       });
     },
 

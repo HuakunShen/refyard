@@ -13,9 +13,11 @@
  *    approved root can be registered, and the request names a *relative* path, so a
  *    browser cannot aim the service at `/etc` or at a symlink that leaves the root.
  * 2. **A grant does not survive replacement.** The common directory's device and
- *    inode are recorded when the repository is registered; if the path now holds a
- *    different directory (deleted and re-cloned, or swapped), reads fail with
- *    "re-register" instead of silently operating on an unapproved repository.
+ *    inode are recorded when the repository is registered, together with the
+ *    descriptor that pins it; if the path now holds a different directory (deleted
+ *    and re-cloned, or swapped), reads fail with "re-register" instead of silently
+ *    operating on an unapproved repository. `identity.ts` explains why the numbers
+ *    alone were not enough on Linux.
  *
  * The registry also owns the per-repository directory handles: every Git command
  * runs in a worktree whose handle the registry minted, and the handle registry
@@ -34,6 +36,7 @@ import {
   type LayoutFacts,
 } from "@refyard/git-core";
 import { HandleError, type HandleRegistry } from "../filesystem/handles.js";
+import { createDirectoryPins, type DirectoryPin } from "./identity.js";
 import type { RootRegistry } from "./roots.js";
 import type { HostWorktree, WorktreeRegistry } from "./worktrees.js";
 
@@ -94,9 +97,26 @@ export interface RepositoryRegistry {
 export function createRepositoryRegistry(
   options: RepositoryRegistryOptions,
 ): RepositoryRegistry {
-  const records = new Map<string, RepositoryRecord>();
+  const pinner = createDirectoryPins();
+  // Record and pin travel together: everything that returns a record has already
+  // proved, or is about to prove, that the directory it names is the same one.
+  const records = new Map<
+    string,
+    { readonly record: RepositoryRecord; readonly pin: DirectoryPin }
+  >();
   const repositoryIdByCommonDir = new Map<string, string>();
   const now = options.now ?? Date.now;
+
+  function entryOf(repositoryId: string): {
+    readonly record: RepositoryRecord;
+    readonly pin: DirectoryPin;
+  } {
+    const entry = records.get(repositoryId);
+    if (entry === undefined) {
+      throw new HandleError("NotFound", `unknown repository ${repositoryId}`);
+    }
+    return entry;
+  }
 
   async function readWorktreeList(
     engine: GitEngine,
@@ -156,12 +176,13 @@ export function createRepositoryRegistry(
         if (existing !== undefined) {
           // Re-registering the same instance returns the same id: two paths to one
           // repository must not become two repositories in the list.
-          await reconcileWorktrees(existing);
-          return existing;
+          await reconcileWorktrees(existing.record);
+          return existing.record;
         }
       }
 
       const repositoryId = options.nextRepositoryId();
+      const pin = await pinner.pin(layout.commonDir, info);
       const displayPath = options.codec.toDisplayPath(
         new TextEncoder().encode(resolved.absolutePath),
       );
@@ -175,14 +196,14 @@ export function createRepositoryRegistry(
         objectFormat: layout.objectFormat,
         bare: layout.bare,
         shallow: layout.shallow,
-        identity: { dev: Number(info.dev), ino: Number(info.ino) },
+        identity: { dev: pin.dev, ino: pin.ino },
         registeredAtMs: now(),
         // Filled in below, once the worktree list has been read.
         primaryWorktreeId: "",
         worktreeIds: [],
         lastFetchedAt: null,
       };
-      records.set(repositoryId, record);
+      records.set(repositoryId, { record, pin });
       repositoryIdByCommonDir.set(layout.commonDir, repositoryId);
 
       try {
@@ -212,36 +233,29 @@ export function createRepositoryRegistry(
           primaryWorktreeId: primary.worktreeId,
           worktreeIds: worktrees.map((worktree) => worktree.worktreeId),
         };
-        records.set(repositoryId, registered);
+        records.set(repositoryId, { record: registered, pin });
         options.roots.attachRepository(input.allowedRootId, repositoryId);
         void root;
         return registered;
       } catch (error) {
         records.delete(repositoryId);
+        pin.release();
         repositoryIdByCommonDir.delete(layout.commonDir);
         throw error;
       }
     },
 
     async require(repositoryId): Promise<RepositoryRecord> {
-      const record = records.get(repositoryId);
-      if (record === undefined) {
-        throw new HandleError("NotFound", `unknown repository ${repositoryId}`);
-      }
+      const { record, pin } = entryOf(repositoryId);
       await options.roots.requireIntact(record.allowedRootId);
-      let info;
-      try {
-        info = await stat(record.commonDir);
-      } catch {
+      const state = await pin.check();
+      if (state === "missing") {
         throw new HandleError(
           "NotFound",
           `the Git directory of ${record.displayName} is gone; register it again`,
         );
       }
-      if (
-        Number(info.dev) !== record.identity.dev ||
-        Number(info.ino) !== record.identity.ino
-      ) {
+      if (state === "replaced") {
         throw new HandleError(
           "Forbidden",
           `${record.displayName} was replaced since it was registered; register it again`,
@@ -251,19 +265,23 @@ export function createRepositoryRegistry(
     },
 
     get(repositoryId): RepositoryRecord | null {
-      return records.get(repositoryId) ?? null;
+      return records.get(repositoryId)?.record ?? null;
     },
 
     list(): readonly RepositoryRecord[] {
-      return [...records.values()];
+      return [...records.values()].map((entry) => entry.record);
     },
 
     async worktreesOf(repositoryId) {
+      const { pin } = entryOf(repositoryId);
       const record = await this.require(repositoryId);
       const worktrees = await reconcileWorktrees(record);
       records.set(repositoryId, {
-        ...record,
-        worktreeIds: worktrees.map((worktree) => worktree.worktreeId),
+        record: {
+          ...record,
+          worktreeIds: worktrees.map((worktree) => worktree.worktreeId),
+        },
+        pin,
       });
       return worktrees;
     },
@@ -292,11 +310,13 @@ export function createRepositoryRegistry(
     },
 
     unregister(repositoryId): void {
-      const record = records.get(repositoryId);
-      if (record === undefined) {
+      const entry = records.get(repositoryId);
+      if (entry === undefined) {
         return;
       }
+      const { record } = entry;
       records.delete(repositoryId);
+      entry.pin.release();
       repositoryIdByCommonDir.delete(record.commonDir);
       options.roots.detachRepository(record.allowedRootId, repositoryId);
     },

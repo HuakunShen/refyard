@@ -102,6 +102,13 @@ export {
   type RootRegistryOptions,
 } from "./registry/roots.js";
 export {
+  createDirectoryPins,
+  DEFAULT_PIN_BUDGET,
+  type DirectoryPin,
+  type DirectoryPins,
+  type DirectoryState,
+} from "./registry/identity.js";
+export {
   createRepositoryRegistry,
   type RegisterRepositoryInput,
   type RepositoryRecord,
