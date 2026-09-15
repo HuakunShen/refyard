@@ -28,34 +28,34 @@
 	--radius-lg: var(--radius);
 	--radius-xl: calc(var(--radius) + 4px);
 
-	/* shadcn semantic set — light */
-	--color-background: oklch(0.99 0.002 250);
-	--color-foreground: oklch(0.24 0.015 260);
+	/* shadcn semantic set — light (neutral) */
+	--color-background: oklch(1 0 0);
+	--color-foreground: oklch(0.145 0 0);
 	--color-card: oklch(1 0 0);
-	--color-card-foreground: oklch(0.24 0.015 260);
+	--color-card-foreground: oklch(0.145 0 0);
 	--color-popover: oklch(1 0 0);
-	--color-popover-foreground: oklch(0.24 0.015 260);
-	--color-primary: oklch(0.55 0.16 255);
-	--color-primary-foreground: oklch(0.99 0.002 250);
-	--color-secondary: oklch(0.97 0.004 250);
-	--color-secondary-foreground: oklch(0.3 0.02 260);
-	--color-muted: oklch(0.97 0.004 250);
-	--color-muted-foreground: oklch(0.5 0.02 260);
-	--color-accent: oklch(0.96 0.004 250);
-	--color-accent-foreground: oklch(0.3 0.02 260);
-	--color-destructive: oklch(0.55 0.19 25);
-	--color-destructive-foreground: oklch(0.99 0.002 250);
-	--color-border: oklch(0.91 0.006 250);
-	--color-input: oklch(0.91 0.006 250);
-	--color-ring: oklch(0.7 0.03 255);
+	--color-popover-foreground: oklch(0.145 0 0);
+	--color-primary: oklch(0.205 0 0);
+	--color-primary-foreground: oklch(0.985 0 0);
+	--color-secondary: oklch(0.965 0 0);
+	--color-secondary-foreground: oklch(0.205 0 0);
+	--color-muted: oklch(0.965 0 0);
+	--color-muted-foreground: oklch(0.556 0 0);
+	--color-accent: oklch(0.965 0 0);
+	--color-accent-foreground: oklch(0.205 0 0);
+	--color-destructive: oklch(0.577 0.245 27.325);
+	--color-destructive-foreground: oklch(0.985 0 0);
+	--color-border: oklch(0.922 0 0);
+	--color-input: oklch(0.922 0 0);
+	--color-ring: oklch(0.708 0 0);
 
 	/* kit aliases — the names the Git components read */
-	--color-canvas: var(--color-background);
+	--color-canvas: oklch(0.985 0 0);
 	--color-panel: var(--color-card);
 	--color-panel-muted: var(--color-muted);
 	--color-ink: var(--color-foreground);
 	--color-ink-muted: var(--color-muted-foreground);
-	--color-ink-faint: oklch(0.6 0.015 260);
+	--color-ink-faint: oklch(0.65 0 0);
 	--color-brand: var(--color-primary);
 	--color-danger: var(--color-destructive);
 	--color-add: oklch(0.55 0.14 150);
@@ -63,7 +63,7 @@
 	--color-warn: oklch(0.62 0.13 75);
 
 	/* commit-graph lanes */
-	--color-lane-1: oklch(0.62 0.17 255);
+	--color-lane-1: oklch(0.45 0 0);
 	--color-lane-2: oklch(0.62 0.15 150);
 	--color-lane-3: oklch(0.66 0.16 60);
 	--color-lane-4: oklch(0.6 0.19 20);
@@ -76,35 +76,36 @@
 .dark {
 	color-scheme: dark;
 
-	/* shadcn semantic set — dark */
-	--color-background: oklch(0.19 0.012 260);
-	--color-foreground: oklch(0.94 0.006 260);
-	--color-card: oklch(0.23 0.014 260);
-	--color-card-foreground: oklch(0.94 0.006 260);
-	--color-popover: oklch(0.23 0.014 260);
-	--color-popover-foreground: oklch(0.94 0.006 260);
-	--color-primary: oklch(0.68 0.15 255);
-	--color-primary-foreground: oklch(0.18 0.01 260);
-	--color-secondary: oklch(0.27 0.014 260);
-	--color-secondary-foreground: oklch(0.94 0.006 260);
-	--color-muted: oklch(0.27 0.014 260);
-	--color-muted-foreground: oklch(0.75 0.012 260);
-	--color-accent: oklch(0.29 0.014 260);
-	--color-accent-foreground: oklch(0.94 0.006 260);
-	--color-destructive: oklch(0.68 0.17 25);
-	--color-destructive-foreground: oklch(0.18 0.01 260);
-	--color-border: oklch(0.33 0.014 260);
-	--color-input: oklch(0.33 0.014 260);
-	--color-ring: oklch(0.5 0.03 255);
+	/* shadcn semantic set — dark (neutral) */
+	--color-background: oklch(0.145 0 0);
+	--color-foreground: oklch(0.985 0 0);
+	--color-card: oklch(0.18 0 0);
+	--color-card-foreground: oklch(0.985 0 0);
+	--color-popover: oklch(0.18 0 0);
+	--color-popover-foreground: oklch(0.985 0 0);
+	--color-primary: oklch(0.985 0 0);
+	--color-primary-foreground: oklch(0.145 0 0);
+	--color-secondary: oklch(0.24 0 0);
+	--color-secondary-foreground: oklch(0.985 0 0);
+	--color-muted: oklch(0.24 0 0);
+	--color-muted-foreground: oklch(0.708 0 0);
+	--color-accent: oklch(0.269 0 0);
+	--color-accent-foreground: oklch(0.985 0 0);
+	--color-destructive: oklch(0.637 0.237 25.331);
+	--color-destructive-foreground: oklch(0.985 0 0);
+	--color-border: oklch(0.269 0 0);
+	--color-input: oklch(0.269 0 0);
+	--color-ring: oklch(0.439 0 0);
 
 	/* kit aliases that need their own dark values */
-	--color-ink-faint: oklch(0.58 0.015 260);
+	--color-canvas: oklch(0.145 0 0);
+	--color-ink-faint: oklch(0.55 0 0);
 	--color-add: oklch(0.72 0.15 150);
 	--color-remove: oklch(0.68 0.17 25);
 	--color-warn: oklch(0.76 0.13 80);
 
 	/* commit-graph lanes */
-	--color-lane-1: oklch(0.72 0.15 255);
+	--color-lane-1: oklch(0.85 0 0);
 	--color-lane-2: oklch(0.75 0.15 150);
 	--color-lane-3: oklch(0.78 0.14 70);
 	--color-lane-4: oklch(0.7 0.17 25);
@@ -130,3 +131,114 @@
 @utility patch-context {
 	background-color: transparent;
 }
+
+/* Scrollbars */
+* {
+	scrollbar-width: thin;
+	scrollbar-color: color-mix(in oklab, var(--color-border) 70%, transparent) transparent;
+}
+
+@supports not (scrollbar-color: auto) {
+	::-webkit-scrollbar {
+		width: 6px;
+		height: 6px;
+	}
+	::-webkit-scrollbar-thumb {
+		background: color-mix(in oklab, var(--color-border) 70%, transparent);
+		border-radius: 9999px;
+	}
+	::-webkit-scrollbar-track {
+		background: transparent;
+	}
+}
+
+/* Accent Color Themes */
+:root[data-accent="blue"] {
+	--color-primary: oklch(0.55 0.16 255);
+	--color-ring: oklch(0.7 0.03 255);
+}
+.dark[data-accent="blue"], :root.dark[data-accent="blue"] {
+	--color-primary: oklch(0.68 0.15 255);
+	--color-ring: oklch(0.5 0.03 255);
+}
+
+:root[data-accent="emerald"] {
+	--color-primary: oklch(0.55 0.16 150);
+	--color-ring: oklch(0.65 0.12 150);
+}
+.dark[data-accent="emerald"], :root.dark[data-accent="emerald"] {
+	--color-primary: oklch(0.72 0.16 150);
+	--color-ring: oklch(0.6 0.1 150);
+}
+
+:root[data-accent="violet"] {
+	--color-primary: oklch(0.55 0.19 295);
+	--color-ring: oklch(0.65 0.14 295);
+}
+.dark[data-accent="violet"], :root.dark[data-accent="violet"] {
+	--color-primary: oklch(0.72 0.18 295);
+	--color-ring: oklch(0.6 0.12 295);
+}
+
+:root[data-accent="rose"] {
+	--color-primary: oklch(0.58 0.20 15);
+	--color-ring: oklch(0.65 0.15 15);
+}
+.dark[data-accent="rose"], :root.dark[data-accent="rose"] {
+	--color-primary: oklch(0.72 0.19 15);
+	--color-ring: oklch(0.6 0.12 15);
+}
+
+:root[data-accent="amber"] {
+	--color-primary: oklch(0.62 0.16 75);
+	--color-ring: oklch(0.7 0.12 75);
+}
+.dark[data-accent="amber"], :root.dark[data-accent="amber"] {
+	--color-primary: oklch(0.75 0.16 75);
+	--color-ring: oklch(0.65 0.1 75);
+}
+
+:root[data-accent="cyan"] {
+	--color-primary: oklch(0.58 0.15 210);
+	--color-ring: oklch(0.68 0.12 210);
+}
+.dark[data-accent="cyan"], :root.dark[data-accent="cyan"] {
+	--color-primary: oklch(0.75 0.14 210);
+	--color-ring: oklch(0.6 0.1 210);
+}
+
+/* Glassmorphism theme modifier */
+:root[data-glass="true"] {
+	--glass-canvas-bg: rgba(250, 250, 250, 0.75);
+	--glass-card-bg: rgba(255, 255, 255, 0.82);
+	--glass-panel-bg: rgba(255, 255, 255, 0.88);
+	--glass-border: rgba(229, 229, 229, 0.75);
+}
+
+.dark[data-glass="true"], :root.dark[data-glass="true"] {
+	--glass-canvas-bg: rgba(18, 18, 18, 0.72);
+	--glass-card-bg: rgba(26, 26, 26, 0.80);
+	--glass-panel-bg: rgba(22, 22, 22, 0.88);
+	--glass-border: rgba(255, 255, 255, 0.12);
+}
+
+[data-glass="true"] .bg-canvas {
+	background-color: var(--glass-canvas-bg) !important;
+	backdrop-filter: blur(16px);
+	-webkit-backdrop-filter: blur(16px);
+}
+
+[data-glass="true"] .bg-panel {
+	background-color: var(--glass-panel-bg) !important;
+	backdrop-filter: blur(16px);
+	-webkit-backdrop-filter: blur(16px);
+}
+
+[data-glass="true"] [data-slot="card"] {
+	background-color: var(--glass-card-bg) !important;
+	border-color: var(--glass-border) !important;
+	backdrop-filter: blur(12px);
+	-webkit-backdrop-filter: blur(12px);
+	box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.14);
+}
+

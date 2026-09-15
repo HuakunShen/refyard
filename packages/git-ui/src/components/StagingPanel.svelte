@@ -86,65 +86,83 @@
   const actionable = $derived(effectiveSelection.filter(canAct));
 </script>
 
-<div class={cn("flex flex-col gap-2", className)} data-testid="staging-panel">
+<div class={cn("flex flex-col gap-2.5", className)} data-testid="staging-panel">
   {#if entries.length === 0}
-    <p class="text-xs text-ink-faint">
+    <p class="text-xs text-ink-faint italic py-1">
       Nothing to stage — the working tree matches the index.
     </p>
   {:else}
-    <div class="flex flex-wrap items-center gap-2">
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={disabled || busy}
-        onclick={selectAll}
-        data-testid="select-all"
-      >
-        {allSelected ? "All selected" : "Select all"}
-      </Button>
-      <Button
-        size="sm"
-        variant="ghost"
-        disabled={disabled || busy || effectiveSelection.length === 0}
-        onclick={clearSelection}
-      >
-        Clear
-      </Button>
-      <span class="text-xs text-ink-faint">
+    <div class="flex items-center justify-between gap-2">
+      <div class="flex items-center gap-1.5">
+        <Button
+          size="sm"
+          variant="outline"
+          class="h-7 text-xs px-2.5 shadow-none"
+          disabled={disabled || busy}
+          onclick={selectAll}
+          data-testid="select-all"
+        >
+          {allSelected ? "All selected" : "Select all"}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          class="h-7 text-xs px-2 text-ink-muted hover:text-ink"
+          disabled={disabled || busy || effectiveSelection.length === 0}
+          onclick={clearSelection}
+        >
+          Clear
+        </Button>
+      </div>
+      <span class="text-[11px] text-ink-faint font-mono">
         {effectiveSelection.length} of {entries.length} selected
       </span>
     </div>
 
     <ul
-      class="flex max-h-64 flex-col gap-1 overflow-y-auto"
+      class="flex max-h-60 flex-col gap-1 overflow-y-auto pr-0.5"
       data-testid="staging-list"
     >
       {#each entries as entry (entry.pathId)}
+        {@const isChecked = selected.has(entry.pathId)}
         <li
-          class="flex items-center gap-2 rounded px-1 py-0.5 hover:bg-accent/40"
+          class={cn(
+            "flex shrink-0 items-center gap-2 rounded-md border px-2 py-1 transition-colors",
+            isChecked
+              ? "border-primary/40 bg-primary/5"
+              : "border-border/30 bg-card/40 hover:bg-accent/30 hover:border-border/60",
+          )}
         >
           <input
             type="checkbox"
-            class="size-3.5 accent-primary"
-            checked={selected.has(entry.pathId)}
+            class="size-3.5 accent-primary rounded shrink-0"
+            checked={isChecked}
             disabled={disabled || busy}
             aria-label={`select ${entry.displayPath}`}
             onchange={() => toggle(entry.pathId)}
           />
           <span
-            class="font-mono text-xs text-ink-muted"
-            title="index / worktree"
+            class={cn(
+              "font-mono text-xs px-1 py-0.5 rounded font-semibold shrink-0 text-[10px]",
+              entry.indexStatus !== "."
+                ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                : "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+            )}
+            title="index / worktree status"
           >
             {entry.indexStatus}{entry.worktreeStatus}
           </span>
           <span
-            class="truncate text-xs"
+            class="truncate font-mono text-xs text-foreground flex-1 min-w-0"
             title={statusLetterLabel(entry.indexStatus)}
           >
             {entry.displayPath}
           </span>
           {#if entry.kind !== "ordinary"}
-            <Badge tone={entry.kind === "untracked" ? "warn" : "muted"}>
+            <Badge
+              tone={entry.kind === "untracked" ? "warn" : "muted"}
+              class="text-[10px] h-4.5 px-1.5 shrink-0"
+            >
               {entry.kind}
             </Badge>
           {/if}
@@ -152,9 +170,12 @@
       {/each}
     </ul>
 
-    <div class="flex flex-wrap items-center gap-2">
+    <div
+      class="flex flex-wrap items-center gap-1.5 pt-1 border-t border-border/30"
+    >
       <Button
         size="sm"
+        class="h-7 text-xs px-2.5"
         disabled={disabled || busy || effectiveSelection.length === 0}
         onclick={() => onStage(effectiveSelection)}
         data-testid="stage-selected"
@@ -164,21 +185,24 @@
       <Button
         size="sm"
         variant="secondary"
+        class="h-7 text-xs px-2.5 shadow-none"
         disabled={disabled || busy || actionable.length === 0}
         onclick={() => onUnstage(actionable)}
         data-testid="unstage-selected"
       >
         Unstage {actionable.length || ""}
       </Button>
-      <ConfirmAction
-        label={`Discard ${actionable.length || ""}`}
-        confirmLabel={`Discard ${actionable.length} path${actionable.length === 1 ? "" : "s"} for good`}
-        description="Restores the selected files to the index. A backup is written first."
-        disabled={disabled || busy || actionable.length === 0}
-        {busy}
-        onConfirm={() => onDiscard(actionable)}
-        data-testid="discard-selected"
-      />
+      <span class="ml-auto">
+        <ConfirmAction
+          label={`Discard ${actionable.length || ""}`}
+          confirmLabel={`Discard ${actionable.length} path${actionable.length === 1 ? "" : "s"} for good`}
+          description="Restores the selected files to the index. A backup is written first."
+          disabled={disabled || busy || actionable.length === 0}
+          {busy}
+          onConfirm={() => onDiscard(actionable)}
+          data-testid="discard-selected"
+        />
+      </span>
     </div>
   {/if}
 

@@ -29,11 +29,22 @@ async function filesIn(directory: string): Promise<string[]> {
 let rewritten = 0;
 for (const path of await filesIn(ROOT)) {
   const source = await readFile(path, "utf8");
-  // From `src/components/ui/<dir>/<file>`, `$lib/x` is `../../../x`.
-  const updated = source.replaceAll(
+  // From `src/components/ui/<dir>/<file>`, `$lib/components/ui/<other>` is `../<other>`, and `$lib/` is `../../../lib/`.
+  let updated = source.replaceAll(
+    /\$lib\/components\/ui\//g,
+    () =>
+      `${relative(join(path, ".."), "packages/git-ui/src/components/ui").replaceAll("\\", "/")}/`,
+  );
+  updated = updated.replaceAll(
     /\$lib\//g,
     () =>
-      `${relative(join(path, ".."), "packages/git-ui/src").replaceAll("\\", "/")}/`,
+      `${relative(join(path, ".."), "packages/git-ui/src/lib").replaceAll("\\", "/")}/`,
+  );
+  // Also clean up any accidental ../../../lib/components/ui
+  updated = updated.replaceAll(
+    /\.\.\/\.\.\/\.\.\/lib\/components\/ui\//g,
+    () =>
+      `${relative(join(path, ".."), "packages/git-ui/src/components/ui").replaceAll("\\", "/")}/`,
   );
   if (updated !== source) {
     await writeFile(path, updated);

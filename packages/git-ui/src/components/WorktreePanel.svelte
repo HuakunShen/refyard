@@ -9,6 +9,7 @@
    * steps — it deletes a directory, and Git refuses it when the checkout is dirty,
    * which the panel reports instead of working around.
    */
+  import Lock from "@lucide/svelte/icons/lock";
   import { Badge } from "./ui/badge/index.js";
   import { Button } from "./ui/button/index.js";
   import ConfirmAction from "./ConfirmAction.svelte";
@@ -21,7 +22,10 @@
     readonly isLocked: boolean;
     readonly lockReason: string | null;
     /** `null` on an unborn branch, which is a state, not a missing value. */
-    readonly head: { readonly branchName: string | null; readonly oid: string | null };
+    readonly head: {
+      readonly branchName: string | null;
+      readonly oid: string | null;
+    };
   }
 
   type Reference =
@@ -99,64 +103,84 @@
   }
 </script>
 
-<div class={cn("flex flex-col gap-2", className)} data-testid="worktree-panel">
-  <div class="flex flex-wrap items-center gap-2">
-    <input
-      class="w-40 rounded border border-input bg-transparent px-2 py-1 font-mono text-xs"
-      placeholder="relative/path"
-      aria-label="worktree destination"
-      bind:value={relativeDestination}
-      disabled={disabled || busy}
-    />
-    <select
-      class="rounded border border-input bg-transparent px-2 py-1 text-xs"
-      aria-label="worktree reference kind"
-      bind:value={referenceKind}
-      disabled={disabled || busy}
+<div
+  class={cn("flex flex-col gap-2.5", className)}
+  data-testid="worktree-panel"
+>
+  <!-- Worktree Creation Form -->
+  <div
+    class="flex flex-col gap-2 rounded-lg border border-border/50 bg-card/40 p-2.5"
+  >
+    <span
+      class="text-[11px] font-semibold tracking-wider text-ink-muted uppercase"
     >
-      <option value="newBranch">new branch</option>
-      <option value="existingBranch">existing branch</option>
-      <option value="detached">detached commit</option>
-    </select>
-    {#if referenceKind === "detached"}
+      Add linked worktree
+    </span>
+
+    <div class="flex items-center gap-2">
       <input
-        class="w-52 rounded border border-input bg-transparent px-2 py-1 font-mono text-xs"
-        placeholder="commit object name"
-        aria-label="worktree commit"
-        bind:value={oid}
+        class="min-w-0 flex-1 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        placeholder="relative/path"
+        aria-label="worktree destination"
+        bind:value={relativeDestination}
         disabled={disabled || busy}
       />
-    {:else if referenceKind === "existingBranch"}
       <select
-        class="rounded border border-input bg-transparent px-2 py-1 font-mono text-xs"
-        aria-label="worktree branch"
-        bind:value={branchName}
+        class="w-32 rounded border border-input bg-panel px-2 py-1 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+        aria-label="worktree reference kind"
+        bind:value={referenceKind}
         disabled={disabled || busy}
       >
-        <option value="">choose a branch</option>
-        {#each branches as branch (branch)}
-          <option value={branch}>{branch}</option>
-        {/each}
+        <option value="newBranch">new branch</option>
+        <option value="existingBranch">existing branch</option>
+        <option value="detached">detached commit</option>
       </select>
-    {:else}
-      <input
-        class="w-40 rounded border border-input bg-transparent px-2 py-1 font-mono text-xs"
-        placeholder="new branch name"
-        aria-label="worktree new branch"
-        bind:value={branchName}
-        disabled={disabled || busy}
-      />
-    {/if}
-    <Button
-      size="sm"
-      disabled={disabled || busy || relativeDestination.trim().length === 0}
-      onclick={submitCreate}
-      data-testid="create-worktree"
-    >
-      Add worktree
-    </Button>
+    </div>
+
+    <div class="flex items-center gap-2">
+      {#if referenceKind === "detached"}
+        <input
+          class="min-w-0 flex-1 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          placeholder="commit object name"
+          aria-label="worktree commit"
+          bind:value={oid}
+          disabled={disabled || busy}
+        />
+      {:else if referenceKind === "existingBranch"}
+        <select
+          class="min-w-0 flex-1 rounded border border-input bg-panel px-2 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          aria-label="worktree branch"
+          bind:value={branchName}
+          disabled={disabled || busy}
+        >
+          <option value="">choose a branch</option>
+          {#each branches as branch (branch)}
+            <option value={branch}>{branch}</option>
+          {/each}
+        </select>
+      {:else}
+        <input
+          class="min-w-0 flex-1 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          placeholder="new branch name"
+          aria-label="worktree new branch"
+          bind:value={branchName}
+          disabled={disabled || busy}
+        />
+      {/if}
+
+      <Button
+        size="sm"
+        class="h-7 text-xs px-3 shrink-0"
+        disabled={disabled || busy || relativeDestination.trim().length === 0}
+        onclick={submitCreate}
+        data-testid="create-worktree"
+      >
+        Add worktree
+      </Button>
+    </div>
+
     <input
-      class="w-44 rounded border border-input bg-transparent px-2 py-1 text-xs"
+      class="w-full rounded border border-input bg-transparent px-2.5 py-1 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring placeholder:text-ink-faint"
       placeholder="lock reason (optional)"
       aria-label="worktree lock reason"
       bind:value={lockReason}
@@ -164,72 +188,96 @@
     />
   </div>
 
+  <!-- Worktree List -->
   {#if worktrees === null}
     <p class="text-xs text-ink-faint">No worktrees loaded.</p>
   {:else}
     <ul
-      class="flex max-h-64 flex-col gap-1 overflow-y-auto"
+      class="flex max-h-60 flex-col gap-1.5 overflow-y-auto pr-0.5"
       data-testid="worktree-list"
     >
       {#each worktrees as worktree (worktree.worktreeId)}
-        <li class="flex flex-wrap items-center gap-2 rounded px-1 py-0.5">
-          <Badge tone={worktree.isMain ? "muted" : "branch"}>
-            {worktree.isMain ? "primary" : "linked"}
-          </Badge>
-          {#if worktree.isLocked}
-            <Badge tone="muted">locked</Badge>
-          {/if}
-          <span
-            class="min-w-0 flex-1 truncate font-mono text-xs"
-            title={worktree.displayPath}
-          >
-            {worktree.displayPath}
-          </span>
-          <span class="font-mono text-xs text-ink-muted">
-            {worktree.head.branchName ?? shortOid(worktree.head.oid)}
-          </span>
+        <li
+          class="flex flex-col gap-1.5 rounded-lg border border-border/50 bg-card/60 p-2 hover:border-border hover:bg-accent/30 transition-all"
+        >
+          <div class="flex items-center gap-2 min-w-0">
+            <Badge
+              tone={worktree.isMain ? "muted" : "branch"}
+              class="shrink-0 text-[10px] h-4.5 px-1.5 font-mono"
+            >
+              {worktree.isMain ? "primary" : "linked"}
+            </Badge>
+            {#if worktree.isLocked}
+              <Badge
+                tone="muted"
+                class="shrink-0 text-[10px] h-4.5 px-1.5 flex items-center gap-1"
+              >
+                <Lock class="size-2.5" />
+                locked
+              </Badge>
+            {/if}
+            <span
+              class="min-w-0 flex-1 truncate font-mono text-xs font-medium text-foreground"
+              title={worktree.displayPath}
+            >
+              {worktree.displayPath}
+            </span>
+            <span class="font-mono text-xs text-ink-muted shrink-0">
+              {worktree.head.branchName ?? shortOid(worktree.head.oid)}
+            </span>
+          </div>
+
           {#if worktree.isLocked && worktree.lockReason !== null}
-            <span class="text-xs text-ink-faint">{worktree.lockReason}</span>
+            <div class="text-[11px] text-ink-faint italic px-0.5">
+              Reason: {worktree.lockReason}
+            </div>
           {/if}
-          {#if worktree.isLocked}
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={disabled || busy}
-              onclick={() => onUnlock(worktree.worktreeId)}
-              data-testid={`unlock-worktree-${worktree.worktreeId}`}
-            >
-              Unlock
-            </Button>
-          {:else}
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={disabled || busy}
-              onclick={() =>
-                onLock(
-                  worktree.worktreeId,
-                  lockReason.trim().length === 0 ? null : lockReason.trim(),
-                )}
-              data-testid={`lock-worktree-${worktree.worktreeId}`}
-            >
-              Lock
-            </Button>
-          {/if}
-          {#if !worktree.isMain}
-            <!-- The primary worktree is never removed through this API, so it gets
-                 no control; a button that Git always refuses only teaches people
-                 that the button is broken. -->
-            <ConfirmAction
-              label="Remove"
-              confirmLabel={`Remove ${worktree.displayPath}`}
-              description="Refused when the checkout has changes."
-              disabled={disabled || busy}
-              {busy}
-              onConfirm={() => onRemove(worktree.worktreeId)}
-              data-testid={`remove-worktree-${worktree.worktreeId}`}
-            />
-          {/if}
+
+          <div
+            class="flex items-center gap-1.5 pt-0.5 border-t border-border/20"
+          >
+            {#if worktree.isLocked}
+              <Button
+                size="sm"
+                variant="outline"
+                class="h-6 text-xs px-2 shadow-none"
+                disabled={disabled || busy}
+                onclick={() => onUnlock(worktree.worktreeId)}
+                data-testid={`unlock-worktree-${worktree.worktreeId}`}
+              >
+                Unlock
+              </Button>
+            {:else}
+              <Button
+                size="sm"
+                variant="outline"
+                class="h-6 text-xs px-2 shadow-none"
+                disabled={disabled || busy}
+                onclick={() =>
+                  onLock(
+                    worktree.worktreeId,
+                    lockReason.trim().length === 0 ? null : lockReason.trim(),
+                  )}
+                data-testid={`lock-worktree-${worktree.worktreeId}`}
+              >
+                Lock
+              </Button>
+            {/if}
+
+            {#if !worktree.isMain}
+              <span class="ml-auto">
+                <ConfirmAction
+                  label="Remove"
+                  confirmLabel={`Remove ${worktree.displayPath}`}
+                  description="Refused when the checkout has changes."
+                  disabled={disabled || busy}
+                  {busy}
+                  onConfirm={() => onRemove(worktree.worktreeId)}
+                  data-testid={`remove-worktree-${worktree.worktreeId}`}
+                />
+              </span>
+            {/if}
+          </div>
         </li>
       {/each}
     </ul>

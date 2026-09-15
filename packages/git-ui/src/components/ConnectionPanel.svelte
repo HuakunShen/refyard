@@ -168,9 +168,29 @@
     />
   {/if}
 
-  <p class="text-xs text-ink-faint">
-    Run <code class="font-mono">refyard open &lt;path&gt;</code> in the repository
-    you want to read. The ticket is exchanged for an in-memory session and this page
-    clears it from the address bar.
-  </p>
+  <div
+    class="flex flex-col gap-2 rounded-lg border border-border/70 bg-panel/50 p-3.5 text-xs text-ink-muted"
+  >
+    <div class="flex items-center gap-1.5 font-medium text-ink">
+      <span>💡 How to get a fresh pairing link</span>
+    </div>
+    <ul class="list-disc space-y-1 pl-4 text-ink-muted">
+      <li>
+        If Refyard is running in your terminal, press <kbd
+          class="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[11px] text-ink"
+          >p</kbd
+        > + <kbd
+          class="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[11px] text-ink"
+          >Enter</kbd
+        > to print a fresh single-use pairing URL.
+      </li>
+      <li>
+        Or run <code class="font-mono text-ink">refyard open &lt;path&gt;</code>
+        in the repository you want to inspect.
+      </li>
+      <li>
+        Once paired, your session is remembered in this browser, so reopening or opening new tabs will connect automatically without requiring a ticket.
+      </li>
+    </ul>
+  </div>
 </section>

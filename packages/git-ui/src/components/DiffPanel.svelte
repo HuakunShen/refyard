@@ -19,6 +19,9 @@
     DiffResponse,
     FilePatch,
   } from "@refyard/git-contract";
+  import ChevronDown from "@lucide/svelte/icons/chevron-down";
+  import ChevronRight from "@lucide/svelte/icons/chevron-right";
+  import FileText from "@lucide/svelte/icons/file-text";
   import { Badge } from "./ui/badge/index.js";
   import StateBanner from "./StateBanner.svelte";
   import { changeKindLabel, diffStatLabel } from "../lib/format.js";
@@ -82,18 +85,25 @@
   );
 </script>
 
-<div class={cn("flex h-full min-h-0 flex-col gap-3 overflow-auto", className)}>
+<div
+  class={cn(
+    "flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto custom-scrollbar",
+    className,
+  )}
+>
   {#if diff === null}
     <p class="p-3 text-sm text-ink-faint">{placeholder}</p>
   {:else}
-    <header class="flex flex-wrap items-center gap-2 text-xs text-ink-muted">
+    <header
+      class="sticky top-0 z-10 shrink-0 flex flex-wrap items-center gap-2 pb-2.5 pt-0.5 bg-canvas/95 backdrop-blur-sm border-b border-border/40 text-xs text-ink-muted -mx-3 px-3"
+    >
       <span class="font-medium text-ink">
         {diff.request.kind}
-        {#if diff.request.oid !== null}<span class="font-mono"
+        {#if diff.request.oid !== null}<span class="font-mono ml-1"
             >{diff.request.oid.slice(0, 8)}</span
           >{/if}
         {#if diff.request.from !== null && diff.request.to !== null}
-          <span class="font-mono"
+          <span class="font-mono ml-1"
             >{diff.request.from.slice(0, 8)}..{diff.request.to.slice(
               0,
               8,
@@ -101,69 +111,96 @@
           >
         {/if}
       </span>
-      <span>{diff.stats.filesChanged} files</span>
-      <span class="text-add">+{diff.stats.insertions}</span>
-      <span class="text-remove">−{diff.stats.deletions}</span>
+      <span class="text-muted-foreground">·</span>
+      <span
+        >{diff.stats.filesChanged}
+        {diff.stats.filesChanged === 1 ? "file" : "files"}</span
+      >
+      <span class="text-add font-mono font-medium">+{diff.stats.insertions}</span>
+      <span class="text-remove font-mono font-medium">−{diff.stats.deletions}</span>
       {#if diff.stats.binaryFiles > 0}
-        <span>{diff.stats.binaryFiles} binary</span>
+        <span class="text-muted-foreground">· {diff.stats.binaryFiles} binary</span>
       {/if}
     </header>
 
     {#if awaitingPerPathPatches}
-      <StateBanner
-        state="info"
-        title="Patches are read one path at a time"
-        detail="This change set is listed without patches: a patch for every file at once is unbounded work. Select a file to read its patch."
-      />
+      <div class="shrink-0">
+        <StateBanner
+          state="info"
+          title="Patches are read one path at a time"
+          detail="This change set is listed without patches: a patch for every file at once is unbounded work. Select a file to read its patch."
+        />
+      </div>
     {:else if diff.truncated}
-      <StateBanner
-        state="truncated"
-        title="This listing was truncated"
-        detail="The host bounded this response, so later files in it are not shown. Narrow the request to see them."
-      />
+      <div class="shrink-0">
+        <StateBanner
+          state="truncated"
+          title="This listing was truncated"
+          detail="The host bounded this response, so later files in it are not shown. Narrow the request to see them."
+        />
+      </div>
     {/if}
 
     {#if diff.files.length === 0}
-      <p class="text-sm text-ink-muted">No changed files for this request.</p>
+      <p class="text-sm text-ink-muted shrink-0">
+        No changed files for this request.
+      </p>
     {:else}
       {#each diff.files as file (file.pathId + file.changeKind)}
         {@const selected = file.pathId === selectedPathId}
         {@const filePatch = patchFor(file)}
         <section
-          class="overflow-hidden rounded-md border border-border bg-panel"
+          class="shrink-0 overflow-hidden rounded-lg border border-border/80 bg-card/60 shadow-2xs transition-colors"
         >
           <button
             type="button"
             onclick={() => onSelectPath?.(file)}
             aria-current={selected ? "true" : undefined}
             class={cn(
-              "flex w-full flex-wrap items-center gap-2 px-2 py-1.5 text-left",
-              selected ? "bg-brand/10" : "hover:bg-panel-muted",
+              "group flex min-h-[38px] w-full items-center gap-2 px-3 py-2 text-left cursor-pointer transition-colors select-none",
+              selected
+                ? "bg-primary/10 hover:bg-primary/15"
+                : "hover:bg-accent/40",
             )}
           >
+            <span class="text-muted-foreground shrink-0 transition-transform">
+              {#if selected || filePatch.kind !== "unavailable"}
+                <ChevronDown class="size-3.5" />
+              {:else}
+                <ChevronRight class="size-3.5" />
+              {/if}
+            </span>
+            <FileText class="size-3.5 text-muted-foreground/70 shrink-0" />
             <span
-              class="min-w-0 flex-1 truncate font-mono text-xs text-ink"
+              class="min-w-0 flex-1 truncate font-mono text-xs font-medium text-foreground"
               title={file.displayPath}
             >
               {file.displayPath}
             </span>
-            <Badge tone="muted">{changeKindLabel(file.changeKind)}</Badge>
+            <Badge
+              tone={file.changeKind === "deleted" ? "danger" : "muted"}
+              class="text-[10px] h-4.5 px-1.5 shrink-0"
+            >
+              {changeKindLabel(file.changeKind)}
+            </Badge>
             {#if file.oldDisplayPath !== null && file.oldDisplayPath !== file.displayPath}
               <span
-                class="truncate font-mono text-xs text-ink-faint"
+                class="truncate font-mono text-xs text-muted-foreground shrink-0"
                 title={file.oldDisplayPath}
               >
                 ← {file.oldDisplayPath}
               </span>
             {/if}
-            <span class="text-xs text-ink-muted">{diffStatLabel(file)}</span>
+            <span class="text-xs font-mono text-muted-foreground shrink-0"
+              >{diffStatLabel(file)}</span
+            >
           </button>
 
           {#if selected || filePatch.kind !== "unavailable"}
             {#if filePatch.kind === "text"}
               {#if filePatch.synthesized}
                 <p
-                  class="border-t border-border px-2 py-1 text-xs text-ink-faint"
+                  class="border-t border-border/60 bg-muted/30 px-3 py-1.5 text-xs text-muted-foreground"
                 >
                   Untracked file: this content was read from the working tree,
                   not produced by Git.
@@ -171,30 +208,32 @@
               {/if}
               {#if filePatch.hunks.length === 0}
                 <p
-                  class="border-t border-border px-2 py-2 text-xs text-ink-muted"
+                  class="border-t border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground"
                 >
                   No line changes — the file's mode or type changed.
                 </p>
               {:else}
-                <div class="overflow-x-auto border-t border-border">
+                <div
+                  class="overflow-x-auto border-t border-border/60 bg-card/90 custom-scrollbar"
+                >
                   {#each filePatch.hunks as hunk (hunk.header)}
-                    <div class="min-w-max">
+                    <div class="min-w-max text-xs">
                       <p
-                        class="bg-panel-muted px-2 py-0.5 font-mono text-xs text-ink-faint"
+                        class="bg-muted/60 px-3 py-1 font-mono text-[11px] text-muted-foreground select-none border-b border-border/30"
                       >
                         {hunk.header}
                       </p>
                       {#each hunk.lines as line, lineIndex (lineIndex)}
                         <p
                           class={cn(
-                            "px-2 font-mono text-xs whitespace-pre",
+                            "px-3 py-0.5 font-mono text-xs whitespace-pre leading-relaxed",
                             LINE_CLASS[line.kind],
                           )}
                         >
-                          <span class="select-none text-ink-faint"
+                          <span class="select-none text-muted-foreground"
                             >{LINE_PREFIX[line.kind]}</span
                           >{line.text}{#if line.noNewline}<span
-                              class="text-ink-faint"
+                              class="text-muted-foreground italic ml-1"
                             >
                               ⏎ no newline at end of file</span
                             >{/if}
@@ -206,19 +245,19 @@
               {/if}
             {:else if filePatch.kind === "binary"}
               <p
-                class="border-t border-border px-2 py-3 text-sm text-ink-muted"
+                class="border-t border-border/60 px-3 py-3 text-xs text-muted-foreground"
               >
                 Binary file — Git reported no text patch for it.
               </p>
             {:else if filePatch.kind === "oversize"}
               <p
-                class="border-t border-border px-2 py-3 text-sm text-ink-muted"
+                class="border-t border-border/60 px-3 py-3 text-xs text-muted-foreground"
               >
                 Patch omitted: {filePatch.reason}
               </p>
             {:else if filePatch.kind === "unavailable"}
               <p
-                class="border-t border-border px-2 py-3 text-xs text-ink-faint"
+                class="border-t border-border/60 px-3 py-2.5 text-xs text-muted-foreground"
               >
                 {selected
                   ? `Patch unavailable: ${filePatch.reason}`
@@ -226,7 +265,7 @@
               </p>
             {:else}
               <p
-                class="border-t border-border px-2 py-3 text-sm text-ink-muted"
+                class="border-t border-border/60 px-3 py-3 text-xs text-muted-foreground font-mono"
               >
                 Submodule pointer: {filePatch.oldOid === null
                   ? "(none)"

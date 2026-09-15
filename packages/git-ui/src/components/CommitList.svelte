@@ -112,6 +112,9 @@
       .filter((row): row is GraphRow => row !== undefined),
   );
   const firstVisible = $derived(items[0]?.index ?? 0);
+  function formatRefName(ref: string): string {
+    return ref.replace(/^refs\/(heads|remotes|tags)\//, "");
+  }
 </script>
 
 <div class={cn("flex h-full min-h-0 flex-col gap-2", className)}>
@@ -177,12 +180,14 @@
                 onclick={() => onSelect(commit)}
                 aria-current={selected ? "true" : undefined}
                 class={cn(
-                  "flex h-full w-full items-center gap-2 px-2 text-left",
-                  selected ? "bg-brand/10" : "hover:bg-panel-muted",
+                  "relative flex h-full w-full items-center gap-2 px-2.5 text-left transition-colors",
+                  selected
+                    ? "bg-primary/10 font-medium text-foreground before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-1 before:rounded-r before:bg-primary"
+                    : "hover:bg-muted/50 text-foreground/90",
                 )}
               >
                 <span
-                  class="min-w-0 flex-1 truncate text-sm text-ink"
+                  class="min-w-0 flex-1 truncate text-sm text-foreground"
                   title={commit.subject}
                 >
                   {commit.subject.length === 0
@@ -193,7 +198,7 @@
                 {#each commit.refNames.slice(0, 3) as refName (refName)}
                   <Badge
                     tone={refName.includes("/") ? "branch" : "muted"}
-                    title={refName}>{refName}</Badge
+                    title={refName}>{formatRefName(refName)}</Badge
                   >
                 {/each}
                 {#if commit.refNames.length > 3}
@@ -216,18 +221,18 @@
                   >
                 {/if}
 
-                <span class="hidden shrink-0 text-xs text-ink-muted sm:inline"
+                <span class="hidden shrink-0 text-xs text-muted-foreground xl:inline"
                   >{commit.authorName}</span
                 >
                 <time
-                  class="shrink-0 text-xs text-ink-faint"
+                  class="shrink-0 text-xs text-muted-foreground/75"
                   datetime={commit.authoredAt}
                   title={absoluteTime(commit.authoredAt)}
                 >
                   {relativeTime(commit.authoredAt, now)}
                 </time>
                 <span
-                  class="shrink-0 font-mono text-xs text-ink-faint"
+                  class="shrink-0 font-mono text-xs text-muted-foreground/60"
                   title={commit.oid}
                 >
                   {shortOid(commit.oid)}

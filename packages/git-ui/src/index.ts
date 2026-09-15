@@ -59,8 +59,51 @@ export {
   ScrollAreaScrollbar,
 } from "./components/ui/scroll-area/index.js";
 export { Separator } from "./components/ui/separator/index.js";
+export {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "./components/ui/collapsible/index.js";
+export {
+  Dialog,
+  DialogTitle,
+  DialogPortal,
+  DialogFooter,
+  DialogHeader,
+  DialogTrigger,
+  DialogOverlay,
+  DialogContent,
+  DialogDescription,
+  DialogClose,
+} from "./components/ui/dialog/index.js";
+export {
+  Popover,
+  PopoverContent,
+  PopoverDescription,
+  PopoverHeader,
+  PopoverTitle,
+  PopoverTrigger,
+  PopoverClose,
+  PopoverPortal,
+} from "./components/ui/popover/index.js";
+export {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "./components/ui/tabs/index.js";
+export {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TooltipProvider,
+  TooltipPortal,
+} from "./components/ui/tooltip/index.js";
 
 export { default as ModeToggle } from "./components/ModeToggle.svelte";
+export { default as RefyardLogo } from "./components/RefyardLogo.svelte";
+export { default as SectionCard } from "./components/SectionCard.svelte";
+export { default as AppearanceSettings } from "./components/AppearanceSettings.svelte";
 
 export { default as BranchPanel } from "./components/BranchPanel.svelte";
 export { default as CommitDetailPanel } from "./components/CommitDetailPanel.svelte";

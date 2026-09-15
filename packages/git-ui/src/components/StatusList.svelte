@@ -13,6 +13,7 @@
    *   its diff) and nothing else.
    */
   import type { StatusEntry, StatusSnapshot } from "@refyard/git-contract";
+  import ArrowLeft from "@lucide/svelte/icons/arrow-left";
   import { Badge } from "./ui/badge/index.js";
   import { cn } from "../lib/utils.js";
   import {
@@ -49,69 +50,89 @@
   <p class={cn("text-xs text-ink-faint", className)}>No status loaded.</p>
 {:else}
   <div class={cn("flex flex-col gap-2", className)}>
-    <div class="flex flex-wrap items-center gap-2 text-xs text-ink-muted">
-      <span class="font-mono text-ink">{headLabel(snapshot.head)}</span>
+    <div
+      class="flex flex-wrap items-center gap-2 text-xs text-ink-muted pb-1 border-b border-border/20"
+    >
+      <span class="font-mono font-medium text-ink"
+        >{headLabel(snapshot.head)}</span
+      >
       {#if snapshot.upstream !== null}
-        <span
-          >{snapshot.upstream.ahead}↑ {snapshot.upstream.behind}↓ vs {snapshot
-            .upstream.name}</span
-        >
+        <span class="font-mono text-[11px] text-ink-faint">
+          {snapshot.upstream.ahead}↑ {snapshot.upstream.behind}↓ vs {snapshot
+            .upstream.name}
+        </span>
       {/if}
       {#if snapshot.operationInProgress !== null}
-        <Badge tone="warn">{snapshot.operationInProgress} in progress</Badge>
+        <Badge tone="warn" class="text-[10px]"
+          >{snapshot.operationInProgress} in progress</Badge
+        >
       {/if}
-      <span
-        >{snapshot.entryCount} changed {snapshot.entryCount === 1
+      <span class="ml-auto text-[11px] font-mono text-ink-faint">
+        {snapshot.entryCount} changed {snapshot.entryCount === 1
           ? "path"
-          : "paths"}</span
-      >
+          : "paths"}
+      </span>
     </div>
 
     {#if snapshot.entries.length === 0}
-      <p class="text-sm text-ink-muted">
+      <p class="text-xs text-ink-faint italic py-1">
         Working tree and index match the last commit.
       </p>
     {:else}
-      <ul class="flex flex-col">
+      <ul class="flex flex-col gap-1 max-h-60 overflow-y-auto pr-0.5">
         {#each snapshot.entries as entry (entry.pathId)}
           {@const selected = entry.pathId === selectedPathId}
-          <li>
+          <li class="shrink-0">
             <button
               type="button"
               onclick={() => onSelect(entry)}
               aria-current={selected ? "true" : undefined}
               title={statusEntryLabel(entry)}
               class={cn(
-                "flex w-full items-center gap-2 rounded px-2 py-1 text-left",
-                selected ? "bg-brand/10" : "hover:bg-panel-muted",
+                "group flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition-all cursor-pointer",
+                selected
+                  ? "border-primary/50 bg-primary/10 shadow-2xs"
+                  : "border-border/30 bg-card/40 hover:border-border/70 hover:bg-accent/30",
               )}
             >
               <span
-                class="w-8 shrink-0 font-mono text-xs text-ink-faint"
+                class={cn(
+                  "font-mono text-[10px] px-1 py-0.5 rounded font-bold shrink-0",
+                  entry.indexStatus !== "."
+                    ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                    : "bg-amber-500/15 text-amber-600 dark:text-amber-400",
+                )}
                 aria-hidden="true"
               >
                 {entry.indexStatus}{entry.worktreeStatus}
               </span>
               <span
-                class="min-w-0 flex-1 truncate font-mono text-xs text-ink"
+                class="min-w-0 flex-1 truncate font-mono text-xs text-ink group-hover:text-foreground"
                 title={entry.displayPath}
               >
                 {entry.displayPath}
               </span>
               {#if entry.originalDisplayPath !== null}
                 <span
-                  class="truncate text-xs text-ink-faint"
+                  class="flex items-center gap-0.5 truncate text-[11px] text-ink-faint"
                   title={entry.originalDisplayPath}
                 >
-                  ← {entry.originalDisplayPath}
+                  <ArrowLeft class="size-2.5 shrink-0" />
+                  {entry.originalDisplayPath}
                 </span>
               {/if}
               {#if entry.kind !== "ordinary"}
-                <Badge tone={KIND_TONES[entry.kind]}>{entry.kind}</Badge>
+                <Badge
+                  tone={KIND_TONES[entry.kind]}
+                  class="text-[10px] h-4.5 px-1.5 shrink-0"
+                >
+                  {entry.kind}
+                </Badge>
               {/if}
               {#if entry.pathEncoding === "unrepresentable"}
                 <Badge
                   tone="warn"
+                  class="text-[10px] h-4.5 px-1.5 shrink-0"
                   title="This path's bytes are not valid UTF-8, so it can be read as metadata but not handed back for an operation."
                 >
                   metadata only
@@ -120,6 +141,7 @@
               {#if entry.stages !== null && entry.stages.length > 0}
                 <Badge
                   tone="danger"
+                  class="text-[10px] h-4.5 px-1.5 shrink-0"
                   title="Conflicted: base, ours and theirs are all present in the index."
                 >
                   {entry.stages.length} stages
@@ -128,6 +150,7 @@
               {#if entry.submodule !== null}
                 <Badge
                   tone="muted"
+                  class="text-[10px] h-4.5 px-1.5 shrink-0"
                   title="Submodule with changed commit, modified content or untracked files."
                 >
                   submodule
@@ -139,12 +162,11 @@
       </ul>
     {/if}
 
-    <p class="text-xs text-ink-faint">
+    <p class="text-[11px] text-ink-faint">
       Letters are Git's own: index first, then working tree ({statusLetterLabel(
         "M",
       )} = modified,
-      {statusLetterLabel("?")} = untracked). This build reads; it does not stage or
-      discard.
+      {statusLetterLabel("?")} = untracked).
     </p>
   </div>
 {/if}

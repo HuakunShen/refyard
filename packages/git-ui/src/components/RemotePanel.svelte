@@ -53,55 +53,72 @@
 
   const remotes = $derived(refs?.remotes ?? []);
   const currentBranch = $derived(refs?.head.branchName ?? null);
-  // A single remote is selected by default for the sync buttons; with several, none
-  // is — a default that pushes to a remote nobody chose is the failure this avoids.
   const active = $derived(
     selected ?? (remotes.length === 1 ? (remotes[0]?.name ?? null) : null),
   );
 </script>
 
-<div class={cn("flex flex-col gap-2", className)} data-testid="remote-panel">
+<div class={cn("flex flex-col gap-2.5", className)} data-testid="remote-panel">
   {#if refs === null}
     <p class="text-xs text-ink-faint">No refs loaded.</p>
   {:else if remotes.length === 0}
-    <p class="text-xs text-ink-faint">No remotes configured.</p>
+    <p class="text-xs text-ink-faint italic py-1">No remotes configured.</p>
   {:else}
-    <ul class="flex flex-col gap-1" data-testid="remote-list">
+    <!-- Remote list -->
+    <ul class="flex flex-col gap-1.5" data-testid="remote-list">
       {#each remotes as remote (remote.name)}
-        <li class="flex flex-wrap items-center gap-2 rounded px-1 py-0.5">
+        {@const isSelected = active === remote.name}
+        <li
+          class={cn(
+            "flex items-center gap-2 rounded-lg border p-2 transition-all",
+            isSelected
+              ? "border-primary/40 bg-primary/5 shadow-2xs"
+              : "border-border/50 bg-card/60 hover:border-border hover:bg-accent/30",
+          )}
+        >
           <input
             type="radio"
-            class="size-3.5 accent-primary"
+            class="size-3.5 accent-primary rounded-full shrink-0"
             name="remote-select"
-            checked={active === remote.name}
+            checked={isSelected}
             disabled={disabled || busy}
             aria-label={`select remote ${remote.name}`}
             onchange={() => (selected = remote.name)}
           />
-          <span class="font-mono text-xs">{remote.name}</span>
-          <span
-            class="min-w-0 flex-1 truncate text-xs text-ink-faint"
-            title={remote.fetchUrlDisplay}
-          >
-            {remote.fetchUrlDisplay}
+          <div class="flex flex-col min-w-0 flex-1">
+            <span class="font-mono text-xs font-semibold text-foreground">
+              {remote.name}
+            </span>
+            <span
+              class="truncate text-[11px] text-ink-faint"
+              title={remote.fetchUrlDisplay}
+            >
+              {remote.fetchUrlDisplay}
+            </span>
+          </div>
+          <span class="shrink-0">
+            <ConfirmAction
+              label="Remove"
+              confirmLabel={`Remove ${remote.name}`}
+              description="Local branches are untouched; remote-tracking refs go with it."
+              disabled={disabled || busy}
+              {busy}
+              onConfirm={() => onRemove(remote.name)}
+              data-testid={`remove-remote-${remote.name}`}
+            />
           </span>
-          <ConfirmAction
-            label="Remove"
-            confirmLabel={`Remove ${remote.name}`}
-            description="Local branches are untouched; remote-tracking refs go with it."
-            disabled={disabled || busy}
-            {busy}
-            onConfirm={() => onRemove(remote.name)}
-            data-testid={`remove-remote-${remote.name}`}
-          />
         </li>
       {/each}
     </ul>
 
-    <div class="flex flex-wrap items-center gap-2">
+    <!-- Sync action buttons -->
+    <div
+      class="flex flex-wrap items-center gap-1.5 pt-1 border-t border-border/30"
+    >
       <Button
         size="sm"
         variant="outline"
+        class="h-7 text-xs px-2.5 shadow-none"
         disabled={disabled || busy || active === null}
         onclick={() => {
           if (active !== null) {
@@ -115,6 +132,7 @@
       <Button
         size="sm"
         variant="outline"
+        class="h-7 text-xs px-2.5 shadow-none"
         disabled={disabled || busy || active === null || currentBranch === null}
         onclick={() => {
           if (active !== null) {
@@ -127,6 +145,7 @@
       </Button>
       <Button
         size="sm"
+        class="h-7 text-xs px-2.5 ml-auto"
         disabled={disabled || busy || active === null || currentBranch === null}
         onclick={() => {
           if (active !== null && currentBranch !== null) {
@@ -140,36 +159,47 @@
     </div>
   {/if}
 
-  <div class="flex items-center gap-2">
-    <input
-      class="w-24 rounded border border-input bg-transparent px-2 py-1 font-mono text-xs"
-      placeholder="origin"
-      aria-label="remote name"
-      bind:value={remoteName}
-      disabled={disabled || busy}
-    />
-    <input
-      class="min-w-0 flex-1 rounded border border-input bg-transparent px-2 py-1 font-mono text-xs"
-      placeholder="https://… or /path/to/repo.git"
-      aria-label="remote url"
-      bind:value={remoteUrl}
-      disabled={disabled || busy}
-    />
-    <Button
-      size="sm"
-      disabled={disabled ||
-        busy ||
-        remoteName.trim().length === 0 ||
-        remoteUrl.trim().length === 0}
-      onclick={() => {
-        onAdd(remoteName.trim(), remoteUrl.trim());
-        remoteName = "";
-        remoteUrl = "";
-      }}
-      data-testid="add-remote"
+  <!-- Add remote form -->
+  <div
+    class="flex flex-col gap-2 rounded-lg border border-border/50 bg-card/40 p-2.5 pt-2"
+  >
+    <span
+      class="text-[11px] font-semibold tracking-wider text-ink-muted uppercase"
     >
-      Add
-    </Button>
+      Add remote
+    </span>
+    <div class="flex items-center gap-2">
+      <input
+        class="w-24 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
+        placeholder="origin"
+        aria-label="remote name"
+        bind:value={remoteName}
+        disabled={disabled || busy}
+      />
+      <input
+        class="min-w-0 flex-1 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        placeholder="https://… or /path/to/repo.git"
+        aria-label="remote url"
+        bind:value={remoteUrl}
+        disabled={disabled || busy}
+      />
+      <Button
+        size="sm"
+        class="h-7 text-xs px-3 shrink-0"
+        disabled={disabled ||
+          busy ||
+          remoteName.trim().length === 0 ||
+          remoteUrl.trim().length === 0}
+        onclick={() => {
+          onAdd(remoteName.trim(), remoteUrl.trim());
+          remoteName = "";
+          remoteUrl = "";
+        }}
+        data-testid="add-remote"
+      >
+        Add
+      </Button>
+    </div>
   </div>
 
   {#if message !== null}

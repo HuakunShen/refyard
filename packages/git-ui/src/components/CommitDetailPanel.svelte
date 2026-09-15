@@ -9,6 +9,8 @@
    * blank lines is not reflowed into something the author did not write.
    */
   import type { CommitDetail, CommitSummary } from "@refyard/git-contract";
+  import Copy from "@lucide/svelte/icons/copy";
+  import Check from "@lucide/svelte/icons/check";
   import { Badge } from "./ui/badge/index.js";
   import { absoluteTime, shortOid } from "../lib/format.js";
   import { cn } from "../lib/utils.js";
@@ -20,6 +22,22 @@
   }
 
   let { commit, detail, class: className = "" }: Props = $props();
+
+  let copiedOid = $state(false);
+  let copyTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  async function copyCommitOid(oid: string) {
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      await navigator.clipboard.writeText(oid);
+      copiedOid = true;
+      if (copyTimeout !== null) {
+        clearTimeout(copyTimeout);
+      }
+      copyTimeout = setTimeout(() => {
+        copiedOid = false;
+      }, 2000);
+    }
+  }
 </script>
 
 <div class={cn("flex flex-col gap-3 overflow-auto p-3", className)}>
@@ -29,7 +47,21 @@
     <header class="flex flex-col gap-1">
       <h2 class="text-sm font-medium text-ink">{commit.subject}</h2>
       <div class="flex flex-wrap items-center gap-2 text-xs text-ink-muted">
-        <span class="font-mono">{commit.oid}</span>
+        <div class="inline-flex items-center gap-1.5 rounded-md bg-muted/60 px-1.5 py-0.5 font-mono text-[11px] text-foreground/85 border border-border/60">
+          <span>{commit.oid}</span>
+          <button
+            type="button"
+            class="rounded p-0.5 hover:text-foreground text-muted-foreground transition-colors hover:bg-background/80"
+            title={copiedOid ? "Copied!" : "Copy full commit SHA"}
+            onclick={() => copyCommitOid(commit.oid)}
+          >
+            {#if copiedOid}
+              <Check class="size-3 text-emerald-500" />
+            {:else}
+              <Copy class="size-3" />
+            {/if}
+          </button>
+        </div>
         {#if commit.signed}
           <Badge tone="muted">signed</Badge>
         {/if}

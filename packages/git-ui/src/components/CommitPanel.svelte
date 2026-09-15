@@ -10,6 +10,7 @@
    * rather than an empty textarea that means something different here than it does
    * for a normal commit.
    */
+  import GitCommit from "@lucide/svelte/icons/git-commit";
   import { Button } from "./ui/button/index.js";
   import ConfirmAction from "./ConfirmAction.svelte";
   import { cn } from "../lib/utils.js";
@@ -42,27 +43,46 @@
   const commitReady = $derived(
     !disabled && !busy && trimmed.length > 0 && stagedCount > 0,
   );
+
+  function handleKeydown(event: KeyboardEvent) {
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      if (commitReady) {
+        event.preventDefault();
+        onCommit(text);
+      }
+    }
+  }
 </script>
 
-<div class={cn("flex flex-col gap-2", className)} data-testid="commit-panel">
-  <label class="text-xs text-ink-muted" for="commit-message">
-    Commit message ({stagedCount} staged path{stagedCount === 1 ? "" : "s"})
-  </label>
+<div class={cn("flex flex-col gap-2.5", className)} data-testid="commit-panel">
+  <div class="flex items-center justify-between">
+    <label class="flex items-center gap-1.5 text-xs font-medium text-ink-muted" for="commit-message">
+      <span>Commit message</span>
+      <kbd class="rounded border border-border/60 bg-muted/40 px-1 py-0.5 text-[10px] font-sans text-ink-faint">⌘↵</kbd>
+    </label>
+    <span class="text-[11px] font-mono text-ink-faint">
+      {stagedCount} staged path{stagedCount === 1 ? "" : "s"}
+    </span>
+  </div>
+
   <textarea
     id="commit-message"
     data-testid="commit-message"
-    class="min-h-16 w-full rounded-md border border-input bg-transparent px-2 py-1.5 font-mono text-xs shadow-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
+    class="min-h-16 w-full rounded-lg border border-input bg-transparent px-2.5 py-1.5 font-mono text-xs shadow-2xs outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50 transition-all placeholder:text-ink-faint"
     placeholder="What changed, and why"
     bind:value={text}
+    onkeydown={handleKeydown}
     disabled={disabled || busy}></textarea>
 
-  <div class="flex flex-wrap items-center gap-2">
+  <div class="flex flex-wrap items-center gap-1.5">
     <Button
       size="sm"
+      class="h-7 text-xs px-3 gap-1.5 shadow-xs"
       disabled={!commitReady}
       onclick={() => onCommit(text)}
       data-testid="commit-button"
     >
+      <GitCommit class="size-3.5" />
       Commit
     </Button>
 
