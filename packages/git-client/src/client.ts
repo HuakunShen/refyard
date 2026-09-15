@@ -46,7 +46,7 @@ import {
 } from "@refyard/git-contract";
 
 export interface GitClientOptions {
-  /** Base URL of the service, e.g. `http://127.0.0.1:47831`. */
+  /** Base URL of the service, e.g. `http://127.0.0.1:9595`. */
   readonly baseUrl: string;
   /**
    * The `fetch` implementation to use.

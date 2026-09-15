@@ -282,6 +282,7 @@ export {
   type MutationCoordinator,
   type MutationCoordinatorOptions,
 } from "./coordinator/submit.js";
+export { DEFAULT_SERVICE_PORT, PortInUseError } from "./http/server.js";
 export {
   createEventRing,
   createSseSession,

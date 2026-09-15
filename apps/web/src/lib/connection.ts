@@ -127,7 +127,7 @@ function firstValidUrl(...candidates: readonly (string | null)[]): {
   }
   // `url.origin` is always present for an absolute href, so this is a last resort for a
   // caller that passed something unparseable rather than a case that happens in a browser.
-  return { value: "http://127.0.0.1:47831", source: "origin" };
+  return { value: "http://127.0.0.1:9595", source: "origin" };
 }
 
 function safeUrl(value: string): URL | null {

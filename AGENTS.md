@@ -52,7 +52,8 @@ system git CLI → the target machine's repo, credentials, hooks
   functions, no SSR of repository data.
 - **Core UI in `packages/git-ui`** must not import `$app/*`; only `apps/web` owns SvelteKit
   composition, routing, and the connection config (so Kunkun can reuse the same components later).
-- **All HTTP is authenticated**, reads included. Loopback only (default port 47831, `--port 0` for
+- **All HTTP is authenticated**, reads included. Loopback only (default port 9595 — taken port,
+  another free one is chosen and named; an explicit `--port` that is busy is refused; `--port 0` for
   tests). Exact `Origin`/`Host` checks, single-use bootstrap ticket exchanged for an in-memory
   bearer, JSON 404 for unknown `/api` paths, no CORS wildcard, no fallthrough to the SPA. The
   opted-in hosted-UI form (`docs/product/north-star.md` §5) is the only thing allowed to relax any

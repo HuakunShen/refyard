@@ -75,6 +75,34 @@ import {
   originsFor,
   type OriginPolicy,
 } from "./origins.js";
+/**
+ * The port a taken listener holds, as its own error type.
+ *
+ * A caller that named a port explicitly must be told the port is busy; a caller that took
+ * the default may reasonably be moved to a free one. Both need to tell this failure apart
+ * from "the listener could not start at all", which no retry fixes.
+ */
+export class PortInUseError extends Error {
+  readonly port: number;
+
+  constructor(port: number) {
+    super(
+      `port ${port} is already in use; stop what is using it or pass a different --port`,
+    );
+    this.name = "PortInUseError";
+    this.port = port;
+  }
+}
+
+/**
+ * The loopback port a service takes when nobody asks for one.
+ *
+ * It lives here because this is the layer that binds, and the CLI reads it rather than
+ * keeping a second copy: two defaults is how a help text and a listener end up naming
+ * different numbers.
+ */
+export const DEFAULT_SERVICE_PORT = 9595;
+
 export interface HttpHostOptions {
   readonly read: ReadService;
   /** Present once a mutation engine exists; absent in a read-only host. */
@@ -140,7 +168,7 @@ export async function startHttpHost(
     options.serviceInstanceId ??
     `srvc_${randomBytes(12).toString("base64url")}`;
   const host = options.host ?? "127.0.0.1";
-  const port = options.port ?? 47831;
+  const port = options.port ?? DEFAULT_SERVICE_PORT;
   const auth = createAuthStore({
     serviceInstanceId,
     ...(options.now === undefined ? {} : { now: options.now }),
@@ -667,15 +695,17 @@ export async function startHttpHost(
   });
 
   if ("error" in bound) {
-    // A port that is taken is a refusal with a clear instruction, not a silent move
-    // to another port that would invalidate every bookmark and pairing URL.
     const error = bound.error;
-    const detail =
-      error.code === "EADDRINUSE"
-        ? `port ${port} is already in use; stop what is using it or pass a different --port`
-        : `the listener could not start: ${error.code ?? error.message}`;
     await closeQuietly(server);
-    throw new Error(detail);
+    if (error.code === "EADDRINUSE") {
+      // Typed rather than a message the caller has to match on: the CLI decides whether a
+      // busy port is a refusal (an explicitly requested port) or a reason to take another
+      // free one (the default), and that decision belongs above this layer.
+      throw new PortInUseError(port);
+    }
+    throw new Error(
+      `the listener could not start: ${error.code ?? error.message}`,
+    );
   }
 
   const actualPort = bound.port;

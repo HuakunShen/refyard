@@ -63,14 +63,14 @@ refyard serve --repo <path> [options]       # serve without opening a browser
 refyard doctor [--json]                     # report what this machine can do
 ```
 
-| Option             | Meaning                                                                                   |
-| ------------------ | ----------------------------------------------------------------------------------------- |
-| `--repo <path>`    | Repository to serve. Required by `serve`; for `open` a bare path argument does the same.  |
-| `--port <n>`       | Loopback port. Default `47831`; `0` asks the OS for a free one.                           |
-| `--ticket-ttl <s>` | Pairing-ticket lifetime in seconds. Default 60, maximum 86400.                            |
-| `--no-open`        | Do not launch a browser.                                                                  |
-| `--json`           | Machine output: one JSON object on stdout, pairing URL on stderr.                         |
-| `--allow-root`     | Permit running as root. Off by default, because Git hooks would run with root privileges. |
+| Option             | Meaning                                                                                                       |
+| ------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `--repo <path>`    | Repository to serve. Required by `serve`; for `open` a bare path argument does the same.                      |
+| `--port <n>`       | Loopback port. Default `9595`; if that is busy another free port is taken and named; `0` asks the OS for one. |
+| `--ticket-ttl <s>` | Pairing-ticket lifetime in seconds. Default 60, maximum 86400.                                                |
+| `--no-open`        | Do not launch a browser.                                                                                      |
+| `--json`           | Machine output: one JSON object on stdout, pairing URL on stderr.                                             |
+| `--allow-root`     | Permit running as root. Off by default, because Git hooks would run with root privileges.                     |
 
 ### Pairing
 
@@ -79,7 +79,7 @@ included. The first browser is paired by the URL printed at startup:
 
 ```
   open this URL in your browser to pair this session:
-    http://127.0.0.1:47831/?pair=<ticket>
+    http://127.0.0.1:9595/?pair=<ticket>
 ```
 
 The ticket is single-use and expires (`--ticket-ttl`). For a second browser — or after
@@ -91,8 +91,8 @@ URL never appears in the machine-readable output.
 
 ```sh
 refyard serve --repo /path/to/repo --no-open --json
-# stdout: {"serviceInstanceId":"srvc_…","port":47831,"url":"http://127.0.0.1:47831",…}
-# stderr: pairing URL (single use): http://127.0.0.1:47831/?pair=…
+# stdout: {"serviceInstanceId":"srvc_…","port":9595,"url":"http://127.0.0.1:9595",…}
+# stderr: pairing URL (single use): http://127.0.0.1:9595/?pair=…
 ```
 
 ## Stopping
@@ -103,13 +103,13 @@ does not stop the server: a commit in flight is never cancelled by a page going 
 
 ## When something is wrong
 
-| Symptom                                             | What to do                                                                                                  |
-| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `refyard: git was not found`                        | Install Git, or point `REFYARD_GIT` at the executable. `refyard doctor` prints which check failed.          |
-| `port 47831 is already in use`                      | Another program holds the port — refyard never reuses an unknown listener. Pass `--port 0` or pick another. |
-| The UI shows "Not connected" after the port changed | The session was paired with the old origin. Open the new pairing URL printed by the terminal.               |
-| `doctor` reports a feature as unsupported           | That Git build lacks something refyard needs (a very old Git, or a limited bundled build). Upgrade Git.     |
-| The service exits immediately under `--json`        | It prints the reason to stderr; stdout is JSON only, so a supervisor should read stderr for diagnostics.    |
+| Symptom                                             | What to do                                                                                                                                                                             |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `refyard: git was not found`                        | Install Git, or point `REFYARD_GIT` at the executable. `refyard doctor` prints which check failed.                                                                                     |
+| `port 9595 is already in use`                       | You asked for that port with `--port` and another program holds it — refyard never reuses an unknown listener. Without `--port`, the service takes a free port instead and says which. |
+| The UI shows "Not connected" after the port changed | The session was paired with the old origin. Open the new pairing URL printed by the terminal.                                                                                          |
+| `doctor` reports a feature as unsupported           | That Git build lacks something refyard needs (a very old Git, or a limited bundled build). Upgrade Git.                                                                                |
+| The service exits immediately under `--json`        | It prints the reason to stderr; stdout is JSON only, so a supervisor should read stderr for diagnostics.                                                                               |
 
 ## Uninstalling
 

@@ -24,28 +24,28 @@ import {
 describe("pairing ticket", () => {
   it("reads the ticket from the fragment, where a server never sees it", () => {
     const config = parseSessionConfig({
-      href: "http://127.0.0.1:47831/#pair=abc123",
+      href: "http://127.0.0.1:9595/#pair=abc123",
       storedBaseUrl: null,
     });
     expect(config.ticket).toBe("abc123");
-    expect(config.baseUrl).toBe("http://127.0.0.1:47831");
+    expect(config.baseUrl).toBe("http://127.0.0.1:9595");
   });
 
   it("reads the ticket from the query string, so opening the printed URL pairs", () => {
     const config = parseSessionConfig({
-      href: "http://127.0.0.1:47831/?pair=abc123",
+      href: "http://127.0.0.1:9595/?pair=abc123",
       storedBaseUrl: null,
     });
     expect(config.ticket).toBe("abc123");
-    expect(config.baseUrl).toBe("http://127.0.0.1:47831");
+    expect(config.baseUrl).toBe("http://127.0.0.1:9595");
   });
 
   it("accepts the design package's `ticket` spelling in both positions", () => {
     // A pairing URL is pasted around; refusing the other name turns a working URL into an
     // authentication failure.
     for (const href of [
-      "http://127.0.0.1:47831/#ticket=abc123",
-      "http://127.0.0.1:47831/?ticket=abc123",
+      "http://127.0.0.1:9595/#ticket=abc123",
+      "http://127.0.0.1:9595/?ticket=abc123",
     ]) {
       expect(parseSessionConfig({ href, storedBaseUrl: null }).ticket).toBe(
         "abc123",
@@ -55,7 +55,7 @@ describe("pairing ticket", () => {
 
   it("prefers the fragment when a URL somehow carries both", () => {
     const config = parseSessionConfig({
-      href: "http://127.0.0.1:47831/?pair=from-query#pair=from-fragment",
+      href: "http://127.0.0.1:9595/?pair=from-query#pair=from-fragment",
       storedBaseUrl: null,
     });
     expect(config.ticket).toBe("from-fragment");
@@ -63,7 +63,7 @@ describe("pairing ticket", () => {
 
   it("reads a ticket from a URL that also overrides the service address", () => {
     const config = parseSessionConfig({
-      href: "http://127.0.0.1:47831/?api=http://127.0.0.1:5000&pair=abc123",
+      href: "http://127.0.0.1:9595/?api=http://127.0.0.1:5000&pair=abc123",
       storedBaseUrl: null,
     });
     expect(config.ticket).toBe("abc123");
@@ -71,25 +71,25 @@ describe("pairing ticket", () => {
   });
 
   it("reads a ticket from a fragment that carries more than the ticket", () => {
-    const url = new URL("http://127.0.0.1:47831/#pair=abc123&repo=xyz");
+    const url = new URL("http://127.0.0.1:9595/#pair=abc123&repo=xyz");
     expect(readTicket(url)).toBe("abc123");
   });
 
   it("returns null rather than an empty ticket for an empty fragment", () => {
-    expect(readTicket(new URL("http://127.0.0.1:47831/#"))).toBeNull();
-    expect(readTicket(new URL("http://127.0.0.1:47831/?pair="))).toBeNull();
+    expect(readTicket(new URL("http://127.0.0.1:9595/#"))).toBeNull();
+    expect(readTicket(new URL("http://127.0.0.1:9595/?pair="))).toBeNull();
     expect(readTicket(null)).toBeNull();
   });
 
   it("strips the ticket from both the fragment and the query, keeping everything else", () => {
-    expect(stripTicket("http://127.0.0.1:47831/repo/1?pair=abc&x=2")).toBe(
-      "http://127.0.0.1:47831/repo/1?x=2",
+    expect(stripTicket("http://127.0.0.1:9595/repo/1?pair=abc&x=2")).toBe(
+      "http://127.0.0.1:9595/repo/1?x=2",
     );
-    expect(stripTicket("http://127.0.0.1:47831/?pair=abc&ticket=def")).toBe(
-      "http://127.0.0.1:47831/",
+    expect(stripTicket("http://127.0.0.1:9595/?pair=abc&ticket=def")).toBe(
+      "http://127.0.0.1:9595/",
     );
-    expect(stripTicket("http://127.0.0.1:47831/repo/1?x=2#ticket=abc")).toBe(
-      "http://127.0.0.1:47831/repo/1?x=2",
+    expect(stripTicket("http://127.0.0.1:9595/repo/1?x=2#ticket=abc")).toBe(
+      "http://127.0.0.1:9595/repo/1?x=2",
     );
   });
 });
@@ -97,16 +97,16 @@ describe("pairing ticket", () => {
 describe("service address", () => {
   it("defaults to this page's origin, which is the service that served it", () => {
     const config = parseSessionConfig({
-      href: "http://127.0.0.1:47831/",
+      href: "http://127.0.0.1:9595/",
       storedBaseUrl: null,
     });
-    expect(config.baseUrl).toBe("http://127.0.0.1:47831");
+    expect(config.baseUrl).toBe("http://127.0.0.1:9595");
     expect(config.overridden).toBe(false);
   });
 
   it("prefers an explicit ?api= override and says so", () => {
     const config = parseSessionConfig({
-      href: "http://127.0.0.1:47831/?api=http://127.0.0.1:5000",
+      href: "http://127.0.0.1:9595/?api=http://127.0.0.1:5000",
       storedBaseUrl: null,
     });
     expect(config.baseUrl).toBe("http://127.0.0.1:5000");
@@ -116,35 +116,35 @@ describe("service address", () => {
   it("falls back to the page's origin when an override is not a usable http address", () => {
     // A typo in the address must not produce a page that silently talks to nothing.
     const config = parseSessionConfig({
-      href: "http://127.0.0.1:47831/?api=not a url",
+      href: "http://127.0.0.1:9595/?api=not a url",
       storedBaseUrl: null,
     });
-    expect(config.baseUrl).toBe("http://127.0.0.1:47831");
+    expect(config.baseUrl).toBe("http://127.0.0.1:9595");
     expect(config.overridden).toBe(false);
   });
 
   it("uses a remembered address when the URL carries none", () => {
     const config = parseSessionConfig({
       href: "https://app.example.test/",
-      storedBaseUrl: "http://127.0.0.1:47831",
+      storedBaseUrl: "http://127.0.0.1:9595",
     });
-    expect(config.baseUrl).toBe("http://127.0.0.1:47831");
+    expect(config.baseUrl).toBe("http://127.0.0.1:9595");
     expect(config.overridden).toBe(true);
   });
 
   it("normalises away a path, query and trailing slash", () => {
     // Requests are built as `base + path`; a trailing slash would request `//api/v1/…`.
-    expect(normalizeBaseUrl("http://127.0.0.1:47831/")).toBe(
-      "http://127.0.0.1:47831",
+    expect(normalizeBaseUrl("http://127.0.0.1:9595/")).toBe(
+      "http://127.0.0.1:9595",
     );
-    expect(normalizeBaseUrl("http://127.0.0.1:47831/app/?x=1#y")).toBe(
-      "http://127.0.0.1:47831",
+    expect(normalizeBaseUrl("http://127.0.0.1:9595/app/?x=1#y")).toBe(
+      "http://127.0.0.1:9595",
     );
   });
 
   it("refuses a scheme that cannot carry an authenticated API", () => {
     expect(normalizeBaseUrl("file:///tmp/index.html")).toBeNull();
-    expect(normalizeBaseUrl("ws://127.0.0.1:47831")).toBeNull();
+    expect(normalizeBaseUrl("ws://127.0.0.1:9595")).toBeNull();
     expect(normalizeBaseUrl("   ")).toBeNull();
     expect(normalizeBaseUrl(null)).toBeNull();
   });
@@ -152,13 +152,13 @@ describe("service address", () => {
   it("extracts ticket whether pasted as bare token or full pairing URL", () => {
     expect(extractTicketFromText("bare-ticket-123")).toBe("bare-ticket-123");
     expect(
-      extractTicketFromText("http://127.0.0.1:47831/?pair=query-ticket-456"),
+      extractTicketFromText("http://127.0.0.1:9595/?pair=query-ticket-456"),
     ).toBe("query-ticket-456");
     expect(
-      extractTicketFromText("http://127.0.0.1:47831/#pair=frag-ticket-789"),
+      extractTicketFromText("http://127.0.0.1:9595/#pair=frag-ticket-789"),
     ).toBe("frag-ticket-789");
     expect(
-      extractTicketFromText("http://127.0.0.1:47831/?ticket=design-ticket-abc"),
+      extractTicketFromText("http://127.0.0.1:9595/?ticket=design-ticket-abc"),
     ).toBe("design-ticket-abc");
     expect(extractTicketFromText("   spaced-token   ")).toBe("spaced-token");
   });

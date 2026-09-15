@@ -8,6 +8,7 @@
  * is already taken.
  */
 import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -59,6 +60,18 @@ function collect(): {
   };
 }
 
+/** Hold the default port so a case can observe what the service does about it. */
+async function holdDefaultPort(): Promise<Server> {
+  const server = createServer();
+  await new Promise<void>((resolvePromise, reject) => {
+    server.once("error", reject);
+    server.listen({ port: DEFAULT_PORT, host: "127.0.0.1" }, () =>
+      resolvePromise(),
+    );
+  });
+  return server;
+}
+
 describe("argument parsing", () => {
   it("treats a bare path as `open`", () => {
     const parsed = parseArgs(["/tmp/repo"], "/tmp");
@@ -66,6 +79,11 @@ describe("argument parsing", () => {
     if (parsed.ok && parsed.command.kind === "open") {
       expect(parsed.command.path).toBe("/tmp/repo");
       expect(parsed.command.port).toBe(DEFAULT_PORT);
+      // The documented default, asserted here as a value as well as through the constant:
+      // it appears in the help text, the installation guide and a bookmark someone may
+      // have made, so changing it is a decision rather than a refactor.
+      expect(DEFAULT_PORT).toBe(9595);
+      expect(parsed.command.portExplicit).toBe(false);
       expect(parsed.command.openBrowser).toBe(true);
     }
   });
@@ -166,20 +184,20 @@ describe("browser launching", () => {
     // Prevents: a URL reaching a shell, where a `&` or a backtick in a query string
     // would be executed instead of opened.
     const command = browserCommandFor(
-      "http://127.0.0.1:47831/?pair=abc",
+      "http://127.0.0.1:9595/?pair=abc",
       "darwin",
     );
     expect(command).toEqual({
       executable: "/usr/bin/open",
-      args: ["http://127.0.0.1:47831/?pair=abc"],
+      args: ["http://127.0.0.1:9595/?pair=abc"],
     });
     const linux = browserCommandFor("http://127.0.0.1:1/", "linux");
     expect(linux?.args).toEqual(["http://127.0.0.1:1/"]);
   });
 
   it("only accepts loopback http URLs", () => {
-    expect(isLoopbackHttpUrl("http://127.0.0.1:47831/")).toBe(true);
-    expect(isLoopbackHttpUrl("http://localhost:47831/")).toBe(true);
+    expect(isLoopbackHttpUrl("http://127.0.0.1:9595/")).toBe(true);
+    expect(isLoopbackHttpUrl("http://localhost:9595/")).toBe(true);
     expect(isLoopbackHttpUrl("http://example.com/")).toBe(false);
     expect(isLoopbackHttpUrl("file:///etc/passwd")).toBe(false);
     expect(isLoopbackHttpUrl("http://127.0.0.1.evil.example/")).toBe(false);
@@ -263,6 +281,7 @@ describe("serving a repository", () => {
       repositoryPath: repo.root,
       gitPath: fixtureGitPath(),
       port: 0,
+      portExplicit: true,
       openBrowser: false,
       ticketTtlSeconds: 60,
       webRoot: null,
@@ -309,6 +328,7 @@ describe("serving a repository", () => {
       repositoryPath: repo.root,
       gitPath: fixtureGitPath(),
       port: 0,
+      portExplicit: true,
       openBrowser: false,
       ticketTtlSeconds: 60,
       webRoot: null,
@@ -353,6 +373,7 @@ describe("serving a repository", () => {
       repositoryPath: repo.root,
       gitPath: fixtureGitPath(),
       port: 0,
+      portExplicit: true,
       openBrowser: false,
       ticketTtlSeconds: 60,
       webRoot: null,
@@ -400,6 +421,7 @@ describe("serving a repository", () => {
       repositoryPath: repo.root,
       gitPath: fixtureGitPath(),
       port: 0,
+      portExplicit: true,
       openBrowser: false,
       ticketTtlSeconds: 60,
       webRoot: null,
@@ -425,6 +447,7 @@ describe("serving a repository", () => {
       repositoryPath: repo.root,
       gitPath: fixtureGitPath(),
       port: 0,
+      portExplicit: true,
       openBrowser: false,
       ticketTtlSeconds: 60,
       webRoot: null,
@@ -506,6 +529,7 @@ describe("serving a repository", () => {
       repositoryPath: repo.root,
       gitPath: fixtureGitPath(),
       port: 0,
+      portExplicit: true,
       openBrowser: false,
       ticketTtlSeconds: 60,
       webRoot: null,
@@ -537,13 +561,50 @@ describe("serving a repository", () => {
     }
   });
 
-  it("refuses a port that is already in use rather than moving to another one", async () => {
-    // Prevents: a bookmark, a PWA manifest and a pairing URL silently pointing at a
-    // port where this service is not listening.
+  it("takes another free port when the default one is already held", async () => {
+    // The default port is a courtesy, not a promise: another refyard, a dev server or
+    // anything else may hold 9595, and refusing to start because of it would make the
+    // default unusable exactly when a user has two things open. What must not happen is
+    // a silent move: the note says which port is in use and which one this run took.
+    const holder = await holdDefaultPort();
+    try {
+      const notes: string[] = [];
+      const service = await runService({
+        repositoryPath: repo.root,
+        gitPath: fixtureGitPath(),
+        port: DEFAULT_PORT,
+        portExplicit: false,
+        openBrowser: false,
+        ticketTtlSeconds: 60,
+        webRoot: null,
+        allowRoot: false,
+        installSignalHandlers: false,
+        write: (line) => notes.push(line),
+      });
+      try {
+        expect(service.http.port).not.toBe(DEFAULT_PORT);
+        expect(service.http.port).toBeGreaterThan(0);
+        // The pairing URL carries the port that is actually listening, so a browser
+        // following it reaches this service.
+        expect(service.pairingUrl).toContain(`:${service.http.port}`);
+        expect(notes.join("\n")).toContain(`port ${DEFAULT_PORT} is in use`);
+      } finally {
+        await service.close();
+      }
+    } finally {
+      holder.close();
+    }
+  });
+
+  it("refuses an explicitly requested port that is already in use", async () => {
+    // An explicit --port is a request for *that* port: a bookmark, a tunnel, a script.
+    // Moving quietly would break the thing the caller named, so this one refuses and
+    // says which port is busy.
     const first = await runService({
       repositoryPath: repo.root,
       gitPath: fixtureGitPath(),
       port: 0,
+      portExplicit: true,
       openBrowser: false,
       ticketTtlSeconds: 60,
       webRoot: null,
@@ -557,6 +618,7 @@ describe("serving a repository", () => {
           repositoryPath: repo.root,
           gitPath: fixtureGitPath(),
           port: first.http.port,
+          portExplicit: true,
           openBrowser: false,
           ticketTtlSeconds: 60,
           webRoot: null,
@@ -578,6 +640,7 @@ describe("serving a repository", () => {
           repositoryPath: plain,
           gitPath: fixtureGitPath(),
           port: 0,
+          portExplicit: true,
           openBrowser: false,
           ticketTtlSeconds: 60,
           webRoot: null,
@@ -596,6 +659,7 @@ describe("serving a repository", () => {
       repositoryPath: repo.root,
       gitPath: fixtureGitPath(),
       port: 0,
+      portExplicit: true,
       openBrowser: false,
       ticketTtlSeconds: 60,
       webRoot: null,
@@ -619,6 +683,7 @@ describe("serving a repository", () => {
       repositoryPath: repo.root,
       gitPath: fixtureGitPath(),
       port: 0,
+      portExplicit: true,
       openBrowser: false,
       ticketTtlSeconds: 60,
       webRoot: null,

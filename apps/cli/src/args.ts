@@ -30,6 +30,7 @@
  *   convenience for a URL that will be read later (a chat message, a bookmarked note),
  *   never a smaller default.
  */
+import { DEFAULT_SERVICE_PORT } from "@refyard/host-node";
 import { parseArgs as parseTokens } from "citty";
 import { resolve } from "node:path";
 
@@ -66,7 +67,15 @@ export type ParseResult =
   | { readonly ok: true; readonly command: CliCommand }
   | { readonly ok: false; readonly message: string };
 
-export const DEFAULT_PORT = 47831;
+/**
+ * The loopback port this CLI asks for when `--port` is absent.
+ *
+ * Re-exported from the host, which is the layer that binds: one number, one place. If
+ * something else holds it, the service takes another free port and says so (see
+ * `runService`) — a default that refused to start would be unusable whenever a second
+ * refyard, a dev server or a tunnel held it.
+ */
+export const DEFAULT_PORT = DEFAULT_SERVICE_PORT;
 /** Matches the auth store's default; both exist so the CLI can print what it chose. */
 export const DEFAULT_TICKET_TTL_SECONDS = 60;
 
@@ -105,7 +114,8 @@ usage:
 
 options:
   --repo <path>     repository to serve (required by \`serve\`, optional otherwise)
-  --port <n>        loopback port; default ${DEFAULT_PORT}, 0 asks for a free one
+  --port <n>        loopback port; default ${DEFAULT_PORT} (another free port is
+                    taken if it is busy); 0 asks the OS for one
   --ticket-ttl <s>  pairing ticket lifetime in seconds; default 60, max 86400
   --no-open         do not open a browser
   --json            machine-readable output; for \`open\`/\`serve\` it prints one JSON

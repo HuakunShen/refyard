@@ -3,7 +3,7 @@
  *
  * Two things can change under a static UI, and both are silent the other way:
  *
- * - **The service instance.** The address is a preference (`localhost:47831`), so a
+ * - **The service instance.** The address is a preference (`localhost:9595`), so a
  *   workbench bookmark can end up pointing at a *different* refyard — another
  *   machine's tunnel, or a second service started after the first stopped. A token
  *   minted by one instance means nothing to another, and retrying with it produces a

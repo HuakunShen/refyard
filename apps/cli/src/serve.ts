@@ -51,9 +51,11 @@ import {
   createWorktreeRegistry,
   DEFAULT_RETENTION,
   runDoctor,
+  PortInUseError,
   startHttpHost,
   type EventRing,
   type HttpHost,
+  type HttpHostOptions,
   type JournalStore,
   type MutationCoordinator,
   type ReadService,
@@ -69,6 +71,7 @@ import {
   type UnavailableReason,
 } from "@refyard/git-contract";
 import { DEFAULT_PORT, DEFAULT_TICKET_TTL_SECONDS } from "./args.js";
+
 import { isPairingCommand } from "./pairing-reprint.js";
 import { reportedVersion } from "./version.js";
 import { openInBrowser } from "./browser.js";
@@ -318,6 +321,15 @@ export async function assembleService(
 
 export interface RunServiceOptions extends AssembleOptions {
   readonly port: number;
+  /**
+   * Whether `port` was asked for by name.
+   *
+   * An explicit port is a request for *that* port — a bookmark, a tunnel, a script that
+   * expects it — so a busy one is refused. The default port is a courtesy, and a busy one
+   * means "take another free port and say which". Required rather than defaulted: a call
+   * site that has not thought about which case it is in should not silently get one.
+   */
+  readonly portExplicit: boolean;
   readonly openBrowser: boolean;
   /** Pairing-ticket lifetime in seconds; 60 unless --ticket-ttl says otherwise. */
   readonly ticketTtlSeconds: number;
@@ -360,19 +372,21 @@ export async function runService(
   }
 
   const assembly = await assembleService(options);
-  const http = await startHttpHost({
+  const note = options.writeError ?? options.write;
+  // Annotated so a mistyped field is a compile error: an unannotated object spread into
+  // the call would silently drop whatever the host does not recognise.
+  const hostOptions: Omit<HttpHostOptions, "port"> = {
     read: assembly.read,
     mutations: assembly.mutations,
     events: assembly.events,
     serviceInstanceId: assembly.serviceInstanceId,
-    port: options.port,
     ticketTtlSeconds: options.ticketTtlSeconds,
     webRoot: options.webRoot,
     inlineDocument: MINIMAL_PAGE,
     ...(options.shutdownGraceMs === undefined
       ? {}
       : { shutdownGraceMs: options.shutdownGraceMs }),
-    repositoryRootOf: (repositoryId) =>
+    repositoryRootOf: (repositoryId: string) =>
       assembly.repositories.get(repositoryId)?.allowedRootId ?? null,
     grants: {
       allowedRootIds: [assembly.allowedRootId],
@@ -388,13 +402,28 @@ export async function runService(
         options.write(`  ${line}`);
       }
     },
-  });
+  };
+
+  let http: HttpHost;
+  try {
+    http = await startHttpHost({ ...hostOptions, port: options.port });
+  } catch (error) {
+    if (error instanceof PortInUseError && !options.portExplicit) {
+      // The default port is a courtesy, not a promise: a second refyard, a dev server or a
+      // tunnel may hold it. Taking a free port instead keeps the default usable, and the
+      // note names both ports so nothing moves silently. An explicitly requested port is
+      // not retried — see `RunServiceOptions.portExplicit`.
+      http = await startHttpHost({ ...hostOptions, port: 0 });
+      note(
+        `note: port ${error.port} is in use; listening on port ${http.port} instead (pass --port to pin one)`,
+      );
+    } else {
+      throw error;
+    }
+  }
 
   const origin = `http://127.0.0.1:${http.port}`;
   const pairingUrl = http.pairingUrl(origin);
-  // Without a separate error channel (a host that only passes `write`), notes fall
-  // back to it rather than being dropped silently.
-  const note = options.writeError ?? options.write;
 
   /**
    * Two output modes, and the difference is who is reading.

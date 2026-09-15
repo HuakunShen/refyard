@@ -3,7 +3,7 @@
  *
  * A local HTTP service is reachable by every page in every browser on the machine,
  * so "it is only bound to loopback" is not an access-control decision — a page on
- * `https://evil.example` can send a request to `127.0.0.1:47831` and read the
+ * `https://evil.example` can send a request to `127.0.0.1:9595` and read the
  * response if the service allows it. Three checks decide whether to answer:
  *
  * - **Host** must be one of this instance's own authorities. Otherwise a request
@@ -27,9 +27,9 @@
 import type { Problem } from "@refyard/git-contract";
 
 export interface OriginPolicyOptions {
-  /** The loopback authorities this instance answers to, e.g. `127.0.0.1:47831`. */
+  /** The loopback authorities this instance answers to, e.g. `127.0.0.1:9595`. */
   readonly authorities: readonly string[];
-  /** Origins that may call this service, e.g. `http://127.0.0.1:47831`. */
+  /** Origins that may call this service, e.g. `http://127.0.0.1:9595`. */
   readonly allowedOrigins: readonly string[];
 }
 
