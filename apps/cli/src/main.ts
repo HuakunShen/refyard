@@ -77,19 +77,32 @@ async function runServeCommand(
   io: MainIO,
 ): Promise<MainResult> {
   const webRoot = await findWebRoot(io.cliDirectory);
-  const running = await runService({
-    repositoryPath: command.path,
-    gitPath: io.gitPath,
-    port: command.port,
-    portExplicit: command.portExplicit,
-    openBrowser: command.openBrowser,
-    ticketTtlSeconds: command.ticketTtlSeconds,
-    webRoot,
-    allowRoot: command.allowRoot,
-    json: command.json,
-    write: io.write,
-    writeError: io.writeError,
-  });
+  let running: RunningService;
+  try {
+    running = await runService({
+      repositoryPath: command.path,
+      gitPath: io.gitPath,
+      port: command.port,
+      portExplicit: command.portExplicit,
+      openBrowser: command.openBrowser,
+      ticketTtlSeconds: command.ticketTtlSeconds,
+      webRoot,
+      allowRoot: command.allowRoot,
+      json: command.json,
+      write: io.write,
+      writeError: io.writeError,
+    });
+  } catch (error) {
+    // One line, no stack, and a non-zero exit: every failure this command raises is a
+    // sentence a person can act on — the port you asked for is busy, this is not a
+    // repository, refyard will not run as root. An uncaught `PortInUseError:` with a
+    // stack under it buries the sentence, which is how the busy-port message read
+    // before this.
+    io.writeError(
+      `refyard: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return { exitCode: EXIT_FAILED };
+  }
   return { exitCode: EXIT_OK, running };
 }
 

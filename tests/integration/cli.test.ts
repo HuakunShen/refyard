@@ -12,7 +12,12 @@ import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { EXIT_OK, EXIT_USAGE, main } from "../../apps/cli/src/main.js";
+import {
+  EXIT_FAILED,
+  EXIT_OK,
+  EXIT_USAGE,
+  main,
+} from "../../apps/cli/src/main.js";
 import { parseArgs, DEFAULT_PORT } from "../../apps/cli/src/args.js";
 import {
   browserCommandFor,
@@ -558,6 +563,38 @@ describe("serving a repository", () => {
           process.removeListener("SIGTERM", listener);
         }
       }
+    }
+  });
+
+  it("reports a busy explicit port as one line and a failed exit", async () => {
+    // A person reading a terminal gets the sentence, not a stack: `PortInUseError:` with a
+    // trace under it buries the only thing that matters — which port, and what to do.
+    const holder = await holdDefaultPort();
+    try {
+      const io = collect();
+      const result = await main(
+        [
+          "serve",
+          "--no-open",
+          "--port",
+          String(DEFAULT_PORT),
+          "--repo",
+          repo.root,
+        ],
+        {
+          ...io,
+          cwd: repo.root,
+          cliDirectory: repo.root,
+          gitPath: fixtureGitPath(),
+        },
+      );
+      expect(result.exitCode).toBe(EXIT_FAILED);
+      const errors = io.errors.join("\n");
+      expect(errors).toContain(`port ${DEFAULT_PORT} is already in use`);
+      expect(errors).not.toContain("PortInUseError");
+      expect(errors).not.toContain("    at ");
+    } finally {
+      holder.close();
     }
   });
 
