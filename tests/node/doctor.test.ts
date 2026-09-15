@@ -19,6 +19,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   runDoctor,
   versionAtLeast,
+  type DoctorOptions,
 } from "@refyard/host-node/process/doctor";
 import { createGitHost } from "@refyard/host-node/process/git-host";
 import { createHandleRegistry } from "@refyard/host-node/filesystem/handles";
@@ -89,6 +90,41 @@ describe("runDoctor", () => {
     expect(report.gitVersion).toBeNull();
     expect(report.features.porcelainV2Status).toBe(false);
     expect(report.reasons.join(" ")).toContain("could not be executed");
+  });
+
+  it("gives each probe an identity instead of resolving the machine's own", async () => {
+    // Prevents: a machine whose Git has no configured user.* making the doctor
+    // wait on the system account lookup before each network probe — measured at
+    // ~5s per probe on the machine this was found on, which blocks service
+    // startup — and reporting a probe as unsupported when that lookup outlives
+    // the probe's deadline.
+    const fake = alwaysSucceed();
+    // The runner's outcome carries a cleanup report the doctor never reads; the
+    // scripted fake stops at the result, so the report is added back here.
+    const runCommand: NonNullable<DoctorOptions["runCommand"]> = async (
+      spec,
+      context,
+      options,
+    ) => ({
+      ...(await fake.run(spec, context, options)),
+      cleanup: { kind: "not-needed" },
+    });
+    await runDoctor({ gitPath, runCommand });
+    for (const subcommand of ["push", "fetch"]) {
+      const call = fake.calls.find((entry) =>
+        entry.spec.argv.includes(subcommand),
+      );
+      // The probe reuses the fixture commit's identity, passed per invocation:
+      // writing it to a config file would change the machine's Git configuration,
+      // which the doctor must never do.
+      expect(call).toBeDefined();
+      const argv = call?.spec.argv ?? [];
+      expect(argv).toContain("user.name=Refyard Doctor");
+      expect(argv).toContain("user.email=doctor@refyard.invalid");
+      expect(argv.indexOf("user.name=Refyard Doctor")).toBeLessThan(
+        argv.indexOf(subcommand),
+      );
+    }
   });
 
   it("leaves no scratch repository behind", async () => {

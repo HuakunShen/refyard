@@ -1,0 +1,92 @@
+# The release gate, run on a machine nobody was sitting at.
+#
+# This workflow is written but has not run in this repository yet: no run of it is
+# part of the evidence in docs/evidence/. Until it has run at least once, Linux and
+# the CI environment stay "unverified" in docs/evidence/release-matrix.md — the file
+# says so, and a green badge here would not change that.
+#
+# What it does is exactly the command contract from AGENTS.md §5, in the same order a
+# person would run it, on Linux and on macOS. Nothing here is a substitute for a
+# measurement on real hardware; it exists so that a change that breaks a gate is
+# visible without a human remembering to run it.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          # Pinned to the version in package.json "packageManager".
+          version: 11.25.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Static gates
+        run: |
+          pnpm check
+          pnpm check:boundaries
+          pnpm check:contract
+
+      - name: Unit and integration suites
+        run: |
+          pnpm test:unit
+          pnpm test:integration
+
+      - name: Portability smoke
+        run: pnpm test:portable
+
+      - name: Packaging and release-evidence checks
+        run: pnpm test:pack
+
+      - name: Build
+        run: pnpm build:release
+
+      - name: Install the browser the e2e suite drives
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: End-to-end
+        run: pnpm test:e2e
+
+      - name: Packaged install smoke
+        run: pnpm pack:smoke
+
+      - name: Benchmark smoke
+        run: |
+          # A small fixture: this step proves the script runs on a clean machine. The
+          # committed report is the one measured on the release machine, so it is put
+          # back afterwards rather than replaced with CI numbers.
+          pnpm bench:runtime --commits 2000 --reads 10 --runs 1
+          git checkout -- docs/evidence/performance.json
+
+      - name: Upload failure traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces-${{ matrix.os }}
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 7

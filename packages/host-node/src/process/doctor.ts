@@ -23,6 +23,22 @@ import { defaultLimits } from "./runner.js";
 /** Functional baseline the design commits to; below this, features are gated. */
 export const MINIMUM_GIT_VERSION = "2.43.0";
 
+/**
+ * The identity every probe runs under, as `-c` arguments rather than a written
+ * config file: the doctor must not change the machine's Git configuration, and it
+ * must not *depend* on it either.
+ *
+ * A machine with no `user.*` configured makes Git resolve an identity from the
+ * system account database instead, which was measured at ~5s per probe on the
+ * machine this was found on — startup delay for a value no probe here tests.
+ */
+const PROBE_IDENTITY_ARGS: readonly string[] = [
+  "-c",
+  "user.name=Refyard Doctor",
+  "-c",
+  "user.email=doctor@refyard.invalid",
+];
+
 export interface DoctorProbe {
   readonly name: string;
   readonly supported: boolean;
@@ -156,10 +172,9 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
     await setup(["add", "--", "probe.txt"], repo);
     await setup(
       [
-        "-c",
-        "user.name=Refyard Doctor",
-        "-c",
-        "user.email=doctor@refyard.invalid",
+        ...PROBE_IDENTITY_ARGS,
+        // Signing is disabled for this throwaway commit so the probe does not need
+        // the user's key, and does not fail because their key needs a passphrase.
         "-c",
         "commit.gpgSign=false",
         "commit",
@@ -278,6 +293,7 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
     const pushOutcome = await git(
       {
         argv: [
+          ...PROBE_IDENTITY_ARGS,
           "push",
           "--porcelain",
           "origin",
@@ -304,7 +320,7 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorReport> {
 
     const fetchOutcome = await git(
       {
-        argv: ["fetch", "--porcelain", "origin"],
+        argv: [...PROBE_IDENTITY_ARGS, "fetch", "--porcelain", "origin"],
         cwdHandle: "scratch",
         deadlineClass: "network",
         description: "fetch --porcelain",

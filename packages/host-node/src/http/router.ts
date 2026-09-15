@@ -18,6 +18,7 @@
  */
 import { z } from "zod";
 import {
+  MUTATION_KINDS,
   MutationRequestSchema,
   cancelOperationRequestSchema,
   capabilitiesQuerySchema,
@@ -28,6 +29,7 @@ import {
   previewsRequestSchema,
   repositoriesQuerySchema,
   repositoryQuerySchema,
+  targetKindsOf,
   validateOperationSemantics,
   worktreeQuerySchema,
   type Problem,
@@ -181,6 +183,99 @@ export function readRoutes(): readonly RouteDefinition[] {
 }
 
 /**
+ * What to say when a body does not match its schema.
+ *
+ * Zod reports a union failure as one issue at the root — "(root) Invalid input" — which
+ * tells a caller nothing, and the most common union failure here is a *specific,
+ * fixable* mistake: an operation sent with a target kind it does not accept. That case
+ * is answered from the contract's own pairing table, and everything else falls back to
+ * the most specific issue inside the union branches rather than the union itself.
+ */
+function describeBodyProblem(
+  body: unknown,
+  error: z.ZodError,
+  path: string,
+): string {
+  const pairing = pairingProblem(body);
+  if (pairing !== null) {
+    return pairing;
+  }
+  const issue = mostSpecificIssue(error.issues);
+  return `the body for ${path} is not valid: ${issue}`;
+}
+
+/** `addRemote` cannot be sent with a worktree target, said in those words. */
+function pairingProblem(body: unknown): string | null {
+  if (typeof body !== "object" || body === null) {
+    return null;
+  }
+  const target = Reflect.get(body, "target");
+  const operation = Reflect.get(body, "operation");
+  if (
+    typeof target !== "object" ||
+    target === null ||
+    typeof operation !== "object" ||
+    operation === null
+  ) {
+    return null;
+  }
+  const targetKind = Reflect.get(target, "kind");
+  const operationKind = Reflect.get(operation, "kind");
+  if (typeof targetKind !== "string" || typeof operationKind !== "string") {
+    return null;
+  }
+  const kind = MUTATION_KINDS.find((candidate) => candidate === operationKind);
+  if (kind === undefined) {
+    return null;
+  }
+  const accepted = targetKindsOf(kind);
+  if (accepted.some((candidate) => candidate === targetKind)) {
+    return null;
+  }
+  return `${operationKind} cannot target a ${targetKind}; it accepts ${accepted.join(", ")}`;
+}
+
+/** The first issue with a real path, preferring one that is not a discriminant. */
+function mostSpecificIssue(
+  issues: readonly z.core.$ZodIssue[],
+): string {
+  const flattened: z.core.$ZodIssue[] = [];
+  for (const issue of issues) {
+    const nested = Reflect.get(issue, "errors");
+    if (issue.code === "invalid_union" && Array.isArray(nested)) {
+      for (const branch of nested) {
+        if (Array.isArray(branch)) {
+          for (const inner of branch) {
+            if (isZodIssue(inner)) {
+              flattened.push(inner);
+            }
+          }
+        }
+      }
+      continue;
+    }
+    flattened.push(issue);
+  }
+  const withPath = flattened.filter(
+    (issue) => issue.path.length > 0 && issue.code !== "invalid_value",
+  );
+  const chosen = withPath[0] ?? flattened[0];
+  if (chosen === undefined) {
+    return "no detail";
+  }
+  return `${chosen.path.join(".") || "(root)"} ${chosen.message}`;
+}
+
+function isZodIssue(value: unknown): value is z.core.$ZodIssue {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof Reflect.get(value, "code") === "string" &&
+    Array.isArray(Reflect.get(value, "path"))
+  );
+}
+
+/**
  * Declare an action route: one that takes a JSON body.
  *
  * The body schema is applied here for the same reason a read route applies its
@@ -198,14 +293,9 @@ function actionRoute<Schema extends z.ZodType<unknown>>(
     async handle({ body, services }) {
       const parsed = schema.safeParse(body);
       if (!parsed.success) {
-        const first = parsed.error.issues[0];
         throw new ReadProblem({
           code: "InvalidRequest",
-          message: `the body for ${path} is not valid: ${
-            first === undefined
-              ? "no detail"
-              : `${first.path.join(".") || "(root)"} ${first.message}`
-          }`,
+          message: describeBodyProblem(body, parsed.error, path),
           details: { issues: parsed.error.issues.length },
         });
       }
