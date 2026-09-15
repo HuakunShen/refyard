@@ -1,8 +1,23 @@
 # Goal — Evidence closure: turn every "unverified" row into a measurement or a reason
 
-> Status: **active goal, revision 0** — written 2026-09-15.
+> Status: **met, revision 1** — written 2026-09-15, closed the same day.
 > Implements: nothing in the delivered design package by number (T01–T15 are done; T16–T18 stay
-> closed until the standalone V1 ships). Carried by `docs/plans/0004-refyard-v2-evidence-closure.md`.
+> closed until the standalone V1 ships). Carried by `docs/plans/0004-refyard-v2-evidence-closure.md`,
+> which records the command and exit status behind every row below.
+
+## Result
+
+| Acceptance line                                      | Measurement                                                                                                                                                                                                                                                                                                                        |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| three engines                                        | `pnpm test:e2e`: **90 passed, 0 failed** (30 specs × Chromium 153, Firefox 155, WebKit 26.6) on the revision that closed E1; a later run of the whole round recorded one unexplained Firefox failure, which `docs/browser-support.md` keeps as an open question rather than a browser defect                                       |
+| a Linux run recorded                                 | `bun scripts/container-gates.ts --image node:26-trixie`: **10 of 10 gates pass**, Linux arm64, Node 26.8.2, Git 2.47.3, non-root; `test:e2e` is explicitly not in it                                                                                                                                                               |
+| four shapes off "partial"                            | SHA-256 (read **and** write), shallow (boundary + `missingParents` + refusal), bare (reads, and every write refused by name), tab/space/non-ASCII bytes — all verified; bare carries the named limitation that ref-only writes are refused too                                                                                     |
+| Git-version rows carry real numbers                  | Git 2.47.3 (Linux, ten gates) and Git 2.39.5 (`node:26-bookworm`: doctor probes, 66 read/write cases)                                                                                                                                                                                                                              |
+| nothing in the round changes what the product claims | `GET /api/v1/capabilities` on this machine after all five tasks: **35 operations**, `fetch`/`pull`/`push` present, every probe supported. The one deliberate change is E4's: a Git _below_ the baseline loses `fetch`/`pull`, with `git-too-old` as the reason — a machine fact, not a build fact, and asserted in both directions |
+
+What the round could not close is named in the plan ("What each task left open"): Safari itself,
+Linux x64, the e2e suite on Linux, Git below 2.39, ref-only writes to a bare repository, and the
+original log lines of the 403.
 
 ## Why this round exists
 

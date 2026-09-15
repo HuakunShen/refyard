@@ -10,24 +10,24 @@ whenever a mechanism gets in the way, never a way around the mechanism.
 `pnpm test:e2e`, 2026-09-15, one worker, Playwright 1.63.0 pinned by `pnpm-lock.yaml`:
 **90 passed, 0 failed (11.9 m)** — the same 30 specs per engine.
 
-| Browser  | Engine version | Result                                                                                                             |
-| -------- | -------------- | ------------------------------------------------------------------------------------------------------------------ |
-| Chromium | 153.0.8010.12  | **Verified.** All 30 end-to-end specs, including the offline reload and the instance-change refusal.                |
-| Firefox  | 155.0          | **Verified.** All 30.                                                                                              |
-| WebKit   | 26.6           | **Verified.** All 30, after the two engine differences below were found and the case was made engine-independent.   |
-| Safari, Chrome, Edge (installed) | — | **Unverified.** These are the engines above wearing a different version number and a different shell; nobody has run those builds. |
-| Mobile browsers | —               | **Unverified**, and the layout is a desktop workbench, not a phone app.                                            |
+| Browser                          | Engine version | Result                                                                                                                             |
+| -------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Chromium                         | 153.0.8010.12  | **Verified.** All 30 end-to-end specs, including the offline reload and the instance-change refusal.                               |
+| Firefox                          | 155.0          | **Verified.** All 30.                                                                                                              |
+| WebKit                           | 26.6           | **Verified.** All 30, after the two engine differences below were found and the case was made engine-independent.                  |
+| Safari, Chrome, Edge (installed) | —              | **Unverified.** These are the engines above wearing a different version number and a different shell; nobody has run those builds. |
+| Mobile browsers                  | —              | **Unverified**, and the layout is a desktop workbench, not a phone app.                                                            |
 
 ### What running three engines found
 
-Two of the three are WebKit-specific, and both were in the *test* rather than in the app —
+Two of the three are WebKit-specific, and both were in the _test_ rather than in the app —
 which is the kind of thing that engine was added to find out:
 
 - **`context.setOffline(true)` blocks navigations in WebKit.** `page.reload()` and
   `page.goto()` fail with `WebKit encountered an internal error`, and a page-initiated
   `location.reload()` is dropped outright: a marker set on `window` before the reload is
   still there afterwards and `performance.timeOrigin` has not moved. The earlier version of
-  the offline-reload spec therefore asserted against the *old* document — the shell looked
+  the offline-reload spec therefore asserted against the _old_ document — the shell looked
   cached, the data looked stale, and nothing proved either. The case now stops the service
   process instead of emulating an outage at the browser, which is a plain reload every
   engine runs and is also the closer reproduction of "`refyard serve` exited, the tab is
@@ -41,6 +41,23 @@ the service gone, the repository-creation panel said **"not implemented in this 
 claim about the build, made by a page that had received no capabilities at all. It now says
 "the service has not reported its operations", and the e2e case asserts that wording, so the
 two answers cannot collapse back into one.
+
+### One failure that is not explained yet
+
+A later run of the same 90 cases — after the container and asset-root work — came back **89
+passed, 1 failed**: Firefox, `workspace.spec.ts:86` ("clones a local bare remote and shows what
+Git said when it refuses"), `Test timeout of 60000ms exceeded` while waiting for
+`repository-remote-url`. The page snapshot at the timeout shows the panel with its capabilities
+already loaded ("35 write operations") and **every read failing with `NetworkError when
+attempting to fetch resource`** — the service had become unreachable mid-spec. Re-running that
+spec alone in Firefox passes in 7.2 s.
+
+What is not known: why the service went away, and whether it exited, crashed, or was killed. The
+harness did not keep its stderr after readiness, so a mid-run crash was invisible; it now prints
+the service's stderr when it exits before the spec stopped it, which is what the next occurrence
+needs to explain itself. Until then the row stays verified — 89 of 90 in that run, 90 of 90
+before it, and the case passes on re-run — with this noted as an open question rather than
+counted as a browser defect.
 
 ## What the app needs
 
@@ -83,7 +100,7 @@ same-origin, not to weaken a check:
   can only have come from the worker. The reloaded page reports "no live updates" (the
   event stream's state), the repository list reports the failed read, no write control is
   offered, and nothing is queued — verified in all three engines.
-- A page the *browser* knows is offline additionally appends "(offline)" to that badge,
+- A page the _browser_ knows is offline additionally appends "(offline)" to that badge,
   because `navigator.onLine` is a fact only the browser has.
 - There is no background sync, no push, and no periodic work. A closed tab stops doing
   anything at all.

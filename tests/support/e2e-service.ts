@@ -75,6 +75,21 @@ export async function startE2eService(
     stderr += chunk.toString("utf8");
   });
 
+  let stopping = false;
+  child.on("exit", (code, signal) => {
+    if (stopping) {
+      return;
+    }
+    // A service that exits before the spec stopped it is a failure nobody asked for, and its
+    // stderr is the only place the reason is written. Printing it here is what turns the next
+    // occurrence from "NetworkError when attempting to fetch resource" in the browser into an
+    // explanation in the test output — one Firefox case failed exactly that way once, and the
+    // service's own words were lost because this listener did not exist.
+    console.error(
+      `e2e service exited early (code ${code ?? "null"}, signal ${signal ?? "none"}):\n${stderr.slice(-2000)}`,
+    );
+  });
+
   const deadline = Date.now() + 30_000;
   for (;;) {
     const line = stdout
@@ -93,6 +108,7 @@ export async function startE2eService(
         port: ready.port,
         instanceId: ready.serviceInstanceId,
         async stop(): Promise<void> {
+          stopping = true;
           if (child.exitCode !== null || child.signalCode !== null) {
             return;
           }

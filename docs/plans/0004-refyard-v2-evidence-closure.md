@@ -1,10 +1,32 @@
 # Plan 0004 — Evidence closure: the rows that say "unverified"
 
-> Status: **active plan, revision 0** — written 2026-09-15.
+> Status: **completed, revision 1** — written 2026-09-15, closed the same day.
 > Implements: `docs/goals/2026-09-15-evidence-closure.md`.
 > Carries no reference task number, for the same reason plan 0003 does not: T01–T15 are delivered
 > and T16–T18 stay closed until the standalone V1 ships. The tasks below close gaps the T15 gate
 > recorded rather than added features.
+
+## Outcome, per task
+
+Each row names the command that was run, its result, and where the evidence lives.
+
+| Task | Command actually run                                                                              | Result                                                                                                                                                 | Evidence                                                                                                               |
+| ---- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| E1   | `pnpm test:e2e` (Playwright 1.63.0, one worker)                                                   | **90 passed, 0 failed, 11.9 m** — 30 specs × Chromium 153, Firefox 155, WebKit 26.6                                                                    | matrix browser table; `docs/browser-support.md` (engine versions, the two WebKit-only limits, both fixed in the specs) |
+| E2   | `bun scripts/container-gates.ts --image node:26-trixie`                                           | **10 of 10 gates, exit 0** — Linux arm64, Node 26.8.2, Git 2.47.3, non-root user                                                                       | matrix "Linux, in a container", with the three findings                                                                |
+| E3   | `pnpm test:integration`                                                                           | **345 passed** (22 files), including the four shape rows; SHA-256 read **and** write, shallow boundary, bare subject, tab/space/non-ASCII bytes        | matrix Git-and-repository-shapes rows                                                                                  |
+| E4   | `--image node:26-bookworm` + `refyard doctor --json` + `vitest run reads.test.ts staging.test.ts` | Git **2.39.5**: doctor reports `featureVersionSupported: false` and `fetch-porcelain` unsupported; **66 read/write cases pass** there                  | matrix Git-version rows                                                                                                |
+| E5   | `pnpm exec vitest run tests/integration/http.test.ts`                                             | 20 passed, including the retargeted-symlink recovery; the single unexplained 403 is recorded with what is known and what is not. **20 passed, exit 0** | matrix "An asset root that changes under a running service"                                                            |
+
+Two of the five tasks changed product code rather than only tests, and both are recorded here
+because the goal says the round must not change what the product claims:
+
+1. **E4** — an operation whose porcelain this machine's Git lacks is no longer advertised
+   (`unavailableForGitFeatures`, `kindsBlockedByGitFeatures`). On the baseline Git nothing changes:
+   the operation list is identical, and only a Git below it loses `fetch`/`pull`, with the reason
+   named. `tests/integration/http.test.ts` asserts both halves.
+2. **E5** — the asset root is re-resolved once when a request would miss because of it, which is a
+   fix to a failure mode found (not created) by this round.
 
 Each task ends the same way: the command actually run, its exit status, the evidence file updated
 in the same commit, and anything that could not be closed left named as unverified.
@@ -85,6 +107,22 @@ with a case that retargets a symlinked web root under a running service and asse
 record the single unexplained 403 in the evidence as an open question with its log lines.
 
 **Acceptance:** the case passes, and the record says what is known and what is not.
+
+## What each task left open
+
+- **E1**: WebKit's Playwright build is not Apple's Safari; that row stays unverified. Mobile
+  viewports and assistive technology were not exercised.
+- **E2**: `test:e2e` did not run in the container — the image carries no browser and installing
+  Chromium's dependencies on Linux is a decision this round did not make, so the e2e row is
+  unverified on Linux rather than assumed. Linux **x64** was not exercised either (the container
+  is arm64).
+- **E3**: ref-only writes (`fetch`, `push`, `tag`, `branch`, `remote`) are refused in a bare
+  repository along with the worktree ones; supporting them needs a per-operation "needs a working
+  tree" classification, which is future work and is named as such in the matrix.
+- **E4**: Git below 2.39 was not exercised, and only the read/write subset ran there, not the
+  whole suite.
+- **E5**: the original log lines of the 403 were in a terminal, not in the repository, so the
+  record says what is known and does not reconstruct the rest.
 
 ## Not in this plan
 

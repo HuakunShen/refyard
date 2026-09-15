@@ -333,4 +333,6 @@ if (failed.length > 0 || missing.length > 0) {
   );
   process.exit(1);
 }
-console.log(`\nall ${results.length} steps passed on ${options.image} (container)`);
+console.log(
+  `\nall ${results.length} steps passed on ${options.image} (container)`,
+);
