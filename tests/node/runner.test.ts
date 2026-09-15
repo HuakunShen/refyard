@@ -269,6 +269,43 @@ describe("runGit environment", () => {
     expect(new TextDecoder().decode(outcome.stdout)).toBe("0");
   });
 
+  it("keeps the ambient Git identity, so a commit is attributed as the caller expected", async () => {
+    // Prevents: two failures with one cause. A service started from a shell or a CI job
+    // that exported GIT_COMMITTER_* must commit as that identity, exactly as `git` would
+    // in the same shell. And when neither the config nor the environment carries an
+    // identity, Git resolves one from the system account database for every command that
+    // needs it — measured at 15.05s for one `git worktree add` on the machine this was
+    // found on, which the user feels as a workbench that hangs.
+    process.env["GIT_AUTHOR_NAME"] = "ci-runner";
+    process.env["GIT_AUTHOR_EMAIL"] = "ci@refyard.invalid";
+    process.env["GIT_COMMITTER_NAME"] = "ci-runner";
+    process.env["GIT_COMMITTER_EMAIL"] = "ci@refyard.invalid";
+    try {
+      const outcome = await runGit(
+        nodeScriptSpec(
+          "process.stdout.write(JSON.stringify({ author: process.env['GIT_AUTHOR_NAME'] ?? null, authorEmail: process.env['GIT_AUTHOR_EMAIL'] ?? null, committer: process.env['GIT_COMMITTER_NAME'] ?? null, committerEmail: process.env['GIT_COMMITTER_EMAIL'] ?? null }))",
+        ),
+        { runId: "t17" },
+        options(),
+      );
+      expect(JSON.parse(new TextDecoder().decode(outcome.stdout))).toEqual({
+        author: "ci-runner",
+        authorEmail: "ci@refyard.invalid",
+        committer: "ci-runner",
+        committerEmail: "ci@refyard.invalid",
+      });
+    } finally {
+      for (const name of [
+        "GIT_AUTHOR_NAME",
+        "GIT_AUTHOR_EMAIL",
+        "GIT_COMMITTER_NAME",
+        "GIT_COMMITTER_EMAIL",
+      ]) {
+        delete process.env[name];
+      }
+    }
+  });
+
   it("leaves an ambient variable out unless it is on the allow-list", async () => {
     // Prevents: credentials and tokens a developer happened to export being handed
     // to every Git process, where a hook could read and leak them.

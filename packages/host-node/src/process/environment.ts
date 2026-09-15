@@ -40,6 +40,19 @@ export const INHERITED_ENV_VARS: readonly string[] = [
   "XDG_CONFIG_HOME",
   "XDG_CACHE_HOME",
   "XDG_DATA_HOME",
+  // The commit identity, which belongs to whoever started this service. These set a
+  // name, an address and a date — they cannot redirect Git or make it run anything, so
+  // they are not on the blocked list — and dropping them would mean two visible
+  // failures: a CI job that exported GIT_COMMITTER_* getting commits attributed to
+  // somebody else, and Git resolving an identity from the system account database for
+  // every command that needs one. That fallback was measured at 15.05s for a single
+  // `git worktree add` on the machine this was found on.
+  "GIT_AUTHOR_NAME",
+  "GIT_AUTHOR_EMAIL",
+  "GIT_AUTHOR_DATE",
+  "GIT_COMMITTER_NAME",
+  "GIT_COMMITTER_EMAIL",
+  "GIT_COMMITTER_DATE",
   // Signing and SSH, so the user's existing setup keeps working.
   "SSH_AUTH_SOCK",
   "SSH_AGENT_PID",
