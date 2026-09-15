@@ -18,7 +18,7 @@
  *   listener it did not create.
  */
 import { createServer, type Server } from "node:net";
-import { writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
@@ -250,6 +250,100 @@ describe("argument injection", () => {
       await repo.git(["diff", "--cached", "--name-only"]),
     );
     expect(stagedAfter).not.toContain("smuggle.txt");
+  });
+
+  it("refuses a clone whose URL is a transport helper", async () => {
+    // `ext::sh -c …` is a URL that runs a command. Clone is the operation that would
+    // hand it straight to Git, and the refusal must happen at the boundary — before an
+    // operation is accepted — with the reason rather than a generic "invalid".
+    const response = await submitRaw(service, {
+      clientRequestId: "sec-clone-ext",
+      target: {
+        kind: "workspace",
+        allowedRootId: service.allowedRootId,
+        relativeDestination: "from-helper",
+      },
+      operation: {
+        kind: "cloneRepository",
+        remoteUrl: "ext::sh -c whoami",
+        relativeDestination: "from-helper",
+        initializeSubmodules: false,
+      },
+    });
+    expect(response.status).toBe(400);
+    expect(response.text).toContain("transport helper");
+  });
+
+  it("refuses a workspace destination that climbs out of the approved root", async () => {
+    // Both creating operations address a destination inside the root, and the rule
+    // belongs to the target rather than to one operation: the operations route once
+    // validated only the operation-specific half, so this request was accepted and
+    // refused later, after the journal already had a record for it.
+    for (const operation of [
+      { kind: "initRepository", initialBranch: null },
+      {
+        kind: "cloneRepository",
+        remoteUrl: "https://example.invalid/repo.git",
+        relativeDestination: "../../escape",
+        initializeSubmodules: false,
+      },
+    ]) {
+      const response = await submitRaw(service, {
+        clientRequestId: `sec-workspace-dotdot-${operation.kind}`,
+        target: {
+          kind: "workspace",
+          allowedRootId: service.allowedRootId,
+          relativeDestination: "../../escape",
+        },
+        operation,
+      });
+      expect(response.status, `${operation.kind} was accepted`).toBe(400);
+      expect(response.text).toContain("target.relativeDestination");
+    }
+  });
+
+  it("refuses a creation in a root this session was not granted", async () => {
+    // The registry and the session are different things: another window may have
+    // approved a directory this session was never handed. Creating a repository there
+    // would be exactly the reach the session's grants exist to bound.
+    const ungranted = join(repo.scratchRoot, "other-root");
+    await mkdir(ungranted, { recursive: true });
+    const grantedOnly = await startTestService({
+      repo,
+      ungrantedRootPaths: [ungranted],
+    });
+    try {
+      const token = await grantedOnly.pair();
+      const foreignRootId = grantedOnly.ungrantedRootIds[0];
+      expect(
+        foreignRootId,
+        "the ungranted root was not approved",
+      ).toBeDefined();
+      expect(foreignRootId).not.toBe(grantedOnly.allowedRootId);
+
+      const response = await grantedOnly.fetch("/api/v1/operations", {
+        method: "POST",
+        token,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          clientRequestId: "sec-root-not-granted",
+          target: {
+            kind: "workspace",
+            allowedRootId: foreignRootId ?? "",
+            relativeDestination: "should-not-exist",
+          },
+          operation: { kind: "initRepository", initialBranch: null },
+        }),
+      });
+      expect(response.status).toBe(403);
+      expect(await response.text()).toContain("was not granted");
+      // Nothing was created there.
+      await expect(
+        readFile(join(ungranted, "should-not-exist", ".git", "HEAD")),
+      ).rejects.toThrow();
+    } finally {
+      await grantedOnly.close();
+    }
   });
 
   it("refuses a pairing the contract does not allow, and says which", async () => {

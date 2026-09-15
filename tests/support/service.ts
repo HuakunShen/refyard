@@ -65,6 +65,13 @@ export interface TestService {
   readonly events: EventRing;
   /** The private state root this service's journal lives in. */
   readonly stateRoot: string;
+  /**
+   * Roots this host approved but did **not** grant the session.
+   *
+   * Named so a case can address one and assert the refusal: the registry knows it,
+   * the session does not.
+   */
+  readonly ungrantedRootIds: readonly string[];
   /** The pairing URL a browser would be sent to, ticket included in the fragment. */
   readonly pairingUrl: string;
   /** Exchange the ticket for a bearer token; returns the token. */
@@ -94,6 +101,14 @@ export interface StartTestServiceOptions {
   readonly limits?: { readonly maxBodyBytes?: number };
   /** Grant this session access to a repository id it will otherwise not own. */
   readonly extraRepositoryIds?: readonly string[];
+  /**
+   * Approve additional roots **without** granting them to the session.
+   *
+   * The registry and the session are two different things: a root can exist (another
+   * window approved it, the CLI was started with it) while this session was never
+   * handed it. That is the case a scope check exists for.
+   */
+  readonly ungrantedRootPaths?: readonly string[];
 }
 
 export async function startTestService(
@@ -233,6 +248,13 @@ export async function startTestService(
 
   const log: string[] = [];
   let sessionToken: string | null = null;
+  const ungranted = [];
+  for (const path of options.ungrantedRootPaths ?? []) {
+    ungranted.push(
+      (await roots.approve({ path, executionTrusted: true })).allowedRootId,
+    );
+  }
+
   const http = await startHttpHost({
     read,
     mutations,
@@ -269,6 +291,7 @@ export async function startTestService(
     instanceId: http.serviceInstanceId,
     repositoryId: record.repositoryId,
     allowedRootId: root.allowedRootId,
+    ungrantedRootIds: [...ungranted],
     mutations,
     journal,
     events,

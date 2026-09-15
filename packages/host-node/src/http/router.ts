@@ -30,7 +30,7 @@ import {
   repositoriesQuerySchema,
   repositoryQuerySchema,
   targetKindsOf,
-  validateOperationSemantics,
+  validateMutationRequest,
   worktreeQuerySchema,
   type Problem,
 } from "@refyard/git-contract";
@@ -317,15 +317,16 @@ export function mutationRoutes(): readonly RouteDefinition[] {
                 "this host has no mutation engine; no operation was accepted and none will run",
             });
           }
-          // Semantic validation at the boundary: the schema pins the shape, and these
-          // rules — a branch name that would read as an option, a remote URL that is a
-          // transport helper in disguise, a rename to its own name — are refused here,
-          // before an operation is accepted or Git is reached.
-          const problems = validateOperationSemantics(
-            body.operation,
-            body.target,
-          );
-          if (problems.length > 0) {
+          // The contract's own validator, not the narrower operation-only half: the
+          // target-level rules — "a destination inside an approved root is relative,
+          // contained and never a `.git` path" — apply to every workspace operation,
+          // and calling the narrower function here is how `initRepository` and
+          // `cloneRepository` briefly accepted a destination that climbed out of its
+          // approved root. One entry point means a rule added to the contract reaches
+          // the live surface without anyone remembering to wire it here.
+          const validated = validateMutationRequest(body);
+          if (!validated.ok) {
+            const problems = validated.problems;
             throw new ReadProblem({
               code: "InvalidRequest",
               message: `the operation is not valid: ${problems
