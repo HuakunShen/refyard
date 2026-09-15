@@ -76,6 +76,12 @@ on time, a widened TTL is honoured, and a ticket is consumed whether or not the 
 
 ## Invariants held in code, checked by tests or by construction
 
+- **The environment a Git process gets is built by the host, never from a request**: it is an
+  allow-list of the service's own variables, and `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`,
+  `GIT_OBJECT_DIRECTORY`, `GIT_CONFIG*`, `GIT_EXTERNAL_DIFF` and the trace switches are removed
+  afterwards — structurally, so not even a test can put one back. The commit identity
+  (`GIT_AUTHOR_*`, `GIT_COMMITTER_*`) is inherited, because it is the caller's and cannot make Git
+  run anything (`tests/node/runner.test.ts`).
 - No `--no-verify` anywhere; hooks run. The only exception is the doctor's throwaway probe commit in
   a private temporary repository (`packages/host-node/src/process/doctor.ts`), which is a fixture,
   not the user's repository.

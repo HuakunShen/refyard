@@ -618,6 +618,25 @@ packages/host-node/src/process/doctor.ts   probes carry an identity instead of r
   machine's identity lookup, and the probe measures porcelain output rather than the account
   database. The fix is `PROBE_IDENTITY_ARGS` in `doctor.ts`; the case that pins it is
   "gives each probe an identity instead of resolving the machine's own".
+- **The same identity fallback was costing the product, not just the probe.** While isolating the
+  e2e services (below) the worktree case started failing on its ten-second wait: `createWorktree`
+  succeeded, but 15 seconds late. `git worktree add` was the whole of it — 15.05s with no identity
+  available, 0.03s with one — and the service was dropping the identity its own environment carried,
+  because the host's child-environment allow-list did not include `GIT_AUTHOR_*`/`GIT_COMMITTER_*`.
+  Two failures, one cause: a CI job that exports `GIT_COMMITTER_*` got commits attributed to
+  somebody else, and anyone without a configured identity waited a quarter of a minute per
+  identity-needing command. The variables are now inherited; they set a name, an address and a date,
+  and cannot redirect Git or make it run anything, which is why they belong on the inherit list
+  rather than the blocked one.
+- **Every e2e spec was writing into the developer's real refyard state directory.** The specs
+  started the CLI with the inherited environment, so the journal — and the operation list the specs
+  read to prove nothing was written — was the developer's, shared across runs. `/api/v1/operations`
+  is bounded by a page limit; once the journal held more than that, "the count did not move" reported
+  the same number before and after a click and stopped being evidence. `tests/support/e2e-service.ts`
+  starts each spec's service on the fixture's environment with `REFYARD_STATE_DIR` inside the
+  fixture's own scratch directory, and a new case asserts the invariant: a freshly started service
+  reports no operations. The isolation is what exposed the identity bug above.
+
 - **`process.execPath` under bun is bun, not Node — again.** The first report named
   `node 26.3.0` while the service was actually being run by bun, whose `process.versions.node`
   reports the version it emulates. The bench now resolves `node` from `PATH`, refuses to run when
@@ -646,16 +665,18 @@ packages/host-node/src/process/doctor.ts   probes carry an identity instead of r
 
 ### Verification, actually run
 
-| Command                 | Result                                                                                                                                                                                           |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `pnpm check`            | 8 tasks, 0 errors                                                                                                                                                                                |
-| `pnpm check:boundaries` | 3 portable packages / 53 source files; 62 test/script files imported by name                                                                                                                     |
-| `pnpm check:contract`   | artifacts match the schemas, 438 named schemas                                                                                                                                                   |
-| `pnpm test`             | 536 passed (35 files)                                                                                                                                                                            |
-| `pnpm test:portable`    | neutral IIFE 60,542 bytes, 11 planner/parser checks                                                                                                                                              |
-| `pnpm test:e2e`         | 26 passed (Chromium)                                                                                                                                                                             |
-| `pnpm pack:smoke`       | 14 steps passed                                                                                                                                                                                  |
-| `pnpm bench:runtime`    | see `docs/evidence/performance.json` — 100,000-commit fixture, 3 lifecycles: cold start 0.457s, RSS 86→94 MiB, 183.5 status reads/s at concurrency 4, history first page 389ms, SIGTERM→exit 4ms |
+| Command                 | Result                                                                                                          |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `pnpm check`            | 8 tasks, 0 errors                                                                                               |
+| `pnpm check:boundaries` | 3 portable packages / 53 source files; 63 test/script files imported by name                                    |
+| `pnpm check:contract`   | artifacts match the schemas, 438 named schemas                                                                  |
+| `pnpm test`             | 537 passed (35 files)                                                                                           |
+| `pnpm test:integration` | 313 passed (20 files), including `tests/security`                                                               |
+| `pnpm test:pack`        | 13 passed (installed package + evidence shape)                                                                  |
+| `pnpm test:portable`    | neutral IIFE 60,542 bytes, 11 planner/parser checks                                                             |
+| `pnpm test:e2e`         | 27 passed (Chromium), each spec on its own isolated state directory                                             |
+| `pnpm pack:smoke`       | 14 steps passed                                                                                                 |
+| `pnpm bench:runtime`    | 100,000-commit fixture, 3 lifecycles; every value in `docs/evidence/performance.json`, with its scope and range |
 
 Unverified, and named as such rather than hidden: **every platform other than this macOS arm64
 machine** (Linux, Windows, WSL, macOS x64 — the CI workflow written for Linux and macOS has not run

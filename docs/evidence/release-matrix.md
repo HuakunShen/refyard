@@ -29,18 +29,18 @@ machine. It is one machine, and the report says so in its own fields.
 Each row is a root script from the project's command contract, run from a clean checkout of the
 revision this file belongs to.
 
-| Gate                    | What it covered                                                                                                                                           | Status   |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| `pnpm check`            | TypeScript across 8 workspace tasks, `strict` with `noUncheckedIndexedAccess`                                                                             | verified |
-| `pnpm check:boundaries` | 3 portable packages (53 source files) free of host APIs; 62 test/script files reach into packages by name only                                            | verified |
-| `pnpm check:contract`   | committed JSON Schema artifacts match the Zod schemas; 438 named schemas, every `$ref` resolves                                                           | verified |
-| `pnpm test:unit`        | unit suites (contract, core planners/parsers, graph, client, ui, fixtures)                                                                                | verified |
-| `pnpm test:integration` | real Git in temporary repositories: reads, writes, merge, worktrees, submodules, jobs, restart, auth, concurrency                                         | verified |
-| `pnpm test:portable`    | a neutral IIFE build (60,542 bytes) runs the core with no host globals and no Node shims; 11 planner/parser checks                                        | verified |
-| `pnpm test:e2e`         | 26 Playwright cases against the built SPA, served by the real host over the packaged static bundle                                                        | verified |
-| `pnpm build`            | turbo build of every package plus the static SPA                                                                                                          | verified |
-| `pnpm pack:smoke`       | 14 steps against the `npm pack` tarball: `npm exec` install, doctor, `serve --json`, packaged UI, authenticated API, SIGTERM, busy port, tarball contents | verified |
-| `pnpm bench:runtime`    | the packaged CLI on a 100,000-commit fixture, three repeated lifecycles                                                                                   | verified |
+| Gate                    | What it covered                                                                                                                                                                               | Status   |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| `pnpm check`            | TypeScript across 8 workspace tasks, `strict` with `noUncheckedIndexedAccess`                                                                                                                 | verified |
+| `pnpm check:boundaries` | 3 portable packages (53 source files) free of host APIs; 63 test/script files reach into packages by name only                                                                                | verified |
+| `pnpm check:contract`   | committed JSON Schema artifacts match the Zod schemas; 438 named schemas, every `$ref` resolves                                                                                               | verified |
+| `pnpm test:unit`        | unit suites (contract, core planners/parsers, graph, client, ui, fixtures)                                                                                                                    | verified |
+| `pnpm test:integration` | real Git in temporary repositories: reads, writes, merge, worktrees, submodules, jobs, restart, auth, concurrency; plus the negative security cases in `tests/security` — 313 cases, 20 files | verified |
+| `pnpm test:portable`    | a neutral IIFE build (60,542 bytes) runs the core with no host globals and no Node shims; 11 planner/parser checks                                                                            | verified |
+| `pnpm test:e2e`         | 27 Playwright cases against the built SPA, served by the real host over the packaged static bundle, each on a service with its own state directory                                            | verified |
+| `pnpm build`            | turbo build of every package plus the static SPA                                                                                                                                              | verified |
+| `pnpm pack:smoke`       | 14 steps against the `npm pack` tarball: `npm exec` install, doctor, `serve --json`, packaged UI, authenticated API, SIGTERM, busy port, tarball contents                                     | verified |
+| `pnpm bench:runtime`    | the packaged CLI on a 100,000-commit fixture, three repeated lifecycles                                                                                                                       | verified |
 
 Verification scope, stated plainly: `pnpm test` (unit + integration) is a single run of the suite
 on this machine; it is not a soak, not a fuzz campaign, and not a property test over arbitrary
@@ -65,7 +65,7 @@ The e2e suite runs against the Chromium that Playwright manages, not a system br
 
 | Browser                                               | Status     | Notes                                                                                                       |
 | ----------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------- |
-| Chromium (Playwright bundled; Desktop Chrome profile) | verified   | 26 cases: reads, staging, stash, branch, merge, worktrees, versions, offline reload with the service worker |
+| Chromium (Playwright bundled; Desktop Chrome profile) | verified   | 27 cases: reads, staging, stash, branch, merge, worktrees, versions, offline reload with the service worker |
 | Firefox                                               | unverified | no Playwright project for it                                                                                |
 | WebKit / Safari (macOS)                               | unverified | not run                                                                                                     |
 | Safari on iOS                                         | unverified | not run                                                                                                     |
