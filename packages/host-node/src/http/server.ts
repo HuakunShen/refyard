@@ -92,6 +92,16 @@ export interface HttpHostOptions {
   readonly limits?: Partial<HttpLimits>;
   /** Grants every session paired through this host receives. */
   readonly grants: SessionGrants;
+  /**
+   * The approved root a registered repository lives in, or null when this host does
+   * not know it.
+   *
+   * Used by the scope check: a repository that did not exist when the session paired
+   * (one this session just created, or another window's) is covered by the session's
+   * grant on its **root**. Without this, creating a repository would produce one the
+   * client cannot read back without a restart.
+   */
+  readonly repositoryRootOf?: (repositoryId: string) => string | null;
   readonly actor?: string;
   /**
    * Pairing-ticket lifetime in seconds. The 60-second default is the design; widening it
@@ -616,16 +626,22 @@ export async function startHttpHost(
   function checkScope(session: Session, input: unknown): Problem | null {
     const repositoryId = repositoryIdForScope(input);
     if (repositoryId !== null) {
-      if (!auth.allowsRepository(session, repositoryId)) {
-        return problemFor(
-          "Forbidden",
-          "this session was not granted that repository",
-          {
-            repositoryId,
-          },
-        );
+      if (auth.allowsRepository(session, repositoryId)) {
+        return null;
       }
-      return null;
+      // Not granted by id — but a root grant covers what lives in that root, which is
+      // how a repository this session just created stays reachable.
+      const root = options.repositoryRootOf?.(repositoryId) ?? null;
+      if (root !== null && auth.allowsRoot(session, root)) {
+        return null;
+      }
+      return problemFor(
+        "Forbidden",
+        "this session was not granted that repository",
+        {
+          repositoryId,
+        },
+      );
     }
     const allowedRootId = allowedRootIdForScope(input);
     if (allowedRootId !== null && !auth.allowsRoot(session, allowedRootId)) {

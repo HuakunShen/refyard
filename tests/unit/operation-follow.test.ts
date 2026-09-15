@@ -18,7 +18,11 @@ function record(status: OperationRecord["status"]): OperationRecord {
     operationId: "op_1",
     clientRequestId: "req-1",
     kind: "merge",
-    target: { kind: "repository", repositoryId: "repo_1", expectedSnapshotId: "s1" },
+    target: {
+      kind: "repository",
+      repositoryId: "repo_1",
+      expectedSnapshotId: "s1",
+    },
     status,
     sequence: 1,
     acceptedAt: "2026-09-15T00:00:00.000Z",

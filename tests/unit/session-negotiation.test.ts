@@ -56,10 +56,13 @@ describe("session negotiation", () => {
   });
 
   it("refuses a service whose API major differs, and names both majors", () => {
-    const verdict = negotiateSession({ instanceId: "srvc_a", hasToken: true }, {
-      ...service,
-      apiMajor: UI_API_MAJOR + 1,
-    });
+    const verdict = negotiateSession(
+      { instanceId: "srvc_a", hasToken: true },
+      {
+        ...service,
+        apiMajor: UI_API_MAJOR + 1,
+      },
+    );
     expect(verdict.kind).toEqual("incompatible");
     if (verdict.kind !== "incompatible") {
       return;
@@ -72,10 +75,13 @@ describe("session negotiation", () => {
   it("refuses an incompatible major even before any session exists", () => {
     // The page must not become writable just because this tab is unpaired: an old UI
     // meeting a new service is the case where semantics drift.
-    const verdict = negotiateSession({ instanceId: null, hasToken: false }, {
-      ...service,
-      apiMajor: UI_API_MAJOR - 1,
-    });
+    const verdict = negotiateSession(
+      { instanceId: null, hasToken: false },
+      {
+        ...service,
+        apiMajor: UI_API_MAJOR - 1,
+      },
+    );
     expect(verdict.kind).toEqual("incompatible");
   });
 });

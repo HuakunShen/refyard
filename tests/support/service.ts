@@ -244,6 +244,8 @@ export async function startTestService(
       ? {}
       : { inlineDocument: options.inlineDocument }),
     ...(options.limits === undefined ? {} : { limits: options.limits }),
+    repositoryRootOf: (repositoryId) =>
+      repositories.get(repositoryId)?.allowedRootId ?? null,
     grants: {
       allowedRootIds: [root.allowedRootId],
       repositoryIds: [
