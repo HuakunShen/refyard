@@ -30,7 +30,11 @@ import {
 import type { PathRegistry } from "../registry/paths.js";
 import type { RepositoryRegistry } from "../registry/repositories.js";
 import type { RootRegistry } from "../registry/roots.js";
-import { createEffect, type EffectOutcome, type MutationEffect } from "./jobs.js";
+import {
+  createEffect,
+  type EffectOutcome,
+  type MutationEffect,
+} from "./jobs.js";
 import {
   createFactsResolver,
   failed,
@@ -54,7 +58,12 @@ function containedBy(parent: string, candidate: string): boolean {
     return true;
   }
   const rel = relative(from, to);
-  return rel.length > 0 && !rel.startsWith(`..${sep}`) && rel !== ".." && !isAbsolute(rel);
+  return (
+    rel.length > 0 &&
+    !rel.startsWith(`..${sep}`) &&
+    rel !== ".." &&
+    !isAbsolute(rel)
+  );
 }
 
 export function createWorktreeEffects(

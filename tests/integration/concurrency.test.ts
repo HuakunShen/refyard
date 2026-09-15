@@ -21,10 +21,7 @@ import {
   createQueue,
   DEFAULT_QUEUE_LIMITS,
 } from "@refyard/host-node/coordinator/queue";
-import {
-  createEventRing,
-  sseFrame,
-} from "@refyard/host-node/http/events";
+import { createEventRing, sseFrame } from "@refyard/host-node/http/events";
 import { LIMITS } from "@refyard/git-contract";
 import { createRepo, type GitFixtureRepo } from "../support/repo.js";
 import { startTestService, type TestService } from "../support/service.js";

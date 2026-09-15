@@ -338,34 +338,42 @@ describe("authorization and request shape", () => {
     // Prevents: an unimplemented path being answered with a plausible empty success,
     // which a UI would then render as "nothing to see". (Previews became a real
     // route when mutations arrived; repository registration never did.)
-    const response = await service.fetch("/api/v1/repositories/register", { token });
+    const response = await service.fetch("/api/v1/repositories/register", {
+      token,
+    });
     expect(response.status).toBe(501);
     const body = (await response.json()) as { problem: { code: string } };
     expect(body.problem.code).toBe("UnsupportedOperation");
   });
 
   it("answers 501 for a mutation no effect implements, never a fake 202", async () => {
-    // Prevents: the UI believing a repository was created when this build has no
-    // code that could run it. (Staging, branches/remotes/network, stash/tags and
-    // worktree/submodule operations have effects now; creating a repository and
-    // the merge operations still do not.)
-    const response = await service.fetch("/api/v1/operations", {
-      method: "POST",
-      token,
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        clientRequestId: "req-1",
-        target: {
-          kind: "workspace",
-          allowedRootId: service.allowedRootId,
-          relativeDestination: "not-implemented-yet",
-        },
-        operation: { kind: "initRepository", initialBranch: null },
-      }),
-    });
-    expect(response.status).toBe(501);
-    const body = (await response.json()) as { problem: { code: string } };
-    expect(body.problem.code).toBe("UnsupportedOperation");
+    // Prevents: the UI believing an operation ran when the host has no code that
+    // could run it. The 501 comes from the coordinator's registry, so a host with no
+    // effects at all must refuse everything — which is also the only way to exercise
+    // this path now that every contract mutation has an effect in the real build.
+    const stripped = await startTestService({ repo, effects: [] });
+    try {
+      const strippedToken = await stripped.pair();
+      const response = await stripped.fetch("/api/v1/operations", {
+        method: "POST",
+        token: strippedToken,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          clientRequestId: "req-1",
+          target: {
+            kind: "workspace",
+            allowedRootId: stripped.allowedRootId,
+            relativeDestination: "not-implemented-here",
+          },
+          operation: { kind: "initRepository", initialBranch: null },
+        }),
+      });
+      expect(response.status).toBe(501);
+      const body = (await response.json()) as { problem: { code: string } };
+      expect(body.problem.code).toBe("UnsupportedOperation");
+    } finally {
+      await stripped.close();
+    }
   });
 
   it("lists operations for this session, which is empty until one runs", async () => {

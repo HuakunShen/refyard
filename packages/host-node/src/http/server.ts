@@ -603,23 +603,40 @@ export async function startHttpHost(
     );
   }
 
-  /** Refuse a request that names a repository the session does not cover. */
+  /**
+   * Refuse a request that names a repository, or an approved root, the session does
+   * not cover.
+   *
+   * A workspace target (init, clone) names a root and a destination instead of a
+   * repository — there is no repository yet, which is the point of the operation — so
+   * the grant checked for it is the root's. Skipping that check would let any paired
+   * session create a repository anywhere in the service's approved roots, which is
+   * exactly the reach a session's grants exist to bound.
+   */
   function checkScope(session: Session, input: unknown): Problem | null {
     const repositoryId = repositoryIdForScope(input);
-    if (repositoryId === null) {
-      // No repository named (or not a single string): the route's own schema decides
-      // whether that is acceptable, and it cannot grant anything the session lacks.
+    if (repositoryId !== null) {
+      if (!auth.allowsRepository(session, repositoryId)) {
+        return problemFor(
+          "Forbidden",
+          "this session was not granted that repository",
+          {
+            repositoryId,
+          },
+        );
+      }
       return null;
     }
-    if (!auth.allowsRepository(session, repositoryId)) {
+    const allowedRootId = allowedRootIdForScope(input);
+    if (allowedRootId !== null && !auth.allowsRoot(session, allowedRootId)) {
       return problemFor(
         "Forbidden",
-        "this session was not granted that repository",
-        {
-          repositoryId,
-        },
+        "this session was not granted that approved root",
+        { allowedRootId },
       );
     }
+    // Neither named (or not a single string): the route's own schema decides whether
+    // that is acceptable, and it cannot grant anything the session lacks.
     return null;
   }
 
@@ -715,6 +732,28 @@ function repositoryIdForScope(input: unknown): string | null {
     const target = input.target;
     if ("repositoryId" in target && typeof target.repositoryId === "string") {
       return target.repositoryId;
+    }
+  }
+  return null;
+}
+
+function allowedRootIdForScope(input: unknown): string | null {
+  if (typeof input !== "object" || input === null) {
+    return null;
+  }
+  if (
+    "target" in input &&
+    typeof input.target === "object" &&
+    input.target !== null
+  ) {
+    const target = input.target;
+    if (
+      "kind" in target &&
+      target.kind === "workspace" &&
+      "allowedRootId" in target &&
+      typeof target.allowedRootId === "string"
+    ) {
+      return target.allowedRootId;
     }
   }
   return null;

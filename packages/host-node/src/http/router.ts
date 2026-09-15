@@ -236,9 +236,7 @@ function pairingProblem(body: unknown): string | null {
 }
 
 /** The first issue with a real path, preferring one that is not a discriminant. */
-function mostSpecificIssue(
-  issues: readonly z.core.$ZodIssue[],
-): string {
+function mostSpecificIssue(issues: readonly z.core.$ZodIssue[]): string {
   const flattened: z.core.$ZodIssue[] = [];
   for (const issue of issues) {
     const nested = Reflect.get(issue, "errors");
@@ -323,7 +321,10 @@ export function mutationRoutes(): readonly RouteDefinition[] {
           // rules — a branch name that would read as an option, a remote URL that is a
           // transport helper in disguise, a rename to its own name — are refused here,
           // before an operation is accepted or Git is reached.
-          const problems = validateOperationSemantics(body.operation, body.target);
+          const problems = validateOperationSemantics(
+            body.operation,
+            body.target,
+          );
           if (problems.length > 0) {
             throw new ReadProblem({
               code: "InvalidRequest",

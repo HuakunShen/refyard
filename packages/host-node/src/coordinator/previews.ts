@@ -38,7 +38,11 @@ import {
 import type { PreviewStore } from "../filesystem/preview.js";
 import type { PathRegistry } from "../registry/paths.js";
 import type { RepositoryRegistry } from "../registry/repositories.js";
-import { createEffect, type EffectOutcome, type MutationEffect } from "./jobs.js";
+import {
+  createEffect,
+  type EffectOutcome,
+  type MutationEffect,
+} from "./jobs.js";
 import {
   createFactsResolver,
   failed,

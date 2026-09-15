@@ -8,7 +8,11 @@
  * differently is exactly how one of them ends up acting on a repository the request
  * never named, so it lives here once.
  */
-import type { OperationResult, ParsedMutationRequest, Problem } from "@refyard/git-contract";
+import type {
+  OperationResult,
+  ParsedMutationRequest,
+  Problem,
+} from "@refyard/git-contract";
 import {
   readHeadFacts,
   readStatusFacts,

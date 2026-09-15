@@ -47,6 +47,7 @@ import {
   createMergeEffects,
   createTextCodec,
   createWorktreeEffects,
+  unavailableMutations,
   createWorktreeRegistry,
   DEFAULT_RETENTION,
   runDoctor,
@@ -63,7 +64,6 @@ import { createHostEngine, type GitEngine } from "@refyard/git-core";
 import {
   API_MAJOR,
   CONTRACT_VERSION,
-  MUTATION_KINDS,
   targetKindsOf,
   type ReadKind,
   type UnavailableReason,
@@ -217,7 +217,12 @@ export async function assembleService(
     previews,
     backups: createRecoveryStore({ root: join(stateRoot, "backups") }),
   });
-  const repositoryEffects = createRepositoryEffects({ engine, repositories });
+  const repositoryEffects = createRepositoryEffects({
+    engine,
+    repositories,
+    roots,
+    handles,
+  });
   const stashTagEffects = createStashTagEffects({
     engine,
     repositories,
@@ -249,21 +254,12 @@ export async function assembleService(
     nextSequence: () => (sequence += 1),
   });
 
-  // What the contract defines and this build does not implement, named rather than
-  // silently absent — and derived from the coordinator's own registry, so adding an
-  // effect moves a kind out of this list and the message cannot outlive the fact.
-  const implemented = new Set(mutations.implementedKinds());
-  const missing = MUTATION_KINDS.filter((kind) => !implemented.has(kind));
-  const unavailable: UnavailableReason[] =
-    missing.length === 0
-      ? []
-      : [
-          {
-            code: "not-implemented",
-            message: `this build does not implement ${missing.length} of the contract's mutations; each is named here and none of them is reported as available`,
-            operations: [...missing],
-          },
-        ];
+  // What the contract defines and this build does not implement — derived from the
+  // coordinator's own registry by the shared rule, so the CLI and the test harness
+  // cannot drift apart on what "unavailable" means.
+  const unavailable: UnavailableReason[] = unavailableMutations(
+    mutations.implementedKinds(),
+  );
 
   const read = createReadService({
     engine,

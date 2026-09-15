@@ -239,9 +239,12 @@ describe("git client", () => {
     expect(kinds).toContain("createStash");
     expect(kinds).toContain("createWorktree");
     expect(kinds).toContain("abortMerge");
-    // A kind with no effect must stay absent until one exists: creating a repository
-    // addresses a workspace root, which this build has no flow for.
-    expect(kinds).not.toContain("initRepository");
+    // Every mutation the contract defines now has an effect, so the list is complete
+    // and `unavailable` is empty. A kind with no effect stays absent until one
+    // exists — the case below runs a service that has none.
+    expect(kinds).toContain("initRepository");
+    expect(kinds).toContain("cloneRepository");
+    expect(capabilities.unavailable).toEqual([]);
     expect(capabilities.reads).toContain("status");
   });
 
@@ -314,26 +317,56 @@ describe("git client", () => {
   });
 
   it("turns a 501 for an unimplemented operation into UnsupportedOperation", async () => {
-    const { token } = await pairedClient();
-    const mutations = createMutationClient({
-      baseUrl: service.baseUrl,
-      fetch: (input, init) =>
-        service.fetch(String(input).replace(service.baseUrl, ""), init ?? {}),
-      token: () => token,
-    });
-    // `initRepository` has no effect in this build; the client surfaces the closed
-    // code instead of a generic failure.
-    await expect(
-      mutations.submit({
-        clientRequestId: "http-501-1",
-        target: {
-          kind: "workspace",
-          allowedRootId: service.allowedRootId,
-          relativeDestination: "not-implemented-yet",
-        },
-        operation: { kind: "initRepository", initialBranch: null },
-      }),
-    ).rejects.toMatchObject({ code: "UnsupportedOperation", status: 501 });
+    // A service with no effects at all stands in for a build that does not implement
+    // the operation: the 501 comes from the registry, never from a hardcoded list of
+    // "known but missing" kinds, and the client surfaces the closed code.
+    const none = await startTestService({ repo, effects: [] });
+    try {
+      const token = await none.pair();
+      const mutations = createMutationClient({
+        baseUrl: none.baseUrl,
+        fetch: (input, init) =>
+          none.fetch(String(input).replace(none.baseUrl, ""), init ?? {}),
+        token: () => token,
+      });
+      await expect(
+        mutations.submit({
+          clientRequestId: "http-501-1",
+          target: {
+            kind: "workspace",
+            allowedRootId: none.allowedRootId,
+            relativeDestination: "not-implemented-here",
+          },
+          operation: { kind: "initRepository", initialBranch: null },
+        }),
+      ).rejects.toMatchObject({ code: "UnsupportedOperation", status: 501 });
+
+      // And the same service says so in capabilities: nothing is advertised, and
+      // every kind it cannot run is named with a reason.
+      const capabilitiesResponse = await none.fetch("/api/v1/capabilities", {
+        token,
+      });
+      expect(capabilitiesResponse.status).toBe(200);
+      const capabilities = (await capabilitiesResponse.json()) as {
+        operations: readonly { kind: string }[];
+        unavailable: readonly {
+          code: string;
+          message: string;
+          operations: readonly string[];
+        }[];
+      };
+      expect(capabilities.operations).toEqual([]);
+      // One reason naming every missing kind — not one entry per kind, and not an
+      // empty list: a build with nothing to offer says so explicitly.
+      expect(capabilities.unavailable).toHaveLength(1);
+      const missing = capabilities.unavailable[0];
+      expect(missing?.code).toBe("not-implemented");
+      expect(missing?.message.length).toBeGreaterThan(0);
+      expect(missing?.operations.length).toBe(35);
+      expect(missing?.operations).toContain("initRepository");
+    } finally {
+      await none.close();
+    }
   });
 
   it("fails when the service answers with a body that breaks the contract", async () => {

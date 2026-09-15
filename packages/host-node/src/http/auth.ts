@@ -93,6 +93,15 @@ export interface AuthStore {
   }): AuthorizeResult;
   /** Does this session's grant cover the repository? */
   allowsRepository(session: Session, repositoryId: string): boolean;
+  /**
+   * Does this session's grant cover the approved root?
+   *
+   * Needed because a workspace target (init, clone) names a root and a destination
+   * rather than a repository: the operation's whole purpose is to create the
+   * repository, so there is no repository id to check, and a session that was never
+   * granted a root must not be able to create anything inside it.
+   */
+  allowsRoot(session: Session, allowedRootId: string): boolean;
   revoke(sessionId: string): boolean;
   sessionCount(): number;
   ticketCount(): number;
@@ -289,6 +298,13 @@ export function createAuthStore(options: AuthStoreOptions): AuthStore {
         return true;
       }
       return session.grants.repositoryIds.includes(repositoryId);
+    },
+
+    allowsRoot(session, allowedRootId): boolean {
+      // Deliberately *not* covered by `repository:*`: that scope is about acting on
+      // repositories that exist, and creating one inside a directory the session was
+      // never handed is a different permission.
+      return session.grants.allowedRootIds.includes(allowedRootId);
     },
 
     revoke(sessionId): boolean {

@@ -5,9 +5,13 @@
  * decides what "the repository this request touches" means:
  *
  * - **`repositoryIdFor`.** A worktree or repository target names its repository
- *   directly. A workspace target (init, clone) names a destination instead, and this
- *   build has no effect for those, so it answers `null` — the engine then refuses the
- *   request as unimplemented rather than guessing at an id.
+ *   directly. A workspace target (init, clone) names a destination instead — the
+ *   operation is what brings a repository into being — so the key is the approved root
+ *   it writes into. That key is what serializes the operation in the queue and what a
+ *   restart blocks: two creations in one approved tree do not run at once, and a
+ *   creation that died mid-write blocks further creations there until someone
+ *   resolves it. The journal's `repositoryId` column holds this key; the client-facing
+ *   record does not carry it at all (a client sees the target).
  * - **`preconditionsFor`.** Snapshot freshness, index state and the post-restart
  *   write block come from a *fresh* read taken at submit time, not from whatever the
  *   client believed when it planned the request.
@@ -68,6 +72,26 @@ export interface MutationCoordinator {
 }
 
 /** Where a target's repository comes from, or null when there is none yet. */
+/**
+ * The key an operation is serialized, blocked and journalled under.
+ *
+ * One writer per resource: a repository (its common Git directory is the thing Git
+ * locks), or — for the two operations that create one — the approved root the
+ * destination lives in. The `root:` prefix is deliberate: it cannot collide with a
+ * minted `repositoryId`, so a log line or a stored key says which kind of resource it
+ * names without a second field.
+ */
+export function writeKeyOfTarget(
+  target: ParsedMutationRequest["target"],
+): string | null {
+  if (target.kind === "workspace") {
+    return target.allowedRootId.length === 0
+      ? null
+      : `root:${target.allowedRootId}`;
+  }
+  return target.repositoryId;
+}
+
 export function repositoryIdOfTarget(
   target: ParsedMutationRequest["target"],
 ): string | null {
@@ -99,6 +123,29 @@ export function createMutationCoordinator(
   async function preconditionsFor(
     request: ParsedMutationRequest,
   ): Promise<PreconditionContext> {
+    if (request.target.kind === "workspace") {
+      // Nothing to compare a snapshot against: the destination has no repository yet,
+      // no index and no in-progress operation. The restart block is still consulted,
+      // under the same key the queue and the journal use, so a creation that died
+      // mid-write is not restarted into the directory it left behind.
+      const block = options.recovery.blockFor(
+        writeKeyOfTarget(request.target) ?? "",
+      );
+      return {
+        snapshotHeadOid: null,
+        currentHeadOid: null,
+        indexUnchanged: true,
+        operationInProgress: null,
+        restartBlock:
+          block === null
+            ? null
+            : {
+                reason: block.reason,
+                operationIds: [...block.operationIds],
+              },
+      };
+    }
+
     const repositoryId = repositoryIdOfTarget(request.target);
     if (repositoryId === null) {
       // Unreachable in practice: the engine refuses a request without a repository
@@ -195,10 +242,6 @@ export function createMutationCoordinator(
       }),
     ]);
 
-    if (request.target.kind === "workspace") {
-      // Not reachable today; kept so this function has no implicit fall-through.
-      throw new Error("a workspace target has no preconditions");
-    }
     const snapshot = options.snapshots.get(request.target.expectedSnapshotId);
     return {
       snapshotHeadOid: snapshot?.headOid ?? null,
@@ -228,7 +271,7 @@ export function createMutationCoordinator(
     nextOperationId: options.nextOperationId,
     nextSequence: options.nextSequence,
     ...(options.now === undefined ? {} : { now: options.now }),
-    repositoryIdFor: (request) => repositoryIdOfTarget(request.target),
+    repositoryIdFor: (request) => writeKeyOfTarget(request.target),
     preconditionsFor,
     onEvent: (event) => {
       if (event.kind === "operation" && event.operation !== null) {

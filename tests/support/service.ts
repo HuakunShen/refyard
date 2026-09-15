@@ -34,6 +34,7 @@ import {
   createTextCodec,
   createWorktreeEffects,
   createWorktreeRegistry,
+  unavailableMutations,
   DEFAULT_RETENTION,
   startHttpHost,
   type EventRing,
@@ -167,23 +168,21 @@ export async function startTestService(
     // The real product wiring: the T08 staging effects, exactly as the CLI
     // registers them, so a passing test is evidence about the product. A test
     // passes `effects` only to install a controlled stub.
-    effects:
-      options.effects ??
-      [
-        ...createStagingEffects({
-          engine,
-          repositories,
-          paths,
-          previews,
-          backups:
-            options.backupStore ??
-            createRecoveryStore({ root: join(stateRoot, "backups") }),
-        }),
-        ...createRepositoryEffects({ engine, repositories }),
-        ...createStashTagEffects({ engine, repositories }),
-        ...createWorktreeEffects({ engine, repositories, roots, paths }),
-        ...createMergeEffects({ engine, repositories }),
-      ],
+    effects: options.effects ?? [
+      ...createStagingEffects({
+        engine,
+        repositories,
+        paths,
+        previews,
+        backups:
+          options.backupStore ??
+          createRecoveryStore({ root: join(stateRoot, "backups") }),
+      }),
+      ...createRepositoryEffects({ engine, repositories, roots, handles }),
+      ...createStashTagEffects({ engine, repositories }),
+      ...createWorktreeEffects({ engine, repositories, roots, paths }),
+      ...createMergeEffects({ engine, repositories }),
+    ],
     nextOperationId: () => `op_${(counter += 1).toString(36)}`,
     nextSequence: () => (sequence += 1),
   });
@@ -210,7 +209,9 @@ export async function startTestService(
       fetchPorcelain: true,
       objectFormats: ["sha1", "sha256"],
     },
-    unavailable: [],
+    // Derived from this host's own registry, exactly as the CLI derives it: a
+    // harness that hardcoded an empty list could not exercise the 501 path at all.
+    unavailable: unavailableMutations(mutations.implementedKinds()),
     reads: [
       "capabilities",
       "repositories",
@@ -341,7 +342,9 @@ export async function submitAndWait(
   };
   const operationId = parsed.operationId ?? parsed.operation?.operationId;
   if (operationId === undefined) {
-    throw new Error(`submit response carried no operation id: ${text.slice(0, 200)}`);
+    throw new Error(
+      `submit response carried no operation id: ${text.slice(0, 200)}`,
+    );
   }
   const terminal = new Set([
     "succeeded",

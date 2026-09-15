@@ -463,14 +463,15 @@ describe("serving a repository", () => {
       for (const kind of MUTATION_KINDS) {
         expect(available.has(kind) || unavailable.has(kind)).toBe(true);
       }
-      // The two mutations this build does not implement are the ones named, and they
-      // are not advertised as available.
-      expect(available.has("initRepository")).toBe(false);
-      expect(available.has("cloneRepository")).toBe(false);
-      expect(unavailable.has("initRepository")).toBe(true);
-      expect(unavailable.has("cloneRepository")).toBe(true);
-      // And what is advertised is what this build can do: a mutation the user can see
-      // in the contract and drive from the UI.
+      // Every contract mutation is implemented, so the missing list is *empty* — not
+      // a sentence saying nothing is missing, and not a stale entry. This is the other
+      // end of the arithmetic the harness case exercises with a reduced effect set: a
+      // build with nothing missing reports nothing.
+      expect(capabilities.unavailable).toEqual([]);
+      expect(available.size).toBe(MUTATION_KINDS.length);
+      // The last two to arrive, and the two that used to be named here as missing.
+      expect(available.has("initRepository")).toBe(true);
+      expect(available.has("cloneRepository")).toBe(true);
       expect(available.has("commit")).toBe(true);
       expect(available.has("merge")).toBe(true);
     } finally {

@@ -1,5 +1,6 @@
 /**
- * The T09 mutation effects: branches, remotes, and fetch/push/pull.
+ * The T09 mutation effects: branches, remotes, fetch/push/pull — and the two
+ * operations that create a repository where there was none.
  *
  * These are the operations where "it failed" is often not the whole truth, and the
  * classification here is the product decision:
@@ -17,6 +18,30 @@
  *
  * All commands run through the same facts resolver: the target's worktree (a
  * repository target uses its primary worktree) is re-read before anything runs.
+ *
+ * `initRepository` and `cloneRepository` are the exception to that, and they are here
+ * rather than in their own module because they share the interface: their target is a
+ * **workspace** — an approved root plus a destination inside it — so there is no
+ * repository to resolve yet, and the repository registry only learns about the result
+ * *after* the command succeeded. Three rules follow, and all three are load-bearing:
+ *
+ * - **the destination is proven inside the approved root** by the handle registry
+ *   (lexical containment before the command, symlinks re-proven after it), never by
+ *   joining strings here;
+ * - **a failed command registers nothing.** Registration is what makes a repository
+ *   visible to this session, so a refusal or an uncertain outcome must leave the
+ *   registry exactly as it was;
+ * - **nothing is cleaned up.** A failed clone may have left a directory behind; the
+ *   outcome says so and names the path, and no code here removes anything the user
+ *   chose. That is the difference between a workbench and a script that deletes.
+ *
+ * For `cloneRepository` the contract carries the destination twice — in the operation
+ * payload and in the workspace target — and accepts a request where the two differ.
+ * The operation's own field decides where the clone goes, and the result names the
+ * destination that was used, so a client that sent two different values can see which
+ * one happened. The UI sends the same value in both. Changing that would mean editing
+ * a frozen schema, which is a decision with its own evidence, not a detail to settle
+ * inside an effect.
  */
 import { OPERATION_SCHEMAS } from "@refyard/git-contract";
 import {
@@ -35,8 +60,17 @@ import {
   type NetworkOutcome,
   type PushParseResult,
 } from "@refyard/git-core";
+import { readdir } from "node:fs/promises";
+import type { CreationOutcome, DestinationState } from "@refyard/git-core";
+import { cloneRepository, initRepository } from "@refyard/git-core";
+import type { HandleRegistry } from "../filesystem/handles.js";
 import type { RepositoryRegistry } from "../registry/repositories.js";
-import { createEffect, type EffectOutcome, type MutationEffect } from "./jobs.js";
+import type { RootRegistry } from "../registry/roots.js";
+import {
+  createEffect,
+  type EffectOutcome,
+  type MutationEffect,
+} from "./jobs.js";
 import {
   createFactsResolver,
   failed,
@@ -47,10 +81,44 @@ import {
   unknownOutcome,
   writeOutcomeFromGit,
 } from "./effects-support.js";
+import type { ParsedMutationRequest } from "@refyard/git-contract";
 
 export interface RepositoryEffectsOptions {
   readonly engine: GitEngine;
   readonly repositories: RepositoryRegistry;
+  /** Needed by the two creation effects: a workspace target names a root, not a repo. */
+  readonly roots: RootRegistry;
+  readonly handles: HandleRegistry;
+}
+
+/** The errno of a failed directory read, without casting the error. */
+function errorCodeOf(error: unknown): string | null {
+  if (typeof error !== "object" || error === null) {
+    return null;
+  }
+  const code: unknown = Reflect.get(error, "code");
+  return typeof code === "string" ? code : null;
+}
+
+/**
+ * What a destination holds right now, as the host sees it.
+ *
+ * `absent` and `empty` are different answers — `git clone` accepts an existing empty
+ * directory and refuses one with content — and that pair, before and after the
+ * command, is what separates "Git refused" from "a failed command left a directory
+ * behind". A destination that cannot be read at all is reported as occupied: Git will
+ * refuse it anyway, and calling an unreadable directory empty would invite a retry
+ * into something this service could not look at.
+ */
+async function observeDestination(
+  destination: string,
+): Promise<DestinationState> {
+  try {
+    const entries = await readdir(destination);
+    return entries.length === 0 ? "empty" : "nonEmpty";
+  } catch (error) {
+    return errorCodeOf(error) === "ENOENT" ? "absent" : "nonEmpty";
+  }
 }
 
 /** A per-ref push summary a person can read: `refs/heads/main: new branch`. */
@@ -58,9 +126,7 @@ function pushSummary(result: PushParseResult): string {
   if (result.everythingUpToDate || result.refs.length === 0) {
     return "already up to date; nothing was pushed";
   }
-  return result.refs
-    .map((ref) => `${ref.to}: ${ref.summary}`)
-    .join("; ");
+  return result.refs.map((ref) => `${ref.to}: ${ref.summary}`).join("; ");
 }
 
 export function createRepositoryEffects(
@@ -85,14 +151,15 @@ export function createRepositoryEffects(
       | { readonly kind: "done" }
       | {
           readonly kind: "refused";
-          readonly code: Parameters<
-            typeof writeOutcomeFromGit
-          >[1]["code"];
+          readonly code: Parameters<typeof writeOutcomeFromGit>[1]["code"];
           readonly exitCode: number | null;
           readonly diagnostic: string;
         }
     >,
-    describe: () => { readonly summary: string; readonly changedRefs: readonly string[] },
+    describe: () => {
+      readonly summary: string;
+      readonly changedRefs: readonly string[];
+    },
   ): Promise<EffectOutcome> {
     const outcome = await run();
     if (outcome.kind === "refused") {
@@ -298,7 +365,10 @@ export function createRepositoryEffects(
           changedRefs:
             operation.newName === null
               ? []
-              : [`remote:${operation.remoteName}`, `remote:${operation.newName}`],
+              : [
+                  `remote:${operation.remoteName}`,
+                  `remote:${operation.newName}`,
+                ],
           newHeadOid: facts.value.head.oid,
         }),
       };
@@ -467,7 +537,232 @@ export function createRepositoryEffects(
     },
   });
 
+  /* ------------------------------------------------------- repository creation */
+
+  /**
+   * The approved root and destination a workspace target names.
+   *
+   * The destination is resolved through the handle registry, which proves lexical
+   * containment; the root itself is re-proved intact so a directory that was replaced
+   * since it was approved is refused rather than written into.
+   */
+  async function resolveWorkspace(
+    request: ParsedMutationRequest,
+    relativeDestination: string,
+    operationId: string,
+  ): Promise<
+    | {
+        readonly ok: true;
+        readonly allowedRootId: string;
+        readonly relativeDestination: string;
+        readonly destination: string;
+        readonly cwdHandle: string;
+      }
+    | { readonly ok: false; readonly problem: EffectOutcome }
+  > {
+    const target = request.target;
+    if (target.kind !== "workspace") {
+      return {
+        ok: false,
+        problem: failedOp(
+          operationId,
+          "InvalidOperationPayload",
+          "this operation must address a workspace (an approved root and a destination inside it)",
+        ),
+      };
+    }
+    try {
+      await options.roots.requireIntact(target.allowedRootId);
+    } catch {
+      return {
+        ok: false,
+        problem: failedOp(
+          operationId,
+          "Forbidden",
+          "the approved root is gone, or is not the directory it was approved as; approve it again",
+        ),
+      };
+    }
+    try {
+      const resolved = options.handles.resolveDestination(
+        target.allowedRootId,
+        relativeDestination,
+      );
+      return {
+        ok: true,
+        allowedRootId: target.allowedRootId,
+        relativeDestination: resolved.relativePath,
+        destination: resolved.absolutePath,
+        // Commands run from the approved root: the destination may not exist yet, and
+        // a handle must resolve to a directory that does.
+        cwdHandle: options.handles.handleFor(target.allowedRootId, ""),
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        problem: failedOp(
+          operationId,
+          "Forbidden",
+          error instanceof Error
+            ? error.message
+            : "the destination is not usable inside its approved root",
+        ),
+      };
+    }
+  }
+
+  /**
+   * Turn a creation outcome into what the journal records, and register on success.
+   *
+   * Registration happens only for `done`, and a registration that fails is
+   * `needsAttention` rather than `failed`: the repository exists on disk, and telling
+   * the caller "it failed" would be telling them something untrue about their files.
+   */
+  async function finishCreation(
+    outcome: CreationOutcome,
+    input: {
+      readonly operationId: string;
+      readonly what: string;
+      readonly allowedRootId: string;
+      readonly relativeDestination: string;
+      readonly summary: string;
+    },
+  ): Promise<EffectOutcome> {
+    const operationId = input.operationId;
+    const destination = input.relativeDestination;
+    if (outcome.kind === "done") {
+      try {
+        await options.repositories.register({
+          allowedRootId: input.allowedRootId,
+          relativePath: destination,
+          handles: options.handles,
+        });
+      } catch (error) {
+        return {
+          kind: "needsAttention",
+          problem: {
+            code: "NeedsAttention",
+            message: `the ${input.what} finished, but this service could not register the repository at ${destination}: ${
+              error instanceof Error
+                ? error.message
+                : "the directory could not be read"
+            }; the files are there and nothing was removed`,
+            retryable: false,
+            operationId,
+          },
+        };
+      }
+      const head = await headAfter(
+        options.engine,
+        options.handles.handleFor(input.allowedRootId, destination),
+      );
+      return {
+        kind: "succeeded",
+        result: resultOf({
+          summary: input.summary,
+          newHeadOid: head?.oid ?? null,
+        }),
+      };
+    }
+
+    const diagnostic =
+      outcome.diagnostic.trim().length > 0
+        ? outcome.diagnostic.trim()
+        : `git exited ${outcome.exitCode ?? "unknown"}`;
+    if (outcome.kind === "uncertain") {
+      return unknownOutcome(
+        operationId,
+        `the ${input.what} did not finish cleanly (${outcome.code}); what is at ${destination} is ${outcome.destinationAfter === "nonEmpty" ? "a directory with content" : "unchanged"}, and whether the command completed is not known — nothing was retried and nothing was removed`,
+      );
+    }
+    if (outcome.kind === "leftBehind") {
+      return {
+        kind: "needsAttention",
+        problem: {
+          code: "NeedsAttention",
+          message: `the ${input.what} failed and left files at ${destination}: ${diagnostic}; nothing was removed, so that path is the user's to inspect`,
+          retryable: false,
+          operationId,
+        },
+      };
+    }
+    return failedOp(
+      operationId,
+      "GitCommandFailed",
+      `git refused the ${input.what}: ${diagnostic}`.slice(0, 2000),
+    );
+  }
+
+  const initRepositoryEffect = createEffect({
+    kind: "initRepository",
+    schema: OPERATION_SCHEMAS.initRepository,
+    async run({ request, operation, operationId }) {
+      const target = request.target;
+      // The destination of an init is the workspace target's own: the operation has no
+      // field for it, because `git init` runs where the client points the root.
+      const relativeDestination =
+        target.kind === "workspace" ? target.relativeDestination : "";
+      const workspace = await resolveWorkspace(
+        request,
+        relativeDestination,
+        operationId,
+      );
+      if (!workspace.ok) {
+        return workspace.problem;
+      }
+      const outcome = await initRepository(options.engine, {
+        cwdHandle: workspace.cwdHandle,
+        destination: workspace.destination,
+        initialBranch: operation.initialBranch,
+        observeDestination,
+      });
+      return finishCreation(outcome, {
+        operationId,
+        what: "init",
+        allowedRootId: workspace.allowedRootId,
+        relativeDestination: workspace.relativeDestination,
+        summary:
+          operation.initialBranch === null
+            ? `created a repository at ${workspace.relativeDestination}`
+            : `created a repository at ${workspace.relativeDestination} on ${operation.initialBranch}`,
+      });
+    },
+  });
+
+  const cloneRepositoryEffect = createEffect({
+    kind: "cloneRepository",
+    schema: OPERATION_SCHEMAS.cloneRepository,
+    async run({ request, operation, operationId }) {
+      const workspace = await resolveWorkspace(
+        request,
+        operation.relativeDestination,
+        operationId,
+      );
+      if (!workspace.ok) {
+        return workspace.problem;
+      }
+      const outcome = await cloneRepository(options.engine, {
+        cwdHandle: workspace.cwdHandle,
+        remoteUrl: operation.remoteUrl,
+        destination: workspace.destination,
+        initializeSubmodules: operation.initializeSubmodules,
+        observeDestination,
+      });
+      return finishCreation(outcome, {
+        operationId,
+        what: "clone",
+        allowedRootId: workspace.allowedRootId,
+        relativeDestination: workspace.relativeDestination,
+        summary: operation.initializeSubmodules
+          ? `cloned ${operation.remoteUrl} into ${workspace.relativeDestination}, including submodules`
+          : `cloned ${operation.remoteUrl} into ${workspace.relativeDestination}`,
+      });
+    },
+  });
+
   return [
+    initRepositoryEffect,
+    cloneRepositoryEffect,
     createBranchEffect,
     switchBranchEffect,
     renameBranchEffect,
@@ -484,6 +779,8 @@ export function createRepositoryEffects(
 
 /** The kinds this module implements, in capabilities order. */
 export const REPOSITORY_MUTATION_KINDS = [
+  "initRepository",
+  "cloneRepository",
   "createBranch",
   "switchBranch",
   "renameBranch",

@@ -13,7 +13,11 @@ import {
   refsSnapshotSchema,
   statusSnapshotSchema,
 } from "@refyard/git-contract";
-import { createBareRemote, createRepo, type GitFixtureRepo } from "../support/repo.js";
+import {
+  createBareRemote,
+  createRepo,
+  type GitFixtureRepo,
+} from "../support/repo.js";
 import {
   startTestService,
   submitAndWait,
@@ -27,7 +31,12 @@ interface Refs {
     name: string;
     oid: string;
     isCurrent: boolean;
-    upstream: { fullName: string; ahead: number; behind: number; gone: boolean } | null;
+    upstream: {
+      fullName: string;
+      ahead: number;
+      behind: number;
+      gone: boolean;
+    } | null;
   }[];
   readonly remotes: readonly {
     name: string;
@@ -100,9 +109,7 @@ async function worktreeTarget(
   };
 }
 
-async function startNetworkService(
-  repo: GitFixtureRepo,
-): Promise<TestService> {
+async function startNetworkService(repo: GitFixtureRepo): Promise<TestService> {
   const service = await startTestService({ repo });
   const token = await service.pair();
   // Every request this file makes is an authenticated client; the bearer is
@@ -138,7 +145,9 @@ describe("branches", () => {
       const after = await readRefs(service);
       expect(branchNames(after)).toContain("feature");
       expect(after.head.branchName).toEqual(before.head.branchName);
-      const created = after.branches.find((branch) => branch.name === "feature");
+      const created = after.branches.find(
+        (branch) => branch.name === "feature",
+      );
       expect(created?.oid).toEqual(before.head.oid);
     } finally {
       await service.close();
@@ -355,7 +364,9 @@ describe("branches", () => {
       });
       expect(set.status).toBe("succeeded");
       const withUpstream = await readRefs(service);
-      const main = withUpstream.branches.find((branch) => branch.name === "main");
+      const main = withUpstream.branches.find(
+        (branch) => branch.name === "main",
+      );
       expect(main?.upstream?.fullName).toEqual("refs/remotes/origin/main");
 
       const second = await repositoryTarget(service);
@@ -556,9 +567,9 @@ describe("fetch, push and pull", () => {
         },
       });
       expect(record.status).toBe("failed");
-      const remoteMain = new TextDecoder().decode(
-        await remote.git(["rev-parse", "refs/heads/main"]),
-      ).trim();
+      const remoteMain = new TextDecoder()
+        .decode(await remote.git(["rev-parse", "refs/heads/main"]))
+        .trim();
       const localMain = (await repo.headOid()).trim();
       expect(remoteMain).not.toEqual(localMain);
     } finally {
@@ -589,7 +600,12 @@ describe("fetch, push and pull", () => {
       const record = await submitAndWait(service, {
         clientRequestId: "fetch-1",
         target,
-        operation: { kind: "fetch", remoteName: "origin", prune: false, tags: "none" },
+        operation: {
+          kind: "fetch",
+          remoteName: "origin",
+          prune: false,
+          tags: "none",
+        },
       });
       expect(record.status).toBe("succeeded");
       const after = await readRefs(service);
