@@ -17,6 +17,7 @@
  * query strings and headers do.
  */
 import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { inlineScriptHashes } from "@refyard/host-node";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -120,6 +121,32 @@ describe("static assets", () => {
     } finally {
       await rm(outside, { force: true });
     }
+  });
+
+  it("re-hashes a document that was rebuilt under the running service", async () => {
+    // Prevents: the stale-CSP trap in the development loop. The policy names the hash of
+    // the document's own inline bootstrap, so it is only valid for the bytes it was read
+    // from. `pnpm build` rewrites these files while a service is running; a header cached
+    // by path alone would keep naming the old hash, the browser would refuse the new
+    // inline script, and the app would never start — with nothing in the UI to explain it.
+    const first = "<!doctype html><script>window.shell = 'one';</script>";
+    const second =
+      "<!doctype html><script>window.shell = 'two, and longer';</script>";
+    await writeFile(join(webRoot, "200.html"), first);
+    const before = await service.fetch("/");
+    const policyBefore = before.headers.get("content-security-policy") ?? "";
+    const hashBefore = /sha256-[A-Za-z0-9+/=]+/.exec(policyBefore)?.[0];
+    expect(hashBefore).toBeDefined();
+    // The policy names the hash of what was actually served, not of something else.
+    const expectedBefore = inlineScriptHashes(first);
+    expect(policyBefore).toContain(expectedBefore[0] ?? "no-hash");
+
+    // The rebuild: same path, different bytes.
+    await writeFile(join(webRoot, "200.html"), second);
+    const after = await service.fetch("/");
+    const policyAfter = after.headers.get("content-security-policy") ?? "";
+    expect(policyAfter).toContain(inlineScriptHashes(second)[0] ?? "no-hash");
+    expect(policyAfter).not.toContain(hashBefore ?? "never-matches");
   });
 
   it("serves a placeholder that says what is true when there is no web build", async () => {

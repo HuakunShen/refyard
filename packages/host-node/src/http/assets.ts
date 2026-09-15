@@ -100,23 +100,45 @@ export function createAssetServer(options: AssetServerOptions): AssetServer {
   let resolvedRoot: string | null = null;
   let rootReady = false;
   /**
-   * Per-document headers, computed once per path.
+   * Per-document headers, keyed by the file's identity and not by its path.
    *
-   * A document is read to find its inline scripts, and the result depends only on the
-   * bytes on disk; a packaged bundle does not change while the service is running, so the
-   * second request for a document must not pay for the first one's read.
+   * The policy names the hash of the document's own inline scripts, so it is only correct
+   * for the bytes it was computed from. A packaged bundle does not change while the
+   * service runs — but a development build does: `pnpm build` rewrites these files under
+   * a running service, and a cache keyed by path alone would keep answering with the old
+   * hash. The browser would then refuse the new document's inline bootstrap, and the app
+   * would never start. mtime and size are what the filesystem changes on a rewrite.
    */
   const documentHeaderCache = new Map<
     string,
-    Readonly<Record<string, string>>
+    {
+      readonly mtimeMs: number;
+      readonly size: number;
+      readonly headers: Readonly<Record<string, string>>;
+    }
   >();
 
   async function documentHeaders(
     absolutePath: string,
   ): Promise<Readonly<Record<string, string>>> {
+    let stamp: { readonly mtimeMs: number; readonly size: number } | null =
+      null;
+    try {
+      const info = await stat(absolutePath);
+      stamp = { mtimeMs: info.mtimeMs, size: info.size };
+    } catch {
+      // A document that cannot be stat-ed cannot be cached; the read below reports the
+      // same failure with the strict policy.
+      stamp = null;
+    }
     const cached = documentHeaderCache.get(absolutePath);
-    if (cached !== undefined) {
-      return cached;
+    if (
+      cached !== undefined &&
+      stamp !== null &&
+      cached.mtimeMs === stamp.mtimeMs &&
+      cached.size === stamp.size
+    ) {
+      return cached.headers;
     }
     let headers: Readonly<Record<string, string>> = HTML_HEADERS;
     try {
@@ -137,7 +159,9 @@ export function createAssetServer(options: AssetServerOptions): AssetServer {
       // policy is not the place to report an I/O error.
       headers = HTML_HEADERS;
     }
-    documentHeaderCache.set(absolutePath, headers);
+    if (stamp !== null) {
+      documentHeaderCache.set(absolutePath, { ...stamp, headers });
+    }
     return headers;
   }
 
