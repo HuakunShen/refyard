@@ -395,52 +395,39 @@ describe("argument injection", () => {
 });
 
 describe("terminal and document injection", () => {
-  it("returns a control character in a path as JSON, never as a raw byte", async () => {
-    const repo = await createRepo({ initialCommit: true });
-    // A file name with a bell and an escape: legal on this filesystem, and a way to
-    // make a terminal beep, move the cursor or rewrite the line it is printed on.
-    const hostile = "hostile\u0001\u001b[31mname.txt";
-    if (process.platform === "win32") {
-      // NTFS forbids control characters in a name, so the path is put in the index
-      // instead of on disk. That is not a workaround for the test's sake: an index
-      // written elsewhere, a checkout of a repository made on Linux, or a tool that
-      // edits paths directly all produce exactly this, and the service reports index
-      // paths as bytes on every platform.
-      const blob = new TextDecoder()
-        .decode(
-          await repo.git(["hash-object", "-w", "--stdin"], {
-            stdin: new TextEncoder().encode("content\n"),
-          }),
-        )
-        .trim();
-      await repo.git([
-        "update-index",
-        "--add",
-        "--cacheinfo",
-        `100644,${blob},${hostile}`,
-      ]);
-    } else {
+  it.skipIf(process.platform === "win32")(
+    "returns a control character in a path as JSON, never as a raw byte",
+    async () => {
+      const repo = await createRepo({ initialCommit: true });
+      // A file name with a bell and an escape: legal on this filesystem, and a way to
+      // make a terminal beep, move the cursor or rewrite the line it is printed on.
+      //
+      // Not on Windows at all: NTFS forbids control characters in a name, and Git for
+      // Windows refuses to put such a path in the index either (`error: Invalid path`),
+      // so no repository there can hold one for the service to report. The escaping rule
+      // is still exercised below by a patch whose *content* carries an escape sequence.
+      const hostile = "hostile\u0001\u001b[31mname.txt";
       await repo.write(hostile, "content\n");
-    }
-    const service = await startService(repo);
-    try {
-      const response = await service.fetch(
-        `/api/v1/status?repositoryId=${service.repositoryId}`,
-      );
-      const body = await response.text();
-      expect(response.status).toBe(200);
-      // JSON escapes control characters; a raw ESC or SOH byte would mean the encoder
-      // lost that guarantee, and a terminal reading this is how a lie gets rendered.
-      expect(body.includes("\u001b")).toBe(false);
-      expect(body.includes("\u0001")).toBe(false);
-      expect(body).toContain("\\u001b");
-      // The path is still reported, escaped rather than dropped.
-      expect(body).toContain("hostile");
-    } finally {
-      await service.close();
-      await repo.dispose();
-    }
-  });
+      const service = await startService(repo);
+      try {
+        const response = await service.fetch(
+          `/api/v1/status?repositoryId=${service.repositoryId}`,
+        );
+        const body = await response.text();
+        expect(response.status).toBe(200);
+        // JSON escapes control characters; a raw ESC or SOH byte would mean the encoder
+        // lost that guarantee, and a terminal reading this is how a lie gets rendered.
+        expect(body.includes("\u001b")).toBe(false);
+        expect(body.includes("\u0001")).toBe(false);
+        expect(body).toContain("\\u001b");
+        // The path is still reported, escaped rather than dropped.
+        expect(body).toContain("hostile");
+      } finally {
+        await service.close();
+        await repo.dispose();
+      }
+    },
+  );
 
   it("sends a patch containing an escape sequence as JSON text", async () => {
     const repo = await createRepo({ initialCommit: true });

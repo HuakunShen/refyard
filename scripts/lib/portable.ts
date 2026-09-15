@@ -81,7 +81,7 @@ import {
   parseLayoutOutput,
   splitStashSubject,
   CatFileDecoder,
-} from "__CORE__";
+} from __CORE__;
 // Fixture bytes arrive as plain numbers and are turned into typed arrays by the
 // sandbox's own \`Uint8Array\`, so no host global (not even TextEncoder) is needed
 // inside the VM and no object crosses a realm boundary.
@@ -170,9 +170,13 @@ function fixtureData(): Record<string, number[]> {
 export async function runPortableSmoke(): Promise<PortableSmokeResult> {
   const result = await build({
     stdin: {
+      // `JSON.stringify`, not the bare path: the placeholder sits in TypeScript
+      // *source*, and a Windows path pasted into it is read as escape sequences
+      // (`\U`, `\s`, `\d`), which is how the portable check failed on Windows with
+      // `Could not resolve "C:Usersshenhdev\refyardpackagesgit-coresrcindex.ts"`.
       contents: SELF_TEST_ENTRY.replace(
         "__CORE__",
-        join(repositoryRoot, "packages/git-core/src/index.ts"),
+        JSON.stringify(join(repositoryRoot, "packages/git-core/src/index.ts")),
       ),
       resolveDir: repositoryRoot,
       loader: "ts",

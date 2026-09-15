@@ -15,7 +15,8 @@
  * non-zero on the first failure. Nothing here publishes, installs a service, or
  * touches the user's Git configuration.
  */
-import { execFile, spawn } from "node:child_process";
+import { execFile, spawn, type ChildProcessByStdio } from "node:child_process";
+import type { Readable } from "node:stream";
 import { cp, mkdir, mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -36,7 +37,8 @@ const steps: Step[] = [];
 
 function record(name: string, command: string, status: string): void {
   steps.push({ name, command, status });
-  console.log(`  ${status === "ok" ? "ok  " : "FAIL"} ${name}  [${command}]`);
+  const label = status === "ok" ? "ok  " : status === "skip" ? "skip" : "FAIL";
+  console.log(`  ${label} ${name}  [${command}]`);
 }
 
 async function step<T>(
@@ -63,6 +65,50 @@ async function step<T>(
 // execPath and version describe bun, not the Node that `npm exec` will spawn.
 const node = "node";
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+const isWindows = process.platform === "win32";
+
+/**
+ * `npm exec …` as a child process that keeps running.
+ *
+ * Windows cannot start a `.cmd` directly: Node's `spawn` throws EINVAL for it, and
+ * under bun the same call produced a child with no output and no exit — the smoke then
+ * waited its full timeout for a readiness line that could never come. So the wrapper is
+ * started through `cmd.exe` there, with the arguments quoted here and passed verbatim
+ * (`windowsVerbatimArguments`), because Node's `shell: true` concatenates arguments
+ * without quoting and these ones contain a temporary directory that may have a space.
+ */
+function spawnNpmExec(
+  args: readonly string[],
+): ChildProcessByStdio<null, Readable, Readable> {
+  // Written out in each branch so the stdio tuple selects the overload whose stdout and
+  // stderr are streams rather than `null`. Its own process group, so the smoke can send
+  // the signal a terminal's Ctrl+C sends: the whole foreground group, because signalling
+  // only the npm wrapper is a different test (see the evidence file).
+  if (!isWindows) {
+    return spawn(npm, [...args], {
+      cwd: consumer,
+      env,
+      stdio: ["ignore", "pipe", "pipe"],
+      detached: true,
+    });
+  }
+  const line = [npm, ...args].map(quoteForCommandPrompt).join(" ");
+  return spawn(process.env["ComSpec"] ?? "cmd.exe", ["/d", "/s", "/c", line], {
+    cwd: consumer,
+    env,
+    stdio: ["ignore", "pipe", "pipe"],
+    detached: true,
+    windowsVerbatimArguments: true,
+  });
+}
+
+/** Quote one argument for `cmd.exe`: only what it would otherwise split or expand. */
+function quoteForCommandPrompt(argument: string): string {
+  if (argument.length > 0 && !/[\s"&|<>^()]/.test(argument)) {
+    return argument;
+  }
+  return `"${argument.replaceAll('"', '""')}"`;
+}
 
 const workspace = await mkdtemp(join(tmpdir(), "refyard-pack-"));
 const home = join(workspace, "home");
@@ -228,28 +274,21 @@ await step("create a repository for serve", "git init", async () => {
   );
 });
 
-const serving = spawn(
-  npm,
-  [
-    "exec",
-    "--yes",
-    "--package",
-    tarballPath,
-    "--",
-    "refyard",
-    "serve",
-    "--no-open",
-    "--port",
-    "0",
-    "--repo",
-    repository,
-    "--json",
-  ],
-  // Its own process group, so the smoke can send the signal a terminal's Ctrl+C sends:
-  // the whole foreground group. Signalling only the wrapper is a different test, and one
-  // where Linux keeps the service alive (see the evidence file).
-  { cwd: consumer, env, stdio: ["ignore", "pipe", "pipe"], detached: true },
-);
+const serving = spawnNpmExec([
+  "exec",
+  "--yes",
+  "--package",
+  tarballPath,
+  "--",
+  "refyard",
+  "serve",
+  "--no-open",
+  "--port",
+  "0",
+  "--repo",
+  repository,
+  "--json",
+]);
 let stdout = "";
 let stderr = "";
 serving.stdout.on("data", (chunk: Buffer) => {
@@ -339,61 +378,73 @@ await step(
   },
 );
 
-await step(
-  "SIGTERM stops the service cleanly",
-  "kill -TERM, then the address must stop answering",
-  async () => {
-    // What this asserts is the *service*, not npm's exit status. The service here is a
-    // grandchild — `npm exec` spawns it — and the status the wrapper reports after the
-    // signal is npm's business: on Linux npm dies by the signal itself, on macOS it has
-    // exited 0, and neither answer says whether refyard stopped. What a user can observe is
-    // the address: after Ctrl+C (or a supervisor's SIGTERM) it must stop answering.
-    const exited = new Promise<void>((resolvePromise) => {
-      serving.once("exit", () => resolvePromise());
-    });
-    // The group, not the wrapper: `npm exec` spawns the service as a grandchild, and a
-    // signal aimed at npm alone is not what a user's Ctrl+C or a shell's job control does.
-    if (serving.pid === undefined) {
-      throw new Error("the service wrapper has no pid");
-    }
-    process.kill(-serving.pid, "SIGTERM");
+if (isWindows) {
+  // Windows has no SIGTERM: `process.kill` there is TerminateProcess and there is no
+  // process group to signal, so the graceful path this step is about does not exist.
+  // Recorded as skipped rather than passed — a user stopping the service on Windows
+  // gets whatever TerminateProcess gives, which is not this claim.
+  record(
+    "SIGTERM stops the service cleanly",
+    "kill -TERM (Windows has no signals)",
+    "skip",
+  );
+} else {
+  await step(
+    "SIGTERM stops the service cleanly",
+    "kill -TERM, then the address must stop answering",
+    async () => {
+      // What this asserts is the *service*, not npm's exit status. The service here is a
+      // grandchild — `npm exec` spawns it — and the status the wrapper reports after the
+      // signal is npm's business: on Linux npm dies by the signal itself, on macOS it has
+      // exited 0, and neither answer says whether refyard stopped. What a user can observe is
+      // the address: after Ctrl+C (or a supervisor's SIGTERM) it must stop answering.
+      const exited = new Promise<void>((resolvePromise) => {
+        serving.once("exit", () => resolvePromise());
+      });
+      // The group, not the wrapper: `npm exec` spawns the service as a grandchild, and a
+      // signal aimed at npm alone is not what a user's Ctrl+C or a shell's job control does.
+      if (serving.pid === undefined) {
+        throw new Error("the service wrapper has no pid");
+      }
+      process.kill(-serving.pid, "SIGTERM");
 
-    const deadline = Date.now() + 15_000;
-    for (;;) {
-      let answered = false;
-      try {
-        const response = await fetch(`${ready.url}/`, {
-          signal: AbortSignal.timeout(2_000),
-        });
-        answered = response.status > 0;
-      } catch {
-        answered = false;
+      const deadline = Date.now() + 15_000;
+      for (;;) {
+        let answered = false;
+        try {
+          const response = await fetch(`${ready.url}/`, {
+            signal: AbortSignal.timeout(2_000),
+          });
+          answered = response.status > 0;
+        } catch {
+          answered = false;
+        }
+        if (!answered) {
+          break;
+        }
+        if (Date.now() > deadline) {
+          throw new Error(
+            "the address still answered 15s after SIGTERM; the service did not stop",
+          );
+        }
+        await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));
       }
-      if (!answered) {
-        break;
-      }
-      if (Date.now() > deadline) {
-        throw new Error(
-          "the address still answered 15s after SIGTERM; the service did not stop",
-        );
-      }
-      await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));
-    }
 
-    const timeout = new Promise<never>((_, reject) =>
-      setTimeout(
-        () => reject(new Error("the wrapper did not exit within 15s")),
-        15_000,
-      ),
-    );
-    await Promise.race([exited, timeout]);
-    // A death by signal is npm's own exit path — the address is already gone, which is the
-    // claim this step makes. What must not happen is an unexplained non-zero code.
-    if (serving.signalCode === null && serving.exitCode !== 0) {
-      throw new Error(`the wrapper exited with ${serving.exitCode}`);
-    }
-  },
-);
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error("the wrapper did not exit within 15s")),
+          15_000,
+        ),
+      );
+      await Promise.race([exited, timeout]);
+      // A death by signal is npm's own exit path — the address is already gone, which is the
+      // claim this step makes. What must not happen is an unexplained non-zero code.
+      if (serving.signalCode === null && serving.exitCode !== 0) {
+        throw new Error(`the wrapper exited with ${serving.exitCode}`);
+      }
+    },
+  );
+}
 
 // 3. The failure a user is most likely to hit: two servers, one port.
 const portHolder = spawn(

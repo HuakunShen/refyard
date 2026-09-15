@@ -572,14 +572,20 @@ describe("submodules", () => {
       if (entry === undefined) {
         throw new Error("no submodule was added");
       }
-      // Change the URL the parent records, then sync.
-      const gitmodules = await repo.readText(".gitmodules");
+      // Change the URL the parent records, then sync. Written through Git rather than
+      // by editing the file: `.gitmodules` is a config file, so Git stores a Windows
+      // path escaped (`C:\\Users\\...`), and a textual replacement of the unescaped
+      // path silently matches nothing there — the sync then had nothing to copy and
+      // the assertion below failed for a reason that had nothing to do with syncing.
       const otherRemote = await seedSubmoduleRemote();
       try {
-        await repo.write(
+        await repo.git([
+          "config",
+          "--file",
           ".gitmodules",
-          gitmodules.replace(subRemote.path, otherRemote.path),
-        );
+          "submodule.vendor/lib.url",
+          otherRemote.path,
+        ]);
         const record = await submitAndWait(service, {
           clientRequestId: "sub-sync-1",
           target: await worktreeTarget(service),
