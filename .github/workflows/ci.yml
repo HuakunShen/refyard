@@ -1,9 +1,9 @@
 # The release gate, run on a machine nobody was sitting at.
 #
-# This workflow is written but has not run in this repository yet: no run of it is
-# part of the evidence in docs/evidence/. Until it has run at least once, Linux and
-# the CI environment stay "unverified" in docs/evidence/release-matrix.md — the file
-# says so, and a green badge here would not change that.
+# The first run of this workflow was 2026-09-15 (`ci` on `main`, run 34981570854): both
+# platforms passed `pnpm check` and died on `bun: not found` in the next command, which
+# is why bun is installed below. Runs and their outcomes are recorded in
+# docs/evidence/release-matrix.md.
 #
 # What it does is exactly the command contract from AGENTS.md §5, in the same order a
 # person would run it, on Linux and on macOS. Nothing here is a substitute for a
@@ -41,6 +41,14 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: pnpm
+
+      # The dev scripts are TypeScript run by bun (`check:boundaries`, `check:contract`,
+      # `test:portable`, `pack:smoke`, `bench:runtime`), and never the product. The first
+      # run of this workflow failed with `sh: 1: bun: not found` on both platforms for
+      # exactly that reason — `pnpm check` passed, and the step died on the next command.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
 
       - name: Install
         run: pnpm install --frozen-lockfile
