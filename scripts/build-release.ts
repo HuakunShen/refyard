@@ -118,7 +118,8 @@ const result = await build({
   bundle: true,
   platform: "node",
   format: "esm",
-  target: "node26",
+  // The floor the published `engines` promises (see scripts/bundle-cli.ts).
+  target: "node22",
   // Workspace packages are bundled, so the artifact never resolves `workspace:*`.
   external: [],
   legalComments: "none",

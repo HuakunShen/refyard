@@ -22,6 +22,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { publishedEnginesRange, satisfiesEngines } from "./lib/node-engines.js";
 
 const run = promisify(execFile);
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -229,7 +230,7 @@ if (
   process.exit(1);
 }
 const installed = await step(
-  "the Node on PATH is the supported major",
+  "the Node on PATH is inside the published engines range",
   "node --version",
   async () => {
     const printed = await run(node, ["--version"], { env });
@@ -242,9 +243,16 @@ if (doctorReport.nodeVersion !== installed) {
   );
   process.exit(1);
 }
-if (!/^v26\./.test(installed)) {
+// The range is read from the manifest — the promise the package makes — rather than
+// hard-coded here: a smoke that names its own favourite major keeps passing after the
+// promise narrows. Only the `>=A.B <C` shape the manifest uses is understood; anything
+// else is reported rather than waved through.
+const enginesRange = await publishedEnginesRange(staging);
+const insideRange = satisfiesEngines(enginesRange, installed);
+if (insideRange !== true) {
   console.error(
-    `pack:smoke: this machine's Node is ${installed}; refyard publishes engines ">=26 <27" and the smoke test must run the supported major`,
+    `pack:smoke: this machine's Node is ${installed}, the published engines range is "${enginesRange}"` +
+      (insideRange === null ? " (a shape this check does not understand)" : ""),
   );
   process.exit(1);
 }

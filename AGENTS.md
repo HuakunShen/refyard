@@ -34,8 +34,12 @@ system git CLI → the target machine's repo, credentials, hooks
   inside the Node host. **Never expose `runGit(args, cwd)`, raw argv, shell, `cwd`, or `env` over
   HTTP, SSE, or any browser bridge.** The browser sends Git _intentions_; only trusted core turns
   intentions into argv.
-- **One runtime for V1: Node 26.x.** No Rust/Axum, no Bun backend, no QuickJS/JSC/WinUI, no second
-  engine, no native npm platform packages, no Electron/Tauri/Wails, no built-in terminal.
+- **One runtime for V1: Node.** Development and releases are pinned to 26.8.2; the _published_
+  `engines` range is `>=22 <27`, because the packaged CLI completes its real lifecycle on every
+  line still supported (22, 24, 26 — measured on 22.11.0, 22.23.2, 24.10.0, 25.2.1, 26.8.2) and
+  on 20.19.0 too, which the range excludes only because Node 20 is past its end of life. No
+  Rust/Axum, no Bun backend, no QuickJS/JSC/WinUI, no second engine, no native npm platform
+  packages, no Electron/Tauri/Wails, no built-in terminal.
   (The v2 design package says 24.x because that was the current major when it was written; on
   2026-09-14 the user directed this repository to Node 26 — same principle, one pinned major.)
 - **Git Core is host-free.** `packages/git-core` and `packages/git-graph` must not import
@@ -129,7 +133,8 @@ references/                the delivered v2 design package (read-only)
 
 ## 5. Toolchain
 
-- **Node 26.8.2** (`.nvmrc`), `engines: { node: ">=26 <27" }` in published packages.
+- **Node 26.8.2** (`.nvmrc`) for development and CI; `engines: { node: ">=22 <27" }` in the published
+  package (measured, not aspirational).
 - **pnpm 11.25.0** workspace (`pnpm-workspace.yaml`, `packages/*` + `apps/*`), `workspace:*` for
   internal deps, turborepo task orchestration.
 - **TypeScript 7.0.2** (`strict`, `noUncheckedIndexedAccess`, `verbatimModuleSyntax`,

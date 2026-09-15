@@ -24,9 +24,11 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
+import { publishedEnginesRange, satisfiesEngines } from "./lib/node-engines.js";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const stagingRoot = join(repoRoot, "packages", "npm-dist");
 const evidencePath = join(repoRoot, "docs", "evidence", "performance.json");
 
 function argument(name: string, fallback: number): number {
@@ -191,11 +193,20 @@ const node = "node";
 const nodeVersionText = (
   await runText(node, ["--version"], { env, cwd: workspace })
 ).trim();
-const nodeMajor = Number.parseInt(nodeVersionText.replace(/^v/, ""), 10);
-if (nodeMajor !== 26) {
+// The range comes from the manifest, not from a favourite major written here: the report
+// has to describe a runtime the *published promise* covers, and the promise is `engines`
+// in `packages/npm-dist/package.json`. Only the `>=A.B <C` shape is understood; anything
+// else is reported instead of waved through.
+const enginesRange = await publishedEnginesRange(stagingRoot);
+const insideRange = satisfiesEngines(enginesRange, nodeVersionText);
+if (insideRange !== true) {
   throw new Error(
-    `bench:runtime: the Node on PATH is ${nodeVersionText}; refyard publishes engines ">=26 <27" ` +
-      "and the report must describe a runtime users can run it on",
+    `bench:runtime: the Node on PATH is ${nodeVersionText}; the published engines range is ` +
+      `"${enginesRange}"` +
+      (insideRange === null
+        ? " (a shape this check does not understand)"
+        : "") +
+      " and the report must describe a runtime users can run it on",
   );
 }
 console.log(`  runtime: node ${nodeVersionText.replace(/^v/, "")}`);
@@ -404,7 +415,7 @@ console.log(
 );
 
 // The packaged CLI when it exists, so the measurement is of the artifact users install.
-const packagedCli = join(repoRoot, "packages", "npm-dist", "dist", "cli.mjs");
+const packagedCli = join(stagingRoot, "dist", "cli.mjs");
 const devCli = join(repoRoot, ".refyard-dev", "cli.mjs");
 let cliPath = devCli;
 for (const candidate of [packagedCli, devCli]) {

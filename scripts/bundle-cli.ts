@@ -55,7 +55,8 @@ const result = await build({
   bundle: true,
   platform: "node",
   format: "esm",
-  target: "node26",
+  // The floor the published `engines` promises: the bundle must parse there, not only on 26.
+  target: "node22",
   // Workspace packages are bundled: the published artifact must not depend on
   // `workspace:*` specifiers resolving at run time.
   external: [],

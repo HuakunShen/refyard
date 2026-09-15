@@ -24,6 +24,55 @@ unverified is a row nobody has run yet, and it stays that way until a gate runs 
 Every number in `docs/evidence/performance.json` and every test result below comes from this
 machine. It is one machine, and the report says so in its own fields.
 
+## Node versions
+
+The published `engines` range is **`>=22 <27`**. It is a range rather than one version because
+the runtime has no dependency on anything newer: the packaged CLI was run through its real
+lifecycle under six Node lines, and every one of them produced the same result.
+
+`refyard serve --json` from the `npm pack` tarball, then pair (`session/exchange`), read
+`capabilities`, `status`, `history` and `refs`, fetch the packaged UI, ask for a preview token,
+submit `stagePaths`, and check the file really is staged with `git diff --cached`:
+
+| Node     | Capabilities | UI  | History | HEAD  | Stage operation | `git diff --cached` | Status   |
+| -------- | ------------ | --- | ------- | ----- | --------------- | ------------------- | -------- |
+| 20.19.0  | 35 kinds     | 200 | 2 commits | `main` | `succeeded`   | `b.txt`             | verified |
+| 22.11.0  | 35 kinds     | 200 | 2 commits | `main` | `succeeded`   | `b.txt`             | verified |
+| 22.23.2  | 35 kinds     | 200 | 2 commits | `main` | `succeeded`   | `b.txt`             | verified |
+| 24.10.0  | 35 kinds     | 200 | 2 commits | `main` | `succeeded`   | `b.txt`             | verified |
+| 25.2.1   | 35 kinds     | 200 | 2 commits | `main` | `succeeded`   | `b.txt`             | verified |
+| 26.8.2   | 35 kinds     | 200 | 2 commits | `main` | `succeeded`   | `b.txt`             | verified |
+
+Three things this table is and is not:
+
+- It is the **product** working: a released tarball, the real CLI, a real Git repository, HTTP
+  and SSE over loopback, a real write through the queue. It is not the test suite.
+- **20.19.0 works but is not in the range.** Node 20 reached end of life on 2026-04-30
+  (`nodejs/Release` schedule, read 2026-09-15), so promising it would be a promise to support an
+  unsupported line. `>=22 <27` covers every line still supported: 22 (maintenance), 24 (LTS) and
+  26 (current — it becomes LTS on 2026-10-28). The `20.19.0` row is the evidence that the range
+  is chosen for support policy, not because the code needs a newer engine.
+- **32-bit, musl, Alpine and other libc builds are not tested here.** Nothing in the code is
+  platform-specific beyond Node's own builtins, but a row that was not run is not in this table.
+
+The suite, as opposed to the product, needs the toolchain's floor: **Vitest 4 declares
+`^20.19 || >=22.12`**, so the development and CI path is Node 22.12+ while the published runtime
+range is the wider `>=22 <27`. `scripts/lib/node-engines.ts` reads the published range out of
+`packages/npm-dist/package.json`; `pack:smoke`, `bench:runtime` and the performance-evidence test
+all assert the Node they are looking at satisfies it, so the range cannot drift away from what was
+measured.
+
+The ten gates were also run end to end on the floor line, **Node 22.23.2**: `check` (8 tasks),
+`check:boundaries`, `check:contract`, `test:unit` (236), `test:integration` (352), `test:pack` (15),
+`test:portable` (4), `build:release`, `pack:smoke` (14 steps) and `test:e2e` all pass there, and
+`bench:runtime` completes. On the release runtime, **Node 26.8.2**, the same ten gates pass and
+`pnpm test:e2e` reports **90 passed in 10.6 m**. Two runs of the e2e suite were needed on the floor
+line: the first came back with one failure — the identity of which was lost because the runner
+printed a summary line instead of the log — and the immediate re-run on the same revision passed
+**90 of 90 in 10.6 m**, on the harness this revision ships. That unknown failure is the third
+sighting of one flaky case per long run (see `browser-support.md`), not a Node-22 finding.
+
+
 ## Gates
 
 Each row is a root script from the project's command contract, run from a clean checkout of the

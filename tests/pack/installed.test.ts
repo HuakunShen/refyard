@@ -6,15 +6,15 @@
  *
  * - `bin.refyard` exists and the staged shim starts with a shebang, because a bin
  *   without one is only runnable through `node`;
- * - `engines.node` pins the major this build is tested on;
+ * - `engines.node` is the range this build is tested on, and the smoke test checks the
+ *   Node it runs under against that same range rather than against its own opinion;
  * - there are no `dependencies` and no install scripts: the bundle carries its
  *   workspace packages, so a broken `postinstall` cannot exist and nothing resolves
  *   `workspace:*` at install time;
  * - the `files` whitelist ships the CLI, the UI and nothing else — no sources, no
  *   fixtures, no references;
- * - `private: true` and an `UNLICENSED` license, because this package is not for the
- *   public registry and no license has been granted. A test asserts that nobody has
- *   quietly invented one.
+ * - the package is publishable and `UNLICENSED`: publishing makes it installable and
+ *   grants nobody a licence, and no licence text is invented on the project's behalf.
  *
  * The staged-tree checks run only when a build exists, since `packages/npm-dist/dist`
  * is generated output; the manifest checks always run.
@@ -63,11 +63,14 @@ describe("the published manifest", () => {
     expect(manifest.bin).toEqual({ refyard: "bin/refyard.mjs" });
   });
 
-  it("pins the Node major this build is verified on", async () => {
+  it("declares the oldest Node line the suite has been run on", async () => {
     const manifest = await readManifest();
-    // The v2 design package says 24 because that was current when it was written; this
-    // repository is pinned to Node 26, and the range here is the one the CI gate runs.
-    expect(manifest.engines?.["node"]).toEqual(">=26 <27");
+    // `>=22 <27`: the packaged CLI completes its lifecycle on 22.11.0 and up, and the
+    // range starts at 22 because Node 20 is past end of life — not because the code needs
+    // it (see docs/evidence/release-matrix.md, "Node versions"). Development stays pinned
+    // to 26.8.2 through `.nvmrc`, which is a different promise from this one: this is what
+    // a user installing the tarball is told they need.
+    expect(manifest.engines?.["node"]).toEqual(">=22 <27");
   });
 
   it("carries no dependencies and no install scripts", async () => {
@@ -91,12 +94,14 @@ describe("the published manifest", () => {
     expect(manifest.files).toEqual(["bin", "dist", "web"]);
   });
 
-  it("is not publishable and claims no license", async () => {
+  it("is publishable, and grants no licence by publishing", async () => {
     const manifest = await readManifest();
-    // An accidental `npm publish` is refused by npm itself, and no license text is
-    // invented on the project's behalf.
-    expect(manifest.private).toBe(true);
+    // The manifest is the thing that reaches the registry, so the release identity is
+    // asserted here: `private` would make `npm publish` refuse, and `UNLICENSED` is the
+    // deliberate choice that publishing makes the package *installable*, not usable.
+    expect(manifest.private).toBeUndefined();
     expect(manifest.license).toEqual("UNLICENSED");
+    expect(manifest.version).not.toEqual("0.0.0");
   });
 });
 

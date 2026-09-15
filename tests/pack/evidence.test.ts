@@ -11,6 +11,10 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import {
+  publishedEnginesRange,
+  satisfiesEngines,
+} from "../../scripts/lib/node-engines.js";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const evidence = join(repoRoot, "docs", "evidence");
@@ -88,9 +92,14 @@ describe("performance evidence", () => {
     const report = await readPerformance();
     expect(report.kind).toBe("refyard-performance-report");
     expect(report.runtime.kind).toBe("node");
-    // The published packages declare engines ">=26 <27"; a report from another
-    // major is not evidence about the supported runtime.
-    expect(report.runtime.version).toMatch(/^26\./);
+    // The published manifest declares the Node range; a report from a runtime outside it
+    // is not evidence about the runtime that promise covers. Reading the range instead of
+    // naming a favourite major is what keeps the two from drifting apart.
+    const range = await publishedEnginesRange(
+      join(repoRoot, "packages", "npm-dist"),
+    );
+    expect(range).not.toBe("");
+    expect(satisfiesEngines(range, report.runtime.version)).toBe(true);
     expect(Number.isNaN(Date.parse(report.measuredAt))).toBe(false);
     expect(report.runtime.platform.length).toBeGreaterThan(0);
     expect(report.runtime.arch.length).toBeGreaterThan(0);

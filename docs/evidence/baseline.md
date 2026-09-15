@@ -43,7 +43,8 @@ effect and Homebrew's `node` was found first). `.nvmrc` pins `26.8.2`.
 
 - **Runtime major is Node 26**, not the 24.x named in the v2 design package, by the user's
   direction on 2026-09-14. Same principle (exactly one pinned major); the reference plan's
-  T13 `engines` assertion will read `>=26 <27` with a comment.
+  T13 `engines` assertion was written as `>=26 <27` with a comment. It reads `>=22 <27` now —
+  measured, not narrowed by a dependency — see `release-matrix.md`, "Node versions".
 - **The public contract is authored here** (`packages/git-contract`) because
   `reference/contracts.ts` and `CONTRACT.md` were not delivered. The 35-operation union and its
   target pairing are frozen in `OPERATION_TARGET_LIST`, and `tests/contract/schema.test.ts`

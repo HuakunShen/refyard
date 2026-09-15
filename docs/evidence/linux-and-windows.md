@@ -13,7 +13,7 @@ found five defects the first run could not (below).
 | Thing            | Ubuntu (`ufo`)                           | Windows (`rog16-windows`)                                   |
 | ---------------- | ---------------------------------------- | ----------------------------------------------------------- |
 | Operating system | Ubuntu 24.04, x86_64, kernel 7.0.0-30    | Windows 10.0.26200, x64                                     |
-| Node             | 26.8.2 (installed with nvm for this run) | 26.5.0 (already installed; `engines` allows `>=26 <27`)     |
+| Node             | 26.8.2 (installed with nvm for this run) | 26.5.0 (already installed; the `engines` range of the day was `>=26 <27`) |
 | Git              | 2.43.0                                   | 2.55.0.windows.3                                            |
 | pnpm             | 11.25.0 (already installed)              | 11.25.0 (installed through npm for this run — see the note) |
 | bun              | 1.4.0 (dev scripts only)                 | 1.3.14 (dev scripts only)                                   |

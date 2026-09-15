@@ -36,10 +36,12 @@ registry is the one whose checks ran, not a rebuild on a release machine.
 | Description | same                             | Reads "Not published; install from a locally built tarball." — true until the moment it is published, then it is the registry text.                            |
 | Public      | the publish command              | `refyard` is unscoped, so a plain `npm publish` publishes it **publicly**. `npm publish --access restricted` refuses rather than silently restricting nothing. |
 
-Two mechanical facts: `"private": true` must be removed from that manifest or `npm publish` refuses
-(it is `true` today, deliberately, so no accident can publish it), and the repository is
-`UNLICENSED` and will be pushed to a **private** GitHub repository — a published npm package whose
-source is private is ordinary, but it is worth saying out loud in the release notes.
+Decided on 2026-09-15 for the first release: **version 0.1.0**, **`UNLICENSED` kept** (publishing
+makes the package installable, not usable — no licence is granted to anyone who installs it), the
+GitHub repository stays **private** (so the manifest carries no `repository`/`homepage` links that
+would 404 for a stranger), and `"private": true` was removed from the manifest — it is what
+`npm publish` refuses on. `pnpm test:pack` asserts the release identity that comes out of this:
+publishable, `UNLICENSED`, and a version that is not the `0.0.0` placeholder.
 
 ## The commands
 
@@ -73,7 +75,9 @@ exactly why every other test uses locally built tarballs.
 
 ## Release notes, at minimum
 
-- The version, the Node major (`engines: >=26 <27`), and the `git` functional baseline (2.43;
+- The version, the Node range (`engines: >=22 <27`; the packaged CLI completes its real lifecycle
+  on 20.19.0, 22.11.0, 22.23.2, 24.10.0, 25.2.1 and 26.8.2, and the range starts at 22 because
+  Node 20 is past end of life), and the `git` functional baseline (2.43;
   `fetch`/`pull` additionally need 2.41+ porcelain and are reported per probe by `refyard doctor`).
 - What the release does **not** do, in the words the evidence file uses: no hosted origin, no
   terminal, no plugin host, and the write operations listed in `GET /api/v1/capabilities` are the
