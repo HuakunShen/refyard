@@ -1,6 +1,7 @@
 # Plan 0005 — The remaining scope: forms 2–4, T16–T18, and the open defects
 
-> Status: **active, revision 1** — written 2026-09-16, after 0.1.1 was published.
+> Status: **active, revision 2** — written 2026-09-16, after 0.1.1 was published; revised after
+> the owner required Cloudflare Worker PWA hosting and a backend-only CLI.
 > Implements: `docs/goals/2026-09-16-remaining-scope.md`.
 > Source tasks: the design package's T16/T17/T18 (`references/ai-chat/2026-09-14/`), the north
 > star's decision table, and the defects this repository's own platform runs produced. Tasks are
@@ -35,6 +36,8 @@ Windows — but the three-engine run has **not** been re-run since R1, which is 
 7. **R12–R14** are the gated and verification-only items: form 3 needs the owner's go-ahead, T18
    produces a decision rather than a runtime, and the WebKit-on-Linux row needs one `sudo` command
    on another machine.
+8. **R15** binds the deployment shape: the Cloudflare Worker owns only the static PWA, the CLI
+   owns only the authenticated backend API, and hosted API calls require an explicit secure origin.
 
 ## How to execute this plan
 
@@ -112,6 +115,7 @@ Filled in as each task closes. A row that says "not done" names the reason.
 | R12  | _pending_       |                      |        |          |
 | R13  | _pending_       |                      |        |          |
 | R14  | _pending_       |                      |        |          |
+| R15  | _pending_       |                      |        |          |
 
 ## R1 — The session token leaves `localStorage`
 
@@ -542,3 +546,49 @@ engines; the WebKit-on-Linux row becomes verified or stays blocked with the comm
 modified; a failure found there is fixed with a case or recorded, never skipped.
 
 **Acceptance:** the row in the platform evidence file states the outcome and the engine version.
+
+## R15 — Cloudflare Worker PWA and backend-only CLI
+
+**What:** deploy `apps/web/build` as a Cloudflare Workers Static Assets site with the existing
+SvelteKit SPA and service worker; the npm/CLI artifact owns only the Node Git backend and never
+ships or serves the web bundle. The browser may call a CLI service only through an explicitly
+configured HTTPS endpoint (for example a user-owned Cloudflare Tunnel) whose exact UI origin is
+allowed by the CLI.
+
+**Files:** `apps/web/wrangler.jsonc`, `apps/web/static/_headers`, `apps/web/package.json`,
+`package.json`, `apps/web/src/lib/connection.ts`, `apps/cli/src/{args,main,serve}.ts`,
+`packages/host-node/src/http/{server,origins}.ts`, `tests/{web-host,security,compat}/*`,
+`docs/{installation,browser-support,evidence/release-matrix}.md`.
+
+**Interfaces:** the Worker is an asset-only deployment; it has no Git binding, secret, API proxy,
+or server route. Its `assets.directory` is `./build` and its SPA fallback is
+`single-page-application`; `_headers` supplies exact security headers because Wrangler has no
+`headers` config field. The CLI accepts an exact allowlisted UI origin, emits a pairing URL that
+carries the API origin and one-use ticket, and adds exact CORS response headers only for that
+allowlisted origin. No wildcard origin, credential cookie, token in `localStorage`, or token in a
+Cloudflare binding is permitted.
+
+**Rules:** HTTPS termination/tunnel ownership is explicit and documented; a public Worker cannot
+reach a user's loopback by itself. The Worker caches only its own bounded static assets; its service
+worker never intercepts or caches `/api/*` or cross-origin API requests. Secrets use Wrangler's
+secret mechanism or the local CLI environment, never source, `vars`, query strings, or process
+arguments. The backend retains bearer auth, ticket TTL/replay protection, repository scope and
+hostile-origin refusal. The CLI's legacy static asset path is removed from the production package;
+local browser tests use a separate static asset server and the same public API client path.
+
+**Acceptance:**
+
+- `pnpm build` produces the static SPA and PWA files; `pnpm --dir apps/web exec wrangler deploy --dry-run`
+  validates the Worker configuration and asset upload without publishing;
+- a test serves the built assets through the Worker-compatible configuration and asserts SPA routes
+  fall back, `/api/*` does not fall back to HTML, security headers are present, and non-GET asset
+  requests are refused;
+- backend tests assert same-origin behavior remains unchanged, an unlisted hosted origin is refused,
+  an exact allowlisted origin can preflight and exchange a one-use ticket, and a tunnel/API URL is
+  still bearer-authenticated; browser tests pair against the separate static host and leave the CLI
+  process responsible for API only;
+- package tests assert the npm artifact has no `web/` files and the CLI readiness output identifies
+  an API-only service; docs state the Cloudflare Worker revision, HTTPS/tunnel prerequisite, and
+  unverified deployment account/domain separately from local dry-run evidence.
+
+**Commit:** `feat(deploy): host the PWA on Cloudflare and keep the CLI API-only`
