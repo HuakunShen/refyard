@@ -525,8 +525,10 @@ record(
   {
     name: "history-first-page",
     window: (sample) => sample.historySeconds,
+    // The lane fold is not in this number: `packages/git-graph` runs in the browser,
+    // and the service never computes lanes.
     processScope:
-      "one refyard service process; `git log` for one page plus the graph fold",
+      "one refyard service process: `git log` for one page, parsed into commit summaries",
     memoryMetric: "none",
     unit: "milliseconds",
     pick: (sample) => sample.historySeconds * 1000,

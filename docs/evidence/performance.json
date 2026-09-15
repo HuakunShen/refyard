@@ -1,6 +1,6 @@
 {
   "kind": "refyard-performance-report",
-  "measuredAt": "2026-09-15T01:11:24.289Z",
+  "measuredAt": "2026-09-15T02:37:18.845Z",
   "runtime": {
     "kind": "node",
     "version": "26.8.2",
@@ -24,48 +24,48 @@
   "measurements": [
     {
       "name": "cold-start-to-ready",
-      "durationSeconds": 0.48,
+      "durationSeconds": 0.467,
       "processScope": "refyard CLI process: spawn → listener up → readiness object printed (Git feature probe included)",
       "memoryMetric": "none",
-      "value": 0.48,
+      "value": 0.467,
       "unit": "seconds",
-      "notes": "Includes the doctor-style Git feature probe at startup; excludes building the fixture. median of 3 runs, range 0.456–0.485."
+      "notes": "Includes the doctor-style Git feature probe at startup; excludes building the fixture. median of 3 runs, range 0.467–0.468."
     },
     {
       "name": "service-rss-after-start",
-      "durationSeconds": 0.56,
+      "durationSeconds": 0.524,
       "processScope": "the refyard service process only (ps -o rss), after readiness and before any read",
       "memoryMetric": "resident set size of that process, as reported by ps",
       "value": 86,
       "unit": "MiB",
-      "notes": "Excludes the browser and excludes any Git process. median of 3 runs, range 85.516–86.375."
+      "notes": "Excludes the browser and excludes any Git process. median of 3 runs, range 85.328–85.922."
     },
     {
       "name": "status-read-throughput",
-      "durationSeconds": 0.56,
+      "durationSeconds": 0.524,
       "processScope": "one refyard service process over loopback HTTP; each read runs `git status --porcelain=v2 --branch -z` plus the index read",
       "memoryMetric": "none",
-      "value": 178.6,
+      "value": 190.8,
       "unit": "reads/second",
-      "notes": "At concurrency 4 against a 100000-commit repository on this machine. median of 3 runs, range 173.31–181.159."
+      "notes": "At concurrency 4 against a 100000-commit repository on this machine. median of 3 runs, range 182.815–208.333."
     },
     {
       "name": "service-rss-after-reads",
-      "durationSeconds": 0.56,
+      "durationSeconds": 0.524,
       "processScope": "the refyard service process only, after the read batch above",
       "memoryMetric": "resident set size of that process, as reported by ps",
-      "value": 94,
+      "value": 93,
       "unit": "MiB",
-      "notes": "After 100 reads at concurrency 4. median of 3 runs, range 93.188–94.234."
+      "notes": "After 100 reads at concurrency 4. median of 3 runs, range 92.875–93.672."
     },
     {
       "name": "history-first-page",
-      "durationSeconds": 0.434,
-      "processScope": "one refyard service process; `git log` for one page plus the graph fold",
+      "durationSeconds": 0.424,
+      "processScope": "one refyard service process: `git log` for one page, parsed into commit summaries",
       "memoryMetric": "none",
-      "value": 434,
+      "value": 424,
       "unit": "milliseconds",
-      "notes": "Page size 100 of 100000 commits; the response is bounded by the contract's page limit (truncated in 3 of 3 runs). median of 3 runs, range 404–437."
+      "notes": "Page size 100 of 100000 commits; the response is bounded by the contract's page limit (truncated in 3 of 3 runs). median of 3 runs, range 405–437."
     },
     {
       "name": "graceful-shutdown",
