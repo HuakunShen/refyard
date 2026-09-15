@@ -1,6 +1,6 @@
 {
   "name": "refyard",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A browser workbench for a Git repository on this machine: loopback only, authenticated, and it drives the machine's own git.",
   "license": "UNLICENSED",
   "type": "module",
