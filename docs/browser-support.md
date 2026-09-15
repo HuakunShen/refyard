@@ -7,16 +7,40 @@ whenever a mechanism gets in the way, never a way around the mechanism.
 
 ## What was run
 
-| Browser                          | Version                              | Result                                                                                        |
-| -------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------------- |
-| Chromium (Playwright)            | the build pinned in `pnpm-lock.yaml` | **Verified.** All 25 end-to-end specs run here, including offline reload and instance change. |
-| Firefox, WebKit                  | —                                    | **Unverified.** No run has happened on these engines. Playwright can run them; nobody has.    |
-| Safari, Chrome, Edge (installed) | —                                    | **Unverified.** The app is plain SPA + `fetch` + `EventSource`; nothing here claims it works. |
-| Mobile browsers                  | —                                    | **Unverified**, and the layout is a desktop workbench, not a phone app.                       |
+`pnpm test:e2e`, 2026-09-15, one worker, Playwright 1.63.0 pinned by `pnpm-lock.yaml`:
+**90 passed, 0 failed (11.9 m)** — the same 30 specs per engine.
 
-The service worker, pairing flow, event stream, keyboard reprint (`p` + Enter) and the
-write panels are all covered by specs that run against the shipped bundle in this one
-engine. A browser that passes nothing else should be treated as untested, not as broken.
+| Browser  | Engine version | Result                                                                                                             |
+| -------- | -------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Chromium | 153.0.8010.12  | **Verified.** All 30 end-to-end specs, including the offline reload and the instance-change refusal.                |
+| Firefox  | 155.0          | **Verified.** All 30.                                                                                              |
+| WebKit   | 26.6           | **Verified.** All 30, after the two engine differences below were found and the case was made engine-independent.   |
+| Safari, Chrome, Edge (installed) | — | **Unverified.** These are the engines above wearing a different version number and a different shell; nobody has run those builds. |
+| Mobile browsers | —               | **Unverified**, and the layout is a desktop workbench, not a phone app.                                            |
+
+### What running three engines found
+
+Two of the three are WebKit-specific, and both were in the *test* rather than in the app —
+which is the kind of thing that engine was added to find out:
+
+- **`context.setOffline(true)` blocks navigations in WebKit.** `page.reload()` and
+  `page.goto()` fail with `WebKit encountered an internal error`, and a page-initiated
+  `location.reload()` is dropped outright: a marker set on `window` before the reload is
+  still there afterwards and `performance.timeOrigin` has not moved. The earlier version of
+  the offline-reload spec therefore asserted against the *old* document — the shell looked
+  cached, the data looked stale, and nothing proved either. The case now stops the service
+  process instead of emulating an outage at the browser, which is a plain reload every
+  engine runs and is also the closer reproduction of "`refyard serve` exited, the tab is
+  still open".
+- **`page.waitForFunction("<string>")` is refused** in WebKit: the page's CSP has no
+  `'unsafe-eval'`, so the string is not evaluated. The same expression passed to
+  `page.evaluate` is fine, and the specs use that.
+
+The third finding is not engine-specific, but the offline case is what surfaced it: with
+the service gone, the repository-creation panel said **"not implemented in this build"** — a
+claim about the build, made by a page that had received no capabilities at all. It now says
+"the service has not reported its operations", and the e2e case asserts that wording, so the
+two answers cannot collapse back into one.
 
 ## What the app needs
 
@@ -25,7 +49,7 @@ engine. A browser that passes nothing else should be treated as untested, not as
 | `fetch` with `Authorization`     | every API call                            | The app cannot pair or read. Nothing degrades gracefully.                                                                   |
 | `EventSource` (SSE)              | live-update hints, stale-snapshot notices | Reads still work; the header says "no live updates". Nothing is lost — the app re-reads on every write and on window focus. |
 | `sessionStorage`, `localStorage` | the session token, the service address    | The app runs unpaired and forgets the address on reload — the pairing URL still works.                                      |
-| Service worker                   | offline app shell                         | Online use is unaffected; a reload while offline shows the browser's error page instead of "not connected".                 |
+| Service worker                   | offline app shell                         | Online use is unaffected; a reload with the service gone shows the browser's error page instead of the cached shell.        |
 | `crypto.getRandomValues`         | client request ids                        | Not used for tokens; the host mints those.                                                                                  |
 
 ## Same-origin is the supported shape
@@ -54,7 +78,13 @@ same-origin, not to weaken a check:
 - While the browser reports offline, write controls refuse with a message and nothing is
   queued: a write is never deferred to a moment when the user is not looking, and it is
   never replayed after the connection returns.
-- A reload while offline shows the cached shell and the state "not connected (offline)".
+- **A reload with the service gone is served from the worker's cache.** Every document is
+  served `cache-control: no-store`, so a shell that arrives while the service is stopped
+  can only have come from the worker. The reloaded page reports "no live updates" (the
+  event stream's state), the repository list reports the failed read, no write control is
+  offered, and nothing is queued — verified in all three engines.
+- A page the *browser* knows is offline additionally appends "(offline)" to that badge,
+  because `navigator.onLine` is a fact only the browser has.
 - There is no background sync, no push, and no periodic work. A closed tab stops doing
   anything at all.
 

@@ -49,8 +49,13 @@
      * Per operation rather than one flag: a build that could clone but not init is a
      * real state (and the other way round), and offering a mode whose operation the
      * host will refuse is the lie the capability rule exists to prevent.
+     *
+     * `"unknown"` is the third answer, and it is not the same one: capabilities that
+     * never arrived — the service is gone, or has not answered yet — say nothing about
+     * this build. Saying "not implemented in this build" there would blame the code for
+     * a connection the reader could restore.
      */
-    available: { readonly init: boolean; readonly clone: boolean };
+    available: { readonly init: boolean; readonly clone: boolean } | "unknown";
     disabled?: boolean;
     busy?: boolean;
     /**
@@ -84,9 +89,13 @@
   let remoteUrl = $state("");
   let initializeSubmodules = $state(false);
 
-  const modeAvailable = $derived(
-    mode === "init" ? available.init : available.clone,
+  const initAvailable = $derived(
+    available === "unknown" ? false : available.init,
   );
+  const cloneAvailable = $derived(
+    available === "unknown" ? false : available.clone,
+  );
+  const modeAvailable = $derived(mode === "init" ? initAvailable : cloneAvailable);
   const locked = $derived(disabled || busy);
   const destinationReady = $derived(destination.trim().length > 0);
   const ready = $derived(
@@ -138,7 +147,7 @@
             : "bg-transparent text-muted-foreground hover:bg-panel-muted",
         )}
         aria-pressed={mode === "init"}
-        disabled={locked || !available.init}
+        disabled={locked || !initAvailable}
         onclick={() => (mode = "init")}
         data-testid="repository-mode-init"
       >
@@ -153,14 +162,16 @@
             : "bg-transparent text-muted-foreground hover:bg-panel-muted",
         )}
         aria-pressed={mode === "clone"}
-        disabled={locked || !available.clone}
+        disabled={locked || !cloneAvailable}
         onclick={() => (mode = "clone")}
         data-testid="repository-mode-clone"
       >
         Clone
       </button>
     </div>
-    {#if !modeAvailable}
+    {#if available === "unknown"}
+      <Badge tone="muted">the service has not reported its operations</Badge>
+    {:else if !modeAvailable}
       <Badge tone="muted">not implemented in this build</Badge>
     {/if}
   </div>

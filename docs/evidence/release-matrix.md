@@ -61,21 +61,23 @@ absence of races that were not constructed.
 
 ## Browsers
 
-The e2e suite runs against the Chromium that Playwright manages, not a system browser.
+`pnpm test:e2e`, 2026-09-15, Playwright 1.63.0, one worker: **90 passed, 0 failed (11.9 m)** —
+the same 30 specs in each of three engines, against the built bundle and a real service.
 
-| Browser                                               | Status     | Notes                                                                                                       |
-| ----------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------------------------- |
-| Chromium (Playwright bundled; Desktop Chrome profile) | verified   | 27 cases: reads, staging, stash, branch, merge, worktrees, versions, offline reload with the service worker |
-| Firefox                                               | unverified | no Playwright project for it                                                                                |
-| WebKit / Safari (macOS)                               | unverified | not run                                                                                                     |
-| Safari on iOS                                         | unverified | not run                                                                                                     |
-| Chrome on Android                                     | unverified | not run                                                                                                     |
-| Mobile viewports (any)                                | unverified | the e2e project is desktop-sized only                                                                       |
-| Screen readers / accessibility tree                   | unverified | no assistive-technology run                                                                                 |
+| Browser                                          | Status     | Notes                                                                                                                  |
+| ------------------------------------------------ | ---------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Chromium 153 (Playwright bundled)                 | verified   | 30 cases: reads, staging, stash, branch, merge, worktrees, versions, live updates, offline reload, repository creation |
+| Firefox 155 (Playwright bundled)                  | verified   | the same 30 cases                                                                                                      |
+| WebKit 26.6 (Playwright bundled)                  | verified   | the same 30 cases. Two WebKit-only limits were found in the *tests*; both are recorded in `browser-support.md`           |
+| Safari (the installed macOS app)                  | unverified | Playwright's WebKit is the engine, not Apple's build; nobody has opened the app in Safari                               |
+| Safari on iOS                                     | unverified | not run                                                                                                                |
+| Chrome on Android                                 | unverified | not run                                                                                                                |
+| Mobile viewports (any)                            | unverified | the e2e projects are desktop-sized only                                                                                |
+| Screen readers / accessibility tree               | unverified | no assistive-technology run                                                                                            |
 
-What "verified" does not mean: nothing here says the UI looks right on a phone, that Safari's
-service-worker behavior matches Chromium's, or that a screen reader can drive the app. Those are
-open, and they are named here rather than implied.
+What "verified" does not mean: nothing here says the UI looks right on a phone, that Apple's
+Safari build behaves like Playwright's WebKit, or that a screen reader can drive the app. Those
+are open, and they are named here rather than implied.
 
 ## Git and repository shapes
 

@@ -106,30 +106,24 @@ export function timedRead<T>(input: {
  * The options every background read carries: the cadence, and that it keeps ticking while
  * the page is hidden (a background tab is exactly where "hidden 15 s" applies).
  *
- * `visible` is injectable so the options can be built in a test without a DOM.
+ * `visible` is a parameter and not a `document` read here: this module is arithmetic and
+ * bookkeeping, it is imported by a Node test, and a DOM read in it would mean the test
+ * could only run in a browser. The app supplies the real answer.
  */
 export function backgroundRead(input: {
   readonly key: readonly unknown[];
   readonly timer: ReadTimer;
-  readonly visible?: () => boolean;
+  readonly visible: () => boolean;
 }): {
   readonly refetchInterval: () => number;
   readonly refetchIntervalInBackground: true;
 } {
-  const visible = input.visible ?? pageVisible;
   return {
     refetchInterval: () =>
       pollIntervalMs({
-        visible: visible(),
+        visible: input.visible(),
         lastReadMs: input.timer.last(input.key),
       }),
     refetchIntervalInBackground: true,
   };
-}
-
-/** Whether the page is visible right now; the one place this module touches the DOM. */
-export function pageVisible(): boolean {
-  return (
-    typeof document === "undefined" || document.visibilityState !== "hidden"
-  );
 }

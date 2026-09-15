@@ -87,34 +87,59 @@ test.describe("an offline workbench", () => {
     expect(await repo.readText("a.txt")).toEqual("changed\n");
   });
 
-  test("reloads from the cached shell while offline, and says it is not connected", async ({
+  test("reloads from the cached shell when the service is gone, and reports what failed", async ({
     page,
-    context,
   }) => {
     await repo.write("a.txt", "changed\n");
     await page.goto(service.pairingUrl);
     await expect(page.getByTestId("staging-panel")).toBeVisible();
     const before = await acceptedOperations(page);
 
-    // The service worker has to be in control before the network goes away, or the
-    // reload only proves that Chromium has a disk cache.
+    // The service worker has to be in control before the service goes away, or the reload
+    // only proves that the browser has a disk cache. It cannot be one either way: the
+    // service serves every document `cache-control: no-store`, so the shell that lands
+    // below can only have come from the worker's own cache.
     // A string expression: no DOM lib in this tsconfig, and the page is what has the
     // service worker, not the test process.
     await page.evaluate("navigator.serviceWorker.ready");
-    await context.setOffline(true);
+    expect(
+      await page.evaluate("navigator.serviceWorker.controller !== null"),
+    ).toBe(true);
+
+    // The network stays up and the *service* goes away — a stopped `refyard serve`, not an
+    // emulated outage. WebKit cannot run this the emulated way: with
+    // `context.setOffline(true)` it drops navigations outright (a marker set before the
+    // reload is still there afterwards, and `performance.timeOrigin` does not move), and
+    // with request interception its own reload command is refused. Stopping the process is
+    // also the closer reproduction of the failure a user hits (`refyard serve` exited, the
+    // tab is still open), and every engine can take this path.
+    await service.stop();
     await page.reload();
 
-    // The shell came from the cache and the page says what it is.
-    await expect(page.getByTestId("connection-state")).toContainText(
-      "not connected",
+    // The shell came from the cache, under the worker's control, and it is the app.
+    expect(
+      await page.evaluate("navigator.serviceWorker.controller !== null"),
+    ).toBe(true);
+    // Exact, or the substring match also lands on the repository rows, whose
+    // temporary fixture paths contain "refyard-fixture-".
+    await expect(page.getByText("refyard", { exact: true })).toBeVisible();
+    // The badge reports the event stream — no live updates, because there is no service to
+    // stream from — and the read that had no answer says so where the data would have been.
+    await expect(page.getByTestId("connection-state")).toHaveText(
+      "no live updates",
     );
-    await expect(page.getByText("refyard")).toBeVisible();
-    // With no data and no service, no write control is offered at all.
+    await expect(page.getByText("Could not list repositories")).toBeVisible();
+    // The token survived in sessionStorage, so a page that had reached the service would
+    // have data; nothing was readable, so no write control is offered at all.
     await expect(page.getByTestId("stage-selected")).toHaveCount(0);
+    // And the panel does not blame the build for a service that is not answering: "not
+    // implemented in this build" is a claim about capabilities, and no capabilities arrived.
+    await expect(page.getByTestId("repository-panel")).toContainText(
+      "the service has not reported its operations",
+    );
 
-    await context.setOffline(false);
-    await page.waitForTimeout(1_000);
-    expect(await acceptedOperations(page)).toEqual(before);
+    // Nothing was accepted before the service died, and the file on disk is untouched.
+    expect(before).toBe(0);
     expect(await repo.readText("a.txt")).toEqual("changed\n");
   });
 

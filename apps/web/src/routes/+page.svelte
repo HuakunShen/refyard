@@ -271,9 +271,21 @@
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
   });
+  /**
+   * Whether the page is visible right now.
+   *
+   * The DOM read lives here, in the app that owns the browser, rather than in the polling
+   * module: that module is the cadence arithmetic and is imported by a Node test, where
+   * `document` does not exist. `ssr = false` means the guard is for that test, not for SSR.
+   */
+  function pageVisible(): boolean {
+    return (
+      typeof document === "undefined" || document.visibilityState !== "hidden"
+    );
+  }
   /** The cadence options a background read carries, for one query key. */
   const polled = (key: readonly unknown[]) =>
-    backgroundRead({ key, timer: readTimer });
+    backgroundRead({ key, timer: readTimer, visible: pageVisible });
 
   const capabilities = createQuery(() => ({
     queryKey: ["capabilities", baseUrl, token],
@@ -676,10 +688,23 @@
   const stashAvailable = $derived(implementedKinds.has("createStash"));
   const tagAvailable = $derived(implementedKinds.has("createTag"));
   const worktreeAvailable = $derived(implementedKinds.has("createWorktree"));
-  const repositoryCreationAvailable = $derived({
-    init: implementedKinds.has("initRepository"),
-    clone: implementedKinds.has("cloneRepository"),
-  });
+  /**
+   * What the *service* says it can create, per operation.
+   *
+   * Capabilities that never arrived are `"unknown"`, not `false`. Those two answers look
+   * alike in a boolean and are not alike at all: a service that answered and listed no
+   * `initRepository` is a build fact, while a service that is not answering — stopped,
+   * still starting — says nothing about this build. The panel words them separately,
+   * because a page that has lost its service should name the connection, not the code.
+   */
+  const repositoryCreationAvailable = $derived(
+    capabilities.data === undefined
+      ? ("unknown" as const)
+      : {
+          init: implementedKinds.has("initRepository"),
+          clone: implementedKinds.has("cloneRepository"),
+        },
+  );
   const submoduleAvailable = $derived(implementedKinds.has("addSubmodule"));
   const mergeAvailable = $derived(implementedKinds.has("merge"));
   /** The operation Git reports as unfinished, straight from the status read. */
