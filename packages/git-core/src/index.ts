@@ -38,6 +38,7 @@ export * from "./plan/tags.js";
 export * from "./plan/worktrees.js";
 export * from "./plan/submodules.js";
 export * from "./plan/merge.js";
+export * from "./plan/repository.js";
 export * from "./workflows/engine.js";
 export * from "./workflows/status.js";
 export * from "./workflows/history.js";

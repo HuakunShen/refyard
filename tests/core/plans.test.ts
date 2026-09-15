@@ -30,6 +30,8 @@ import {
   planDiffPatchForPath,
   planForEachRef,
   planLsFilesStage,
+  planRepositoryClone,
+  planRepositoryInit,
   planRestoreWorktree,
   planStashList,
   planRevList,
@@ -80,6 +82,21 @@ function allSpecs(): GitCommandSpec[] {
     planStashPop(context, { locator: "stash@{0}", restoreIndex: true }),
     planStashDrop(context, "stash@{0}"),
     planStashResolve(context, "stash@{0}"),
+    planRepositoryInit(context, {
+      destination: "/root/new",
+      initialBranch: "trunk",
+    }),
+    planRepositoryInit(context, { destination: "/root/new", initialBranch: null }),
+    planRepositoryClone(context, {
+      remoteUrl: "/remote/repo.git",
+      destination: "/root/cloned",
+      initializeSubmodules: true,
+    }),
+    planRepositoryClone(context, {
+      remoteUrl: "/remote/repo.git",
+      destination: "/root/cloned",
+      initializeSubmodules: false,
+    }),
   ];
 }
 
@@ -116,6 +133,15 @@ describe("planner invariants", () => {
   });
 
   it("classifies reads as readonly and writes as hook-running", () => {
+    // A clone is the one write whose deadline is the network's: it may take minutes,
+    // and the contract's network deadline is what it is for.
+    expect(
+      planRepositoryClone(context, {
+        remoteUrl: "/remote/repo.git",
+        destination: "/root/cloned",
+        initializeSubmodules: false,
+      }).deadlineClass,
+    ).toBe("network");
     expect(planStatus(context).deadlineClass).toBe("readonly");
     expect(planForEachRef(context).deadlineClass).toBe("readonly");
     expect(planCatFileBatch(context, [head()]).deadlineClass).toBe("readonly");

@@ -1,11 +1,17 @@
 /**
- * Refs, remotes, worktrees, submodules and stashes as portable facts.
+ * Refs, remotes, worktrees, submodules and stashes as portable facts — and the two
+ * commands that create a repository.
  *
- * These five reads are grouped because they share a shape: each one asks Git for a
- * listing, and each listing's *interpretation* — which object a tag really points
- * at, which of three object names a submodule is out of sync on, whether a stash
- * locator still matches the object it was recorded with — belongs here rather than
- * in the UI.
+ * The reads are grouped because they share a shape: each one asks Git for a listing,
+ * and each listing's *interpretation* — which object a tag really points at, which of
+ * three object names a submodule is out of sync on, whether a stash locator still
+ * matches the object it was recorded with — belongs here rather than in the UI.
+ *
+ * Creation is here for the opposite reason: `git init` and `git clone` are the only
+ * writes whose destination may not exist when they start, so what a failure *left on
+ * disk* is part of the answer. The comparison (before, after, how the process ended)
+ * is a product rule and lives in core; the observation itself is I/O, so the host
+ * supplies it as a function — core never touches a filesystem.
  *
  * Identity comes later. Core returns paths, objects and names; the host registry
  * mints `repositoryId`/`worktreeId`/`pathId` and decides what a session may see.
@@ -36,12 +42,16 @@ import {
   planSubmoduleConfig,
 } from "../plan/refs.js";
 import {
+  boundedDiagnostic,
   GitWorkflowError,
   parseFailure,
   runMeaningfulExit,
   runRequired,
   type GitEngine,
+  type GitFailureCode,
 } from "./engine.js";
+import { planRepositoryClone, planRepositoryInit } from "../plan/repository.js";
+import type { GitCommandSpec, GitTermination } from "../ports.js";
 
 /* --------------------------------------------------------------------- refs */
 
@@ -423,4 +433,161 @@ function decodeLenient(bytes: Uint8Array): string {
     text += String.fromCharCode(byte);
   }
   return text;
+}
+
+/* ---------------------------------------------------------------- creation */
+
+/**
+ * What a destination looks like on disk, as the host reports it.
+ *
+ * `empty` and `nonEmpty` are deliberately distinct from `absent`: `git clone` refuses
+ * a destination that exists and holds anything, but accepts one that exists and is
+ * empty, and a refusal is only a refusal when the command was the thing that did not
+ * happen.
+ */
+export type DestinationState = "absent" | "empty" | "nonEmpty";
+
+/** Injected by the host: reading a directory is I/O, which core does not do. */
+export type ObserveDestination = (
+  destination: string,
+) => Promise<DestinationState>;
+
+interface CreationFailure {
+  readonly code: GitFailureCode;
+  readonly exitCode: number | null;
+  readonly diagnostic: string;
+}
+
+/**
+ * How a creation command ended, with the destination state that came with it.
+ *
+ * - `refused`: Git exited non-zero and the destination holds what it held before —
+ *   a refusal, with Git's own diagnostic as the reason;
+ * - `leftBehind`: Git exited non-zero and the destination now holds something it did
+ *   not hold before. This is not "failed": a retry into that directory is no longer
+ *   the same operation, and nothing here removes what the user chose;
+ * - `uncertain`: the process was killed, timed out or produced no usable result. What
+ *   is on disk is a fact and travels with the outcome; whether the command finished
+ *   is not known, and the caller must not retry.
+ */
+export type CreationOutcome =
+  | { readonly kind: "done"; readonly destinationAfter: DestinationState }
+  | ({
+      readonly kind: "refused";
+      readonly destinationAfter: DestinationState;
+    } & CreationFailure)
+  | ({
+      readonly kind: "leftBehind";
+      readonly destinationAfter: DestinationState;
+    } & CreationFailure)
+  | ({
+      readonly kind: "uncertain";
+      readonly destinationAfter: DestinationState;
+    } & CreationFailure);
+
+function failureCodeOf(termination: GitTermination): GitFailureCode {
+  switch (termination) {
+    case "timeout":
+      return "GitTimedOut";
+    case "signal":
+      return "GitTerminatedBySignal";
+    case "output-limit":
+      return "GitOutputLimitExceeded";
+    case "spawn-error":
+      return "GitNotStarted";
+    default:
+      return "GitCommandFailed";
+  }
+}
+
+/**
+ * Run one creation command and classify it.
+ *
+ * The destination is observed before and after: that pair is what separates "Git
+ * refused" from "Git left a half-written directory", and both are reported without
+ * cleaning anything up. A killed process is `uncertain` regardless of what it left,
+ * because a timeout says nothing about how far it got.
+ */
+async function runCreation(
+  engine: GitEngine,
+  spec: GitCommandSpec,
+  input: {
+    readonly destination: string;
+    readonly observeDestination: ObserveDestination;
+  },
+): Promise<CreationOutcome> {
+  const before = await input.observeDestination(input.destination);
+  const result = await engine.run(spec);
+  const after = await input.observeDestination(input.destination);
+  const diagnostic = boundedDiagnostic(result.stderr);
+
+  if (result.termination === "exit" && result.exitCode === 0) {
+    return { kind: "done", destinationAfter: after };
+  }
+  if (result.termination !== "exit") {
+    return {
+      kind: "uncertain",
+      destinationAfter: after,
+      code: failureCodeOf(result.termination),
+      exitCode: result.exitCode,
+      diagnostic,
+    };
+  }
+  const failure = {
+    destinationAfter: after,
+    code: "GitCommandFailed" as const,
+    exitCode: result.exitCode,
+    diagnostic,
+  };
+  // Something that was not there before survived the failure. Only a destination
+  // that was `absent` or `empty` before can have gained content from this command.
+  if (before !== "nonEmpty" && after === "nonEmpty") {
+    return { kind: "leftBehind", ...failure };
+  }
+  return { kind: "refused", ...failure };
+}
+
+/** `git init`, classified by what the destination holds afterwards. */
+export async function initRepository(
+  engine: GitEngine,
+  input: {
+    readonly cwdHandle: string;
+    readonly destination: string;
+    readonly initialBranch: string | null;
+    readonly observeDestination: ObserveDestination;
+  },
+): Promise<CreationOutcome> {
+  return runCreation(
+    engine,
+    planRepositoryInit(
+      { cwdHandle: input.cwdHandle },
+      { destination: input.destination, initialBranch: input.initialBranch },
+    ),
+    input,
+  );
+}
+
+/** `git clone`, classified by what the destination holds afterwards. */
+export async function cloneRepository(
+  engine: GitEngine,
+  input: {
+    readonly cwdHandle: string;
+    readonly remoteUrl: string;
+    readonly destination: string;
+    readonly initializeSubmodules: boolean;
+    readonly observeDestination: ObserveDestination;
+  },
+): Promise<CreationOutcome> {
+  return runCreation(
+    engine,
+    planRepositoryClone(
+      { cwdHandle: input.cwdHandle },
+      {
+        remoteUrl: input.remoteUrl,
+        destination: input.destination,
+        initializeSubmodules: input.initializeSubmodules,
+      },
+    ),
+    input,
+  );
 }
