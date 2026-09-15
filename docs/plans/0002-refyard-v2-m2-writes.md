@@ -673,7 +673,7 @@ packages/host-node/src/process/doctor.ts   probes carry an identity instead of r
 | `pnpm test`             | 537 passed (35 files)                                                                                           |
 | `pnpm test:integration` | 313 passed (20 files), including `tests/security`                                                               |
 | `pnpm test:pack`        | 13 passed (installed package + evidence shape)                                                                  |
-| `pnpm test:portable`    | neutral IIFE 60,542 bytes, 11 planner/parser checks                                                             |
+| `pnpm test:portable`    | 4 vitest portability cases + neutral IIFE 60,542 bytes, 11 planner/parser checks                                |
 | `pnpm test:e2e`         | 27 passed (Chromium), each spec on its own isolated state directory                                             |
 | `pnpm pack:smoke`       | 14 steps passed                                                                                                 |
 | `pnpm bench:runtime`    | 100,000-commit fixture, 3 lifecycles; every value in `docs/evidence/performance.json`, with its scope and range |
