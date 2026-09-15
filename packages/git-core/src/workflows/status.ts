@@ -204,6 +204,12 @@ export async function readStatusFacts(
   try {
     parsed = parseStatus(await runRequired(engine, spec));
   } catch (error) {
+    // A Git failure is not a parse failure. Re-throwing it unchanged keeps the exit
+    // status and Git's own diagnostic, which is the entire answer when Git says
+    // "this operation must be run in a work tree" about a bare repository.
+    if (error instanceof GitWorkflowError) {
+      throw error;
+    }
     throw parseFailure(spec.description, error);
   }
 

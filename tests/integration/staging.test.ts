@@ -11,6 +11,7 @@
  */
 import {
   chmod,
+  mkdir,
   lstat,
   readdir,
   readFile,
@@ -23,6 +24,7 @@ import { describe, expect, it } from "vitest";
 import {
   previewsResponseSchema,
   statusSnapshotSchema,
+  validateMutationRequest,
   type OperationRecord,
 } from "@refyard/git-contract";
 import { createRepo, type GitFixtureRepo } from "../support/repo.js";
@@ -936,3 +938,257 @@ describe("operation bookkeeping", () => {
 
 // The real effect factory is wired inside tests/support/service.ts, exactly as
 // apps/cli wires it; this file exercises it through the HTTP API only.
+
+/*
+ * The four partial repository shapes of the evidence plan, write side — plus the class
+ * of failure they share: a write whose *preconditions* cannot be read must be refused,
+ * never reported as `unknown`. The read half of the same rows lives in `reads.test.ts`.
+ */
+describe("repository shapes the write path meets", () => {
+  it("stages and commits in a SHA-256 repository, reporting 64-character ids", async () => {
+    // Prevents: a hardcoded 40-character object id in the write path — the head the
+    // client is told about after a commit is the one it compares against on the next
+    // request, and a truncated id makes every following write look stale.
+    const repo = await createRepo({
+      initialCommit: true,
+      initArgs: ["--object-format=sha256"],
+    });
+    const service = await startStagingService(repo);
+    try {
+      await repo.write("a.txt", "changed\n");
+      const status = await readStatus(service);
+      const aPath = pathIdOf(status.entries, "a.txt");
+      const tokens = await previewTokens(service, status.worktreeId, [aPath]);
+      const staged = await submitAndWait(service, {
+        clientRequestId: "sha256-stage-1",
+        target: {
+          kind: "worktree",
+          repositoryId: service.repositoryId,
+          worktreeId: status.worktreeId,
+          expectedSnapshotId: status.snapshotId,
+        },
+        operation: {
+          kind: "stagePaths",
+          pathIds: [aPath],
+          previewTokens: tokens,
+        },
+      });
+      expect(staged.status).toBe("succeeded");
+
+      const after = await readStatus(service);
+      const committed = await submitAndWait(service, {
+        clientRequestId: "sha256-commit-1",
+        target: {
+          kind: "worktree",
+          repositoryId: service.repositoryId,
+          worktreeId: after.worktreeId,
+          expectedSnapshotId: after.snapshotId,
+        },
+        operation: { kind: "commit", message: "sha256 commit\n" },
+      });
+      expect(committed.status).toBe("succeeded");
+      const head = await repo.headOid();
+      expect(head).toMatch(/^[0-9a-f]{64}$/);
+      expect(committed.result?.newHeadOid).toBe(head);
+    } finally {
+      await service.close();
+      await repo.dispose();
+    }
+  });
+
+  it("keeps a path's exact bytes through stage, commit and diff", async () => {
+    // Prevents: a file name that survives the browser losing a space, a tab or a
+    // multi-byte character on the way to `git add` — the write would then touch a
+    // different path than the one the user selected, and the diff would describe a file
+    // nobody asked about. The names here are the three that break naive handling.
+    const repo = await createRepo({ initialCommit: true });
+    const names = ["moved 新\tname.txt", "plain space.txt", "mix 混合\tx.txt"];
+    for (const name of names) {
+      await repo.write(name, `content of ${name}\n`);
+    }
+    const service = await startStagingService(repo);
+    try {
+      const status = await readStatus(service);
+      const pathIds = names.map((name) => pathIdOf(status.entries, name));
+      const tokens = await previewTokens(service, status.worktreeId, pathIds);
+      const staged = await submitAndWait(service, {
+        clientRequestId: "odd-names-stage-1",
+        target: {
+          kind: "worktree",
+          repositoryId: service.repositoryId,
+          worktreeId: status.worktreeId,
+          expectedSnapshotId: status.snapshotId,
+        },
+        operation: { kind: "stagePaths", pathIds, previewTokens: tokens },
+      });
+      expect(staged.status).toBe("succeeded");
+
+      const after = await readStatus(service);
+      const committed = await submitAndWait(service, {
+        clientRequestId: "odd-names-commit-1",
+        target: {
+          kind: "worktree",
+          repositoryId: service.repositoryId,
+          worktreeId: after.worktreeId,
+          expectedSnapshotId: after.snapshotId,
+        },
+        operation: { kind: "commit", message: "odd names\n" },
+      });
+      expect(committed.status).toBe("succeeded");
+
+      // Git's own view of the committed tree, as raw bytes: the same names, byte for
+      // byte, including the tab and the multi-byte characters. `a.txt` came with the
+      // fixture's first commit and is still there.
+      const tree = await repo.git(["ls-tree", "-z", "--name-only", "HEAD"]);
+      const committedNames = new TextDecoder()
+        .decode(tree)
+        .split("\u0000")
+        .filter((name) => name.length > 0)
+        .sort();
+      expect(committedNames).toEqual([...names, "a.txt"].sort());
+      // And the bytes match, so nothing was normalised on the way through: not the
+      // tab, not the multi-byte characters, and not the space.
+      expect(committedNames.join("\n")).toEqual([...names, "a.txt"].sort().join("\n"));
+    } finally {
+      await service.close();
+      await repo.dispose();
+    }
+  });
+
+  it("refuses to write to a bare repository, naming the reason instead of crashing", async () => {
+    // Prevents: a 500, or a job reported as `unknown`, for a refusal nothing attempted.
+    // A bare repository has no working tree; the reader is told that, and the
+    // repository is left exactly as it was.
+    const repo = await createRepo({ initialCommit: true });
+    const barePath = join(repo.scratchRoot, "bare.git");
+    await repo.git(["clone", "--quiet", "--bare", repo.root, barePath]);
+    const headBefore = await repo.headOid();
+    const service = await startStagingService(repo, { subjectPath: barePath });
+    try {
+      // A bare repository has no working tree, so its "worktree" is the Git directory
+      // itself; that is the id this service mints for it and the target a request must
+      // name. It comes from the service, not from a guess.
+      const worktrees = (await (
+        await service.fetch(
+          `/api/v1/worktrees?repositoryId=${service.repositoryId}`,
+        )
+      ).json()) as { worktrees: readonly { worktreeId: string }[] };
+      const worktreeId = worktrees.worktrees[0]?.worktreeId ?? "";
+      expect(worktreeId).not.toBe("");
+      const response = await submit(service, {
+        clientRequestId: "bare-commit-1",
+        target: {
+          kind: "worktree",
+          repositoryId: service.repositoryId,
+          worktreeId,
+          expectedSnapshotId: "snap_neverissued",
+        },
+        operation: { kind: "commit", message: "should not run\n" },
+      });
+      // A boundary refusal, not a 500: the code says the target is unsupported and the
+      // message says why.
+      expect(response.status).toBe(501);
+      const body = (await response.json()) as {
+        problem: { code: string; message: string };
+      };
+      expect(body.problem.code).toBe("UnsupportedOperation");
+      expect(body.problem.message).toContain("bare repository");
+      // Nothing was accepted, and Git never touched the repository.
+      const operations = (await (
+        await service.fetch("/api/v1/operations")
+      ).json()) as { operations: readonly unknown[] };
+      expect(operations.operations).toEqual([]);
+      expect(await repo.headOid()).toBe(headBefore);
+    } finally {
+      await service.close();
+      await repo.dispose();
+    }
+  });
+
+  it("refuses a write to a repository whose Git directory is gone, and says so", async () => {
+    // Prevents: "that request names a repository this service does not know" for a
+    // repository the service registered a moment ago. The Git directory is gone; the
+    // reader needs to hear exactly that, and nothing may be accepted meanwhile.
+    const repo = await createRepo({ initialCommit: true });
+    const service = await startStagingService(repo);
+    try {
+      const status = await readStatus(service);
+      await rm(join(repo.root, ".git"), { recursive: true, force: true });
+      const response = await submit(service, {
+        clientRequestId: "vanished-commit-1",
+        target: {
+          kind: "worktree",
+          repositoryId: service.repositoryId,
+          worktreeId: status.worktreeId,
+          expectedSnapshotId: status.snapshotId,
+        },
+        operation: { kind: "commit", message: "cannot work\n" },
+      });
+      expect(response.status).toBe(404);
+      const body = (await response.json()) as {
+        problem: { code: string; message: string };
+      };
+      expect(body.problem.code).toBe("NotFound");
+      expect(body.problem.message).toContain("Git directory");
+      expect(body.problem.message).toContain("gone");
+      const operations = (await (
+        await service.fetch("/api/v1/operations")
+      ).json()) as { operations: readonly { status: string }[] };
+      expect(operations.operations).toEqual([]);
+    } finally {
+      await service.close();
+      await repo.dispose();
+    }
+  });
+
+  it("reports an unreadable repository in an effect as failed, never as unknown", async () => {
+    // Prevents: the worst of the two wrong answers. `unknown` means Git may have changed
+    // something and a human must go and verify it; a precondition read that failed before
+    // any command ran means nothing happened. Reporting the second as the first sends
+    // someone to check a repository that was never touched.
+    //
+    // The effect is invoked directly because the submit-time checks run first on every
+    // HTTP path — this is the effect's own read, and the only way to reach it is here.
+    const repo = await createRepo({ initialCommit: true });
+    const service = await startStagingService(repo);
+    try {
+      const status = await readStatus(service);
+      const request = validateMutationRequest({
+        clientRequestId: "unreadable-effect-1",
+        target: {
+          kind: "worktree",
+          repositoryId: service.repositoryId,
+          worktreeId: status.worktreeId,
+          expectedSnapshotId: status.snapshotId,
+        },
+        operation: { kind: "commit", message: "cannot work\n" },
+      });
+      if (!request.ok) {
+        throw new Error(`the fixture request did not validate: ${request.problems[0]?.message ?? ""}`);
+      }
+      // HEAD becomes a directory: the Git directory is still there, so the registry's
+      // own check passes, and Git is what fails.
+      await rm(join(repo.root, ".git", "HEAD"), { recursive: true, force: true });
+      await mkdir(join(repo.root, ".git", "HEAD"), { recursive: true });
+
+      const effect = service.effects.find((entry) => entry.kind === "commit");
+      expect(effect).toBeDefined();
+      const outcome = await effect?.run({
+        request: request.value,
+        operationId: "op_unreadable",
+        actor: "test",
+      });
+      if (outcome === undefined || outcome.kind !== "failed") {
+        throw new Error(
+          `expected a failed outcome, got ${JSON.stringify(outcome)}`,
+        );
+      }
+      expect(outcome.problem.code).toBe("GitCommandFailed");
+      // Git's own words, not a rewritten cause.
+      expect(outcome.problem.message).toMatch(/HEAD|not a git repository|status/i);
+    } finally {
+      await service.close();
+      await repo.dispose();
+    }
+  });
+});

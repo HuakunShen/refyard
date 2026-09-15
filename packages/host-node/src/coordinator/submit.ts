@@ -23,11 +23,13 @@
 import type {
   MutationKind,
   ParsedMutationRequest,
+  Problem,
 } from "@refyard/git-contract";
 import type { GitEngine } from "@refyard/git-core";
 import {
   readHeadFacts,
   readStatusFacts,
+  type HeadFacts,
   type StatusFacts,
 } from "@refyard/git-core";
 import { HandleError } from "../filesystem/handles.js";
@@ -37,6 +39,7 @@ import type { JournalStore } from "../journal/store.js";
 import type { RepositoryRegistry } from "../registry/repositories.js";
 import type { SnapshotStore } from "./snapshots.js";
 import type { WorktreeRegistry } from "../registry/worktrees.js";
+import { bareRefusalOf, readFailureOf } from "./failures.js";
 import { createGitDirLookup, readOperationMarkers } from "./read-support.js";
 import {
   createJobEngine,
@@ -134,6 +137,28 @@ export function createMutationCoordinator(
 ): MutationCoordinator {
   const gitDirs = createGitDirLookup(options.engine);
 
+  /**
+   * The context for a request refused while gathering the facts.
+   *
+   * Every freshness field is empty by design: nothing was read and nothing was
+   * accepted, and `checkPreconditions` answers with the refusal before comparing
+   * any of them.
+   */
+  function refused(
+    code: Problem["code"],
+    message: string,
+    retryable = false,
+  ): PreconditionContext {
+    return {
+      snapshotHeadOid: null,
+      currentHeadOid: null,
+      indexUnchanged: false,
+      operationInProgress: null,
+      restartBlock: null,
+      refusal: { code, message, retryable },
+    };
+  }
+
   async function preconditionsFor(
     request: ParsedMutationRequest,
   ): Promise<PreconditionContext> {
@@ -180,21 +205,23 @@ export function createMutationCoordinator(
     try {
       record = await options.repositories.require(repositoryId);
     } catch (error) {
-      if (error instanceof HandleError && error.code === "NotFound") {
-        return {
-          snapshotHeadOid: null,
-          currentHeadOid: null,
-          indexUnchanged: false,
-          operationInProgress: null,
-          restartBlock: null,
-          refusal: {
-            code: "NotFound" as const,
-            message:
-              "that request names a repository this service does not know",
-          },
-        };
+      if (error instanceof HandleError) {
+        // The registry's own sentence is kept: it distinguishes an id nobody minted
+        // from a Git directory that is gone and one that was replaced, and those three
+        // need different things from the reader (reload, re-register, look again).
+        return refused(error.code, error.message);
       }
       throw error;
+    }
+
+    // A bare repository is readable and not writable in this build. Refused here,
+    // before any Git call, because the status read that follows is exactly what Git
+    // refuses in a repository with no work tree — and a refusal that names the real
+    // reason beats relaying "this operation must be run in a work tree" back to a user
+    // who asked to stage a file.
+    if (record.bare) {
+      const bare = bareRefusalOf(record.displayPath.text);
+      return refused(bare.code, bare.message);
     }
     const worktreeId =
       request.target.kind === "worktree" ? request.target.worktreeId : null;
@@ -202,19 +229,8 @@ export function createMutationCoordinator(
     try {
       worktree = await options.repositories.worktree(repositoryId, worktreeId);
     } catch (error) {
-      if (error instanceof HandleError && error.code === "NotFound") {
-        return {
-          snapshotHeadOid: null,
-          currentHeadOid: null,
-          indexUnchanged: false,
-          operationInProgress: null,
-          restartBlock: null,
-          refusal: {
-            code: "NotFound" as const,
-            message:
-              "that request names a worktree this service does not know; reload and retry",
-          },
-        };
+      if (error instanceof HandleError) {
+        return refused(error.code, error.message);
       }
       throw error;
     }
@@ -234,27 +250,41 @@ export function createMutationCoordinator(
       };
     }
     const handle = worktree.handle;
-    const gitDir = await gitDirs.gitDirFor({
-      worktreeId: worktree.worktreeId,
-      handle,
-      isMain: worktree.isMain,
-      primaryGitDir: record.gitDir,
-    });
-    const [head, status] = await Promise.all([
-      readHeadFacts(options.engine, handle),
-      readStatusFacts(options.engine, {
-        cwdHandle: handle,
-        layout: {
-          gitDir: record.gitDir,
-          commonDir: record.commonDir,
-          topLevel: record.bare ? null : record.displayPath.text,
-          bare: record.bare,
-          shallow: record.shallow,
-          objectFormat: record.objectFormat,
-        },
-        operationMarkers: await readOperationMarkers(gitDir),
-      }),
-    ]);
+    // The facts themselves can fail: a Git directory that moved, a repository whose
+    // directory was replaced, a `git` that stopped answering. None of those is an
+    // internal error, and none of them accepted anything — the request is refused with
+    // the reason, and the caller never sees an exception from this path.
+    let facts: readonly [HeadFacts, StatusFacts];
+    try {
+      const gitDir = await gitDirs.gitDirFor({
+        worktreeId: worktree.worktreeId,
+        handle,
+        isMain: worktree.isMain,
+        primaryGitDir: record.gitDir,
+      });
+      facts = await Promise.all([
+        readHeadFacts(options.engine, handle),
+        readStatusFacts(options.engine, {
+          cwdHandle: handle,
+          layout: {
+            gitDir: record.gitDir,
+            commonDir: record.commonDir,
+            topLevel: record.bare ? null : record.displayPath.text,
+            bare: record.bare,
+            shallow: record.shallow,
+            objectFormat: record.objectFormat,
+          },
+          operationMarkers: await readOperationMarkers(gitDir),
+        }),
+      ]);
+    } catch (error) {
+      const failure = readFailureOf(error);
+      if (failure === null) {
+        throw error;
+      }
+      return refused(failure.code, failure.message, failure.retryable);
+    }
+    const [head, status] = facts;
 
     const snapshot = options.snapshots.get(request.target.expectedSnapshotId);
     return {

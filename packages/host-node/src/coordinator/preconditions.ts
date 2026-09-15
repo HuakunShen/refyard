@@ -56,12 +56,15 @@ export interface PreconditionContext {
   }[];
   /**
    * A refusal established while gathering the facts themselves — an unknown
-   * repository or worktree, for instance. Checked before anything else, so the
-   * submit path can answer with the real code instead of an internal error.
+   * repository or worktree, a repository whose state could not be read. Checked before
+   * anything else, so the submit path can answer with the real code instead of an
+   * internal error.
    */
   readonly refusal?: {
     readonly code: Problem["code"];
     readonly message: string;
+    /** Only a failure that changed nothing and may pass on its own (a deadline) is. */
+    readonly retryable?: boolean;
   };
 }
 
@@ -74,7 +77,7 @@ export function checkPreconditions(
       problem: {
         code: context.refusal.code,
         message: context.refusal.message,
-        retryable: false,
+        retryable: context.refusal.retryable ?? false,
       },
     };
   }

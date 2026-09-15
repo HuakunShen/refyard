@@ -61,6 +61,14 @@ export interface TestService {
   readonly allowedRootId: string;
   /** The mutation engine, wired exactly as the CLI wires it. */
   readonly mutations: MutationCoordinator;
+  /**
+   * The effects this service registered, in the order the CLI registers them.
+   *
+   * Exposed so a case can invoke one directly, with no HTTP and no queue in the way:
+   * that is the only way to reach the effect's own precondition read, which the
+   * submit-time checks run before it in every normal path.
+   */
+  readonly effects: readonly MutationEffect[];
   readonly journal: JournalStore;
   readonly events: EventRing;
   /** The private state root this service's journal lives in. */
@@ -88,6 +96,14 @@ export interface TestService {
 export interface StartTestServiceOptions {
   readonly repo: GitFixtureRepo;
   /**
+   * Register a different directory as *the* subject, inside the fixture.
+   *
+   * A bare repository and a shallow clone are directories the fixture's Git created
+   * beside the checkout — same environment, same HOME — and the service has to be
+   * pointed at them rather than at `repo.root`. Defaults to the fixture's checkout.
+   */
+  readonly subjectPath?: string;
+  /**
    * Reuse a state root, which is how a restart test sees the previous journal.
    */
   readonly stateRoot?: string;
@@ -114,7 +130,7 @@ export interface StartTestServiceOptions {
 export async function startTestService(
   options: StartTestServiceOptions,
 ): Promise<TestService> {
-  const repositoryPath = await realpath(options.repo.root);
+  const repositoryPath = await realpath(options.subjectPath ?? options.repo.root);
   const codec = createTextCodec();
   const handles = createHandleRegistry();
   const roots = createRootRegistry({ handles, codec });
@@ -172,6 +188,25 @@ export async function startTestService(
   const events = createEventRing();
   let sequence = 0;
 
+  // The real product wiring: the T08 staging effects, exactly as the CLI registers
+  // them, so a passing test is evidence about the product. A test passes `effects`
+  // only to install a controlled stub.
+  const effects: readonly MutationEffect[] = options.effects ?? [
+    ...createStagingEffects({
+      engine,
+      repositories,
+      paths,
+      previews,
+      backups:
+        options.backupStore ??
+        createRecoveryStore({ root: join(stateRoot, "backups") }),
+    }),
+    ...createRepositoryEffects({ engine, repositories, roots, handles }),
+    ...createStashTagEffects({ engine, repositories }),
+    ...createWorktreeEffects({ engine, repositories, roots, paths }),
+    ...createMergeEffects({ engine, repositories }),
+  ];
+
   const mutations = createMutationCoordinator({
     journal,
     repositories,
@@ -180,24 +215,7 @@ export async function startTestService(
     recovery,
     snapshots,
     events,
-    // The real product wiring: the T08 staging effects, exactly as the CLI
-    // registers them, so a passing test is evidence about the product. A test
-    // passes `effects` only to install a controlled stub.
-    effects: options.effects ?? [
-      ...createStagingEffects({
-        engine,
-        repositories,
-        paths,
-        previews,
-        backups:
-          options.backupStore ??
-          createRecoveryStore({ root: join(stateRoot, "backups") }),
-      }),
-      ...createRepositoryEffects({ engine, repositories, roots, handles }),
-      ...createStashTagEffects({ engine, repositories }),
-      ...createWorktreeEffects({ engine, repositories, roots, paths }),
-      ...createMergeEffects({ engine, repositories }),
-    ],
+    effects,
     nextOperationId: () => `op_${(counter += 1).toString(36)}`,
     nextSequence: () => (sequence += 1),
   });
@@ -293,6 +311,7 @@ export async function startTestService(
     allowedRootId: root.allowedRootId,
     ungrantedRootIds: [...ungranted],
     mutations,
+    effects,
     journal,
     events,
     stateRoot,

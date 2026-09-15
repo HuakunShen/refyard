@@ -22,6 +22,7 @@ import {
   type StatusFacts,
 } from "@refyard/git-core";
 import type { RepositoryRegistry } from "../registry/repositories.js";
+import { bareRefusalOf, readFailureOf } from "./failures.js";
 import { createGitDirLookup, readOperationMarkers } from "./read-support.js";
 import { repositoryIdOfTarget } from "./submit.js";
 import type { EffectOutcome } from "./jobs.js";
@@ -197,27 +198,64 @@ export function createFactsResolver(
         ),
       };
     }
-    const gitDir = await gitDirs.gitDirFor({
-      worktreeId: worktree.worktreeId,
-      handle: worktree.handle,
-      isMain: worktree.isMain,
-      primaryGitDir: record.gitDir,
-    });
-    const [head, status] = await Promise.all([
-      readHeadFacts(options.engine, worktree.handle),
-      readStatusFacts(options.engine, {
-        cwdHandle: worktree.handle,
-        layout: {
-          gitDir: record.gitDir,
-          commonDir: record.commonDir,
-          topLevel: record.bare ? null : record.displayPath.text,
-          bare: record.bare,
-          shallow: record.shallow,
-          objectFormat: record.objectFormat,
+    // A bare repository is the second place that has to know this: the submit-time
+    // preconditions refuse it too, but an effect can be invoked without them having run
+    // (a direct call, or a future path that does not go through submit).
+    if (record.bare) {
+      const bare = bareRefusalOf(record.displayPath.text);
+      return {
+        ok: false,
+        problem: {
+          code: bare.code,
+          message: bare.message,
+          retryable: false,
+          operationId,
         },
-        operationMarkers: await readOperationMarkers(gitDir),
-      }),
-    ]);
+      };
+    }
+    // Reading the facts is not part of the write. A failure here — a Git directory that
+    // moved, a repository whose directory was replaced, a `git` that stopped answering —
+    // must be reported as `failed`, never as `unknown`: nothing ran, so there is nothing
+    // for a human to go and verify, and `unknown` would say there is.
+    let facts: readonly [HeadFacts, StatusFacts];
+    try {
+      const gitDir = await gitDirs.gitDirFor({
+        worktreeId: worktree.worktreeId,
+        handle: worktree.handle,
+        isMain: worktree.isMain,
+        primaryGitDir: record.gitDir,
+      });
+      facts = await Promise.all([
+        readHeadFacts(options.engine, worktree.handle),
+        readStatusFacts(options.engine, {
+          cwdHandle: worktree.handle,
+          layout: {
+            gitDir: record.gitDir,
+            commonDir: record.commonDir,
+            topLevel: record.bare ? null : record.displayPath.text,
+            bare: record.bare,
+            shallow: record.shallow,
+            objectFormat: record.objectFormat,
+          },
+          operationMarkers: await readOperationMarkers(gitDir),
+        }),
+      ]);
+    } catch (error) {
+      const failure = readFailureOf(error);
+      if (failure === null) {
+        throw error;
+      }
+      return {
+        ok: false,
+        problem: {
+          code: failure.code,
+          message: failure.message,
+          retryable: failure.retryable,
+          operationId,
+        },
+      };
+    }
+    const [head, status] = facts;
     return {
       ok: true,
       value: {

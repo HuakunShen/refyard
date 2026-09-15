@@ -16,7 +16,14 @@
  * - a repository whose directory was replaced is refused rather than served under
  *   an old grant.
  */
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -936,3 +943,215 @@ async function makeDirectory(directory: string): Promise<void> {
   await mkdir(directory, { recursive: true });
   await writeFile(join(directory, "marker.txt"), "here\n");
 }
+
+/*
+ * The four partial repository shapes of the evidence plan, read side.
+ *
+ * Each one is a real repository from the fixture and real Git; where a shape cannot be
+ * read, the case asserts the refusal instead of leaving the row unstated. The write
+ * half of the same rows lives in `staging.test.ts`.
+ */
+
+describe("a SHA-256 repository", () => {
+  let repo: GitFixtureRepo;
+  let harness: Harness;
+
+  beforeEach(async () => {
+    repo = await createRepo({
+      initialCommit: true,
+      initArgs: ["--object-format=sha256"],
+    });
+    harness = await harnessFor(repo);
+  });
+
+  afterEach(async () => {
+    await harness.dispose();
+  });
+
+  it("reads status, history, refs and a diff with 64-character object ids", async () => {
+    // Prevents: a hardcoded 40-character object id anywhere in the read path. Git's
+    // SHA-256 repositories are real, and a parser that assumes SHA-1 either truncates
+    // an id or rejects the repository outright.
+    const head = await repo.headOid();
+    expect(head).toMatch(/^[0-9a-f]{64}$/);
+
+    await repo.write("a.txt", "base\nchanged\n");
+    await repo.write("readme.md", "new\n");
+
+    const listed = await harness.service.repositories();
+    expect(listed.repositories[0]?.objectFormat).toBe("sha256");
+    expect(listed.repositories[0]?.head.oid).toBe(head);
+
+    const status = await harness.service.status({
+      repositoryId: harness.repositoryId,
+    });
+    expect(status.head.oid).toBe(head);
+    const changed = status.entries.find(
+      (entry) => entry.displayPath === "a.txt",
+    );
+    expect(changed?.worktreeStatus).toBe("M");
+    expect(changed?.indexStatus).toBe(".");
+
+    const history = await harness.service.history({
+      repositoryId: harness.repositoryId,
+    });
+    expect(history.objectFormat).toBe("sha256");
+    expect(history.commits[0]?.oid).toBe(head);
+    expect(history.commits[0]?.oid).toMatch(/^[0-9a-f]{64}$/);
+    expect(history.commits[0]?.parents).toEqual([]);
+
+    const refs = await harness.service.refs({
+      repositoryId: harness.repositoryId,
+    });
+    const main = refs.branches.find((branch) => branch.isCurrent);
+    expect(main?.oid).toBe(head);
+    expect(main?.oid).toMatch(/^[0-9a-f]{64}$/);
+
+    const diff = await harness.service.diff({
+      repositoryId: harness.repositoryId,
+      kind: "unstaged",
+      pathId: changed?.pathId ?? "",
+    });
+    expect(diff.files).toHaveLength(1);
+    expect(diff.files[0]?.changeKind).toBe("modified");
+  });
+});
+
+describe("a shallow clone", () => {
+  let source: GitFixtureRepo;
+  let repositoryRoot: string;
+  let harness: Harness;
+
+  beforeEach(async () => {
+    source = await createRepo({ initialCommit: true });
+    for (let index = 1; index <= 3; index += 1) {
+      await source.write(`f${index}.txt`, `${index}\n`);
+      await source.commitAll(`commit ${index}`);
+    }
+    // `file://` rather than a plain path: Git ignores `--depth` for a local clone and
+    // prints a warning instead, which would make this a full clone that silently
+    // proves nothing about shallow repositories.
+    repositoryRoot = join(source.scratchRoot, "shallow");
+    await source.git([
+      "clone",
+      "--quiet",
+      "--depth",
+      "2",
+      `file://${source.root}`,
+      repositoryRoot,
+    ]);
+    harness = await createHarness(repositoryRoot, {
+      env: source.env,
+      dispose: () => source.dispose(),
+    });
+  });
+
+  afterEach(async () => {
+    await harness.dispose();
+  });
+
+  it("says it is shallow and marks the boundary instead of inventing a root", async () => {
+    // Prevents: a shallow clone drawn as a complete history. The grafted edge looks
+    // exactly like a root commit in Git's own output, so a UI that trusts it shows a
+    // first commit that never existed.
+    const history = await harness.service.history({
+      repositoryId: harness.repositoryId,
+    });
+    expect(history.shallow).toBe(true);
+    expect(history.commits).toHaveLength(2);
+    const [tip, boundary] = history.commits;
+    expect(tip?.boundary).toBe(false);
+    expect(boundary?.boundary).toBe(true);
+    // The parent is named, and it is not a row in this page: the object is not here.
+    expect(boundary?.parents).toHaveLength(1);
+    const missing = boundary?.parents[0] ?? "";
+    expect(boundary?.missingParents).toEqual([missing]);
+    expect(history.commits.some((commit) => commit.oid === missing)).toBe(false);
+
+    // The source repository has that commit, so the boundary is not the real root.
+    const sourceCommit = await source.headOid();
+    expect(missing).not.toBe(sourceCommit);
+  });
+
+  it("refuses to describe the ancestor the clone never received", async () => {
+    // Prevents: answering a question about an object that is not in this repository with
+    // an empty or invented answer. "The clone does not have it" and "it is empty" are
+    // different facts, and only one of them is true here.
+    const history = await harness.service.history({
+      repositoryId: harness.repositoryId,
+    });
+    const boundary = history.commits.find((commit) => commit.boundary);
+    const missing = boundary?.missingParents[0] ?? "";
+    expect(missing).toMatch(/^[0-9a-f]{40,64}$/);
+
+    await expect(
+      harness.service.diff({
+        repositoryId: harness.repositoryId,
+        kind: "commit",
+        oid: missing,
+      }),
+    ).rejects.toBeInstanceOf(ReadProblem);
+  });
+});
+
+describe("a bare repository", () => {
+  let source: GitFixtureRepo;
+  let barePath: string;
+  let harness: Harness;
+
+  beforeEach(async () => {
+    source = await createRepo({ initialCommit: true });
+    barePath = join(source.scratchRoot, "bare.git");
+    await source.git(["clone", "--quiet", "--bare", source.root, barePath]);
+    harness = await createHarness(barePath, {
+      env: source.env,
+      dispose: () => source.dispose(),
+    });
+  });
+
+  afterEach(async () => {
+    await harness.dispose();
+  });
+
+  it("reads refs and history, and reports that its head is there", async () => {
+    // Prevents: a bare repository being unusable as a subject at all. It has no
+    // working tree, but its refs and history are exactly what someone with a
+    // server-side repository wants to look at.
+    const head = await source.headOid();
+    const listed = await harness.service.repositories();
+    expect(listed.repositories).toHaveLength(1);
+    expect(listed.repositories[0]?.head.oid).toBe(head);
+    // The registry reports the resolved path, not the one the fixture built the clone
+    // with: on macOS `/var` is a symlink to `/private/var`, and a client that compares
+    // either string against its own is comparing the wrong thing.
+    expect(listed.repositories[0]?.displayPath).toBe(await realpath(barePath));
+
+    const refs = await harness.service.refs({
+      repositoryId: harness.repositoryId,
+    });
+    expect(refs.branches.find((branch) => branch.isCurrent)?.oid).toBe(head);
+
+    const history = await harness.service.history({
+      repositoryId: harness.repositoryId,
+    });
+    expect(history.shallow).toBe(false);
+    expect(history.commits[0]?.oid).toBe(head);
+  });
+
+  it("refuses a status read with Git's own diagnostic instead of an internal error", async () => {
+    // Prevents: "this operation must be run in a work tree" arriving as a 500 or as an
+    // empty change list. Git cannot describe a working tree that does not exist, and
+    // the reader is told exactly that.
+    const failure = await harness.service
+      .status({ repositoryId: harness.repositoryId })
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+    expect(failure).toBeInstanceOf(ReadProblem);
+    expect(failure).toMatchObject({ code: "GitCommandFailed" });
+    // Case-insensitive: older Git capitalises the message ("This operation...").
+    expect(JSON.stringify(failure)).toMatch(/work tree/i);
+    expect(JSON.stringify(failure)).not.toMatch(/InternalError/);
+  });
+});
