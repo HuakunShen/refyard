@@ -1,6 +1,9 @@
 # M2 evidence — the write loop, packaging and the release gate (T08–T15)
 
-> Status: **evidence record, revision 0** — written 2026-09-15 at HEAD `59d5631`
+> Status: **evidence record, revision 1** — revision 0 was written at HEAD `59d5631`; **revision 1
+> adds §7**, which records the round that closed the two gaps revision 0 named (see §1's write
+> surface and §5's first bullet, both superseded there). Where the two disagree, §7 is later and
+> was measured last.
 > (`fix: report only the mutations this build does not implement`), on macOS 26.6 arm64 with
 > Node 26.8.2 and Git 2.50.1 (Apple Git-155).
 >
@@ -116,3 +119,67 @@ Stated as facts about this evidence, not as guesses about the platforms:
 T16–T18 (Xross, Kunkun and native-host review) are out of scope until the standalone V1 ships. The
 next concrete work is whatever the first real use of the packaged CLI turns up — this record exists
 so that the next round can be compared against it rather than against memory.
+
+## 7. Revision 1 — the two gaps closed (init/clone, and diff-scale evidence)
+
+Written 2026-09-15, on the same machine as revision 0 (macOS 26.6 arm64, Node 26.8.2, Git 2.50.1).
+What changed, and what was actually run:
+
+**The write surface is complete.** `initRepository` and `cloneRepository` now have planners, a
+workflow, host effects and a `RepositoryPanel`; `capabilities.unavailable` is the _empty list_ on
+the packaged CLI (35 of 35 mutations advertised), which supersedes §1's "33 of the contract's 35"
+and §5's first bullet. Two things about that list are checked rather than assumed: the built CLI
+advertises all 35 and names none as missing, and a host with no effects at all advertises nothing
+and names every kind — both ends of the set arithmetic, in
+`tests/integration/cli.test.ts` and `tests/integration/http.test.ts`.
+
+**Three defects were found by doing it, and all three are fixed:**
+
+1. **The service crashed on the first end-to-end create.** A workspace operation's write key
+   (`root:root_1`) reached `repositoryChanged`'s repository-id field; the event ring validated the
+   payload, threw a `ZodError` inside a journal transition, and the CLI exited while the mutation was
+   in flight. Now nothing publishes a directory key as a repository id, and the ring drops a payload
+   the contract refuses (answering `null`, reporting through `onInvalidPayload`) instead of taking
+   the process down — a hint is never the source of truth.
+2. **The operations route validated half the contract.** It applied `validateOperationSemantics` (the
+   operation-specific rules) and never the target-level rule that a destination inside an approved
+   root is relative, contained and never a `.git` path. Measured before the fix: a workspace target
+   with `relativeDestination: "../escape"` was answered `202` and journalled, then refused later by
+   the handle registry. The route now runs `validateMutationRequest`, the same entry point the
+   contract tests use.
+3. **A session's root grants were never checked for creating operations.** `checkScope` looks for a
+   repository id in the request, and a workspace target has none — so any paired session could create
+   a repository in any approved root. `allowsRoot` closes it, and a root grant now also covers the
+   repositories inside it, which is how a repository created this round stays readable without a
+   re-pair.
+
+**Commands run at this revision**, from the repository root, all exit status 0:
+
+| Command                 | Reported                                                                                                            |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `pnpm check`            | 8 workspace tasks, TypeScript strict across all of them, 0 errors                                                   |
+| `pnpm check:boundaries` | 3 portable packages (54 source files) free of host APIs; 68 test/script files import packages by name               |
+| `pnpm check:contract`   | committed JSON Schema artifacts match the Zod schemas; 438 named schemas, every `$ref` resolves                     |
+| `pnpm test:unit`        | 225 cases in 14 files                                                                                               |
+| `pnpm test:integration` | 331 cases in 22 files (includes the negative security cases)                                                        |
+| `pnpm test:portable`    | neutral IIFE of 60,542 bytes with no host globals and no Node shims; 11 planner/parser checks, 4 vitest cases       |
+| `pnpm test:e2e`         | 29 Playwright cases in Chromium, including two that create and clone through the panel                              |
+| `pnpm build`            | turbo build of every package plus the static SPA                                                                    |
+| `pnpm pack:smoke`       | 14 steps against the `npm pack` tarball, including the busy-port refusal                                            |
+| `pnpm bench:runtime`    | the packaged CLI on a 100,000-commit fixture, three repeated lifecycles, plus the diff-scale measurements (§ below) |
+
+**The diff-scale measurements** (the other gap): `performance.json` now carries the shapes the diff
+bound exists for — an 8,000-line file, a 32,000-line file whose patch crosses the per-file line
+bound, a 700,000-character single line, and 150 small files — each with its latency, payload bytes,
+the service's resident memory before and after, and the observed range over three runs. The numbers
+worth naming here: the large patch arrives complete (16,000 of 16,000 lines) at 1,518 KiB on the
+wire for 813 KiB of patch text, because each line travels as a `{kind,text,noNewline}` object; the
+bounded one delivers 19,995 of 64,000 lines with `truncated: true`; and the first measurement of
+this round was taken against an artifact _older than its sources_, which is why the report now names
+the artifact's own build stamp, the checkout revision and whether the tree was dirty, and refuses to
+run when the artifact is stale.
+
+**What is still not verified for these two operations**: no `https://` or `ssh://` remote was used,
+no credential helper ran, no submodule-recursing clone was exercised (the flag is argv-tested only),
+and no clone was interrupted mid-transfer by a signal. Those are named as unverified in
+`release-matrix.md` rather than left to inference.
