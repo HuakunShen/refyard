@@ -588,3 +588,79 @@ Safari and installed Chrome are all untested — `docs/browser-support.md` lists
 such), `localStorage`/`sessionStorage` being unavailable (the code is written to degrade,
 but no run exercises it), and the API-major mismatch path end to end (the unit tests
 pin the rule; producing a real major mismatch would need a second contract version).
+
+## T15 — Release gate: negative cases, measured evidence, CI
+
+Delivered:
+
+```
+tests/security/negative.test.ts            11 negative cases: ten payload/repository cases plus one for the wire
+scripts/bench-runtime.ts                   repeated lifecycle against a fast-import fixture
+docs/evidence/performance.json             the measured report: 100,000 commits, 3 runs
+docs/evidence/release-matrix.md            verified / partial / unverified per platform, browser, gate
+docs/evidence/security.md                  the attacks tested, and the work deliberately not done
+tests/pack/evidence.test.ts                5 cases that keep the report from turning into decoration
+.github/workflows/ci.yml                   the gate on Linux and macOS (written, not yet run)
+packages/host-node/src/process/doctor.ts   probes carry an identity instead of resolving one
+```
+
+### Deviations and findings, recorded deliberately
+
+- **The benchmark's 10.5-second cold start was a measurement artifact, and chasing it changed
+  the product.** The packaged CLI starts in ~0.45s; the bench reported 10.45s, reproducibly, while
+  a direct `time` of the same binary in the same environment reported 0.42s. Tracing every `spawn`,
+  DNS call and filesystem call inside the run found it: the doctor's connectivity probe pays
+  `git push --porcelain` and `git fetch --porcelain`, and on a machine with **no configured Git
+  identity** each of those makes Git resolve a default identity from the system account database.
+  Measured here at 5.06s per command (the same push with `-c user.name=… -c user.email=…` takes
+  0.06s). The probe now passes an identity per invocation, exactly as the fixture commit already
+  did, which is also what removes the dependency: `refyard serve` no longer blocks startup on the
+  machine's identity lookup, and the probe measures porcelain output rather than the account
+  database. The fix is `PROBE_IDENTITY_ARGS` in `doctor.ts`; the case that pins it is
+  "gives each probe an identity instead of resolving the machine's own".
+- **`process.execPath` under bun is bun, not Node — again.** The first report named
+  `node 26.3.0` while the service was actually being run by bun, whose `process.versions.node`
+  reports the version it emulates. The bench now resolves `node` from `PATH`, refuses to run when
+  that Node is not the published major (`>=26 <27`), and records the runtime it actually spawned
+  plus the artifact it launched (`node packages/npm-dist/dist/cli.mjs`). Same class of defect as
+  the one found in `pack-smoke`; the rule is that `process.execPath` describes the script runner.
+- **The fixture had to move to `git fast-import` for the scale to be real.** Three processes per
+  commit put 10k and 100k histories out of reach of a run anyone repeats. fast-import writes the
+  same objects in one process: 100,000 commits and a `repack -adq` in 2.6s. The fixture is then
+  _counted_ (`git rev-list --count HEAD` must equal the requested size, the working tree must be
+  clean) before anything is measured, because a silently smaller history would make every read
+  number a fact about a different repository.
+- **Evidence is checked as evidence.** `tests/pack/evidence.test.ts` reads the committed report and
+  fails when it stops naming its runtime (kind, version against the pinned major, git version), its
+  scale, its scope per measurement (`processScope`, `memoryMetric`, unit, notes, window), or whether
+  the numbers are one run or a median of several. `release-matrix.md` is checked the same way: it
+  must contain an `unverified` row and at least one `verified` row, so "not run" cannot be read as
+  "passed".
+- **A negative case was added for the wire itself.** The request schemas are strict objects, so
+  `argv`, `cwd` and `env` have no path from a page to Git; the new case sends them next to a valid
+  `unstagePaths`, asserts the 400, asserts nothing ran, and then submits the same body without them
+  and asserts it is accepted — proving the refusal came from those fields and not from a malformed
+  request. Two rows in `release-matrix.md` were corrected downwards while writing it (bare
+  repositories: unverified; Git below the baseline: partial), because the tests that were assumed to
+  cover them do not exist.
+
+### Verification, actually run
+
+| Command                 | Result                                                                                                                                                                                           |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pnpm check`            | 8 tasks, 0 errors                                                                                                                                                                                |
+| `pnpm check:boundaries` | 3 portable packages / 53 source files; 62 test/script files imported by name                                                                                                                     |
+| `pnpm check:contract`   | artifacts match the schemas, 438 named schemas                                                                                                                                                   |
+| `pnpm test`             | 536 passed (35 files)                                                                                                                                                                            |
+| `pnpm test:portable`    | neutral IIFE 60,542 bytes, 11 planner/parser checks                                                                                                                                              |
+| `pnpm test:e2e`         | 26 passed (Chromium)                                                                                                                                                                             |
+| `pnpm pack:smoke`       | 14 steps passed                                                                                                                                                                                  |
+| `pnpm bench:runtime`    | see `docs/evidence/performance.json` — 100,000-commit fixture, 3 lifecycles: cold start 0.457s, RSS 86→94 MiB, 183.5 status reads/s at concurrency 4, history first page 389ms, SIGTERM→exit 4ms |
+
+Unverified, and named as such rather than hidden: **every platform other than this macOS arm64
+machine** (Linux, Windows, WSL, macOS x64 — the CI workflow written for Linux and macOS has not run
+in this repository yet, so it is not evidence); **every browser other than the Playwright Chromium
+build**; **Git versions other than 2.50.1** (including anything below the 2.43 baseline); **SHA-256
+repositories, bare repositories and shallow clones** beyond the partial coverage listed in
+`release-matrix.md`; and the whole "not done" list in `docs/evidence/security.md` — no external
+audit, no fuzzing, no hostile-remote testing, no credential or SSH-agent testing.
