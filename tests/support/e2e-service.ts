@@ -101,7 +101,18 @@ export async function startE2eService(
         serviceInstanceId: string;
         port: number;
         url: string;
+        ui: string | null;
       };
+      // A service with no web build serves a placeholder page, and every spec then
+      // fails on a panel that does not exist — thirty confusing failures for one
+      // missing directory. This is the clear failure instead: the e2e suite must never
+      // run against the placeholder.
+      if (ready.ui === null || ready.ui === undefined) {
+        throw new Error(
+          "the service found no web build, so it is serving the placeholder page; " +
+            "run `pnpm build && bun scripts/bundle-cli.ts` first",
+        );
+      }
       return {
         pairingUrl: `${ready.url}/?pair=${ticket}`,
         origin: ready.url,

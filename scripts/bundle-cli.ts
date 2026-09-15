@@ -13,15 +13,42 @@
  * the same entry point with `tsdown`, emits `bin/refyard.mjs`, and stages the web
  * assets next to it.
  */
-import { mkdir } from "node:fs/promises";
+import { cp, mkdir, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const outfile = join(repositoryRoot, ".refyard-dev", "cli.mjs");
+const webRoot = join(repositoryRoot, ".refyard-dev", "web");
+const webBuild = join(repositoryRoot, "apps", "web", "build");
 
 await mkdir(dirname(outfile), { recursive: true });
+
+// The web build is staged next to the bundle, because that is the only place the CLI
+// looks for a UI (`findWebRoot` checks `<cli dir>/web` and its parent). Without it the
+// service serves its placeholder page — which is how the e2e suite passed on the
+// machine this was written on: a symlink created by hand at `.refyard-dev/web`, and
+// nothing else. Everywhere else, including CI, the page had no workbench in it and
+// thirty specs failed on a missing panel.
+async function stageWebBuild(): Promise<void> {
+  try {
+    const info = await stat(join(webBuild, "index.html"));
+    if (!info.isFile()) {
+      return;
+    }
+  } catch {
+    console.warn(
+      `bundle-cli: no web build at ${webBuild}; \`refyard open\` will serve the placeholder page`,
+    );
+    return;
+  }
+  await rm(webRoot, { recursive: true, force: true });
+  await cp(webBuild, webRoot, { recursive: true });
+  console.log(`bundle-cli: staged ${webBuild} at ${webRoot}`);
+}
+
+await stageWebBuild();
 const result = await build({
   entryPoints: [join(repositoryRoot, "apps/cli/src/bin.ts")],
   outfile,
