@@ -476,6 +476,9 @@ describe("validation of one request", () => {
     ["file:///etc/passwd", "only https:// and ssh://"],
     ["http://example.invalid/r.git", "only https:// and ssh://"],
     ["--upload-pack=/tmp/x", 'must not start with "-"'],
+    // Drive-relative: `C:project.git` means "wherever this drive's current
+    // directory is", which is not a location a user can be shown or re-check.
+    ["C:project.git", "only https:// and ssh://"],
   ])(
     "refuses the remote URL %s",
     (remoteUrl: string, expectedMessage: string) => {
@@ -501,6 +504,13 @@ describe("validation of one request", () => {
       "ssh://git@example.invalid:2222/project.git",
       "git@example.invalid:team/project.git",
       "/Users/someone/src/project.git",
+      // A Windows absolute path is as local as `/Users/...`: the browser sends what
+      // the user picked, and refusing this shape meant a Windows user could not add
+      // a local remote at all. It cannot be an option (`-`), a transport helper
+      // (`::`) or anything else dangerous — those are refused before this point.
+      "C:\\Users\\someone\\src\\project.git",
+      "C:/Users/someone/src/project.git",
+      "\\\\server\\share\\project.git",
     ]) {
       const result = validateMutationRequest({
         clientRequestId: "request-1",

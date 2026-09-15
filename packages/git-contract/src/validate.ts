@@ -167,11 +167,30 @@ export function validateRemoteName(
 }
 
 /**
+ * A Windows absolute path: `C:\repos\app.git`, `C:/repos/app.git`, or a UNC share.
+ *
+ * A drive letter or a UNC prefix followed by a separator. `C:repos` (a path relative
+ * to the drive's current directory) is deliberately not matched: it names a
+ * different directory depending on where the caller is.
+ */
+const WINDOWS_ABSOLUTE = /^(?:[A-Za-z]:[\\/]|\\\\[^\\/\u0000-\u0020]+[\\/])/;
+
+/**
  * Remote URLs and approved local paths.
  *
  * Only `https://`, `ssh://`, a scp-like `user@host:path`, or an absolute local
  * path are accepted. `ext::` and friends let a remote name run an arbitrary
  * command, so they are refused here rather than trusted to Git's configuration.
+ *
+ * "Absolute" covers Windows as well as POSIX. The check is a string shape rather
+ * than a platform call, because this package has no host APIs: a drive-absolute
+ * `C:\\repos\\app.git` / `C:/repos/app.git` and a UNC `\\\\server\\share\\app.git` are
+ * accepted alongside `/srv/git/app.git`. Nothing is lost by that: a leading `-`
+ * (an option), a `::` (a transport helper) and a control character or space are
+ * refused before this point, so the shape can only be a path. Without it, a
+ * Windows user could not add a local remote at all — the browser sends the path
+ * the user picked, and a worked example of that (`C:\\...`) was refused while the
+ * whole suite passed on macOS and Linux.
  */
 export function validateRemoteUrl(
   value: string,
@@ -200,6 +219,9 @@ export function validateRemoteUrl(
     return [problem("must not contain control characters or spaces", path)];
   }
   if (value.startsWith("/")) {
+    return [];
+  }
+  if (WINDOWS_ABSOLUTE.test(value)) {
     return [];
   }
   const scpLike = /^[A-Za-z0-9._~%+-]+@[A-Za-z0-9._-]+:[^\u0000-\u0020]+$/;

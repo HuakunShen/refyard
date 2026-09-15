@@ -19,7 +19,7 @@
  * - **Unknown stays unknown.** A Git failure becomes a `Problem` with the exit code
  *   and bounded diagnostics — never a fabricated empty list.
  */
-import { join } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 import {
   LIMITS,
@@ -1389,12 +1389,28 @@ function headStateOf(input: {
   };
 }
 
+/**
+ * `absolute` as a slash-separated path relative to `root`, or null when it is not
+ * inside it.
+ *
+ * Resolved rather than concatenated: a root and a child path built with `join` carry
+ * the platform's separator on Windows (`C:\\repos\\app` plus `vendor/agent`), so a
+ * `prefix + "/"` comparison never matched there and a submodule's own HEAD read as
+ * absent. `handleFor` wants a slash-separated relative path, which is what comes back.
+ */
 function relativeTo(root: string, absolute: string): string | null {
-  if (root === absolute) {
+  const relativePath = relative(resolve(root), resolve(absolute));
+  if (relativePath === "") {
     return "";
   }
-  const prefix = root.endsWith("/") ? root : `${root}/`;
-  return absolute.startsWith(prefix) ? absolute.slice(prefix.length) : null;
+  if (
+    isAbsolute(relativePath) ||
+    relativePath === ".." ||
+    relativePath.startsWith(`..${sep}`)
+  ) {
+    return null;
+  }
+  return relativePath.split(sep).join("/");
 }
 
 function bytesKey(bytes: Uint8Array): string {

@@ -24,7 +24,7 @@
  * re-proves containment on each use.
  */
 import { stat } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, parse } from "node:path";
 import type {
   TextCodec,
   WorktreeRecord as GitWorktreeRecord,
@@ -323,9 +323,16 @@ export function createRepositoryRegistry(
   };
 }
 
+/**
+ * The last segment of a path, for a repository's display name.
+ *
+ * `basename` rather than a `lastIndexOf("/")`: on Windows an absolute path is
+ * `C:\\Users\\...\\repo`, which has no slash at all, and the name would have been the
+ * whole path — the repository list would show every row as a full path with no name
+ * to tell them apart. The root of a drive or filesystem has no last segment, and is
+ * its own name.
+ */
 function baseName(path: string): string {
-  const trimmed = path.endsWith("/") ? path.slice(0, -1) : path;
-  const index = trimmed.lastIndexOf("/");
-  const name = index === -1 ? trimmed : trimmed.slice(index + 1);
-  return name.length > 0 ? name : join("/");
+  const name = basename(path);
+  return name.length > 0 ? name : parse(path).root;
 }
