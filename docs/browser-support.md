@@ -42,13 +42,12 @@ claim about the build, made by a page that had received no capabilities at all. 
 "the service has not reported its operations", and the e2e case asserts that wording, so the
 two answers cannot collapse back into one.
 
-### One failure that is not explained yet
+### The former clone-form flake is fixed
 
-The clone case in `workspace.spec.ts` has failed twice, in two different engines, always the
-same case and never reproducibly. Both runs are **89 passed, 1 failed**; the same case passes
-alone in seconds, and the 90 of 90 runs on either side of them include that case. Neither is
-counted as a browser defect, and neither is written off: they are the same open question, and
-they failed the same way.
+The clone case in `workspace.spec.ts` failed twice, in two different engines, always the same
+case and never reproducibly. Both runs were **89 passed, 1 failed**; the same case passed alone
+in seconds, and the 90 of 90 runs on either side included that case. The historical failures
+remain recorded below, but the lifecycle cause is now fixed and covered by a regression.
 
 - **Firefox** (`workspace.spec.ts:86`, "clones a local bare remote and shows what Git said when
   it refuses"). `Error: locator.fill: Test timeout of 60000ms exceeded`, waiting for
@@ -68,23 +67,20 @@ a failure that cannot be described is still a failure, and because it is the rea
 keeps its output now.
 
 In both described occurrences, the mode toggle had been clicked and the form it reveals was not
-there when the spec looked. Two candidates, and they are testable rather than mysterious:
+there when the spec looked. The service-output candidate remains useful for future failures; the
+panel lifecycle candidate has been reproduced and fixed:
 
 - **The service went away.** The harness kept the service's stderr only until readiness and
   then dropped it, so a crash or a refused connection mid-spec was invisible — which is exactly
   why the Firefox occurrence could not be explained. It now prints the service's output (both
   streams, last 4 KB each) when its test fails, and still prints stderr if the service exits
   before the spec stopped it.
-- **The panel remounted and reset its own mode.** `<RepositoryPanel>` is mounted behind
-  `{#if writesAllowed}` (`apps/web/src/routes/+page.svelte:1776`) and keeps the mode it is in
-  as component state (`packages/git-ui/src/components/RepositoryPanel.svelte:83`, `$state`,
-  not a prop). `writesAllowed` is derived from the capabilities read, so if that read resolves
-  after the first paint the panel is created, destroyed and created again — and the second
-  instance starts in `init`. A reader of the app, not just of the spec, sees that as: choose
-  "Clone", and a moment later the choice is back to "Create new". That is a small real defect
-  in the panel's lifecycle, in files owned by the UI work; nothing there was changed for this
-  note, and it is written down so the next occurrence — and the UI pass — starts from the
-  evidence instead of the symptom.
+- **The panel remounted and reset its own mode.** This was the lifecycle cause: the panel was
+  mounted behind `{#if writesAllowed}` and kept its mode as component state. It is fixed by
+  keeping `<RepositoryPanel>` mounted for a paired session and passing `disabled` while the
+  browser is offline. The selected mode and typed values now survive the transient signal. The
+  new regression case failed against the old implementation with `aria-pressed="false"` and
+  passed on the fixed build.
 
 The two are not mutually exclusive: a page whose reads are all failing with `NetworkError` has
 answered the capabilities read with a failure, which is one more way for `writesAllowed` to

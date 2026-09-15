@@ -99,7 +99,7 @@ Filled in as each task closes. A row that says "not done" names the reason.
 | Task | What it changes | Command actually run | Result | Evidence |
 | ---- | --------------- | -------------------- | ------ | -------- |
 | R1   | the token and the instance id leave `localStorage`; a legacy copy is deleted on read | `pnpm check`, `vitest tests/unit/web-storage.test.ts`, the new e2e case in chromium | **7 unit cases and the browser case pass; both fail against the old behaviour.** Commit `e78fbc7`. The full three-engine `pnpm test:e2e` did *not* run on that revision — it was interrupted by the handover. Run it before trusting the row | the case comments; `storage-policy.ts` |
-| R2   | _pending_       |                      |        |          |
+| R2   | the repository panel stays mounted for a paired session and disables writes while offline | `pnpm build`; `bun scripts/bundle-cli.ts`; `pnpm exec playwright test tests/e2e/workspace.spec.ts --project=chromium` | **3 passed, including the new offline/reconnect clone-form regression; the new case failed against the old implementation with `aria-pressed=false`.** | `tests/e2e/workspace.spec.ts`; `docs/browser-support.md` |
 | R3   | _pending_       |                      |        |          |
 | R4   | _pending_       |                      |        |          |
 | R5   | _pending_       |                      |        |          |

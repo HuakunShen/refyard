@@ -123,4 +123,28 @@ test.describe("repository creation", () => {
       page.getByRole("button", { name: /e2e-cloned/ }),
     ).toHaveAttribute("aria-current", "true");
   });
+
+  test("keeps the selected clone form when the browser briefly goes offline", async ({
+    page,
+    context,
+  }) => {
+    // Prevents: a transient browser signal destroys the panel and silently loses the
+    // user's selected mode and any remote/destination values.
+    await page.goto(service.pairingUrl);
+    await expect(page.getByTestId("repository-panel")).toBeVisible();
+    await page.getByTestId("repository-mode-clone").click();
+    await page.getByTestId("repository-remote-url").fill("/tmp/example.git");
+
+    await context.setOffline(true);
+    await expect(page.getByTestId("connection-state")).toContainText("offline");
+    await context.setOffline(false);
+
+    await expect(page.getByTestId("repository-mode-clone")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page.getByTestId("repository-remote-url")).toHaveValue(
+      "/tmp/example.git",
+    );
+  });
 });

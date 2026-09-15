@@ -1773,11 +1773,12 @@
                 }}
               />
             {/if}
-            {#if writesAllowed}
+            {#if token !== null}
               <Separator />
               <RepositoryPanel
                 roots={workspaceRoots}
                 available={repositoryCreationAvailable}
+                disabled={!writesAllowed}
                 busy={mutationBusy}
                 message={repositoryMessage}
                 onInit={onRepositoryInit}
