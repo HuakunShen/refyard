@@ -1,10 +1,16 @@
-# Plan 0002 — Refyard v2, M2: the write loop (T08–T12)
+# Plan 0002 — Refyard v2, M2: the write loop (T08–T15)
 
 M1 (T01–T07, plan 0001) shipped the read-only loop. This plan covers M2: the
 mutations from the v2 design's frozen list of 35, grouped by the reference
-`IMPLEMENTATION_PLAN.md` into T08–T12. Each task keeps the commandments: failing
+`IMPLEMENTATION_PLAN.md` into T08–T12, and then T13–T15 — packaging, the offline
+shell, and the release gate — which were delivered in the same round and are
+recorded below with the same discipline. Each task keeps the commandments: failing
 test first, minimum implementation, the listed verification actually run, one
 commit per task.
+
+What this plan leaves open is carried by plan 0003 (M2 closure): the two contract
+mutations that are still unimplemented, and the diff-scale measurements the evidence
+does not have yet.
 
 `capabilities` is the contract with the browser: an operation appears there
 exactly when an effect for it is registered, because both derive from the same
