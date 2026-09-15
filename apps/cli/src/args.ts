@@ -14,7 +14,7 @@
  * ```
  * refyard [path]                    # same as `open`
  * refyard open [path] [--port N] [--ticket-ttl S] [--no-open]
- * refyard serve --repo <path> [--port N] [--ticket-ttl S] [--no-open]
+ * refyard serve --repo <path>... [--port N] [--ticket-ttl S] [--no-open]
  * refyard doctor [--json]
  * ```
  *
@@ -38,6 +38,7 @@ export type CliCommand =
   | {
       readonly kind: "open";
       readonly path: string;
+      readonly paths: readonly string[];
       readonly port: number;
       readonly portExplicit: boolean;
       readonly openBrowser: boolean;
@@ -48,6 +49,7 @@ export type CliCommand =
   | {
       readonly kind: "serve";
       readonly path: string;
+      readonly paths: readonly string[];
       readonly port: number;
       readonly portExplicit: boolean;
       readonly openBrowser: boolean;
@@ -109,11 +111,11 @@ const HELP_TEXT = `refyard — a local Git workbench
 usage:
   refyard [path]                       open the workbench for a repository
   refyard open [path] [options]        same, spelled out
-  refyard serve --repo <path> [opts]   serve without opening a browser
+  refyard serve --repo <path>... [opts]  serve without opening a browser
   refyard doctor [--json]              report what this machine can do
 
 options:
-  --repo <path>     repository to serve (required by \`serve\`, optional otherwise)
+  --repo <path>...  repository to serve (repeat for multiple explicit repositories)
   --port <n>        loopback port; default ${DEFAULT_PORT} (another free port is
                     taken if it is busy); 0 asks the OS for one
   --ticket-ttl <s>  pairing ticket lifetime in seconds; default 60, max 86400
@@ -177,6 +179,35 @@ function optionalWholeNumber(
     : validated;
 }
 
+/** Collect a repeatable scalar before citty collapses it to its last value. */
+function repeatedRepoValues(
+  words: readonly string[],
+):
+  | { readonly ok: true; readonly values: readonly string[] }
+  | { readonly ok: false; readonly message: string } {
+  const values: string[] = [];
+  for (let index = 0; index < words.length; index += 1) {
+    const word = words[index];
+    if (word === "--repo") {
+      const value = words[index + 1];
+      if (value === undefined || value.startsWith("-")) {
+        return { ok: false, message: "--repo needs a path" };
+      }
+      values.push(value);
+      index += 1;
+      continue;
+    }
+    if (word?.startsWith("--repo=") === true) {
+      const value = word.slice("--repo=".length);
+      if (value.length === 0) {
+        return { ok: false, message: "--repo needs a path" };
+      }
+      values.push(value);
+    }
+  }
+  return { ok: true, values };
+}
+
 export function parseArgs(
   argv: readonly string[],
   cwd: string = process.cwd(),
@@ -200,6 +231,10 @@ export function parseArgs(
   }
 
   const parsed = parseTokens(words, ARGS_DEF);
+  const repoValues = repeatedRepoValues(words);
+  if (!repoValues.ok) {
+    return repoValues;
+  }
 
   // citty tolerates what this tool must not: name and refuse anything undeclared.
   const unknown = Object.keys(parsed).filter((key) => !KNOWN_KEYS.has(key));
@@ -216,6 +251,13 @@ export function parseArgs(
   }
   const path = positionals[0] ?? null;
   const repoPath = parsed.repo ?? null;
+  if (repoValues.values.length > 0 && path !== null) {
+    return {
+      ok: false,
+      message:
+        "pass repository paths either as positional arguments or with --repo",
+    };
+  }
 
   const port = optionalWholeNumber(
     "--port",
@@ -245,14 +287,22 @@ export function parseArgs(
     kind === "serve" ? (parsed.open ?? false) : (parsed.open ?? true);
 
   if (kind === "doctor") {
-    if (path !== null || repoPath !== null) {
+    if (path !== null || repoPath !== null || repoValues.values.length > 0) {
       return { ok: false, message: "doctor does not take a repository path" };
     }
     return { ok: true, command: { kind: "doctor", json, allowRoot } };
   }
 
-  const chosen = repoPath ?? path ?? cwd;
-  if (kind === "serve" && repoPath === null && path === null) {
+  const chosenPaths =
+    repoValues.values.length > 0
+      ? repoValues.values
+      : [repoPath ?? path ?? cwd];
+  if (
+    kind === "serve" &&
+    repoValues.values.length === 0 &&
+    repoPath === null &&
+    path === null
+  ) {
     return {
       ok: false,
       message:
@@ -263,7 +313,8 @@ export function parseArgs(
     ok: true,
     command: {
       kind,
-      path: resolve(cwd, chosen),
+      path: resolve(cwd, chosenPaths[0] ?? cwd),
+      paths: chosenPaths.map((chosen) => resolve(cwd, chosen)),
       port: port.value,
       portExplicit: port.explicit,
       openBrowser,

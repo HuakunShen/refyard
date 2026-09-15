@@ -80,7 +80,7 @@ async function runServeCommand(
   let running: RunningService;
   try {
     running = await runService({
-      repositoryPath: command.path,
+      repositoryPaths: command.paths,
       gitPath: io.gitPath,
       port: command.port,
       portExplicit: command.portExplicit,

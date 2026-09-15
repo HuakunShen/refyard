@@ -94,6 +94,10 @@ export interface ServiceAssembly {
   readonly serviceInstanceId: string;
   readonly repositories: RepositoryRegistry;
   readonly roots: RootRegistry;
+  readonly repositoryPaths: readonly string[];
+  readonly repositoryIds: readonly string[];
+  readonly allowedRootIds: readonly string[];
+  /** Compatibility aliases for callers that intentionally serve one repository. */
   readonly repositoryId: string;
   readonly allowedRootId: string;
   readonly gitPath: string;
@@ -102,7 +106,10 @@ export interface ServiceAssembly {
 }
 
 export interface AssembleOptions {
-  readonly repositoryPath: string;
+  /** One path for older embedders; `repositoryPaths` takes precedence when supplied. */
+  readonly repositoryPath?: string;
+  /** Every path is approved independently; no common parent is inferred. */
+  readonly repositoryPaths?: readonly string[];
   readonly gitPath: string;
   readonly write: (line: string) => void;
   /**
@@ -119,10 +126,20 @@ export interface AssembleOptions {
 export async function assembleService(
   options: AssembleOptions,
 ): Promise<ServiceAssembly> {
-  const repositoryPath = await realpath(options.repositoryPath);
-  const info = await stat(repositoryPath);
-  if (!info.isDirectory()) {
-    throw new Error(`${repositoryPath} is not a directory`);
+  const requestedPaths =
+    options.repositoryPaths ??
+    (options.repositoryPath === undefined ? [] : [options.repositoryPath]);
+  if (requestedPaths.length === 0) {
+    throw new Error("at least one repository path is required");
+  }
+  const repositoryPaths: string[] = [];
+  for (const requestedPath of requestedPaths) {
+    const repositoryPath = await realpath(requestedPath);
+    const info = await stat(repositoryPath);
+    if (!info.isDirectory()) {
+      throw new Error(`${repositoryPath} is not a directory`);
+    }
+    repositoryPaths.push(repositoryPath);
   }
 
   const codec = createTextCodec();
@@ -177,30 +194,43 @@ export async function assembleService(
     );
   }
 
-  const root = await roots.approve({
-    path: repositoryPath,
-    executionTrusted: true,
-  });
-  const record = await repositories.register({
-    allowedRootId: root.allowedRootId,
-    relativePath: "",
-    handles,
-  });
+  const registrations: {
+    readonly path: string;
+    readonly root: Awaited<ReturnType<RootRegistry["approve"]>>;
+    readonly record: Awaited<ReturnType<RepositoryRegistry["register"]>>;
+  }[] = [];
+  for (const repositoryPath of repositoryPaths) {
+    const root = await roots.approve({
+      path: repositoryPath,
+      executionTrusted: true,
+    });
+    const record = await repositories.register({
+      allowedRootId: root.allowedRootId,
+      relativePath: "",
+      handles,
+    });
+    registrations.push({ path: repositoryPath, root, record });
 
-  // Worktrees outside the approved root are read-only in this session, and saying so
-  // up front is the difference between a limitation and a mystery.
-  try {
-    const worktreeList = await repositories.worktreesOf(record.repositoryId);
-    for (const worktree of worktreeList) {
-      if (worktree.handle === null) {
-        options.write(
-          `note: worktree ${worktree.displayPath.text} is outside the approved root (${repositoryPath}); run \`refyard open ${worktree.displayPath.text}\` in another session to work there`,
-        );
+    // Worktrees outside the approved root are read-only in this session, and saying so
+    // up front is the difference between a limitation and a mystery.
+    try {
+      const worktreeList = await repositories.worktreesOf(record.repositoryId);
+      for (const worktree of worktreeList) {
+        if (worktree.handle === null) {
+          options.write(
+            `note: worktree ${worktree.displayPath.text} is outside the approved root (${repositoryPath}); run \`refyard open ${worktree.displayPath.text}\` in another session to work there`,
+          );
+        }
       }
+    } catch {
+      // A worktree list that cannot be read is reported by the first read that needs
+      // it; failing the whole startup over it would hide the service itself.
     }
-  } catch {
-    // A worktree list that cannot be read is reported by the first read that needs
-    // it; failing the whole startup over it would hide the service itself.
+  }
+
+  const firstRegistration = registrations[0];
+  if (firstRegistration === undefined) {
+    throw new Error("at least one repository registration is required");
   }
 
   const reads: readonly ReadKind[] = [
@@ -316,8 +346,11 @@ export async function assembleService(
     serviceInstanceId,
     repositories,
     roots,
-    repositoryId: record.repositoryId,
-    allowedRootId: root.allowedRootId,
+    repositoryPaths,
+    repositoryIds: registrations.map(({ record }) => record.repositoryId),
+    allowedRootIds: registrations.map(({ root }) => root.allowedRootId),
+    repositoryId: firstRegistration.record.repositoryId,
+    allowedRootId: firstRegistration.root.allowedRootId,
     gitPath: options.gitPath,
     gitVersion: doctor?.gitVersion ?? "unknown",
     features,
@@ -394,8 +427,8 @@ export async function runService(
     repositoryRootOf: (repositoryId: string) =>
       assembly.repositories.get(repositoryId)?.allowedRootId ?? null,
     grants: {
-      allowedRootIds: [assembly.allowedRootId],
-      repositoryIds: [assembly.repositoryId],
+      allowedRootIds: [...assembly.allowedRootIds],
+      repositoryIds: [...assembly.repositoryIds],
       scopes: ["repository:read"],
     },
     log: (line) => {
@@ -448,6 +481,8 @@ export async function runService(
         apiMajor: API_MAJOR,
         contractVersion: CONTRACT_VERSION,
         repositoryId: assembly.repositoryId,
+        repositoryIds: [...assembly.repositoryIds],
+        allowedRootIds: [...assembly.allowedRootIds],
         ui: options.webRoot,
       }),
     );
@@ -480,7 +515,7 @@ export async function runService(
   }
 
   options.write(`refyard ${await reportedVersion()} (api ${API_MAJOR})`);
-  options.write(`  repository: ${options.repositoryPath}`);
+  options.write(`  repositories: ${assembly.repositoryPaths.join(", ")}`);
   options.write(`  git:        ${assembly.gitVersion}`);
   options.write(
     `  port:       ${http.port}${options.port === 0 ? " (chosen by the OS)" : ""}`,

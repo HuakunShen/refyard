@@ -7,7 +7,7 @@
  * flag, a port that is not a number, `serve` without a repository, and a port that
  * is already taken.
  */
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -27,6 +27,7 @@ import { runService } from "../../apps/cli/src/serve.js";
 import {
   MUTATION_KINDS,
   capabilitiesResponseSchema,
+  repositoriesResponseSchema,
 } from "@refyard/git-contract";
 import {
   createRepo,
@@ -142,6 +143,22 @@ describe("argument parsing", () => {
 
   it("rejects two paths", () => {
     expect(parseArgs(["a", "b"]).ok).toBe(false);
+  });
+
+  it("retains every explicitly repeated repository for serve", () => {
+    // Prevents: citty's scalar option handling silently dropping the first repository,
+    // leaving a multi-repository request serving only its last path.
+    const parsed = parseArgs(
+      ["serve", "--repo", "/tmp/one", "--repo", "/tmp/two"],
+      "/tmp",
+    );
+    expect(parsed).toMatchObject({
+      ok: true,
+      command: {
+        kind: "serve",
+        paths: ["/tmp/one", "/tmp/two"],
+      },
+    });
   });
 
   it("parses --ticket-ttl in whole seconds and defaults to 60", () => {
@@ -326,6 +343,60 @@ describe("serving a repository", () => {
       expect(io.lines.join("\n")).toContain("Ctrl+C");
     } finally {
       await running.close();
+    }
+  });
+
+  it("serves every repository named with repeated --repo values", async () => {
+    const second = await createRepo({ initialCommit: true });
+    const third = await createRepo({ initialCommit: true });
+    const firstPath = await realpath(repo.root);
+    const secondPath = await realpath(second.root);
+    const thirdPath = await realpath(third.root);
+    const io = collect();
+    const running = await runService({
+      repositoryPaths: [repo.root, second.root],
+      gitPath: fixtureGitPath(),
+      port: 0,
+      portExplicit: true,
+      openBrowser: false,
+      ticketTtlSeconds: 60,
+      webRoot: null,
+      allowRoot: false,
+      installSignalHandlers: false,
+      write: io.write,
+    });
+    try {
+      const origin = `http://127.0.0.1:${running.http.port}`;
+      const exchanged = await fetch(`${origin}/api/v1/session/exchange`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin },
+        body: JSON.stringify({ ticket: ticketFrom(running.pairingUrl) }),
+      });
+      expect(exchanged.status).toBe(200);
+      const session = (await exchanged.json()) as { token: string };
+      const response = await fetch(`${origin}/api/v1/repositories`, {
+        headers: { authorization: `Bearer ${session.token}`, origin },
+      });
+      expect(response.status).toBe(200);
+      const listed = repositoriesResponseSchema.parse(await response.json());
+      expect(listed.repositories).toHaveLength(2);
+      expect(listed.repositories.map((entry) => entry.displayPath)).toEqual(
+        expect.arrayContaining([firstPath, secondPath]),
+      );
+      expect(
+        listed.repositories.map((entry) => entry.displayPath),
+      ).not.toContain(thirdPath);
+      for (const entry of listed.repositories) {
+        const status = await fetch(
+          `${origin}/api/v1/status?repositoryId=${entry.repositoryId}`,
+          { headers: { authorization: `Bearer ${session.token}`, origin } },
+        );
+        expect(status.status).toBe(200);
+      }
+    } finally {
+      await running.close();
+      await second.dispose();
+      await third.dispose();
     }
   });
 
