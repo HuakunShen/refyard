@@ -123,6 +123,44 @@ describe("static assets", () => {
     }
   });
 
+  it("finds the shell again when the web root is replaced under it", async () => {
+    // Prevents: a deploy that leaves the running service answering 404 for its own app.
+    // The root is resolved through `realpath` once per process, so retargeting the
+    // symlink — the ordinary way to publish a new build next to the old one — would
+    // otherwise need a restart, and the browser would show "not found" with nothing to
+    // explain it. The class was found while chasing an unexplained single 403 on
+    // `/favicon.svg`; see `docs/evidence/release-matrix.md` for what is known about that.
+    const first = await mkdtemp(join(tmpdir(), "refyard-build-one-"));
+    const second = await mkdtemp(join(tmpdir(), "refyard-build-two-"));
+    const linkParent = await mkdtemp(join(tmpdir(), "refyard-current-"));
+    const link = join(linkParent, "web");
+    await writeFile(join(first, "200.html"), "<!doctype html><title>one</title>");
+    await writeFile(
+      join(second, "200.html"),
+      "<!doctype html><title>two</title>",
+    );
+    await symlink(first, link);
+    const deployed = await startTestService({ repo, webRoot: link });
+    try {
+      const before = await deployed.fetch("/");
+      expect(before.status).toBe(200);
+      expect(await before.text()).toContain("one");
+
+      // The deploy: the symlink now points at the new build, and the old one is gone.
+      await rm(link);
+      await symlink(second, link);
+      await rm(first, { recursive: true, force: true });
+
+      const after = await deployed.fetch("/");
+      expect(after.status).toBe(200);
+      expect(await after.text()).toContain("two");
+    } finally {
+      await deployed.close();
+      await rm(second, { recursive: true, force: true });
+      await rm(linkParent, { recursive: true, force: true });
+    }
+  });
+
   it("re-hashes a document that was rebuilt under the running service", async () => {
     // Prevents: the stale-CSP trap in the development loop. The policy names the hash of
     // the document's own inline bootstrap, so it is only valid for the bytes it was read

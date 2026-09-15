@@ -165,14 +165,25 @@ export function createAssetServer(options: AssetServerOptions): AssetServer {
     return headers;
   }
 
-  async function assetRoot(): Promise<string | null> {
-    if (rootReady) {
+  /**
+   * The resolved asset root, memoised until a request misses because of it.
+   *
+   * `refresh` drops the memo and resolves again. It is used once per request that could
+   * not be answered — see `serve` — because `realpath` is what turns a symlinked web root
+   * into an absolute path, and a rebuild that retargets the link (or replaces the
+   * directory) leaves this process holding the old one forever: the app would answer
+   * "not found" for its own shell until someone restarted the service.
+   */
+  async function assetRoot(refresh = false): Promise<string | null> {
+    if (rootReady && !refresh) {
       return resolvedRoot;
     }
     rootReady = true;
     if (options.webRoot === null) {
+      resolvedRoot = null;
       return null;
     }
+    const previous = resolvedRoot;
     try {
       const info = await stat(options.webRoot);
       resolvedRoot = info.isDirectory()
@@ -180,6 +191,10 @@ export function createAssetServer(options: AssetServerOptions): AssetServer {
         : null;
     } catch {
       resolvedRoot = null;
+    }
+    if (refresh && resolvedRoot === previous) {
+      // Nothing changed: the miss was a genuine 404, not a stale root.
+      return resolvedRoot;
     }
     return resolvedRoot;
   }
@@ -310,7 +325,19 @@ export function createAssetServer(options: AssetServerOptions): AssetServer {
       response,
       headOnly,
     }): Promise<"served" | "not-found" | "refused"> {
-      const resolved = await resolveAsset(path);
+      let resolved = await resolveAsset(path);
+      if (resolved.kind === "not-found") {
+        // The root is resolved once per process, so a rebuild that replaced it — or a
+        // symlink that was retargeted at the new build — would leave this service
+        // answering "not found" for its own shell until someone restarted it. One retry
+        // after re-resolving is the difference between "the UI is gone" and "the next
+        // request lands in the new build", and it costs a `stat` on a miss.
+        const before = resolvedRoot;
+        const after = await assetRoot(true);
+        if (after !== null && after !== before) {
+          resolved = await resolveAsset(path);
+        }
+      }
       if (resolved.kind === "refused") {
         response.setHeader("content-type", "application/json; charset=utf-8");
         response.setHeader("cache-control", "no-store");

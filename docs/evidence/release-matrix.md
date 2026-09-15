@@ -95,6 +95,31 @@ are open, and they are named here rather than implied.
 | Submodules                                           | verified   | status, out-of-sync reporting, and URL validation in the e2e and integration suites                                                                                                                                                                                                                             |
 | File names with spaces, tabs or non-ASCII characters | verified   | three such names (`moved 新\tname.txt`, `plain space.txt`, `mix 混合\tx.txt`) are staged, committed and read back byte for byte against `git ls-tree -z` (`tests/integration/staging.test.ts`). No **e2e** case clicks such a path in the browser; that part stays unverified                                       |
 
+## An asset root that changes under a running service
+
+The asset root is resolved once per process, through `realpath`. A rebuild that replaces the
+web root — or retargets a symlink at the new build, which is how a deploy usually publishes
+one — therefore used to leave the running service answering `404` for its own shell until
+someone restarted it. The service now re-resolves the root once when a request would miss
+because of it, so the next request lands in the new build (`tests/integration/http.test.ts`,
+"finds the shell again when the web root is replaced under it").
+
+That fix closes the *class* the plan attached this task to. The observation that led there is
+still open, and this is what is known about it:
+
+- **Observed, once:** a single `403` on `GET /favicon.svg`, during the session that wrote the
+  release gates, with three attempts to reproduce it afterwards all answering `200`.
+- **What can produce a 403 there:** exactly two checks in `packages/host-node/src/http/assets.ts`
+  answer `403`, and both mean "outside the web assets" — a lexical containment check and a
+  `realpath` check. A root that moved under the process is the shape that makes the second one
+  fire, which is why it was chased as a member of this class.
+- **Not preserved:** the original log lines. They were in a terminal, not in this repository;
+  a search of `docs/` and of the session artifacts finds only the log-format unit test's own
+  `GET /favicon.svg 403` example, which is not an observation. Nothing is reconstructed here.
+- **What is true now:** a refusal is logged with its reason (`tests/integration/http.test.ts`,
+  "records why a refusal happened, not only its status"), and a stale root self-heals on the
+  next request. If it recurs, the log line names which check refused and the path it resolved.
+
 ## Deliberately absent from this release
 
 These are not gaps in testing; they are decisions, and a release page must not present them as
