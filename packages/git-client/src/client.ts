@@ -19,6 +19,7 @@
  */
 import { z } from "zod";
 import {
+  healthResponseSchema,
   capabilitiesResponseSchema,
   diffResponseSchema,
   historyPageSchema,
@@ -41,6 +42,7 @@ import {
   type StatusSnapshot,
   type SubmodulesResponse,
   type WorktreesResponse,
+  type HealthResponse,
 } from "@refyard/git-contract";
 
 export interface GitClientOptions {
@@ -96,7 +98,7 @@ export interface GitClient {
     readonly expiresAt: string;
     readonly sessionId: string;
   }>;
-  health(): Promise<{ readonly alive: true; readonly apiMajor: number }>;
+  health(): Promise<HealthResponse>;
   capabilities(): Promise<CapabilitiesResponse>;
   repositories(): Promise<RepositoriesResponse>;
   status(query: {
@@ -236,13 +238,14 @@ export function createGitClient(options: GitClientOptions): GitClient {
       };
     },
 
-    async health() {
-      return send(
-        "GET",
-        "/health",
-        z.looseObject({ alive: z.literal(true), apiMajor: z.int() }),
-      );
-    },
+    /**
+     * Who is answering at this address.
+     *
+     * The contract schema, not a loose object: the caller needs the instance id and the
+     * API major to decide whether a remembered session still belongs here, and a
+     * hand-rolled shape is exactly how a field goes missing when the host adds one.
+     */
+    health: () => send("GET", "/health", healthResponseSchema),
 
     capabilities: () =>
       send("GET", "/api/v1/capabilities", capabilitiesResponseSchema),

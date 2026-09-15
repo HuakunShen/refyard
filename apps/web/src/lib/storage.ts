@@ -16,6 +16,14 @@
 
 const TOKEN_KEY = "refyard.session.token";
 const BASE_URL_KEY = "refyard.baseUrl";
+/**
+ * The service instance the stored token belongs to.
+ *
+ * Kept beside the token because the two are only meaningful together: a token without
+ * its instance is a credential for a service that may not be there any more, and the
+ * page needs to notice that rather than retry against a stranger.
+ */
+const INSTANCE_KEY = "refyard.session.instance";
 
 export function readStoredToken(): string | null {
   return readSession(TOKEN_KEY);
@@ -31,6 +39,20 @@ export function readStoredBaseUrl(): string | null {
 
 export function storeBaseUrl(baseUrl: string | null): void {
   writeLocal(BASE_URL_KEY, baseUrl);
+}
+
+export function readStoredInstance(): string | null {
+  return readSession(INSTANCE_KEY);
+}
+
+export function storeInstance(instanceId: string | null): void {
+  writeSession(INSTANCE_KEY, instanceId);
+}
+
+/** Forget the whole session: used when the service is not the one we paired with. */
+export function clearStoredSession(): void {
+  storeToken(null);
+  storeInstance(null);
 }
 
 function readSession(key: string): string | null {

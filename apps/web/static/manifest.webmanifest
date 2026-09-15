@@ -1,0 +1,11 @@
+{
+  "name": "refyard",
+  "short_name": "refyard",
+  "description": "A browser workbench for a Git repository on this machine.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0b0b0c",
+  "theme_color": "#0b0b0c",
+  "icons": []
+}

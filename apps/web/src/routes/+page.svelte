@@ -64,11 +64,19 @@
   import { parseSessionConfig, stripTicket } from "$lib/connection.js";
   import { followOperation } from "$lib/operation-follow.js";
   import {
+    clearStoredSession,
     readStoredBaseUrl,
+    readStoredInstance,
     readStoredToken,
     storeBaseUrl,
+    storeInstance,
     storeToken,
   } from "$lib/storage.js";
+  import {
+    blocksWrites,
+    negotiateSession,
+    type Negotiation,
+  } from "$lib/session-negotiation.js";
 
   const HISTORY_PAGE_SIZE = 100;
 
@@ -85,9 +93,14 @@
   let ticket = $state(initial.ticket ?? "");
   const hadTicketOnLoad = initial.ticket !== null;
   let token = $state<string | null>(browser ? readStoredToken() : null);
+  /** The instance this tab paired with, as recorded when the token was stored. */
+  let pairedInstance = $state<string | null>(
+    browser ? readStoredInstance() : null,
+  );
   let pairPhase = $state<"idle" | "connecting" | "failed">("idle");
   let pairMessage = $state<string | undefined>(undefined);
   let streamState = $state<"offline" | "connecting" | "live">("offline");
+  let browserOnline = $state(true);
 
   const queryClient = useQueryClient();
 
@@ -112,6 +125,11 @@
       const session = await client.exchangeTicket(value);
       token = session.token;
       storeToken(session.token);
+      // Remembering the instance is what lets a later load notice that the address now
+      // answers with a different service.
+      const who = await client.health();
+      pairedInstance = who.serviceInstanceId;
+      storeInstance(who.serviceInstanceId);
       storeBaseUrl(
         initial.overridden || baseUrl !== initial.baseUrl ? baseUrl : null,
       );
@@ -130,7 +148,8 @@
 
   function disconnect(): void {
     token = null;
-    storeToken(null);
+    pairedInstance = null;
+    clearStoredSession();
     selectedOid = null;
     selectedPath = null;
     queryClient.clear();
@@ -405,6 +424,71 @@
   let submoduleMessage = $state<string | null>(null);
   let mergeMessage = $state<string | null>(null);
 
+  /**
+   * Ask the service who it is, without a token.
+   *
+   * `/health` is the one endpoint that answers without authentication, which is what
+   * makes it the right probe here: a stale token must not be able to hide the fact that
+   * the address now belongs to a different service — `capabilities` would answer 401,
+   * and the page would blame the session instead of the instance.
+   */
+  const identity = createQuery(() => ({
+    queryKey: ["identity", baseUrl],
+    queryFn: () => client.health(),
+    enabled,
+  }));
+
+  /**
+   * What this page is allowed to do with the service it found.
+   *
+   * The instance and the API major decide whether the remembered session and the write
+   * controls are usable at all. A mismatch clears storage and the cache rather than
+   * retrying: the token belongs to a service that is not answering, and the UI's idea of
+   * an operation may not match the service's.
+   */
+  const negotiation: Negotiation = $derived(
+    identity.data === undefined
+      ? { kind: "ok" }
+      : negotiateSession(
+          { instanceId: pairedInstance, hasToken: token !== null },
+          {
+            serviceInstanceId: identity.data.serviceInstanceId,
+            apiMajor: identity.data.apiMajor,
+            contractVersion: capabilities.data?.contractVersion ?? "unknown",
+          },
+        ),
+  );
+  /**
+   * Writes are refused when the page is offline, unpaired, or talking to a stranger.
+   *
+   * "Offline" here is the browser's own signal, not a quiet event stream: a dropped SSE
+   * connection means no live hints, not an unreachable service, and the write itself
+   * reports a real failure when the service is gone. What must never happen is a write
+   * being *queued* for later, and nothing in this app queues one.
+   */
+  const writesAllowed = $derived(
+    token !== null && !blocksWrites(negotiation) && browserOnline,
+  );
+
+  $effect(() => {
+    const verdict = negotiation;
+    if (verdict.kind === "ok") {
+      return;
+    }
+    // Once per change: forgetting the session is what makes the notice disappear and
+    // the pairing panel appear, so the state itself is the guard.
+    if (verdict.kind === "differentInstance" && token !== null) {
+      token = null;
+      pairedInstance = null;
+      clearStoredSession();
+      queryClient.clear();
+      return;
+    }
+    if (verdict.kind === "incompatible") {
+      queryClient.clear();
+    }
+  });
+
   const implementedKinds = $derived(
     new Set((capabilities.data?.operations ?? []).map((entry) => entry.kind)),
   );
@@ -462,6 +546,18 @@
     mutationBusy = true;
     report(null);
     try {
+      if (!writesAllowed) {
+        // Nothing is queued for later: an offline page cannot know whether the request
+        // it would send is still the right one, and a write replayed after reconnecting
+        // is exactly what this refuses to do.
+        throw new Error(
+          !browserOnline
+            ? "this browser is offline; nothing was sent and nothing will be retried"
+            : negotiation.kind === "ok"
+              ? "not paired with the service; pair before writing"
+              : negotiation.message,
+        );
+      }
       if (selectedRepositoryId === null || primaryWorktreeId === null) {
         throw new Error("no repository selected");
       }
@@ -1036,7 +1132,30 @@
     );
   }
 
-  /* --------------------------------------------------------------- live hints */
+  /* ------------------------------------------------------- connection and hints */
+
+  /**
+   * The browser's own online signal.
+   *
+   * It is the only signal that means "the network is gone" rather than "this service is
+   * not answering", and it is what the offline gate reads. A page that trusted a quiet
+   * event stream instead would refuse writes on a service that is perfectly reachable.
+   */
+  $effect(() => {
+    if (!browser) {
+      return;
+    }
+    browserOnline = navigator.onLine;
+    const update = (): void => {
+      browserOnline = navigator.onLine;
+    };
+    window.addEventListener("online", update);
+    window.addEventListener("offline", update);
+    return () => {
+      window.removeEventListener("online", update);
+      window.removeEventListener("offline", update);
+    };
+  });
 
   $effect(() => {
     if (!browser || token === null) {
@@ -1180,17 +1299,22 @@
 
     {#if token !== null}
       <Badge
-        tone={streamState === "live"
-          ? "branch"
-          : streamState === "connecting"
-            ? "muted"
-            : "warn"}
+        tone={!browserOnline || negotiation.kind !== "ok"
+          ? "warn"
+          : streamState === "live"
+            ? "branch"
+            : "muted"}
+        data-testid="connection-state"
       >
-        {streamState === "live"
-          ? "live updates"
-          : streamState === "connecting"
-            ? "connecting…"
-            : "no live updates"}
+        {!browserOnline
+          ? "not connected (offline)"
+          : negotiation.kind !== "ok"
+            ? "not connected (incompatible service)"
+            : streamState === "live"
+              ? "live updates"
+              : streamState === "connecting"
+                ? "connecting…"
+                : "no live updates"}
       </Badge>
       <span class="font-mono text-xs text-ink-faint" title="service address"
         >{baseUrl}</span
