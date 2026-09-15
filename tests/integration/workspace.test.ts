@@ -130,9 +130,17 @@ describe("initRepository", () => {
           ]),
         )
         .trim();
-      // The fixture pins the default in its own global config; what matters is that
-      // the service did not invent a name of its own.
-      expect(head).toBe("main");
+      // The oracle is Git itself in the same environment: the fixture's global config
+      // is empty and its system config is disabled, so `init.defaultBranch` decides —
+      // and the service must follow it rather than inventing a name. (Measured while
+      // writing this: the fixture's GIT_DEFAULT_BRANCH does not affect `git init` on
+      // Git 2.50.1, which is why the comparison is made against a real init.)
+      const direct = join(repo.scratchRoot, "direct");
+      await repo.git(["init", "--quiet", direct]);
+      const expected = decoder
+        .decode(await repo.git(["-C", direct, "symbolic-ref", "--short", "HEAD"]))
+        .trim();
+      expect(head).toBe(expected);
     } finally {
       await service.close();
       await repo.dispose();
