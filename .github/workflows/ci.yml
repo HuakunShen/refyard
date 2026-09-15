@@ -73,8 +73,12 @@ jobs:
       - name: Build
         run: pnpm build:release
 
-      - name: Install the browser the e2e suite drives
-        run: pnpm exec playwright install --with-deps chromium
+      # All three engines, because `pnpm test:e2e` runs all three: installing only
+      # chromium made the second CI run fail the same 60 specs on both platforms —
+      # firefox and webkit could not launch. An engine that is not installed is not a
+      # skipped engine; it is sixty failures.
+      - name: Install the browsers the e2e suite drives
+        run: pnpm exec playwright install --with-deps
 
       - name: End-to-end
         run: pnpm test:e2e
