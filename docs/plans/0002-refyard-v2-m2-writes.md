@@ -506,3 +506,85 @@ build time and not re-checked at install).
 
 Nothing here publishes. The tarball is only ever installed from a local path, and
 `--offline` in the smoke run is what proves no registry was consulted.
+
+---
+
+## T14 — Offline shell, hosted UI, protocol negotiation
+
+Delivered:
+
+```
+apps/web/src/service-worker.ts            shell-only cache, /api never cached
+apps/web/src/lib/session-negotiation.ts   instance + API-major rules (pure)
+apps/web/src/lib/storage.ts               the instance beside the token; clear-on-change
+apps/web/static/manifest.webmanifest      installable shell
+packages/git-client/src/client.ts         health() uses the contract schema, not a loose object
+tests/unit/session-negotiation.test.ts    6 cases
+tests/e2e/{offline,versions}.spec.ts      4 cases in Chromium
+docs/browser-support.md                   what was run, what is unverified, what to do
+```
+
+### Deviations and findings, recorded deliberately
+
+- **Negotiation had to move to `/health`, and that is the finding of this task.** The
+  first implementation compared the service instance from `capabilities` — which is
+  authenticated. With a token from a _different_ instance the call answered 401, the
+  page showed "the session is no longer valid", and the instance change was invisible:
+  the user was told to re-pair, but nothing had noticed that the address now belonged to
+  another service, and no test could tell the two apart. `/health` is the one endpoint
+  that answers without a token, so it is the only one that can answer "who are you?"
+  before the page decides whether its session is meaningful.
+- **`health()` in the client was a hand-rolled loose object.** It declared `alive` and
+  `apiMajor` and silently dropped `serviceInstanceId`, which the contract schema
+  carries. It now returns the contract type, because that is exactly the kind of field
+  a hand-rolled shape loses when the host adds one.
+- **The offline spec needed the service worker to exist, and the first attempt proved
+  it.** `page.reload()` with the network off failed with `net::ERR_INTERNET_DISCONNECTED`
+  before the worker existed and `net::ERR_FAILED` after the first version of it — because
+  `$service-worker`'s `build` and `files` lists contain assets, not the prerendered
+  document. The shell now precaches `/index.html` and `/200.html` explicitly, each
+  individually so a missing document cannot fail the whole install.
+- **"Offline" is the browser's signal, not a quiet event stream.** Writing the gate as
+  "the SSE stream is down" would refuse writes against a perfectly reachable service
+  whose stream a proxy is buffering. The page reads `navigator.onLine`, keeps the stream
+  for what it actually is (live hints), and refuses with a message that says nothing was
+  sent and nothing will be retried.
+- **Nothing queues a write.** The refusal is not a deferred request: a page cannot know
+  whether the request it would send is still right after an outage, so the rule is
+  refuse-say-forget. Two e2e cases read the host's own operation list to prove the count
+  did not move during the outage or after it.
+- **A write control is absent, not disabled, when there is no data.** One case asserts
+  `stage-selected` has a count of zero after an offline reload: with every read failing
+  there is no list to select from, and an inert button would suggest otherwise.
+- **The instance is recorded at pairing time.** A token without its instance is a
+  credential for a service that may be gone; storing them together is what lets a later
+  load tell "expired session" from "different service", which are different sentences to
+  a user.
+
+### Not implemented, and named rather than implied
+
+The **hosted static site talking to a loopback API from another origin** is not built.
+The host's origin policy refuses a foreign `Origin`, a `null` origin and
+`Sec-Fetch-Site: cross-site`, and no CLI flag widens that list; a browser will also block
+a public `https://` page from calling loopback HTTP (Private Network Access). The
+supported shape is the same-origin one the service already serves, and
+`docs/browser-support.md` says so instead of documenting a workaround.
+
+### Verification, actually run
+
+| Command                                                           | Result                                                     |
+| ----------------------------------------------------------------- | ---------------------------------------------------------- |
+| `pnpm exec vitest run tests/unit/session-negotiation.test.ts`     | 6 passed                                                   |
+| `pnpm test:e2e --grep "offline workbench\|not the one we paired"` | 4 passed                                                   |
+| `pnpm test:e2e`                                                   | 26 passed                                                  |
+| `pnpm test`                                                       | 519 passed (33 files)                                      |
+| `pnpm check`                                                      | 8 packages, 0 errors                                       |
+| `pnpm check:boundaries`                                           | 3 portable packages, 53 source files; 59 test/script files |
+| `pnpm check:contract`                                             | artifacts match, 438 named schemas                         |
+| `pnpm pack:smoke`                                                 | 14 steps passed                                            |
+
+Unverified: every browser other than the Playwright Chromium build (Firefox, WebKit,
+Safari and installed Chrome are all untested — `docs/browser-support.md` lists them as
+such), `localStorage`/`sessionStorage` being unavailable (the code is written to degrade,
+but no run exercises it), and the API-major mismatch path end to end (the unit tests
+pin the rule; producing a real major mismatch would need a second contract version).
