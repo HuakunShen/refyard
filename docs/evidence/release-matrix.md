@@ -98,16 +98,16 @@ Ctrl+C in a terminal is unaffected — that signals the whole foreground group, 
 `pnpm test:e2e`, 2026-09-15, Playwright 1.63.0, one worker: **90 passed, 0 failed (11.9 m)** —
 the same 30 specs in each of three engines, against the built bundle and a real service.
 
-| Browser                             | Status     | Notes                                                                                                                  |
-| ----------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Chromium 153 (Playwright bundled)   | verified   | 30 cases: reads, staging, stash, branch, merge, worktrees, versions, live updates, offline reload, repository creation |
-| Firefox 155 (Playwright bundled)    | verified   | the same 30 cases                                                                                                      |
-| WebKit 26.6 (Playwright bundled)    | verified   | the same 30 cases. Two WebKit-only limits were found in the _tests_; both are recorded in `browser-support.md`         |
-| Safari (the installed macOS app)    | unverified | Playwright's WebKit is the engine, not Apple's build; nobody has opened the app in Safari                              |
-| Safari on iOS                       | unverified | not run                                                                                                                |
-| Chrome on Android                   | unverified | not run                                                                                                                |
-| Mobile viewports (any)              | unverified | the e2e projects are desktop-sized only                                                                                |
-| Screen readers / accessibility tree | unverified | no assistive-technology run                                                                                            |
+| Browser                             | Status     | Notes                                                                                                                                                                                                                                                          |
+| ----------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Chromium 153 (Playwright bundled)   | verified   | 30 cases: reads, staging, stash, branch, merge, worktrees, versions, live updates, offline reload, repository creation                                                                                                                                         |
+| Firefox 155 (Playwright bundled)    | verified   | the same 30 cases in this run. A later run of the same 90 came back 89 passed / 1 failed — one Firefox workspace case, service unreachable mid-spec, passing again on re-run in 7.2 s; `browser-support.md` keeps it as an open question, not a browser defect |
+| WebKit 26.6 (Playwright bundled)    | verified   | the same 30 cases. Two WebKit-only limits were found in the _tests_; both are recorded in `browser-support.md`                                                                                                                                                 |
+| Safari (the installed macOS app)    | unverified | Playwright's WebKit is the engine, not Apple's build; nobody has opened the app in Safari                                                                                                                                                                      |
+| Safari on iOS                       | unverified | not run                                                                                                                                                                                                                                                        |
+| Chrome on Android                   | unverified | not run                                                                                                                                                                                                                                                        |
+| Mobile viewports (any)              | unverified | the e2e projects are desktop-sized only                                                                                                                                                                                                                        |
+| Screen readers / accessibility tree | unverified | no assistive-technology run                                                                                                                                                                                                                                    |
 
 What "verified" does not mean: nothing here says the UI looks right on a phone, that Apple's
 Safari build behaves like Playwright's WebKit, or that a screen reader can drive the app. Those

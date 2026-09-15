@@ -1,11 +1,11 @@
 # M2 evidence — the write loop, packaging and the release gate (T08–T15)
 
-> Status: **evidence record, revision 1** — revision 0 was written at HEAD `59d5631`; **revision 1
-> adds §7**, which records the round that closed the two gaps revision 0 named (see §1's write
-> surface and §5's first bullet, both superseded there). Where the two disagree, §7 is later and
-> was measured last.
-> (`fix: report only the mutations this build does not implement`), on macOS 26.6 arm64 with
-> Node 26.8.2 and Git 2.50.1 (Apple Git-155).
+> Status: **evidence record, revision 2** — revision 0 was written at HEAD `59d5631` (its fix,
+> "report only the mutations this build does not implement"), on macOS 26.6 arm64 with Node 26.8.2
+> and Git 2.50.1 (Apple Git-155). **Revision 1 added §7**, the round that closed the two gaps
+> revision 0 named (see §1's write surface and §5's first bullet, both superseded there);
+> **revision 2 added §8**, which records what the evidence round changed about the write path
+> itself. Where they disagree, the highest revision is later and was measured last.
 >
 > Every command below was run on this machine, at this revision, and the results are the ones the
 > shell reported. Nothing here is a projection. Where a platform, browser, Git version or suite was
@@ -183,3 +183,81 @@ run when the artifact is stale.
 no credential helper ran, no submodule-recursing clone was exercised (the flag is argv-tested only),
 and no clone was interrupted mid-transfer by a signal. Those are named as unverified in
 `release-matrix.md` rather than left to inference.
+
+## 8. Revision 2 — what the write path does now (evidence round, plan 0004)
+
+Written 2026-09-15, same machine as revisions 0 and 1 (macOS 26.6 arm64, Node 26.8.2, Git 2.50.1),
+plus two Linux containers. This revision records three behaviour changes in the _write_ path and the
+cases behind them; the read-side and platform findings are in `release-matrix.md`.
+
+**1. A bare repository is readable and not writable, and every write says so by name.** Staging or
+committing into a repository with no working tree was answered by Git — sometimes with `fatal: this
+operation must be run in a work tree`, and sometimes not at all, because the status read the
+resolver performs is exactly what Git refuses there. It is now refused before any Git call with
+`UnsupportedOperation` and a message that names the real reason; nothing is accepted, the operation
+list is empty afterwards, and the repository is untouched (`tests/integration/staging.test.ts`,
+"refuses to write to a bare repository, naming the reason instead of crashing"). Reads of the same
+repository still work: the list, its head, its refs and its history
+(`tests/integration/reads.test.ts`); a _status_ read there is refused with `GitCommandFailed` and
+Git's own diagnostic in the problem's details. The limitation that comes with it is named rather
+than hidden: a bare repository's ref-only writes (`fetch`, `push`, `tag`, `branch`, `remote`) are
+refused too, because this build has no per-operation "needs a working tree" classification yet.
+
+**2. A write whose facts cannot be read is `failed`, never `unknown`.** `unknown` means Git may have
+changed something and a human must go and verify it; a precondition read that failed before any
+command ran means nothing happened, and reporting the second as the first sends someone to check a
+repository that was never touched. Both places that read facts now refuse instead: the submit-time
+preconditions (which previously let the failure escape as a `500`) and the effect resolver (which
+previously let it reach the job engine's `unknown`). Two related corrections came with it:
+
+- `readStatusFacts` wrapped a Git failure as a _parse_ failure, so a refusal arrived as
+  `InternalError` with Git's diagnostic thrown away. It now re-throws a `GitWorkflowError`
+  unchanged — the pattern every other workflow already used — and the diagnostic reaches the client.
+- The submit path replaced the registry's own sentence ("the Git directory of repo is gone;
+  register it again") with a generic "this service does not know that repository". The specific
+  sentence is kept, because those two failures need different things from the reader.
+
+Cases: `tests/integration/staging.test.ts` ("refuses a write to a repository whose Git directory is
+gone, and says so", and "reports an unreadable repository in an effect as failed, never as
+unknown" — the effect is invoked directly there, because the submit-time checks run first on every
+HTTP path).
+
+**3. An operation whose porcelain the machine's Git lacks is not offered.** `git fetch --porcelain`
+arrived in Git 2.41; this build's `fetch` and `pull` are built on it, and on Git 2.39.5 the command
+is rejected with "unknown option". The doctor probes for exactly this, and now the probe decides the
+capability: `fetch` and `pull` are absent from `operations` and named in `unavailable` with code
+`git-too-old` and a message that says which porcelain is missing. The other half matters as much:
+the not-implemented reason no longer claims them, because "this build does not implement fetch" is a
+false statement about the build made by a machine whose Git is the reason
+(`tests/integration/http.test.ts`, "a machine whose Git is older than the baseline"). On the
+baseline Git nothing changes: `GET /api/v1/capabilities` on this machine still reports **35
+operations** with every probe supported.
+
+**Write-path cases added this round** (all in `tests/integration/staging.test.ts`): stage and commit
+in a SHA-256 repository with every object id asserted at 64 hex characters and the new head compared
+against Git's own; and three path names containing a tab, a space and multi-byte characters, staged,
+committed and read back byte for byte against `git ls-tree -z`.
+
+**Commands run at this revision**, from the repository root, all exit status 0:
+
+| Command                                           | Reported                                                                                              |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `pnpm check`                                      | 8 workspace tasks, TypeScript strict across all of them, 0 errors                                     |
+| `pnpm check:boundaries`                           | 3 portable packages (54 source files) free of host APIs; 71 test/script files import packages by name |
+| `pnpm check:contract`                             | committed JSON Schema artifacts match the Zod schemas; 438 named schemas, every `$ref` resolves       |
+| `pnpm test:unit`                                  | 233 cases in 15 files                                                                                 |
+| `pnpm test:integration`                           | 345 cases in 22 files (includes the negative security cases and the four repository shapes)           |
+| `pnpm test:pack`                                  | 15 cases                                                                                              |
+| `pnpm test:portable`                              | neutral IIFE with no host globals and no Node shims; 11 planner/parser checks, 4 vitest cases         |
+| `pnpm test:e2e`                                   | 30 specs × 3 engines — Chromium 153, Firefox 155, WebKit 26.6 — 90 passed, 0 failed in 11.9 m         |
+| `bun scripts/container-gates.ts` (node:26-trixie) | 10 of 10 gates on Linux arm64, Node 26.8.2, Git 2.47.3, as a non-root user                            |
+| `refyard doctor --json` (node:26-bookworm)        | Git 2.39.5: baseline not met, `fetch-porcelain` unsupported; reads + staging: 66 cases passed there   |
+| `pnpm pack:smoke`                                 | 14 steps against the `npm pack` tarball                                                               |
+| `pnpm bench:runtime`                              | the packaged CLI on a 100,000-commit fixture, three repeated lifecycles                               |
+
+**What revision 2 does not verify**: the write path was exercised on macOS 26.6 arm64 and Linux
+arm64 (container) only — no Windows, no Linux x64; `test:e2e` has not run on Linux, so no browser
+clicked a write control there; Git below 2.39 was not tried; ref-only writes to a bare repository
+are refused rather than implemented; and one Firefox e2e case failed once with the service
+unreachable mid-spec and passed on re-run, which `docs/browser-support.md` keeps as an open
+question rather than a finding.
