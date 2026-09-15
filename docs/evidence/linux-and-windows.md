@@ -52,7 +52,7 @@ Each gate is a root script from AGENTS.md §5, run with the machine's own pnpm a
 | `pnpm test:portable`    | 0      | 0       | neutral IIFE build of the core, no host globals                                     |
 | `pnpm build:release`    | 0      | 0       | staged CLI bundle and web build                                                     |
 | `pnpm pack:smoke`       | 0      | 0       | 15 steps against the `npm pack` tarball (Windows skips the SIGTERM step, see below) |
-| `pnpm bench:runtime`    | 0      | 0       | 100,000-commit fixture, three repeated lifecycles                                   |
+| `pnpm bench:runtime`    | 0      | —       | Ubuntu: 100,000 commits, three lifecycles. Windows: **did not complete** (below)    |
 
 `pnpm test:e2e`, the Playwright suite, is also on the Ubuntu machine: **30 of 30 chromium specs
 passed** against the built SPA served by the real host. Firefox and WebKit were **not** run there —
@@ -147,9 +147,15 @@ Named plainly, because a matrix row is only as good as its status word:
 
 - **Windows e2e**: the Playwright suite was not run there. The browser rows for Windows are
   unverified, and the product's behaviour in a browser on Windows is unverified with them.
-- **`bench:runtime` on Windows**: still running when this file was written — the 100,000-commit
-  fixture takes far longer to build on NTFS than in the same run on the other two machines. The
-  gate's exit status on Windows is therefore **unverified** here, unlike the other nine.
+- **`bench:runtime` on Windows**: **did not complete**, and the cause was not diagnosed. What was
+  observed, after roughly ninety minutes: the 100,000-commit fixture had been built (`git rev-list
+--count HEAD` → 100000), a service started from the packaged CLI was alive and answering (`HTTP
+200` on `/`), and the benchmark process sat at 0.6 s of CPU — waiting for something that never
+  arrived. Its readiness wait has a 60 s deadline and its lifecycle stops await an exit, so the wait
+  is somewhere this round did not identify. The same gate passes on macOS, on the Ubuntu machine, in
+  the container and in CI; this row is about Windows only. A next attempt should run the benchmark
+  there with its output streaming somewhere readable — the gate's own redirection buffers through
+  `Out-String` until the process exits, which is part of why the wait was invisible.
 - **Linux Firefox and WebKit**: not run — only chromium was installed on that machine.
 - **CI on Windows**: the workflow runs `ubuntu-latest` and `macos-latest`. Windows is not in the
   matrix, so the Windows rows above rest on the manual run on this one machine.
