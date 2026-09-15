@@ -97,6 +97,41 @@ measurements carry their scale in the same fields. No number from this task is a
 hardware, and none of them reopens the parsing decision by itself — reopening needs a shape the
 bound cannot serve, which is a different statement from "a diff took a while".
 
+**Findings from running it (2026-09-15), all recorded rather than smoothed over:**
+
+1. **The `oversize` bullet above was written on a wrong assumption.** `oversize` is a kind of the
+   *untracked-synthesis* path; a tracked file whose patch crosses the bound stays `kind: "text"` and
+   is cut by the per-file line bound, and only the response's `truncated` flag says so. The report
+   therefore measures that bounded answer instead: lines delivered against lines expected, the
+   payload against the patch `git diff` produces unbounded (3.2 MB for that path), and both
+   directions of the flag asserted — false for the complete patch, true for the bounded one. A run
+   where either assertion fails writes no report.
+2. **The bound is unnameable on the wire.** The string that says *which* limit was reached is built
+   (`packages/git-core/src/workflows/diff.ts` pushes into `limitations`; the coordinator adds the
+   path-list case in `coordinator/reads.ts`) and then dropped: no response field carries it, so a
+   client learns "something was cut" and not what. The report says so next to the measurement
+   instead of pretending the limit is visible. Not fixed here: widening the diff response is a
+   contract change, which is its own decision with its own evidence.
+3. **The harness had a race that looked like an auth failure.** The pairing ticket is printed on
+   stderr and nothing orders it against stdout's readiness line, so an exchange that fired early
+   sent an empty ticket, got a 401, and every later read failed as unauthorized. It now waits for the
+   ticket and checks the exchange, so the failure names itself. The same run also left its service
+   process behind on the error path; the lifecycle now stops it in a `finally`.
+4. **The R2 rewrite silently dropped `graceful-shutdown`** from the report. `tests/pack/evidence.test.ts`
+   caught it (the checklist case asserts the measurement set), which is the guard working: a
+   regeneration that loses a row fails a test rather than shipping a thinner report.
+5. **The first run measured a stale artifact.** The bench prefers the packaged bundle, and that
+   bundle was built before the current sources — so every number described a build nobody has. The
+   report now carries the artifact's own `build-info.json`, the checkout's revision, and whether the
+   tree was dirty; the run refuses when the artifact is older than the bundle's sources. This report
+   was produced from a working tree with **uncommitted** changes (an in-flight UI round and a
+   repository-wide format), so it describes revision `e1a2c85` plus those changes, and says so in
+   `artifact.workingTreeDirty` rather than leaving a reader to assume the revision is exact.
+   Noted while doing it, not fixed here: `build-info.json`'s `node` field records
+   `scripts/build-release.ts`'s own `process.version`, and that script runs under bun — so the stamp
+   names a Node version no Node reported. It is the same trap as the bench's `process.execPath`
+   finding, in the packaging path.
+
 ## 4. Out of scope
 
 - **T16–T18** (Xross, Kunkun adapter, native-host review): closed until the standalone V1 ships.
@@ -120,6 +155,11 @@ Every task follows the standing order: failing test first, minimum implementatio
 | `pnpm test:portable`    | the neutral IIFE still runs the core after new planners                     |
 | `pnpm pack:smoke`       | the packaged CLI still installs, serves and stops                           |
 | `pnpm bench:runtime`    | produces the evidence R2 is for                                             |
+
+R2 touches `scripts/`, `tests/pack/` and `docs/evidence/` only, so its own gate is the narrow one:
+`pnpm check`, `pnpm test:pack` (which reads the regenerated report as a file and fails when a row
+loses its scale), and `pnpm bench:runtime` itself. R1's row set is the full table, because R1 adds a
+planner, an effect and a panel.
 
 ## 6. Risks and unknowns, named before they are hit
 

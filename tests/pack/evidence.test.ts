@@ -40,6 +40,31 @@ interface PerformanceReport {
     readonly repository: string;
     readonly isolation: string;
   };
+  readonly artifact: {
+    readonly path: string;
+    readonly modifiedAt: string;
+    readonly buildInfo: {
+      readonly builtAt?: string;
+      readonly gitCommit?: string;
+      readonly bundleBytes?: number;
+    } | null;
+    readonly headRevision: string;
+    readonly workingTreeDirty: boolean;
+  };
+  readonly diffFixture: {
+    readonly changedPaths: number;
+    readonly manyFiles: number;
+    readonly largeLines: number;
+    readonly truncatedLines: number;
+    readonly truncatedPatchLines: number;
+    readonly deliveredTruncatedLines: number;
+    readonly longLineChars: number;
+    readonly unboundedPatchBytes: {
+      readonly large: number;
+      readonly truncated: number;
+      readonly longLine: number;
+    };
+  };
   readonly methodology: {
     readonly repeated: boolean;
     readonly runs?: number;
@@ -118,6 +143,77 @@ describe("performance evidence", () => {
       }
     } else {
       expect(report.methodology.statistic ?? "single run").toContain("single");
+    }
+  });
+
+  it("states the diff scale, and shows the bound was actually reached", async () => {
+    // Prevents: a report whose diff section describes a bound that never bound —
+    // a "bounded answer" row beside a fixture that fits inside the bound, which a
+    // reader a month later cannot tell from a patch that was cut. The scale lives
+    // in fields for exactly that reason, and the delivery count has to be below
+    // the fixture's own expected count, not merely present.
+    const report = await readPerformance();
+    const byName = new Map(
+      report.measurements.map((measurement) => [measurement.name, measurement]),
+    );
+    for (const name of [
+      "diff-large-file",
+      "diff-large-file-payload",
+      "diff-large-file-second-read",
+      "diff-long-line",
+      "diff-long-line-payload",
+      "diff-many-files",
+      "diff-many-files-payload",
+      "diff-truncated-patch",
+      "diff-truncated-patch-payload",
+      "diff-service-rss-after-start",
+      "diff-service-rss-after-batch",
+      "status-after-switching-services",
+    ]) {
+      expect(byName.has(name)).toBe(true);
+    }
+
+    const diff = report.diffFixture;
+    expect(diff.changedPaths).toBe(diff.manyFiles + 3);
+    expect(diff.truncatedPatchLines).toBe(diff.truncatedLines * 2);
+    // The bounded read delivered a cut patch: fewer lines than the file holds, and
+    // more than none (a request that answered nothing would also "fit the bound").
+    expect(diff.deliveredTruncatedLines).toBeGreaterThan(0);
+    expect(diff.deliveredTruncatedLines).toBeLessThan(diff.truncatedPatchLines);
+    // The payload rows are read against the patch git produces unbounded, so the
+    // comparison is in the report rather than in the reader's head.
+    expect(diff.unboundedPatchBytes.truncated).toBeGreaterThan(
+      diff.unboundedPatchBytes.large,
+    );
+    const boundedPayload = byName.get("diff-truncated-patch-payload");
+    const boundedBytes = boundedPayload?.value ?? 0;
+    expect(boundedBytes).toBeGreaterThan(0);
+    expect(boundedBytes).toBeLessThan(diff.unboundedPatchBytes.truncated);
+  });
+
+  it("names the build the numbers came from, and admits a dirty tree", async () => {
+    // Prevents: a report that describes an artifact rather than a revision. The
+    // numbers belong to whichever bundle answered the requests, and a bundle older
+    // than its sources — or built from a tree with uncommitted changes — cannot be
+    // reproduced from the commit it names. Both facts travel with the numbers.
+    const report = await readPerformance();
+    expect(report.artifact.path).toContain("cli.mjs");
+    expect(Number.isFinite(Date.parse(report.artifact.modifiedAt))).toBe(true);
+    expect(report.artifact.headRevision).toMatch(/^[0-9a-f]{7,40}$/);
+    expect(typeof report.artifact.workingTreeDirty).toBe("boolean");
+    if (report.artifact.workingTreeDirty) {
+      // A dirty tree is publishable, an unstated one is not: the report has to say so.
+      const plan = await readFile(
+        join(repoRoot, "docs", "plans", "0003-refyard-v2-m2-closure.md"),
+        "utf8",
+      );
+      expect(plan).toContain("uncommitted");
+    }
+    if (report.artifact.buildInfo !== null) {
+      const buildInfo = report.artifact.buildInfo;
+      expect(buildInfo.gitCommit ?? "").toMatch(/^[0-9a-f]{7,40}$/);
+      expect(buildInfo.builtAt ?? "").not.toBe("");
+      expect(Number.isFinite(Date.parse(buildInfo.builtAt ?? ""))).toBe(true);
     }
   });
 
