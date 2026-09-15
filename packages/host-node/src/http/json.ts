@@ -303,6 +303,16 @@ export function logLine(input: {
   readonly sessionId?: string | undefined;
   readonly correlationId?: string | undefined;
   readonly problemCode?: string | undefined;
+  /**
+   * Why the problem was reported, when the caller has it.
+   *
+   * A code alone is often ambiguous — `Forbidden` covers both "outside the web assets"
+   * and "resolves outside the web assets" — and the message is the part that says which
+   * check fired. It is escaped and bounded first: a message can quote a path or a branch
+   * name from the machine, and a newline in one of those must not forge a second log
+   * line, nor a terminal escape reach the terminal.
+   */
+  readonly problemMessage?: string | undefined;
 }): string {
   const parts = [
     `${input.method} ${input.path}`,
@@ -315,10 +325,26 @@ export function logLine(input: {
   if (input.problemCode !== undefined) {
     parts.push(`problem=${input.problemCode}`);
   }
+  if (input.problemMessage !== undefined && input.problemMessage.length > 0) {
+    parts.push(`reason=${quotedForLog(input.problemMessage)}`);
+  }
   if (input.correlationId !== undefined) {
     parts.push(`correlation=${input.correlationId}`);
   }
   return parts.join(" ");
+}
+
+/**
+ * One message as a single quoted token: control characters escaped, length bounded by
+ * code point so a surrogate pair is never cut in half.
+ */
+function quotedForLog(message: string, maxCodePoints = 200): string {
+  const points = Array.from(message);
+  const clipped =
+    points.length > maxCodePoints
+      ? `${points.slice(0, maxCodePoints).join("")}…`
+      : message;
+  return JSON.stringify(clipped);
 }
 
 /** Redact a URL for display: userinfo removed, query string dropped. */

@@ -149,6 +149,22 @@ describe("static assets", () => {
     expect(policyAfter).not.toContain(hashBefore ?? "never-matches");
   });
 
+  it("records why a refusal happened, not only its status", async () => {
+    // Prevents: a log line that says `problem=Forbidden` and leaves the reader guessing.
+    // Two different checks answer with that code, and the difference matters: one is a
+    // client sending a bad path, the other is a symlink inside the bundle.
+    const response = await service.fetch("/api/v1/capabilities");
+    expect(response.status).toBe(401);
+    const line = service.log.find((entry) =>
+      entry.includes("/api/v1/capabilities"),
+    );
+    expect(line).toBeDefined();
+    expect(line).toContain("problem=Unauthenticated");
+    // The reason is quoted, so a message containing spaces stays one token.
+    expect(line).toMatch(/reason="[^"]+"/);
+    expect(line?.split("\n")).toHaveLength(1);
+  });
+
   it("serves a placeholder that says what is true when there is no web build", async () => {
     const bare = await startTestService({
       repo,

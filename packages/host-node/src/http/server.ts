@@ -264,6 +264,7 @@ export async function startHttpHost(
           status: statusForProblem(originCheck.problem),
           durationMs: now() - startedAt,
           problemCode: originCheck.problem.code,
+          problemMessage: originCheck.problem.message,
         }),
       );
       sendProblem(response, originCheck.problem);
@@ -312,6 +313,7 @@ export async function startHttpHost(
             status: 401,
             durationMs: now() - startedAt,
             problemCode: authorized.problem.code,
+            problemMessage: authorized.problem.message,
           }),
         );
         sendProblem(response, authorized.problem);
@@ -381,6 +383,7 @@ export async function startHttpHost(
             status: statusForProblem(exchanged.problem),
             durationMs: now() - startedAt,
             problemCode: exchanged.problem.code,
+            problemMessage: exchanged.problem.message,
           }),
         );
         sendProblem(response, exchanged.problem);
@@ -435,6 +438,7 @@ export async function startHttpHost(
               status: 401,
               durationMs: now() - startedAt,
               problemCode: authorized.problem.code,
+              problemMessage: authorized.problem.message,
             }),
           );
           sendProblem(response, authorized.problem);
@@ -451,6 +455,7 @@ export async function startHttpHost(
             durationMs: now() - startedAt,
             sessionId: authorized.session.sessionId,
             problemCode: problem.code,
+            problemMessage: problem.message,
           }),
         );
         sendProblem(response, problem);
@@ -464,6 +469,7 @@ export async function startHttpHost(
             status: 401,
             durationMs: now() - startedAt,
             problemCode: authorized.problem.code,
+            problemMessage: authorized.problem.message,
           }),
         );
         sendProblem(response, authorized.problem);
@@ -561,6 +567,7 @@ export async function startHttpHost(
             durationMs: now() - startedAt,
             sessionId: session.sessionId,
             problemCode: problem.code,
+            problemMessage: problem.message,
           }),
         );
         sendProblem(response, problem);
