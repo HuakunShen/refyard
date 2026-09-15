@@ -104,8 +104,8 @@ absence of races that were not constructed.
 | macOS x64                      | unverified | not run; no Intel machine was used                                                                                                                                                                                                                 |
 | Linux arm64, container         | verified   | `node:26-trixie` (Node 26.8.2, Git 2.47.3), all ten gates, as a non-root user — see below                                                                                                                                                          |
 | Linux x64, native              | verified   | Ubuntu 24.04, Node 26.8.2, Git 2.43.0: all ten gates, plus the chromium e2e suite (30 of 30) — `linux-and-windows.md`                                                                                                                              |
-| Linux x64 (CI, ubuntu-latest)  | verified   | `ci` run 34984950591, 2026-09-15, revision `f7be568`: all ten gates and 90 of 90 e2e cases (three engines) in 15m11s — see "Continuous integration" below                                                                                          |
-| macOS arm64 (CI, macos-latest) | verified   | the same run: all ten gates and 90 of 90 e2e cases in 12m4s                                                                                                                                                                                        |
+| Linux x64 (CI, ubuntu-latest)  | verified   | `ci` run 35009027364, 2026-09-15, revision `180f515`: all ten gates, 90 of 90 e2e cases (three engines) in 11.7m, `pack:smoke` 14 steps — see "Continuous integration" below                                                       |
+| macOS arm64 (CI, macos-latest) | verified   | the same run: all ten gates, 90 of 90 e2e cases in 10.7m, `pack:smoke` 14 steps                                                                                                                                            |
 | Windows (native)               | partial    | Windows 10.0.26200, Node 26.5.0, Git 2.55.0.windows.3: nine gates and all 15 `pack:smoke` steps pass, one step skipped (Windows has no signals); the e2e suite was **not** run, so the browser rows stay unverified there — `linux-and-windows.md` |
 | WSL                            | unverified | not run                                                                                                                                                                                                                                            |
 | Container/CI runner            | verified   | `bun scripts/container-gates.ts --image node:26-trixie`, 2026-09-15                                                                                                                                                                                |
@@ -170,6 +170,19 @@ The three runs before it failed, and each failure was worth having:
    engines. Chromium had passed 30 of 30 first.
 
 None of the three could have been found locally, which is the point of running CI at all.
+
+The run for revision **`180f515`** — the measured engines change — was **35009027364**, and both
+jobs succeeded again. It is the run that matters for the range: neither runner is inside the
+`ci.yml` on a hand-picked Node, and both `pack:smoke` steps reported
+
+```
+  ok   the Node on PATH is inside the published engines range  [node --version]
+```
+
+against the manifest's new `>=22 <27`. End-to-end: **90 passed (11.7 m)** on ubuntu-latest and
+**90 passed (10.7 m)** on macos-latest, three engines each; `pack:smoke` 14 steps on both; the
+2,000-commit benchmark smoke completed on both (`bench:runtime: wrote … performance.json`, on the
+runner's own checkout — it is not committed from there).
 
 ## Browsers
 
