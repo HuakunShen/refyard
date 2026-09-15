@@ -54,12 +54,19 @@ test.describe("repository creation", () => {
     await expect(page.getByTestId("repository-panel")).toBeVisible();
 
     await page.getByTestId("repository-destination").fill("e2e-created");
+    // The branch is pinned rather than left empty. An empty field means "Git's own
+    // default on this machine", and that is `main` only where somebody configured it:
+    // this spec asserted `main` and passed on macOS, where the developer's global
+    // config said so, then failed on a Linux box whose config says nothing and got
+    // `master`. What the default *is* is covered where it can be compared against Git
+    // itself (the integration suite runs a real `git init` and compares).
+    await page.getByLabel("initial branch").fill("main");
     await page.getByTestId("repository-submit").click();
     await expect(page.getByTestId("repository-message-result")).toContainText(
       /created a repository at e2e-created/,
     );
 
-    // On disk: a repository, whose HEAD names the branch the fixture defaults to.
+    // On disk: a repository, whose HEAD names the branch that was asked for.
     expect(await exists(join(repo.root, "e2e-created", ".git", "HEAD"))).toBe(
       true,
     );

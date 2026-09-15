@@ -274,13 +274,7 @@ await step("create a repository for serve", "git init", async () => {
   );
 });
 
-const serving = spawnNpmExec([
-  "exec",
-  "--yes",
-  "--package",
-  tarballPath,
-  "--",
-  "refyard",
+const serveArgs = [
   "serve",
   "--no-open",
   "--port",
@@ -288,7 +282,57 @@ const serving = spawnNpmExec([
   "--repo",
   repository,
   "--json",
-]);
+];
+
+// The long-running invocation.
+//
+// On Windows it is started from the *installed* package rather than through `npm
+// exec`, and that is a measurement, not a preference: an `npm exec` child that does
+// not exit delivers nothing to a pipe or to a file there (tried with Node and with
+// bun, through `cmd.exe` and directly, and with a file as its stdout), while the
+// short-lived invocations — `doctor` above, the busy-port failure below — are
+// captured normally, and an inherited console works. The bytes served are the ones
+// `npm exec` would have run, installed by npm from the same tarball.
+let installedCli: string | null = null;
+if (isWindows) {
+  installedCli = join(
+    consumer,
+    "node_modules",
+    "refyard",
+    "bin",
+    "refyard.mjs",
+  );
+  await step(
+    "install the tarball like a dependency",
+    "npm install <tarball> --no-save",
+    async () => {
+      await npmRun(["install", tarballPath, "--no-save"]);
+      const installed = await stat(installedCli ?? "");
+      if (!installed.isFile() || installed.size === 0) {
+        throw new Error(
+          `the installed CLI is missing or empty: ${installedCli}`,
+        );
+      }
+    },
+  );
+}
+
+const serving =
+  installedCli === null
+    ? spawnNpmExec([
+        "exec",
+        "--yes",
+        "--package",
+        tarballPath,
+        "--",
+        "refyard",
+        ...serveArgs,
+      ])
+    : spawn(node, [installedCli, ...serveArgs], {
+        cwd: consumer,
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
 let stdout = "";
 let stderr = "";
 serving.stdout.on("data", (chunk: Buffer) => {
@@ -560,6 +604,18 @@ await step(
     }
   },
 );
+
+// The service is still running on Windows: the SIGTERM step is skipped there, and
+// nothing else stopped it, so it held the workspace open and the cleanup failed with
+// EBUSY — a stray service on the machine, which is worse than the error that reported
+// it. Terminate it before removing anything.
+if (isWindows && serving.exitCode === null && serving.pid !== undefined) {
+  serving.kill();
+  const stopped = Date.now() + 10_000;
+  while (serving.exitCode === null && Date.now() < stopped) {
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
+  }
+}
 
 await rm(workspace, { recursive: true, force: true });
 console.log(`\npack:smoke: ${steps.length} steps passed`);
