@@ -18,7 +18,7 @@
  * decoded here.
  */
 import { GitOutputParseError } from "../ports.js";
-import { splitNulFrames } from "../bytes/nul.js";
+import { splitNulFrames } from "../bytes/nul-framing.js";
 
 export interface WorktreeRecord {
   /** Raw path bytes of the worktree. */

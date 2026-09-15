@@ -8,7 +8,7 @@
  * ASCII (object names, modes, status letters) are decoded.
  */
 import { GitOutputParseError } from "../ports.js";
-import { splitOnByte, splitNulFrames } from "../bytes/nul.js";
+import { splitOnByte, splitNulFrames } from "../bytes/nul-framing.js";
 
 /* ------------------------------------------------------------------ remotes */
 

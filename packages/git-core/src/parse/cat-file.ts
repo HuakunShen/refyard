@@ -20,7 +20,7 @@
  * all potentially non-UTF-8, and the host decides how to display them.
  */
 import { GitOutputParseError } from "../ports.js";
-import { concatBytes } from "../bytes/nul.js";
+import { concatBytes } from "../bytes/nul-framing.js";
 import { CORE_LIMITS } from "../bytes/limits.js";
 
 const FORMAT = "cat-file --batch";

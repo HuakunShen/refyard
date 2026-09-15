@@ -19,7 +19,7 @@
  * are handled explicitly, and both are exercised by live fixtures.
  */
 import { GitOutputParseError } from "../ports.js";
-import { FrameReader, splitNulFrames } from "../bytes/nul.js";
+import { FrameReader, splitNulFrames } from "../bytes/nul-framing.js";
 import { CORE_LIMITS } from "../bytes/limits.js";
 
 export type ChangeKind =

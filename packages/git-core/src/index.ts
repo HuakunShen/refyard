@@ -17,7 +17,7 @@
  * caller. `pnpm check:boundaries` fails the build if that stops being true.
  */
 export * from "./ports.js";
-export * from "./bytes/nul.js";
+export * from "./bytes/nul-framing.js";
 export * from "./bytes/limits.js";
 export * from "./parse/status.js";
 export * from "./parse/numstat.js";

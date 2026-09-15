@@ -15,7 +15,7 @@
  * peeled `*objectname` for annotated tags.
  */
 import { GitOutputParseError } from "../ports.js";
-import { splitOnByte } from "../bytes/nul.js";
+import { splitOnByte } from "../bytes/nul-framing.js";
 import { CORE_LIMITS } from "../bytes/limits.js";
 
 export type RefObjectType = "commit" | "tag" | "tree" | "blob" | "unknown";

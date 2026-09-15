@@ -17,7 +17,7 @@
  * a record type we do not understand would drop changes from the UI.
  */
 import { GitOutputParseError } from "../ports.js";
-import { FrameReader, splitNulFrames } from "../bytes/nul.js";
+import { FrameReader, splitNulFrames } from "../bytes/nul-framing.js";
 import { CORE_LIMITS } from "../bytes/limits.js";
 
 export type StatusRecordKind =
