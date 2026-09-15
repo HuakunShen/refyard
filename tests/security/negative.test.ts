@@ -302,6 +302,34 @@ describe("argument injection", () => {
     }
   });
 
+  it("refuses a destination that names the Git directory itself", async () => {
+    // `project/.git` is not "a directory called .git" to Git, it is the repository's own
+    // metadata: creating or cloning into it would write where the service keeps its
+    // identity. Refused by the target rule, at the boundary, for both creating
+    // operations — the same rule the contract test covers, here through the live route.
+    for (const operation of [
+      { kind: "initRepository", initialBranch: null },
+      {
+        kind: "cloneRepository",
+        remoteUrl: "https://example.invalid/repo.git",
+        relativeDestination: "project/.git",
+        initializeSubmodules: false,
+      },
+    ]) {
+      const response = await submitRaw(service, {
+        clientRequestId: `sec-workspace-gitdir-${operation.kind}`,
+        target: {
+          kind: "workspace",
+          allowedRootId: service.allowedRootId,
+          relativeDestination: "project/.git",
+        },
+        operation,
+      });
+      expect(response.status, `${operation.kind} was accepted`).toBe(400);
+      expect(response.text).toContain(".git");
+    }
+  });
+
   it("refuses a creation in a root this session was not granted", async () => {
     // The registry and the session are different things: another window may have
     // approved a directory this session was never handed. Creating a repository there
