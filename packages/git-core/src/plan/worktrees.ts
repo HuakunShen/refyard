@@ -49,7 +49,10 @@ function spec(
  */
 export function planWorktreeAdd(
   context: PlanContext,
-  input: { readonly destination: string; readonly reference: WorktreeReference },
+  input: {
+    readonly destination: string;
+    readonly reference: WorktreeReference;
+  },
 ): GitCommandSpec {
   const reference = input.reference;
   if (reference.kind === "existingBranch") {

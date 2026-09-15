@@ -15,7 +15,11 @@
  * that away would turn a precise answer into a bare failure.
  */
 import type { GitCommandSpec } from "../ports.js";
-import { boundedDiagnostic, type GitEngine, type GitFailureCode } from "./engine.js";
+import {
+  boundedDiagnostic,
+  type GitEngine,
+  type GitFailureCode,
+} from "./engine.js";
 import {
   parseFetchPorcelain,
   parsePushPorcelain,
@@ -58,7 +62,9 @@ async function runQuiet(
   };
 }
 
-function failureCodeOf(termination: GitCommandSpec["deadlineClass"] | string): GitFailureCode {
+function failureCodeOf(
+  termination: GitCommandSpec["deadlineClass"] | string,
+): GitFailureCode {
   switch (termination) {
     case "timeout":
       return "GitTimedOut";

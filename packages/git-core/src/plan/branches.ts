@@ -89,7 +89,10 @@ export function planBranchSetUpstream(
   context: PlanContext,
   input: {
     readonly branchName: string;
-    readonly upstream: { readonly remoteName: string; readonly branchName: string } | null;
+    readonly upstream: {
+      readonly remoteName: string;
+      readonly branchName: string;
+    } | null;
   },
 ): GitCommandSpec {
   if (input.upstream === null) {

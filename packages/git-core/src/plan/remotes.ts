@@ -44,7 +44,11 @@ export function planRemoteAdd(
 /** `git remote set-url [--push] <name> <url>`. */
 export function planRemoteSetUrl(
   context: PlanContext,
-  input: { readonly name: string; readonly url: string; readonly push: boolean },
+  input: {
+    readonly name: string;
+    readonly url: string;
+    readonly push: boolean;
+  },
 ): GitCommandSpec {
   const argv = ["remote", "set-url"];
   if (input.push) {

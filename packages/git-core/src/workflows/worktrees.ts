@@ -62,7 +62,10 @@ async function runSpec(
 export function addWorktree(
   engine: GitEngine,
   context: { readonly cwdHandle: string },
-  input: { readonly destination: string; readonly reference: WorktreeReference },
+  input: {
+    readonly destination: string;
+    readonly reference: WorktreeReference;
+  },
 ): Promise<RepositoryWriteOutcome> {
   return runSpec(engine, planWorktreeAdd(context, input));
 }
