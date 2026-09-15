@@ -28,25 +28,23 @@
   } from "@refyard/git-contract";
   import { layoutPages, type GraphCommit } from "@refyard/git-graph";
   import {
+    AppearanceSettings,
     Badge,
     BranchPanel,
     Button,
-    Card,
-    CardContent,
-    CardHeader,
-    CardTitle,
     CommitDetailPanel,
     CommitList,
     CommitPanel,
     ConflictPanel,
     ConnectionPanel,
     DiffPanel,
-    DEFAULT_METRICS,
     ModeToggle,
     RefsPanel,
+    RefyardLogo,
     RemotePanel,
-    Separator,
     RepositoryList,
+    SectionCard,
+    Separator,
     StagingPanel,
     StashPanel,
     StateBanner,
@@ -54,21 +52,44 @@
     SubmodulePanel,
     TagPanel,
     WorktreePanel,
+    cn,
     shortOid,
   } from "@refyard/git-ui";
+  import {
+    Archive,
+    Boxes,
+    FileDiff,
+    FolderGit2,
+    GitBranch,
+    GitCommit,
+    Globe,
+    Layers,
+    RefreshCw,
+    Tag,
+  } from "@lucide/svelte";
   import {
     createInfiniteQuery,
     createQuery,
     useQueryClient,
   } from "@tanstack/svelte-query";
-  import { parseSessionConfig, stripTicket } from "$lib/connection.js";
+  import {
+    extractTicketFromText,
+    parseSessionConfig,
+    stripTicket,
+  } from "$lib/connection.js";
   import { followOperation } from "$lib/operation-follow.js";
   import {
     clearStoredSession,
+    readStoredAccent,
+    readStoredBackground,
     readStoredBaseUrl,
+    readStoredGlass,
     readStoredInstance,
     readStoredToken,
+    storeAccent,
+    storeBackground,
     storeBaseUrl,
+    storeGlass,
     storeInstance,
     storeToken,
   } from "$lib/storage.js";
@@ -102,6 +123,24 @@
   let streamState = $state<"offline" | "connecting" | "live">("offline");
   let browserOnline = $state(true);
 
+  let accent = $state(browser ? readStoredAccent() : "default");
+  let background = $state(browser ? readStoredBackground() : "none");
+  let glass = $state(browser ? readStoredGlass() : false);
+
+  $effect(() => {
+    if (!browser) {
+      return;
+    }
+    document.documentElement.setAttribute("data-accent", accent);
+    document.documentElement.setAttribute(
+      "data-glass",
+      glass ? "true" : "false",
+    );
+    storeAccent(accent);
+    storeBackground(background);
+    storeGlass(glass);
+  });
+
   const queryClient = useQueryClient();
 
   // Rebuilt when the address changes: the client holds the base URL, and a stale one would
@@ -115,7 +154,11 @@
   );
 
   async function pair(): Promise<void> {
-    const value = ticket.trim();
+    const rawValue = ticket.trim();
+    if (rawValue.length === 0) {
+      return;
+    }
+    const value = extractTicketFromText(rawValue);
     if (value.length === 0) {
       return;
     }
@@ -134,15 +177,16 @@
         initial.overridden || baseUrl !== initial.baseUrl ? baseUrl : null,
       );
       pairPhase = "idle";
-      ticket = "";
-      if (browser) {
-        // The ticket is spent; leaving it in the address bar would replay a dead value on
-        // reload and leave a credential in the browser's history.
-        window.history.replaceState({}, "", stripTicket(window.location.href));
-      }
     } catch (error) {
       pairPhase = "failed";
       pairMessage = describeProblem(error);
+    } finally {
+      ticket = "";
+      if (browser) {
+        // The ticket is spent or was attempted; leaving it in the address bar would replay a dead value on
+        // reload and leave a credential in the browser's history.
+        window.history.replaceState({}, "", stripTicket(window.location.href));
+      }
     }
   }
 
@@ -166,6 +210,16 @@
       pairPhase === "idle"
     ) {
       void pair();
+    } else if (
+      browser &&
+      hadTicketOnLoad &&
+      token !== null &&
+      ticket.length > 0
+    ) {
+      // Already authenticated with a valid session: strip the pairing ticket from the URL
+      // so it does not linger in the address bar or history.
+      ticket = "";
+      window.history.replaceState({}, "", stripTicket(window.location.href));
     }
   });
 
@@ -1260,19 +1314,69 @@
   );
 </script>
 
-<div class="flex h-dvh min-h-0 flex-col bg-canvas text-ink">
+<div class="relative flex h-dvh min-h-0 flex-col bg-canvas text-ink">
+  {#if background !== "none"}
+    <div
+      class="pointer-events-none fixed inset-0 z-0 bg-cover bg-center bg-no-repeat transition-all duration-500"
+      style="background-image: url('{background === 'mountain-mist'
+        ? '/backgrounds/mountain-mist.svg'
+        : background === 'aurora'
+          ? '/backgrounds/aurora.svg'
+          : background}'); opacity: 0.85;"
+    ></div>
+  {/if}
+
   <header
-    class="flex flex-wrap items-center gap-3 border-b border-border bg-panel px-4 py-2"
+    class="relative z-10 flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border/80 bg-panel/90 px-4 backdrop-blur-md"
   >
-    <span class="text-sm font-semibold">refyard</span>
+    <div class="flex items-center gap-2">
+      <RefyardLogo variant="mark" size={22} />
+      <span class="text-sm font-semibold tracking-tight">refyard</span>
+
+      {#if capabilities.data !== undefined}
+        <span
+          class="hidden items-center gap-1.5 text-xs text-muted-foreground 2xl:flex"
+        >
+          <span class="rounded bg-muted/70 px-1.5 py-0.5 font-mono text-[11px]"
+            >git {capabilities.data.git.version}</span
+          >
+          <span class="text-ink-faint">·</span>
+          <span
+            class="font-mono text-[11px] text-ink-faint"
+            title="service instance"
+            >{shortOid(capabilities.data.serviceInstanceId)}</span
+          >
+        </span>
+      {/if}
+    </div>
+
+    {#if repository !== null}
+      <div
+        class="hidden items-center gap-1.5 rounded-full border border-border/80 bg-background/60 px-3 py-1 text-xs shadow-2xs backdrop-blur-xs md:flex"
+      >
+        <FolderGit2 class="size-3.5 text-primary" />
+        <span
+          class="max-w-44 truncate font-semibold tracking-tight text-ink lg:max-w-64"
+          title={repository.displayPath}
+        >
+          {repository.displayName}
+        </span>
+        {#if status.data?.head?.branchName}
+          <span class="text-ink-faint">·</span>
+          <div
+            class="flex items-center gap-1 text-[11px] text-muted-foreground"
+          >
+            <GitBranch class="size-3 text-primary/70" />
+            <span class="font-medium text-foreground"
+              >{status.data.head.branchName}</span
+            >
+          </div>
+        {/if}
+      </div>
+    {/if}
 
     {#if capabilities.data !== undefined}
-      <span class="flex items-center gap-2 text-xs text-ink-muted">
-        <span>git {capabilities.data.git.version}</span>
-        <span class="text-ink-faint">·</span>
-        <span class="font-mono" title="service instance"
-          >{shortOid(capabilities.data.serviceInstanceId)}</span
-        >
+      <div class="flex items-center">
         {#if capabilities.data.operations.length === 0}
           <Badge
             tone="muted"
@@ -1292,7 +1396,7 @@
             {capabilities.data.operations.length} write operations
           </Badge>
         {/if}
-      </span>
+      </div>
     {/if}
 
     <span class="flex-1"></span>
@@ -1305,7 +1409,24 @@
             ? "branch"
             : "muted"}
         data-testid="connection-state"
+        class="gap-1.5 py-0.5"
       >
+        <span class="relative flex size-2">
+          <span
+            class={cn(
+              "absolute inline-flex h-full w-full rounded-full opacity-75",
+              streamState === "live"
+                ? "animate-ping bg-emerald-400"
+                : "bg-muted-foreground",
+            )}
+          ></span>
+          <span
+            class={cn(
+              "relative inline-flex size-2 rounded-full",
+              streamState === "live" ? "bg-emerald-500" : "bg-muted-foreground",
+            )}
+          ></span>
+        </span>
         {!browserOnline
           ? "not connected (offline)"
           : negotiation.kind !== "ok"
@@ -1316,9 +1437,18 @@
                 ? "connecting…"
                 : "no live updates"}
       </Badge>
-      <span class="font-mono text-xs text-ink-faint" title="service address"
-        >{baseUrl}</span
+      <span
+        class="hidden font-mono text-xs text-ink-faint 2xl:inline"
+        title="service address">{baseUrl}</span
       >
+      <AppearanceSettings
+        {accent}
+        {background}
+        {glass}
+        onAccentChange={(val) => (accent = val)}
+        onBackgroundChange={(val) => (background = val)}
+        onGlassChange={(val) => (glass = val)}
+      />
       <ModeToggle />
       <Button size="sm" variant="ghost" onclick={disconnect}>Disconnect</Button>
     {/if}
@@ -1359,20 +1489,20 @@
     </main>
   {:else}
     <main
-      class="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[20rem_minmax(0,1fr)_26rem]"
+      class="relative z-1 grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[18.5rem_minmax(0,1fr)_21rem] xl:grid-cols-[21rem_minmax(0,1fr)_25rem] 2xl:grid-cols-[23rem_minmax(0,1fr)_28rem]"
     >
       <aside
-        class="flex min-h-0 flex-col gap-3 overflow-auto border-r border-border p-3"
+        class="flex min-h-0 flex-col gap-2.5 overflow-y-auto border-r border-border/80 bg-canvas/40 p-2.5 custom-scrollbar"
       >
-        <Card size="sm">
-          <CardHeader>
-            <CardTitle
-              class="text-xs font-semibold tracking-wide text-ink-muted uppercase"
-            >
-              Repositories
-            </CardTitle>
-          </CardHeader>
-          <CardContent class="flex flex-col gap-2">
+        <SectionCard
+          title="Repositories"
+          count={repositoryList.length}
+          open={true}
+        >
+          {#snippet icon()}
+            <FolderGit2 class="size-3.5 text-muted-foreground" />
+          {/snippet}
+          <div class="flex flex-col gap-2">
             {#if repositories.isPending}
               <StateBanner state="loading" title="Loading repositories…" />
             {:else if repositories.isError}
@@ -1408,21 +1538,19 @@
                 }}
               />
             {/if}
-          </CardContent>
-        </Card>
-
-        <Separator />
+          </div>
+        </SectionCard>
 
         {#if repository !== null}
-          <Card size="sm">
-            <CardHeader>
-              <CardTitle
-                class="text-xs font-semibold tracking-wide text-ink-muted uppercase"
-              >
-                Changes
-              </CardTitle>
-            </CardHeader>
-            <CardContent class="flex flex-col gap-2">
+          <SectionCard
+            title="Changes"
+            count={status.data ? status.data.entries.length : undefined}
+            open={true}
+          >
+            {#snippet icon()}
+              <FileDiff class="size-3.5 text-muted-foreground" />
+            {/snippet}
+            <div class="flex flex-col gap-2">
               {#if status.isPending}
                 <StateBanner state="loading" title="Reading status…" />
               {:else if status.isError}
@@ -1452,8 +1580,8 @@
                   }}
                 />
               {/if}
-            </CardContent>
-          </Card>
+            </div>
+          </SectionCard>
 
           {#if mergeAvailable && (operationInProgress !== null || mergeMessage !== null)}
             <ConflictPanel
@@ -1468,17 +1596,19 @@
           {/if}
 
           {#if stagingAvailable}
-            <Separator />
-
-            <Card size="sm">
-              <CardHeader>
-                <CardTitle
-                  class="text-xs font-semibold tracking-wide text-ink-muted uppercase"
-                >
-                  Stage &amp; commit
-                </CardTitle>
-              </CardHeader>
-              <CardContent class="flex flex-col gap-3">
+            <SectionCard
+              title="Stage & commit"
+              count={status.data
+                ? status.data.entries.filter(
+                    (entry) => entry.indexStatus !== ".",
+                  ).length
+                : undefined}
+              open={true}
+            >
+              {#snippet icon()}
+                <GitCommit class="size-3.5 text-muted-foreground" />
+              {/snippet}
+              <div class="flex flex-col gap-3">
                 {#if status.isPending}
                   <StateBanner state="loading" title="Reading status…" />
                 {:else if status.isError}
@@ -1512,46 +1642,20 @@
                     />
                   {/if}
                 {/if}
-              </CardContent>
-            </Card>
+              </div>
+            </SectionCard>
           {/if}
 
-          <Separator />
-
-          <Card size="sm">
-            <CardHeader>
-              <CardTitle
-                class="text-xs font-semibold tracking-wide text-ink-muted uppercase"
-              >
-                Refs
-              </CardTitle>
-            </CardHeader>
-            <CardContent class="flex flex-col gap-2">
-              {#if refs.isPending}
-                <StateBanner state="loading" title="Reading refs…" />
-              {:else if refs.isError}
-                <StateBanner
-                  state="error"
-                  title="Could not read refs"
-                  detail={describeProblem(refs.error)}
-                />
-              {:else}
-                <RefsPanel refs={refs.data ?? null} />
-              {/if}
-            </CardContent>
-          </Card>
-
           {#if branchAvailable}
-            <Separator />
-            <Card size="sm">
-              <CardHeader>
-                <CardTitle
-                  class="text-xs font-semibold tracking-wide text-ink-muted uppercase"
-                >
-                  Branches
-                </CardTitle>
-              </CardHeader>
-              <CardContent class="flex flex-col gap-2">
+            <SectionCard
+              title="Branches"
+              count={refs.data ? refs.data.branches.length : undefined}
+              open={true}
+            >
+              {#snippet icon()}
+                <GitBranch class="size-3.5 text-muted-foreground" />
+              {/snippet}
+              <div class="flex flex-col gap-2">
                 {#if refs.isPending}
                   <StateBanner state="loading" title="Reading branches…" />
                 {:else if refs.isError}
@@ -1573,21 +1677,20 @@
                     onMerge={onBranchMerge}
                   />
                 {/if}
-              </CardContent>
-            </Card>
+              </div>
+            </SectionCard>
           {/if}
 
           {#if networkAvailable}
-            <Separator />
-            <Card size="sm">
-              <CardHeader>
-                <CardTitle
-                  class="text-xs font-semibold tracking-wide text-ink-muted uppercase"
-                >
-                  Remotes &amp; sync
-                </CardTitle>
-              </CardHeader>
-              <CardContent class="flex flex-col gap-2">
+            <SectionCard
+              title="Remotes & sync"
+              count={refs.data ? refs.data.remotes.length : undefined}
+              open={true}
+            >
+              {#snippet icon()}
+                <Globe class="size-3.5 text-muted-foreground" />
+              {/snippet}
+              <div class="flex flex-col gap-2">
                 {#if refs.isPending}
                   <StateBanner state="loading" title="Reading remotes…" />
                 {:else if refs.isError}
@@ -1609,21 +1712,20 @@
                     {onPull}
                   />
                 {/if}
-              </CardContent>
-            </Card>
+              </div>
+            </SectionCard>
           {/if}
 
           {#if stashAvailable}
-            <Separator />
-            <Card size="sm">
-              <CardHeader>
-                <CardTitle
-                  class="text-xs font-semibold tracking-wide text-ink-muted uppercase"
-                >
-                  Stashes
-                </CardTitle>
-              </CardHeader>
-              <CardContent class="flex flex-col gap-2">
+            <SectionCard
+              title="Stashes"
+              count={stashes.data ? stashes.data.stashes.length : undefined}
+              open={true}
+            >
+              {#snippet icon()}
+                <Archive class="size-3.5 text-muted-foreground" />
+              {/snippet}
+              <div class="flex flex-col gap-2">
                 {#if stashes.isPending}
                   <StateBanner state="loading" title="Reading stashes…" />
                 {:else if stashes.isError}
@@ -1644,21 +1746,20 @@
                     onDrop={onStashDrop}
                   />
                 {/if}
-              </CardContent>
-            </Card>
+              </div>
+            </SectionCard>
           {/if}
 
           {#if tagAvailable}
-            <Separator />
-            <Card size="sm">
-              <CardHeader>
-                <CardTitle
-                  class="text-xs font-semibold tracking-wide text-ink-muted uppercase"
-                >
-                  Tags
-                </CardTitle>
-              </CardHeader>
-              <CardContent class="flex flex-col gap-2">
+            <SectionCard
+              title="Tags"
+              count={refs.data ? refs.data.tags.length : undefined}
+              open={true}
+            >
+              {#snippet icon()}
+                <Tag class="size-3.5 text-muted-foreground" />
+              {/snippet}
+              <div class="flex flex-col gap-2">
                 {#if refs.isPending}
                   <StateBanner state="loading" title="Reading tags…" />
                 {:else if refs.isError}
@@ -1679,21 +1780,22 @@
                     onPush={onTagPush}
                   />
                 {/if}
-              </CardContent>
-            </Card>
+              </div>
+            </SectionCard>
           {/if}
 
           {#if worktreeAvailable}
-            <Separator />
-            <Card size="sm">
-              <CardHeader>
-                <CardTitle
-                  class="text-xs font-semibold tracking-wide text-ink-muted uppercase"
-                >
-                  Worktrees
-                </CardTitle>
-              </CardHeader>
-              <CardContent class="flex flex-col gap-2">
+            <SectionCard
+              title="Worktrees"
+              count={worktrees.data
+                ? worktrees.data.worktrees.length
+                : undefined}
+              open={true}
+            >
+              {#snippet icon()}
+                <Layers class="size-3.5 text-muted-foreground" />
+              {/snippet}
+              <div class="flex flex-col gap-2">
                 {#if worktrees.isPending}
                   <StateBanner state="loading" title="Reading worktrees…" />
                 {:else if worktrees.isError}
@@ -1715,21 +1817,22 @@
                     onUnlock={onWorktreeUnlock}
                   />
                 {/if}
-              </CardContent>
-            </Card>
+              </div>
+            </SectionCard>
           {/if}
 
           {#if submoduleAvailable}
-            <Separator />
-            <Card size="sm">
-              <CardHeader>
-                <CardTitle
-                  class="text-xs font-semibold tracking-wide text-ink-muted uppercase"
-                >
-                  Submodules
-                </CardTitle>
-              </CardHeader>
-              <CardContent class="flex flex-col gap-2">
+            <SectionCard
+              title="Submodules"
+              count={submodules.data
+                ? submodules.data.submodules.length
+                : undefined}
+              open={true}
+            >
+              {#snippet icon()}
+                <Boxes class="size-3.5 text-muted-foreground" />
+              {/snippet}
+              <div class="flex flex-col gap-2">
                 {#if submodules.isPending}
                   <StateBanner state="loading" title="Reading submodules…" />
                 {:else if submodules.isError}
@@ -1749,14 +1852,43 @@
                     onSync={onSubmoduleSync}
                   />
                 {/if}
-              </CardContent>
-            </Card>
+              </div>
+            </SectionCard>
+          {/if}
+
+          {#if !branchAvailable}
+            <SectionCard
+              title="Refs"
+              count={refs.data
+                ? refs.data.branches.length +
+                  refs.data.remoteBranches.length +
+                  refs.data.tags.length
+                : undefined}
+              open={true}
+            >
+              {#snippet icon()}
+                <GitBranch class="size-3.5 text-muted-foreground" />
+              {/snippet}
+              <div class="flex flex-col gap-2">
+                {#if refs.isPending}
+                  <StateBanner state="loading" title="Reading refs…" />
+                {:else if refs.isError}
+                  <StateBanner
+                    state="error"
+                    title="Could not read refs"
+                    detail={describeProblem(refs.error)}
+                  />
+                {:else}
+                  <RefsPanel refs={refs.data ?? null} />
+                {/if}
+              </div>
+            </SectionCard>
           {/if}
         {/if}
       </aside>
 
       <section class="flex min-h-0 flex-col gap-2 p-3">
-        <div class="flex items-center gap-2">
+        <div class="shrink-0 flex items-center gap-2">
           <h2 class="text-sm font-semibold">History</h2>
           {#if repository !== null}
             <span
@@ -1770,9 +1902,13 @@
           <Button
             size="sm"
             variant="ghost"
+            class="h-7 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
             disabled={history.isFetching}
             onclick={() => void history.refetch()}
           >
+            <RefreshCw
+              class={cn("size-3.5", history.isFetching && "animate-spin")}
+            />
             Refresh
           </Button>
         </div>
@@ -1820,7 +1956,7 @@
         {/if}
       </section>
 
-      <section class="flex min-h-0 flex-col border-l border-border">
+      <section class="flex min-h-0 flex-col border-l border-border bg-canvas/30">
         {#if selectedPath !== null && selectedPath.kind === "ignored"}
           <div class="p-3">
             <StateBanner
@@ -1830,12 +1966,21 @@
             />
           </div>
         {:else if diffRequest === null}
-          <div class="p-3">
-            <StateBanner
-              state="empty"
-              title="Nothing selected"
-              detail="Choose a commit or a changed path to read its diff."
-            />
+          <div class="flex flex-1 flex-col items-center justify-center p-6 text-center">
+            <div class="mb-3 flex size-12 items-center justify-center rounded-2xl bg-muted/60 text-muted-foreground shadow-2xs border border-border/50">
+              <FileDiff class="size-6 text-primary/70" />
+            </div>
+            <h3 class="text-sm font-medium text-foreground">No diff selected</h3>
+            <p class="mt-1 max-w-xs text-xs text-muted-foreground">
+              Select a commit in History or a modified file in Changes to inspect the diff.
+            </p>
+            <div class="mt-4 w-full max-w-xs">
+              <StateBanner
+                state="empty"
+                title="Nothing selected"
+                detail="Choose a commit or a changed path to read its diff."
+              />
+            </div>
           </div>
         {:else}
           {#if selectedOid !== null}
@@ -1845,7 +1990,7 @@
               class="max-h-72 shrink-0 border-b border-border"
             />
           {/if}
-          <div class="min-h-0 flex-1">
+          <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
             {#if diff.isPending}
               <div class="p-3">
                 <StateBanner state="loading" title="Reading diff…" />
@@ -1884,7 +2029,7 @@
 
         {#if primaryWorktreeId !== null}
           <footer
-            class="border-t border-border px-3 py-2 text-xs text-ink-faint"
+            class="shrink-0 border-t border-border px-3 py-2 text-xs text-ink-faint"
           >
             worktree <span class="font-mono">{shortOid(primaryWorktreeId)}</span
             >

@@ -14,6 +14,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  extractTicketFromText,
   normalizeBaseUrl,
   parseSessionConfig,
   readTicket,
@@ -146,5 +147,19 @@ describe("service address", () => {
     expect(normalizeBaseUrl("ws://127.0.0.1:47831")).toBeNull();
     expect(normalizeBaseUrl("   ")).toBeNull();
     expect(normalizeBaseUrl(null)).toBeNull();
+  });
+
+  it("extracts ticket whether pasted as bare token or full pairing URL", () => {
+    expect(extractTicketFromText("bare-ticket-123")).toBe("bare-ticket-123");
+    expect(
+      extractTicketFromText("http://127.0.0.1:47831/?pair=query-ticket-456"),
+    ).toBe("query-ticket-456");
+    expect(
+      extractTicketFromText("http://127.0.0.1:47831/#pair=frag-ticket-789"),
+    ).toBe("frag-ticket-789");
+    expect(
+      extractTicketFromText("http://127.0.0.1:47831/?ticket=design-ticket-abc"),
+    ).toBe("design-ticket-abc");
+    expect(extractTicketFromText("   spaced-token   ")).toBe("spaced-token");
   });
 });

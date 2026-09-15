@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="100%" height="100%" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <!-- Deep night sky gradient -->
+    <linearGradient id="auroraSky" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#040812"/>
+      <stop offset="35%" stop-color="#071120"/>
+      <stop offset="70%" stop-color="#0b1b30"/>
+      <stop offset="100%" stop-color="#0f243d"/>
+    </linearGradient>
+
+    <!-- Aurora light waves -->
+    <radialGradient id="auroraGreen" cx="40%" cy="30%" r="60%">
+      <stop offset="0%" stop-color="#22d3ee" stop-opacity="0.45"/>
+      <stop offset="30%" stop-color="#10b981" stop-opacity="0.35"/>
+      <stop offset="60%" stop-color="#059669" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#040812" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="auroraPurple" cx="70%" cy="35%" r="55%">
+      <stop offset="0%" stop-color="#818cf8" stop-opacity="0.4"/>
+      <stop offset="40%" stop-color="#6366f1" stop-opacity="0.25"/>
+      <stop offset="75%" stop-color="#4f46e5" stop-opacity="0.1"/>
+      <stop offset="100%" stop-color="#040812" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Mountain silhouettes -->
+    <linearGradient id="darkMountain" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0b1828"/>
+      <stop offset="100%" stop-color="#03070d"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Sky -->
+  <rect width="1920" height="1080" fill="url(#auroraSky)"/>
+
+  <!-- Stars -->
+  <g fill="#ffffff" opacity="0.7">
+    <circle cx="120" cy="80" r="1.2"/>
+    <circle cx="280" cy="140" r="1.5"/>
+    <circle cx="450" cy="70" r="1"/>
+    <circle cx="620" cy="110" r="1.8"/>
+    <circle cx="780" cy="60" r="1.2"/>
+    <circle cx="950" cy="130" r="1.5"/>
+    <circle cx="1120" cy="80" r="1"/>
+    <circle cx="1300" cy="100" r="2"/>
+    <circle cx="1470" cy="65" r="1.2"/>
+    <circle cx="1650" cy="120" r="1.4"/>
+    <circle cx="1800" cy="90" r="1.6"/>
+    <circle cx="340" cy="220" r="1"/>
+    <circle cx="700" cy="250" r="1.3"/>
+    <circle cx="1220" cy="210" r="1.5"/>
+    <circle cx="1550" cy="240" r="1.1"/>
+  </g>
+
+  <!-- Aurora Ribbon 1 -->
+  <path d="M-100 280 Q350 140 750 250 T1600 200 T2100 280 L2100 650 L-100 650 Z" fill="url(#auroraGreen)"/>
+
+  <!-- Aurora Ribbon 2 -->
+  <path d="M-50 220 Q450 320 950 180 T1750 240 T2100 160 L2100 650 L-50 650 Z" fill="url(#auroraPurple)"/>
+
+  <!-- Distant mountain peaks -->
+  <path d="M0 680 L180 570 L380 660 L600 520 L840 650 L1080 490 L1320 630 L1560 510 L1780 640 L1920 580 L1920 1080 L0 1080 Z" fill="url(#darkMountain)" opacity="0.9"/>
+
+  <!-- Frozen lake reflection -->
+  <rect x="0" y="740" width="1920" height="340" fill="#060e1a" opacity="0.95"/>
+  <ellipse cx="960" cy="820" rx="800" ry="30" fill="#10b981" opacity="0.08"/>
+  <ellipse cx="1200" cy="880" rx="650" ry="25" fill="#6366f1" opacity="0.07"/>
+
+  <!-- Foreground jagged mountain ridge -->
+  <path d="M0 860 L220 760 L460 850 L720 730 L980 840 L1260 720 L1540 830 L1800 740 L1920 810 L1920 1080 L0 1080 Z" fill="#020408"/>
+</svg>

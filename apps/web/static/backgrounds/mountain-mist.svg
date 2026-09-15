@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="100%" height="100%" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <!-- Sky gradient -->
+    <linearGradient id="skyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#708ea8"/>
+      <stop offset="30%" stop-color="#94b0c6"/>
+      <stop offset="60%" stop-color="#c1d6e3"/>
+      <stop offset="85%" stop-color="#dceaf2"/>
+      <stop offset="100%" stop-color="#eef6fb"/>
+    </linearGradient>
+
+    <!-- Mountain gradients -->
+    <linearGradient id="farMtn" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#648299"/>
+      <stop offset="100%" stop-color="#99b5c9" stop-opacity="0.7"/>
+    </linearGradient>
+
+    <linearGradient id="midMtn" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#46657c"/>
+      <stop offset="70%" stop-color="#6e8f9e"/>
+      <stop offset="100%" stop-color="#adc8d1" stop-opacity="0.6"/>
+    </linearGradient>
+
+    <linearGradient id="nearMtn" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#284452"/>
+      <stop offset="60%" stop-color="#3c5e6d"/>
+      <stop offset="100%" stop-color="#73979f" stop-opacity="0.8"/>
+    </linearGradient>
+
+    <!-- Forest foreground -->
+    <linearGradient id="forestGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1b333b"/>
+      <stop offset="100%" stop-color="#2a454d"/>
+    </linearGradient>
+
+    <!-- Lake gradient -->
+    <linearGradient id="waterGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#bfd8e4"/>
+      <stop offset="50%" stop-color="#96b5c7"/>
+      <stop offset="100%" stop-color="#6b8d9f"/>
+    </linearGradient>
+
+    <!-- Mist filters -->
+    <filter id="fogFilter" x="0%" y="0%" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.012 0.004" numOctaves="4" result="noise"/>
+      <feDisplacementMap in="SourceGraphic" in2="noise" scale="30" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </defs>
+
+  <!-- Sky background -->
+  <rect width="1920" height="1080" fill="url(#skyGrad)"/>
+
+  <!-- Distant mountain ridge -->
+  <path d="M0 450 L120 380 L280 430 L450 320 L620 400 L800 290 L980 370 L1150 260 L1320 350 L1500 240 L1680 340 L1820 290 L1920 340 L1920 1080 L0 1080 Z" fill="url(#farMtn)" opacity="0.65"/>
+
+  <!-- Mid mountain ridge -->
+  <path d="M0 520 L160 440 L340 510 L520 410 L710 490 L900 380 L1080 460 L1260 360 L1440 450 L1620 370 L1780 460 L1920 420 L1920 1080 L0 1080 Z" fill="url(#midMtn)" opacity="0.85"/>
+
+  <!-- Soft horizontal mist between ranges -->
+  <rect x="0" y="440" width="1920" height="160" fill="#eef5fa" opacity="0.45" filter="url(#fogFilter)"/>
+
+  <!-- Closer rugged mountain ridge -->
+  <path d="M0 620 L140 540 L300 600 L490 510 L680 590 L880 480 L1060 560 L1280 470 L1480 570 L1690 490 L1850 560 L1920 530 L1920 1080 L0 1080 Z" fill="url(#nearMtn)"/>
+
+  <!-- Lake surface -->
+  <rect x="0" y="680" width="1920" height="400" fill="url(#waterGrad)"/>
+
+  <!-- Lake water reflection / ripple bands -->
+  <ellipse cx="960" cy="740" rx="900" ry="25" fill="#e2f0f7" opacity="0.35"/>
+  <ellipse cx="640" cy="800" rx="600" ry="18" fill="#e2f0f7" opacity="0.25"/>
+  <ellipse cx="1200" cy="850" rx="700" ry="14" fill="#e2f0f7" opacity="0.2"/>
+
+  <!-- Left pine forest hill -->
+  <path d="M0 640 Q180 660 320 740 Q460 820 520 950 L0 1080 Z" fill="url(#forestGrad)"/>
+  <!-- Left pine trees silhouette -->
+  <g fill="#172b32">
+    <polygon points="60,610 45,670 75,670"/>
+    <polygon points="110,630 92,695 128,695"/>
+    <polygon points="170,660 150,730 190,730"/>
+    <polygon points="230,690 208,765 252,765"/>
+    <polygon points="290,730 265,810 315,810"/>
+    <polygon points="360,770 330,860 390,860"/>
+    <polygon points="420,830 385,930 455,930"/>
+  </g>
+
+  <!-- Right pine forest hill -->
+  <path d="M1920 620 Q1740 650 1580 730 Q1420 810 1340 960 L1920 1080 Z" fill="url(#forestGrad)"/>
+  <!-- Right pine trees silhouette -->
+  <g fill="#172b32">
+    <polygon points="1860,590 1845,650 1875,650"/>
+    <polygon points="1800,615 1782,680 1818,680"/>
+    <polygon points="1730,645 1710,720 1750,720"/>
+    <polygon points="1660,680 1638,760 1682,760"/>
+    <polygon points="1580,720 1555,805 1605,805"/>
+    <polygon points="1500,770 1470,865 1530,865"/>
+    <polygon points="1410,830 1375,935 1445,935"/>
+  </g>
+
+  <!-- Foreground lake shore mist -->
+  <rect x="0" y="860" width="1920" height="220" fill="#e6f1f8" opacity="0.3" filter="url(#fogFilter)"/>
+</svg>

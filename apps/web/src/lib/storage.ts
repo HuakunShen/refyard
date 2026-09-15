@@ -26,11 +26,12 @@ const BASE_URL_KEY = "refyard.baseUrl";
 const INSTANCE_KEY = "refyard.session.instance";
 
 export function readStoredToken(): string | null {
-  return readSession(TOKEN_KEY);
+  return readSession(TOKEN_KEY) ?? readLocal(TOKEN_KEY);
 }
 
 export function storeToken(token: string | null): void {
   writeSession(TOKEN_KEY, token);
+  writeLocal(TOKEN_KEY, token);
 }
 
 export function readStoredBaseUrl(): string | null {
@@ -42,17 +43,46 @@ export function storeBaseUrl(baseUrl: string | null): void {
 }
 
 export function readStoredInstance(): string | null {
-  return readSession(INSTANCE_KEY);
+  return readSession(INSTANCE_KEY) ?? readLocal(INSTANCE_KEY);
 }
 
 export function storeInstance(instanceId: string | null): void {
   writeSession(INSTANCE_KEY, instanceId);
+  writeLocal(INSTANCE_KEY, instanceId);
 }
 
-/** Forget the whole session: used when the service is not the one we paired with. */
+/** Forget the whole session: used when the service is not the one we paired with or user disconnects. */
 export function clearStoredSession(): void {
   storeToken(null);
   storeInstance(null);
+}
+
+const ACCENT_KEY = "refyard.theme.accent";
+const BG_KEY = "refyard.theme.background";
+const GLASS_KEY = "refyard.theme.glass";
+
+export function readStoredAccent(): string {
+  return readLocal(ACCENT_KEY) ?? "default";
+}
+
+export function storeAccent(accent: string | null): void {
+  writeLocal(ACCENT_KEY, accent);
+}
+
+export function readStoredBackground(): string {
+  return readLocal(BG_KEY) ?? "none";
+}
+
+export function storeBackground(background: string | null): void {
+  writeLocal(BG_KEY, background);
+}
+
+export function readStoredGlass(): boolean {
+  return readLocal(GLASS_KEY) === "true";
+}
+
+export function storeGlass(enabled: boolean): void {
+  writeLocal(GLASS_KEY, enabled ? "true" : "false");
 }
 
 function readSession(key: string): string | null {

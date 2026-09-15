@@ -80,6 +80,25 @@ export function readTicket(url: URL | null): string | null {
   );
 }
 
+/**
+ * Extract a bare ticket from user input, which may be either a bare ticket or a full pairing URL.
+ */
+export function extractTicketFromText(raw: string): string {
+  const trimmed = raw.trim();
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) {
+    try {
+      const url = new URL(trimmed);
+      const extracted = readTicket(url);
+      if (extracted !== null) {
+        return extracted;
+      }
+    } catch {
+      // Not a valid URL, treat as bare ticket
+    }
+  }
+  return trimmed;
+}
+
 /** A normalised `http(s)` origin, or null when the value is missing or unusable. */
 export function normalizeBaseUrl(value: string | null): string | null {
   const trimmed = clean(value);
