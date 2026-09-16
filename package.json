@@ -36,6 +36,7 @@
     "@refyard/host-node": "workspace:*",
     "@types/node": "catalog:",
     "esbuild": "catalog:",
+    "kkrpc": "catalog:",
     "oxc-parser": "catalog:",
     "prettier": "catalog:",
     "prettier-plugin-svelte": "catalog:",

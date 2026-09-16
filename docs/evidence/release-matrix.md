@@ -333,6 +333,18 @@ adapter makes no install attempt and does not weaken Refyard's Host/Origin check
 authority caveat and the missing app/dependency registry are recorded in
 `integrations/xross/README.md`.
 
+## Kunkun integration
+
+R11 targets Kunkun revision `a12620cc709d06bda6cecc15fa35cadbf243cd94` and fixed kkrpc `2.0.0`.
+`integrations/kunkun/package.json` declares one `custom-view` command, a backend permission scoped
+to `dist/backend.js`, and loopback-only network access. The backend holds the Refyard GitClient and
+bearer; the view receives only a kkrpc proxy, with AsyncIterable events replacing browser SSE.
+
+The manifest, real Refyard status call over a real kkrpc memory transport, event streaming, and
+unchanged `Permission denied` propagation pass in `tests/integration/kunkun-adapter.test.ts`.
+Out-of-tree installation, backend packaging, and a real Electron Kunkun custom-view launch are
+**unverified** because this session did not install or modify the Kunkun checkout.
+
 ## Published releases
 
 Both releases were published by the project's owner and then checked against the registry — a

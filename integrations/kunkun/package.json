@@ -1,0 +1,45 @@
+{
+  "name": "refyard-kunkun",
+  "version": "0.1.1",
+  "private": true,
+  "type": "module",
+  "description": "Refyard Git workbench custom view for Kunkun",
+  "dependencies": {
+    "@refyard/git-client": "0.1.1",
+    "kkrpc": "2.0.0"
+  },
+  "kunkun": {
+    "identifier": "sh.refyard.git-workbench",
+    "name": "Refyard Git Workbench",
+    "shortDescription": "A scoped Git workbench backed by an explicit Refyard session.",
+    "longDescription": "The view reuses Refyard's GitService contract through a privileged backend process. The backend owns the session token; the renderer only receives a kkrpc service proxy.",
+    "commands": [
+      {
+        "name": "workbench",
+        "title": "Refyard Git Workbench",
+        "mode": "custom-view",
+        "main": "dist/view/index.html",
+        "dist": "dist/view"
+      }
+    ],
+    "permissions": [
+      {
+        "permission": "backend",
+        "allow": [
+          {
+            "script": "dist/backend.js",
+            "runtime": "node",
+            "capabilities": {
+              "subprocess": ["node"],
+              "env": ["PATH", "HOME"]
+            }
+          }
+        ]
+      },
+      {
+        "permission": "network",
+        "domains": ["127.0.0.1", "localhost"]
+      }
+    ]
+  }
+}
