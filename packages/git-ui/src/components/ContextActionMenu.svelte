@@ -10,6 +10,7 @@
     actions: readonly ContextAction[];
     children: Snippet;
     triggerClass?: string;
+    triggerTestId?: string;
     contentClass?: string;
     "data-testid"?: string;
   }
@@ -18,6 +19,7 @@
     actions,
     children,
     triggerClass = "",
+    triggerTestId = undefined,
     contentClass = "",
     "data-testid": testId = undefined,
   }: Props = $props();
@@ -26,7 +28,7 @@
 </script>
 
 <ContextMenu.Root>
-  <ContextMenu.Trigger class={triggerClass}>
+  <ContextMenu.Trigger class={triggerClass} data-testid={triggerTestId}>
     {@render children()}
   </ContextMenu.Trigger>
   <ContextMenu.Content class={contentClass} data-testid={testId}>

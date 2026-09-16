@@ -16,6 +16,9 @@
   import { Badge } from "./ui/badge/index.js";
   import { Button } from "./ui/button/index.js";
   import ConfirmAction from "./ConfirmAction.svelte";
+  import ConfirmDialog from "./ConfirmDialog.svelte";
+  import ContextActionMenu from "./ContextActionMenu.svelte";
+  import type { ContextAction } from "../lib/context-actions.js";
   import { cn } from "../lib/utils.js";
 
   interface Props {
@@ -59,6 +62,8 @@
   let editingUpstream = $state<string | null>(null);
   let upstreamValue = $state("");
   let mergeNoFf = $state(false);
+  let deleteDialogOpen = $state(false);
+  let pendingDeleteBranch = $state<string | null>(null);
 
   const branches = $derived(refs?.branches ?? []);
   const remoteBranches = $derived(
@@ -75,6 +80,69 @@
     upstreamValue = remoteBranches.some((entry) => entry.name === current)
       ? current
       : "";
+  }
+
+  function askDelete(branchName: string): void {
+    pendingDeleteBranch = branchName;
+    deleteDialogOpen = true;
+  }
+
+  function branchContextActions(
+    branch: (typeof branches)[number],
+  ): readonly ContextAction[] {
+    const actionDisabled = disabled || busy;
+    return [
+      ...(branch.isCurrent
+        ? []
+        : [
+            {
+              kind: "action" as const,
+              id: "switch",
+              label: "Switch",
+              disabled: actionDisabled,
+              onSelect: () => onSwitch(branch.name),
+            },
+            {
+              kind: "action" as const,
+              id: "merge",
+              label: "Merge into Current",
+              disabled: actionDisabled,
+              onSelect: () => onMerge(branch.name, mergeNoFf),
+            },
+          ]),
+      { kind: "separator" as const, id: "edit-separator" },
+      {
+        kind: "action" as const,
+        id: "upstream",
+        label: "Upstream…",
+        disabled: actionDisabled,
+        onSelect: () => editUpstream(branch),
+      },
+      {
+        kind: "action" as const,
+        id: "rename",
+        label: "Rename…",
+        disabled: actionDisabled,
+        onSelect: () => {
+          renaming = branch.name;
+          editingUpstream = null;
+          renameValue = branch.name;
+        },
+      },
+      { kind: "separator" as const, id: "delete-separator" },
+      ...(branch.isCurrent
+        ? []
+        : [
+            {
+              kind: "action" as const,
+              id: "delete",
+              label: "Delete…",
+              destructive: true,
+              disabled: actionDisabled,
+              onSelect: () => askDelete(branch.name),
+            },
+          ]),
+    ];
   }
 
   function saveUpstream(branchName: string): void {
@@ -114,162 +182,174 @@
               : "border-border/50 bg-card/60 hover:border-border hover:bg-accent/30",
           )}
         >
-          {#if renaming === branch.name}
-            <div class="flex items-center gap-1.5">
-              <input
-                class="min-w-0 flex-1 rounded border border-input bg-transparent px-2 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                aria-label={`new name for ${branch.name}`}
-                bind:value={renameValue}
-                disabled={disabled || busy}
-              />
-              <Button
-                size="sm"
-                class="h-7 text-xs px-2.5"
-                disabled={disabled || busy || renameValue.trim().length === 0}
-                onclick={() => {
-                  onRename(branch.name, renameValue.trim());
-                  renaming = null;
-                }}
-              >
-                Rename
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                class="h-7 text-xs px-2"
-                onclick={() => (renaming = null)}
-              >
-                Cancel
-              </Button>
-            </div>
-          {:else}
-            <div class="flex items-center gap-2 min-w-0">
-              <GitBranch
-                class={cn(
-                  "size-3.5 shrink-0",
-                  branch.isCurrent ? "text-primary" : "text-ink-muted",
-                )}
-              />
-              <span
-                class="min-w-0 flex-1 truncate font-mono text-xs font-medium"
-                title={branch.name}
-              >
-                {branch.name}
-              </span>
-              {#if branch.isCurrent}
-                <Badge
-                  tone="head"
-                  class="shrink-0 text-[10px] h-4.5 px-1.5 font-mono"
-                  >HEAD</Badge
-                >
-              {/if}
-              {#if branch.upstream !== null}
-                <span class="text-[11px] text-ink-faint shrink-0 font-mono">
-                  {branch.upstream.gone
-                    ? "upstream gone"
-                    : `${branch.upstream.ahead}↑ ${branch.upstream.behind}↓`}
-                </span>
-              {/if}
-            </div>
-
-            {#if editingUpstream === branch.name}
-              <div
-                class="flex items-center gap-1.5 rounded-md border border-border/40 bg-background/50 p-1.5"
-              >
-                <select
-                  class="min-w-0 flex-1 rounded border border-input bg-background px-2 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  aria-label={`upstream for ${branch.name}`}
-                  bind:value={upstreamValue}
-                  disabled={disabled || busy}
-                >
-                  <option value="">No upstream</option>
-                  {#each remoteBranches as remoteBranch (remoteBranch.fullName)}
-                    <option value={remoteBranch.name}
-                      >{remoteBranch.name}</option
-                    >
-                  {/each}
-                </select>
-                <Button
-                  size="sm"
-                  class="h-7 px-2.5 text-xs"
-                  disabled={disabled || busy}
-                  onclick={() => saveUpstream(branch.name)}
-                  data-testid={`save-upstream-${branch.name}`}>Save</Button
-                >
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  class="h-7 px-2 text-xs"
-                  onclick={() => (editingUpstream = null)}>Cancel</Button
-                >
-              </div>
-            {/if}
-
-            <div
-              class="flex flex-wrap items-center gap-1.5 pt-0.5 border-t border-border/20"
-            >
-              {#if branch.isCurrent}
-                <span class="text-[11px] text-ink-faint italic py-0.5"
-                  >Current branch</span
-                >
+          <ContextActionMenu
+            actions={branchContextActions(branch)}
+            triggerClass="block w-full"
+            triggerTestId={`branch-row-${branch.name}`}
+            data-testid={`branch-context-${branch.name}`}
+          >
+            {#snippet children()}
+              {#if renaming === branch.name}
+                <div class="flex items-center gap-1.5">
+                  <input
+                    class="min-w-0 flex-1 rounded border border-input bg-transparent px-2 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    aria-label={`new name for ${branch.name}`}
+                    bind:value={renameValue}
+                    disabled={disabled || busy}
+                  />
+                  <Button
+                    size="sm"
+                    class="h-7 text-xs px-2.5"
+                    disabled={disabled ||
+                      busy ||
+                      renameValue.trim().length === 0}
+                    onclick={() => {
+                      onRename(branch.name, renameValue.trim());
+                      renaming = null;
+                    }}
+                    data-testid={`save-rename-${branch.name}`}
+                  >
+                    Rename
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    class="h-7 text-xs px-2"
+                    onclick={() => (renaming = null)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
               {:else}
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  class="h-6 text-xs px-2 shadow-none"
-                  disabled={disabled || busy}
-                  onclick={() => onSwitch(branch.name)}
-                  data-testid={`switch-${branch.name}`}
+                <div class="flex items-center gap-2 min-w-0">
+                  <GitBranch
+                    class={cn(
+                      "size-3.5 shrink-0",
+                      branch.isCurrent ? "text-primary" : "text-ink-muted",
+                    )}
+                  />
+                  <span
+                    class="min-w-0 flex-1 truncate font-mono text-xs font-medium"
+                    title={branch.name}
+                  >
+                    {branch.name}
+                  </span>
+                  {#if branch.isCurrent}
+                    <Badge
+                      tone="head"
+                      class="shrink-0 text-[10px] h-4.5 px-1.5 font-mono"
+                      >HEAD</Badge
+                    >
+                  {/if}
+                  {#if branch.upstream !== null}
+                    <span class="text-[11px] text-ink-faint shrink-0 font-mono">
+                      {branch.upstream.gone
+                        ? "upstream gone"
+                        : `${branch.upstream.ahead}↑ ${branch.upstream.behind}↓`}
+                    </span>
+                  {/if}
+                </div>
+
+                {#if editingUpstream === branch.name}
+                  <div
+                    class="flex items-center gap-1.5 rounded-md border border-border/40 bg-background/50 p-1.5"
+                  >
+                    <select
+                      class="min-w-0 flex-1 rounded border border-input bg-background px-2 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      aria-label={`upstream for ${branch.name}`}
+                      bind:value={upstreamValue}
+                      disabled={disabled || busy}
+                    >
+                      <option value="">No upstream</option>
+                      {#each remoteBranches as remoteBranch (remoteBranch.fullName)}
+                        <option value={remoteBranch.name}
+                          >{remoteBranch.name}</option
+                        >
+                      {/each}
+                    </select>
+                    <Button
+                      size="sm"
+                      class="h-7 px-2.5 text-xs"
+                      disabled={disabled || busy}
+                      onclick={() => saveUpstream(branch.name)}
+                      data-testid={`save-upstream-${branch.name}`}>Save</Button
+                    >
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      class="h-7 px-2 text-xs"
+                      onclick={() => (editingUpstream = null)}>Cancel</Button
+                    >
+                  </div>
+                {/if}
+
+                <div
+                  class="flex flex-wrap items-center gap-1.5 pt-0.5 border-t border-border/20"
                 >
-                  Switch
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  class="h-6 text-xs px-2 shadow-none"
-                  disabled={disabled || busy}
-                  onclick={() => onMerge(branch.name, mergeNoFf)}
-                  data-testid={`merge-${branch.name}`}
-                >
-                  Merge in
-                </Button>
+                  {#if branch.isCurrent}
+                    <span class="text-[11px] text-ink-faint italic py-0.5"
+                      >Current branch</span
+                    >
+                  {:else}
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      class="h-6 text-xs px-2 shadow-none"
+                      disabled={disabled || busy}
+                      onclick={() => onSwitch(branch.name)}
+                      data-testid={`switch-${branch.name}`}
+                    >
+                      Switch
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      class="h-6 text-xs px-2 shadow-none"
+                      disabled={disabled || busy}
+                      onclick={() => onMerge(branch.name, mergeNoFf)}
+                      data-testid={`merge-${branch.name}`}
+                    >
+                      Merge in
+                    </Button>
+                  {/if}
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    class="h-6 px-2 text-xs text-ink-muted hover:text-ink"
+                    disabled={disabled || busy}
+                    onclick={() => editUpstream(branch)}
+                    data-testid={`edit-upstream-${branch.name}`}
+                  >
+                    Upstream…
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    class="h-6 text-xs px-2 text-ink-muted hover:text-ink ml-auto"
+                    disabled={disabled || busy}
+                    onclick={() => {
+                      renaming = branch.name;
+                      renameValue = branch.name;
+                    }}
+                    data-testid={`rename-${branch.name}`}
+                  >
+                    Rename…
+                  </Button>
+                  {#if !branch.isCurrent}
+                    <ConfirmAction
+                      label="Delete"
+                      confirmLabel={`Delete ${branch.name}`}
+                      description="Merged branches only; an unmerged branch is refused."
+                      disabled={disabled || busy}
+                      {busy}
+                      onConfirm={() => onDelete(branch.name)}
+                      data-testid={`delete-${branch.name}`}
+                    />
+                  {/if}
+                </div>
               {/if}
-              <Button
-                size="sm"
-                variant="ghost"
-                class="h-6 px-2 text-xs text-ink-muted hover:text-ink"
-                disabled={disabled || busy}
-                onclick={() => editUpstream(branch)}
-                data-testid={`edit-upstream-${branch.name}`}
-              >
-                Upstream…
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                class="h-6 text-xs px-2 text-ink-muted hover:text-ink ml-auto"
-                disabled={disabled || busy}
-                onclick={() => {
-                  renaming = branch.name;
-                  renameValue = branch.name;
-                }}
-                data-testid={`rename-${branch.name}`}
-              >
-                Rename…
-              </Button>
-              {#if !branch.isCurrent}
-                <ConfirmAction
-                  label="Delete"
-                  confirmLabel={`Delete ${branch.name}`}
-                  description="Merged branches only; an unmerged branch is refused."
-                  disabled={disabled || busy}
-                  {busy}
-                  onConfirm={() => onDelete(branch.name)}
-                  data-testid={`delete-${branch.name}`}
-                />
-              {/if}
-            </div>
-          {/if}
+            {/snippet}
+          </ContextActionMenu>
         </li>
       {/each}
     </ul>
@@ -315,3 +395,23 @@
     <p class="text-xs text-ink-muted" data-testid="branch-message">{message}</p>
   {/if}
 </div>
+
+<ConfirmDialog
+  bind:open={deleteDialogOpen}
+  title={pendingDeleteBranch === null
+    ? "Delete branch"
+    : `Delete ${pendingDeleteBranch}?`}
+  description="Only fully merged branches can be deleted; unmerged work is refused by Git."
+  confirmLabel={pendingDeleteBranch === null
+    ? "Delete branch"
+    : `Delete ${pendingDeleteBranch}`}
+  disabled={pendingDeleteBranch === null || disabled}
+  {busy}
+  onConfirm={() => {
+    if (pendingDeleteBranch !== null) {
+      onDelete(pendingDeleteBranch);
+      pendingDeleteBranch = null;
+    }
+  }}
+  data-testid="branch-delete-dialog"
+/>
