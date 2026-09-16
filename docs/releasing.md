@@ -1,103 +1,137 @@
 # Releasing
 
-Everything the person publishing has to decide, everything already done, and the exact commands.
-Written for the first publish, which is a manual step by design: the tarball that reaches the
-registry is the one whose checks ran, not a rebuild on a release machine.
+Refyard separates verification from publication. `ci.yml` tests the repository; the
+tag-triggered `.github/workflows/publish.yml` is the only workflow allowed to publish the
+API-only npm package.
 
-## What is already in place
+## Release identity
 
-- **The publishable package is `packages/npm-dist`.** `pnpm build:release` stages the API-only CLI
-  bundle and its `bin` entry; the static SPA is deployed separately from `apps/web`.
-- **Its manifest declares no dependencies, no install scripts, no workspace references**, and
-  `pnpm pack:smoke` fails the build if it ever does — a package with a postinstall script is a
-  package that runs code on someone's machine at install time.
-- **The tarball is checked before it is published**: `pnpm test:pack` (contents and manifest rules)
-  and `pnpm pack:smoke`, which installs the tarball through `npm exec` in a temporary directory
-  with an isolated `HOME` and cache, then drives the installed CLI: `doctor`, `serve --json`, the
-  API-only 404 boundary, the authenticated API, a busy port, tarball contents.
-- **A dry run was measured on 2026-09-15** from the staged package at revision `ab1d5fb`:
+- **Package:** `refyard` from `packages/npm-dist`.
+- **Current published version:** `0.1.1`.
+- **Next release prepared by this checkout:** `0.1.2`.
+- **License:** GNU Affero General Public License v3.0 only (`AGPL-3.0-only`).
+- **Repository:** `https://github.com/HuakunShen/refyard`.
+- **Package contents:** the API-only Node CLI; the static PWA is deployed separately from
+  `apps/web` and is never included in the npm tarball.
 
-  ```
-  npm notice name: refyard          npm notice package size:  2.2 MB
-  npm notice version: 0.0.0         npm notice unpacked size: 5.2 MB
-  npm notice total files: 191       npm notice shasum: 6a9a4e468ad5037022ae56c81a7da868cda1db72
-  ```
+The package manifest contains no dependencies, install scripts, or workspace references. The
+release build carries its runtime code in the bundle, and `pnpm pack:smoke` installs the actual
+tarball in an isolated temporary environment before publication.
 
-  `npm publish --dry-run` prints what would be uploaded and contacts nothing. What it does _not_
-  prove is the step after it — the real `npm publish` — which stays the publisher's.
+Published npm versions are immutable. A release mistake is corrected with a new version; the
+same version must never be republished.
 
-## Decisions that are not mine to make
+## npm Trusted Publisher setup
 
-| Decision    | Where                            | State today                                                                                                                                                    |
-| ----------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Name        | `packages/npm-dist/package.json` | `refyard`. Checked against the registry on 2026-09-15: **unclaimed** (`404`). Publishing claims it, permanently, for this account.                             |
-| Version     | same                             | `0.0.0`, a placeholder. `0.1.0` is the conventional first release; a published version can never be reused or edited.                                          |
-| License     | same                             | `UNLICENSED`. On a public package that means "no license granted" — legal to publish, and a decision nobody else can make.                                     |
-| Description | same                             | Reads "Not published; install from a locally built tarball." — true until the moment it is published, then it is the registry text.                            |
-| Public      | the publish command              | `refyard` is unscoped, so a plain `npm publish` publishes it **publicly**. `npm publish --access restricted` refuses rather than silently restricting nothing. |
+Configure the package on npmjs.com before pushing the first release tag. In the package's
+Trusted Publisher form choose:
 
-Decided on 2026-09-15 for the first release: **version 0.1.0**, **`UNLICENSED` kept** (publishing
-makes the package installable, not usable — no licence is granted to anyone who installs it), the
-GitHub repository stays **private** (so the manifest carries no `repository`/`homepage` links that
-would 404 for a stranger), and `"private": true` was removed from the manifest — it is what
-`npm publish` refuses on. `pnpm test:pack` asserts the release identity that comes out of this:
-publishable, `UNLICENSED`, and a version that is not the `0.0.0` placeholder.
+| Field                | Value                        |
+| -------------------- | ---------------------------- |
+| Publisher            | GitHub Actions               |
+| Organization or user | `HuakunShen`                 |
+| Repository           | `refyard`                    |
+| Workflow filename    | `publish.yml`                |
+| Environment name     | `publish`                    |
+| Allowed action       | enable **Allow npm publish** |
 
-## The commands
+The workflow filename is the filename only, not `.github/workflows/publish.yml`. All fields are
+case-sensitive. The workflow grants `id-token: write` and uses a GitHub-hosted runner; it does
+not read `NPM_TOKEN` or `NODE_AUTH_TOKEN`. npm Trusted Publishing uses short-lived OIDC
+credentials and automatically creates provenance for a public package from a public repository.
+See the [npm Trusted Publishing documentation](https://docs.npmjs.com/trusted-publishers/).
+
+## Local release gates
+
+Run these commands from a clean checkout of the revision to release. Use `CI=1` in a non-TTY
+environment so pnpm does not ask before recreating its modules directory:
 
 ```sh
-# 1. Build and check, from a clean checkout of the revision being released.
-pnpm install --frozen-lockfile
-pnpm check && pnpm check:boundaries && pnpm check:contract
-pnpm test:unit && pnpm test:integration && pnpm test:pack && pnpm test:portable
-pnpm build:release
-pnpm pack:smoke
-
-# 2. Edit packages/npm-dist/package.json: name, version, license, description, and remove
-#    "private": true.
-
-# 3. Dry run — prints the file list, sizes and integrity hash without contacting the registry.
-cd packages/npm-dist && npm publish --dry-run
-
-# 4. Publish. `--otp` if the account has 2FA (it should).
-cd packages/npm-dist && npm publish --otp <code>
-
-# 5. Verify what is actually in the registry, then install it from the registry in a scratch
-#    directory and run it there — not from this checkout.
-npm view refyard version dist.integrity dist.tarball
-cd "$(mktemp -d)" && npm exec --yes --package refyard@<version> -- refyard doctor --json
+CI=1 pnpm install --frozen-lockfile
+CI=1 pnpm check
+CI=1 pnpm check:boundaries
+CI=1 pnpm check:contract
+CI=1 pnpm test:unit
+CI=1 pnpm test:integration
+CI=1 pnpm test:pack
+CI=1 pnpm test:portable
+CI=1 pnpm build:release
+CI=1 pnpm pack:smoke
+CI=1 pnpm --dir apps/web exec wrangler deploy --dry-run
 ```
 
-Step 5's `npm exec` fetches the published package. That is the one place in this project where a
-package named `refyard` may be run from a registry, and only after this manifest has been published
-by the account that owns the name: before that, the name is somebody else's to take, which is
-exactly why every other test uses locally built tarballs.
+The full browser and compatibility gates remain part of the repository release checklist:
 
-## Release notes, at minimum
+```sh
+CI=1 pnpm test:e2e
+CI=1 pnpm test:compat
+```
 
-- The version, the Node range (`engines: >=22 <27`; the packaged CLI completes its real lifecycle
-  on 20.19.0, 22.11.0, 22.23.2, 24.10.0, 25.2.1 and 26.8.2, and the range starts at 22 because
-  Node 20 is past end of life), and the `git` functional baseline (2.43;
-  `fetch`/`pull` additionally need 2.41+ porcelain and are reported per probe by `refyard doctor`).
-- What the release does **not** do, in the words the evidence file uses: no Git backend in the
-  Cloudflare Worker, no built-in terminal, no plugin host, and the write operations listed in
-  `GET /api/v1/capabilities` are the complete set.
-- The verification status of the platforms it will run on — `docs/evidence/release-matrix.md` and
-  `docs/evidence/linux-and-windows.md` are the source, including the rows that say _unverified_.
-- That the service is loopback-only and authenticated, and that it runs the machine's own `git`
-  (hooks, filters and credential helpers included) against approved directories.
-- If hosted access is documented, that every non-loopback origin has an exact allowlist and an
-  environment-only `REFYARD_HOSTED_PASSWORD`; the password is used only for the initial exchange,
-  is never placed in CLI arguments or Worker configuration, and any public tunnel/Cloudflare
-  deployment is verified separately from the local dry-run.
+`pnpm build:release` stages `packages/npm-dist/dist` and records the source revision in
+`dist/build-info.json`; `pnpm pack:smoke` verifies the staged package rather than a fresh rebuild
+at publish time.
 
-## After the first publish
+## CI publication
 
-- A published version is immutable: a mistake is fixed by publishing the next version, never by
-  editing or unpublishing (unpublishing is possible within 72 hours and is the kind of thing that
-  breaks somebody's lockfile).
-- The `packageManager` pin (`pnpm@11.25.0`) and `.nvmrc` (Node 26.8.2) are the toolchain the
-  release was tested with; a publish from a different toolchain should say so.
-- `.github/workflows/ci.yml` runs the same gate list on `ubuntu-latest` and `macos-latest`, three
-  browsers included. The first green run was `34984950591` on 2026-09-15 (revision `f7be568`); the
-  release notes can cite it, and a later release should cite its own run rather than that one.
+The publisher runs only for a tag matching `v*`:
+
+```sh
+git tag -a v0.1.2 -m "refyard v0.1.2"
+git push origin v0.1.2
+```
+
+Before `npm publish`, `.github/workflows/publish.yml` performs the static, unit, integration,
+portability, package, build, and installed-tarball gates, then checks:
+
+```text
+GITHUB_REF_NAME == "v" + packages/npm-dist/package.json.version
+```
+
+The final step runs `npm publish` with `working-directory: packages/npm-dist`. There is no manual
+publish command and no npm token to rotate. The `publish` GitHub environment is intentionally a
+release-control point: configure any required approval there before creating a tag.
+
+## Verify the published artifact
+
+After the GitHub Actions run succeeds, verify the registry metadata and provenance:
+
+```sh
+npm view refyard version dist.integrity dist.tarball
+npm view refyard --json | rg 'version|repository|license|dist'
+```
+
+Then install the published version in a scratch directory, never from this checkout:
+
+```sh
+release_tmp="$(mktemp -d)"
+cd "${release_tmp}"
+npm exec --yes --package refyard@0.1.2 -- refyard doctor --json
+```
+
+This check exercises the package that reached the registry. Do not run an unverified remote
+package named `refyard` before the owner has published this repository's package; the name is
+registry-owned and the repository's local tests use only locally built tarballs before that point.
+
+## Cloudflare UI deployment
+
+The Cloudflare Worker is a separate static/PWA artifact. It has no Git authority, API proxy,
+repository path, bearer token, hosted password, or upload route. Maintainers can deploy it with:
+
+```sh
+pnpm deploy:web
+```
+
+The public README also exposes an official Deploy to Cloudflare button. A user's deployment
+belongs to that user's Cloudflare account; it is not a deployment of this maintainer account and
+does not move Git contents to a central Refyard server. The UI can connect to a backend only when
+the user supplies an operator-owned HTTPS endpoint and exact allowed origin.
+
+## What the release does not promise
+
+- The npm package does not ship or serve the UI.
+- The Cloudflare Worker does not run Git or receive repository contents.
+- The Node host is loopback-only by default and authenticates reads as well as writes.
+- Hosted access requires an exact origin allowlist and environment-only
+  `REFYARD_HOSTED_PASSWORD`.
+- Platform/browser rows marked unverified in `docs/evidence/release-matrix.md` remain unverified
+  until their named environment is actually exercised.
