@@ -2,7 +2,7 @@
 
 Refyard separates verification from publication. `ci.yml` tests the repository; the
 tag-triggered `.github/workflows/publish.yml` is the only workflow allowed to publish the
-API-only npm package.
+self-contained npm package.
 
 ## Release identity
 
@@ -11,8 +11,8 @@ API-only npm package.
 - **Next release prepared by this checkout:** `0.1.2`.
 - **License:** GNU Affero General Public License v3.0 only (`AGPL-3.0-only`).
 - **Repository:** `https://github.com/HuakunShen/refyard`.
-- **Package contents:** the API-only Node CLI; the static PWA is deployed separately from
-  `apps/web` and is never included in the npm tarball.
+- **Package contents:** the Node Git service plus the same static PWA under `dist/web` for the
+  default local workbench. `apps/web` can additionally deploy that UI to Cloudflare.
 
 The package manifest contains no dependencies, install scripts, or workspace references. The
 release build carries its runtime code in the bundle, and `pnpm pack:smoke` installs the actual
@@ -128,7 +128,7 @@ the user supplies an operator-owned HTTPS endpoint and exact allowed origin.
 
 ## What the release does not promise
 
-- The npm package does not ship or serve the UI.
+- The npm package serves its bundled UI only on the loopback local-workbench path; `serve` remains API-only.
 - The Cloudflare Worker does not run Git or receive repository contents.
 - The Node host is loopback-only by default and authenticates reads as well as writes.
 - Hosted access requires an exact origin allowlist and environment-only

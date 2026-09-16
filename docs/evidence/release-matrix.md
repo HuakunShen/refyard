@@ -19,15 +19,17 @@ unverified is a row nobody has run yet, and it stays that way until a gate runs 
 | Git              | 2.50.1 (Apple Git-155)                      | verified |
 | pnpm             | 11.25.0                                     | verified |
 | bun              | 1.4.2 (dev scripts only; never the product) | verified |
-| Date             | 2026-09-16                                  | verified |
+| Date             | 2026-09-15                                  | verified |
 
 Every number in `docs/evidence/performance.json` and every test result below comes from this
 machine. It is one machine, and the report says so in its own fields.
 
 ## Node versions
 
-The following table is historical evidence for published 0.1.x artifacts, which bundled the UI.
-The current R15 artifact is API-only; its replacement evidence is in the section above.
+The following table is historical evidence for published 0.1.x artifacts. The 2026-09-16
+Git-client candidate again bundles the local UI, but the multi-Node table below was not re-run for
+that candidate; its current Node-26 packaging and browser evidence is recorded in the dedicated
+local-workbench section below.
 
 The published `engines` range is **`>=22 <27`**. It is a range rather than one version because
 the runtime has no dependency on anything newer: the packaged CLI was run through its real
@@ -83,14 +85,14 @@ revision this file belongs to.
 | Gate                    | What it covered                                                                                                                                                                                                                                         | Status   |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
 | `pnpm check`            | TypeScript across 8 workspace tasks, `strict` with `noUncheckedIndexedAccess`                                                                                                                                                                           | verified |
-| `pnpm check:boundaries` | 3 portable packages (54 source files) free of host APIs; 71 test/script files reach into packages by name only                                                                                                                                          | verified |
-| `pnpm check:contract`   | committed JSON Schema artifacts match the Zod schemas; 438 named schemas, every `$ref` resolves                                                                                                                                                         | verified |
-| `pnpm test:unit`        | unit suites (contract, core planners/parsers, graph, client, ui, fixtures) — 236 cases, 16 files                                                                                                                                                        | verified |
-| `pnpm test:integration` | real Git in temporary repositories: reads, writes, merge, worktrees, submodules, jobs, restart, auth, concurrency, network, repository creation, the four repository shapes; plus the negative security cases in `tests/security` — 352 cases, 23 files | verified |
-| `pnpm test:portable`    | 4 portability cases in vitest, plus a neutral IIFE build (60,542 bytes) run with no host globals and no Node shims — 11 planner/parser checks                                                                                                           | verified |
-| `pnpm test:e2e`         | 30 Playwright specs in **three engines** (Chromium, Firefox, WebKit) against the built SPA, served by a separate static asset host while the API-only CLI owns the service, each on a service with its own state directory                              | verified |
+| `pnpm check:boundaries` | 3 portable packages (55 source files) free of host APIs; 90 test/script files reach into packages by name only                                                                                                                                          | verified |
+| `pnpm check:contract`   | committed JSON Schema artifacts match the Zod schemas; 443 named schemas, every `$ref` resolves                                                                                                                                                         | verified |
+| `pnpm test:unit`        | unit suites (contract, core planners/parsers, graph, client, ui, fixtures, web-host/workflow) — 262 cases, 24 files                                                                                                                                     | verified |
+| `pnpm test:integration` | real Git in temporary repositories: reads, writes, merge, worktrees, submodules, jobs, restart, auth, concurrency, network, repository creation, the four repository shapes; plus the negative security cases in `tests/security` — 385 cases, 28 files | verified |
+| `pnpm test:portable`    | 4 portability cases in vitest, plus a neutral IIFE build (60,550 bytes) run with no host globals and no Node shims — 11 planner/parser checks                                                                                                           | verified |
+| `pnpm test:e2e`         | 108 browser cases: 36 logical workflows × **three engines**. Normal workbench cases use bundled same-origin `open`; explicit hosted/instance-replacement cases keep the split-origin topology. 108/108 passed in 11.8 m.                                | verified |
 | `pnpm build`            | turbo build of every package plus the static SPA                                                                                                                                                                                                        | verified |
-| `pnpm pack:smoke`       | 14 steps against the `npm pack` tarball: `npm exec` install, doctor, `serve --json`, API-only 404 boundary, authenticated API, SIGTERM, busy port, tarball contents                                                                                     | verified |
+| `pnpm pack:smoke`       | 15 steps against the `npm pack` tarball: installed `open` serves the packaged local workbench; installed `serve` remains API-only; doctor, auth, shutdown, busy-port and tarball boundaries also pass.                                                  | verified |
 | `pnpm bench:runtime`    | the packaged CLI on a 100,000-commit fixture, three repeated lifecycles — macOS, Ubuntu, a container, CI (2,000 commits) and, from round two, Windows                                                                                                   | verified |
 
 Verification scope, stated plainly: `pnpm test` (unit + integration) is a single run of the suite
@@ -263,42 +265,40 @@ implied by this row.
 | -------------------------------------------------- | -------- | ----------------------------------------------------------------------------------------- |
 | `POST /api/v1/repositories/register` and `/revoke` | verified | R4 integration and Chromium UI cases; exact paths, refusals, revocation and restart audit |
 
-## Cloudflare Worker and API-only current revision
+## Local workbench and hosted PWA current candidate
 
-The 2026-09-16 R15 work changes the packaging boundary from the historical 0.1.x artifact. The
-current local release evidence is at commit `0c3cd6d`; it has not been published, and no current-
-head live Worker deployment has been verified.
+The 2026-09-16 Git-client direction restores the local workbench as the default packaged form
+without removing R15's independently hosted PWA. This candidate has not been published or deployed.
+Current local evidence is:
 
-| Surface                  | Result                                                                                                                                                                                                    |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Static PWA build         | `pnpm build` and `pnpm build:release` passed; `apps/web/build` contains the SPA, service worker and manifest.                                                                                             |
-| Cloudflare configuration | `pnpm --dir apps/web exec wrangler deploy --dry-run --config ../../wrangler.jsonc` passed with Wrangler 4.132.0, reading 87 asset files; no upload occurred.                                              |
-| Worker boundary          | `pnpm test:web-host` passed 4/4: asset delegation/security headers, JSON `/api/*` 404, and non-GET refusal.                                                                                               |
-| Backend-only package     | Package `refyard@0.1.2` has AGPL-3.0-only metadata; `pnpm test:pack` passed 17/17 and `pnpm pack:smoke` passed all 14 steps, with no `web/` directory.                                                    |
-| Browser topology         | The latest full `pnpm test:e2e` run passed 105/105 across Chromium, Firefox and WebKit against the separate static host and API-only CLI.                                                                 |
-| Compatibility            | `pnpm test:compat` passed 9/9 across Chromium, Firefox and WebKit; the WebKit response-rewrite isolation is part of the test harness.                                                                     |
-| Runtime benchmark        | `pnpm bench:runtime` passed against the rebuilt `refyard@0.1.2` artifact: 100,000-commit fixture, 100 reads at concurrency 4, three measured lifecycles; see [performance.json](performance.json).        |
-| Hosted API path          | Exact-origin CORS, password-gated ticket exchange and bearer read passed in local isolated services; no public HTTPS tunnel was exercised.                                                                |
-| npm publication          | **Pending external verification.** `publish.yml` and its local workflow contract test are present; no public-repository push, release tag, GitHub Actions publish run, or registry update is claimed yet. |
-| Live deployment          | **Unverified for current HEAD.** A current-head Cloudflare Worker deployment, domain mapping, and hosted browser/tunnel path still require a separate external run.                                       |
+| Surface                   | Result                                                                                                                                                                                                                                   |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Local packaged UI         | `pnpm build:release`, `pnpm test:pack`, and `pnpm pack:smoke` passed. The tarball contains `dist/web`; an installed `refyard open <repo>` served that SPA from its own loopback origin.                                                  |
+| API-only integration form | The same installed tarball ran `refyard serve`; `/` stayed a JSON 404, readiness reported `ui: null` / `apiOnly: true`, and API reads still required a bearer.                                                                           |
+| Browser topology          | `pnpm test:e2e` passed **108/108 in 11.8 m** across Chromium, Firefox and WebKit. The E2E helper defaults to bundled same-origin local mode; hosted pairing and service-replacement cases opt into the split-origin topology explicitly. |
+| Static PWA build          | `pnpm build` passed; `apps/web/build` remains the source artifact copied into the npm package and deployable separately.                                                                                                                 |
+| Worker boundary           | `pnpm test:web-host` passed **11/11** across the web-host suites, including Worker asset/security boundaries. The earlier Wrangler dry-run remains historical R15 evidence; it was not re-run in this phase.                             |
+| Hosted API path           | Exact-origin CORS, password-gated ticket exchange and bearer reads pass in isolated services; the hosted Playwright pairing case passes in all three engines.                                                                            |
+| Live deployment           | **Unverified.** No Cloudflare account, domain, Worker deployment, TLS tunnel or public browser-to-host path was used in this phase.                                                                                                      |
 
-The pairing URL has two explicit addresses in hosted mode: `--ui-origin` is the Worker page origin,
-and `--api-origin` is the HTTPS API/tunnel origin visible to the browser. The CLI still binds its
-listener to loopback; the operator-owned tunnel must preserve the service's Host/Origin/auth
-checks.
+The local and hosted forms consume the same static frontend build and the same GitService contract.
+Local `open` keeps UI and API on one loopback origin. Hosted mode still uses `--ui-origin` for the
+page origin and `--api-origin` for the browser-visible HTTPS/tunnel origin; the operator-owned
+tunnel must preserve the service's Host/Origin/auth checks. `refyard serve` never starts or serves
+the packaged GUI merely because the files are present.
 
 ## Compatibility suite
 
-`pnpm test:compat` uses the built SPA, the API-only CLI and a separate static asset host. The
-real host response is rewritten only at the browser test boundary to model a page/service pair
-from different revisions. The three engines passed 9/9: a major mismatch refused writes, a newer
+`pnpm test:compat` intentionally uses the built SPA with explicit hosted mode and a separate
+static asset host. The real host response is rewritten only at the browser test boundary to model
+a page/service pair from different revisions. The three engines passed 9/9: a major mismatch refused writes, a newer
 same-major contract kept history reads working while disabling writes, and additive health and
-capabilities fields were ignored. The full e2e gate separately passed 105/105.
+capabilities fields were ignored. The full current e2e gate separately passed 108/108.
 
 ## Hono, OpenAPI, Scalar and MCP
 
-The Node listener now adapts API and discovery requests into Hono. The static asset server remains
-the separate trusted bundle boundary; it is not exposed as an MCP capability. `hono-openapi`
+The Node listener now adapts API and discovery requests into Hono. The static asset layer remains
+a trusted bundle boundary; it is not exposed as an MCP capability. `hono-openapi`
 describes the route table and contract response schemas, Scalar serves `/scalar`, and the MCP
 endpoint uses `@hono/mcp` with stateful in-memory sessions bound to the same Refyard bearer session.
 
@@ -371,12 +371,13 @@ R12 closes T18 as an evidence-backed **stay on Node** decision. The current meas
 and its machine-readable input is the current
 [performance.json](/Volumes/Portable2TB/ExtDev/refyard/docs/evidence/performance.json).
 
-The approved local benchmark completed three lifecycles on macOS arm64 with Node 26.8.2, Git
-2.50.1, a 100,000-commit fixture and no network: cold start 0.468 s, service RSS 95 MiB before
-reads and 103 MiB after 100 status reads, 194.6 status reads/s, first history page 402 ms, and
-diff-service RSS 208 MiB after the large/bounded/long-line/many-file batch. The current API-only
-CLI bundle is 2,209,211 bytes; `npm pack` reported 394,396 bytes compressed and 2.2 MB unpacked.
-These are Node/process measurements, not a native-runtime comparison.
+The approved local benchmark was re-run for this candidate: three lifecycles on macOS arm64 with
+Node 26.8.2, Git 2.50.1, a 100,000-commit fixture and no network. Cold start was 0.386 s; service
+RSS was 95 MiB before reads and 103 MiB after 100 status reads; status throughput was 224.2 reads/s;
+the first history page was 345 ms; and diff-service RSS was 204 MiB after the
+large/bounded/long-line/many-file batch. `build:release` produced a 2,210,213-byte backend bundle
+plus the packaged local web assets. These are Node/process measurements, not a native-runtime
+comparison.
 
 | Native-host question                                                | Status         | Evidence                                                                                           |
 | ------------------------------------------------------------------- | -------------- | -------------------------------------------------------------------------------------------------- |

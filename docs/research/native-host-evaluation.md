@@ -17,31 +17,31 @@ and the current [Xross adapter boundary](../../integrations/xross/README.md).
 
 The actual commands run for this report were:
 
-| Command | Exit status | What it established |
-| --- | ---: | --- |
-| `pnpm build:release` | 0 | Built the current 0.1.1 API-only CLI bundle at commit `844307b`. |
-| `pnpm bench:runtime` in the default sandbox | 1 | The fixture completed, but the temporary loopback listener was refused with `EPERM`; this is not a product measurement. |
-| `pnpm bench:runtime` with approved local loopback access | 0 | Completed three lifecycle runs against the full fixture and wrote `performance.json`. |
-| `pnpm test:portable` | 0 | Ran the neutral IIFE smoke and its four Vitest cases. |
-| `pnpm pack:smoke` with approved local loopback access | 0 | Installed the current tarball in an isolated npm environment and completed all 14 smoke steps. |
+| Command                                                  | Exit status | What it established                                                                                                                         |
+| -------------------------------------------------------- | ----------: | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm build:release`                                     |           0 | Built the current 0.1.2 candidate: backend bundle plus packaged local workbench.                                                            |
+| `pnpm bench:runtime` in the default sandbox              |           1 | The fixture completed, but the temporary loopback listener was refused with `EPERM`; this is not a product measurement.                     |
+| `pnpm bench:runtime` with approved local loopback access |           0 | Completed three lifecycle runs against the full fixture and wrote `performance.json`.                                                       |
+| `pnpm test:portable`                                     |           0 | Ran the neutral IIFE smoke and its four Vitest cases.                                                                                       |
+| `pnpm pack:smoke` with approved local loopback access    |           0 | Installed the current tarball in an isolated npm environment and completed all 15 smoke steps, including local `open` and API-only `serve`. |
 
 The successful benchmark used Node 26.8.2, Git 2.50.1, macOS arm64, one temporary repository with
 100,000 linear commits, a 153-path diff fixture, no network, three runs, and concurrency four.
 The report uses the median and records each observed range. The most relevant values are:
 
-| Measurement | Result | Scope |
-| --- | ---: | --- |
-| Cold start to readiness | 0.468 s | CLI process, including the Git feature probe |
-| Service RSS before reads | 95 MiB | Refyard service only; no browser or Git child |
-| Status throughput | 194.6 reads/s | One service over loopback, concurrency four |
-| Service RSS after 100 status reads | 103 MiB | Same service and read batch |
-| First history page | 402 ms | 100 commits from the 100,000-commit fixture, bounded response |
-| Large-file diff | 118 ms / 1,554,484 bytes | 8,000-line file; time and JSON response payload |
-| Long-line diff | 110 ms / 1,442,557 bytes | One 700,000-character line |
-| Truncated diff | 133 ms / 1,962,008 bytes | 19,995 of 64,000 patch lines delivered, marked truncated |
-| Diff-service RSS after batch | 208 MiB | Service only after large, bounded, long-line and many-file reads |
-| Immediate warm large-file diff | 110 ms | Same diff read again |
-| Graceful shutdown | 5 ms | SIGTERM with no request in flight |
+| Measurement                        |                   Result | Scope                                                            |
+| ---------------------------------- | -----------------------: | ---------------------------------------------------------------- |
+| Cold start to readiness            |                  0.386 s | CLI process, including the Git feature probe                     |
+| Service RSS before reads           |                   95 MiB | Refyard service only; no browser or Git child                    |
+| Status throughput                  |            224.2 reads/s | One service over loopback, concurrency four                      |
+| Service RSS after 100 status reads |                  103 MiB | Same service and read batch                                      |
+| First history page                 |                   345 ms | 100 commits from the 100,000-commit fixture, bounded response    |
+| Large-file diff                    |  99 ms / 1,554,484 bytes | 8,000-line file; time and JSON response payload                  |
+| Long-line diff                     |  93 ms / 1,442,557 bytes | One 700,000-character line                                       |
+| Truncated diff                     | 111 ms / 1,962,008 bytes | 19,995 of 64,000 patch lines delivered, marked truncated         |
+| Diff-service RSS after batch       |                  204 MiB | Service only after large, bounded, long-line and many-file reads |
+| Immediate warm large-file diff     |                    90 ms | Same diff read again                                             |
+| Graceful shutdown                  |                     3 ms | SIGTERM with no request in flight                                |
 
 These numbers demonstrate a measurable Node process cost and a substantial temporary memory
 increase while diff responses are parsed. They do **not** demonstrate that the JavaScript runtime
@@ -77,7 +77,7 @@ golden inputs. The neutral IIFE cannot substitute for those runs.
 
 ## process-cleanup-limitations
 
-The successful benchmark measured a 5 ms SIGTERM-to-exit floor when no request was in flight, and
+The successful benchmark measured a 3 ms SIGTERM-to-exit floor when no request was in flight, and
 the tarball smoke completed its installed-package SIGTERM check. Those are useful lifecycle facts,
 but neither test is a long-running process-tree measurement. The service's RSS measurements are
 explicitly service-only; they do not add child Git/helper RSS, browser tabs, or system memory.
@@ -96,14 +96,14 @@ the Node host boundary; it is not evidence for a native VM.
 
 ## full-artifact-size
 
-The current API-only release staging was measured after `pnpm build:release`:
+The current local-workbench release staging was measured after `pnpm build:release`:
 
-- `packages/npm-dist/dist/cli.mjs`: 2,209,211 bytes;
-- `packages/npm-dist/dist/build-info.json`: version 0.1.1, engines `>=22 <27`, one entry point;
-- `npm pack` package size: 394,396 bytes;
-- `npm pack` unpacked size: 2.2 MB, five files;
+- `packages/npm-dist/dist/cli.mjs`: 2,210,213 bytes;
+- `packages/npm-dist/dist/build-info.json`: version 0.1.2, engines `>=22 <27`, one entry point;
+- `pnpm pack:smoke` produced a 984,305-byte tarball;
+- generated package payload files sum to 3,337,688 bytes across 73 tarball entries;
 - `pnpm pack:smoke`: the tarball installed and ran successfully in an isolated environment;
-- no web directory is present in the CLI package — the PWA is deployed from `apps/web`.
+- `dist/web` is present (about 1,280 KiB on disk) and is copied from the same `apps/web/build` that remains independently deployable.
 
 The 60,550-byte neutral core IIFE is a separate portability artifact, not the size of a native
 host. The design package's 512 KiB target and 5 MiB upper bound are review rules for a future
@@ -114,12 +114,12 @@ dependencies, or target assets were assembled, so the native delta is **unverifi
 
 The Node side of the comparison is real but narrow:
 
-| Workload point | Node service RSS |
-| --- | ---: |
-| Ready, before reads | 96 MiB |
-| After 100 status reads | 104 MiB |
-| Diff service ready | 96 MiB |
-| Diff service after the batch | 204 MiB |
+| Workload point               | Node service RSS |
+| ---------------------------- | ---------------: |
+| Ready, before reads          |           95 MiB |
+| After 100 status reads       |          103 MiB |
+| Diff service ready           |           95 MiB |
+| Diff service after the batch |          204 MiB |
 
 The last increase is associated with a batch containing a complete approximately 2 MB patch, a
 bounded patch, a 700,000-character line, and metadata for 150 changed files. It is not a proof
