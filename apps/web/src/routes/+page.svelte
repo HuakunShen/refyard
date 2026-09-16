@@ -25,6 +25,7 @@
     DiffResponse,
     ParsedMutationRequest,
     StatusEntry,
+    StashesResponse,
   } from "@refyard/git-contract";
   import { layoutPages, type GraphCommit } from "@refyard/git-graph";
   import {
@@ -413,6 +414,28 @@
       ...polled(key),
     };
   });
+
+  /**
+   * Keep the last known stash rows while a background read is pending or failed.
+   * Query data is authoritative when it arrives, but the panel owns destructive
+   * confirmation state and must not be remounted just because a retry is in flight.
+   */
+  let lastStashesRepositoryId = $state<string | null>(null);
+  let lastStashes = $state<StashesResponse["stashes"]>([]);
+  $effect(() => {
+    const data = stashes.data;
+    const repositoryId = selectedRepositoryId;
+    if (data === undefined || repositoryId === null) {
+      return;
+    }
+    lastStashesRepositoryId = repositoryId;
+    lastStashes = data.stashes;
+  });
+  const displayedStashes = $derived(
+    lastStashesRepositoryId === selectedRepositoryId
+      ? lastStashes
+      : (stashes.data?.stashes ?? []),
+  );
 
   const worktrees = createQuery(() => {
     const key = ["worktrees", baseUrl, token, selectedRepositoryId];
@@ -2061,18 +2084,22 @@
                 <Archive class="size-3.5 text-muted-foreground" />
               {/snippet}
               <div class="flex flex-col gap-2">
-                {#if stashes.isPending}
+                {#if stashes.isPending && stashes.data === undefined}
                   <StateBanner state="loading" title="Reading stashes…" />
-                {:else if stashes.isError}
+                {/if}
+                {#if stashes.isError}
                   <StateBanner
                     state="error"
                     title="Could not read stashes"
                     detail={describeProblem(stashes.error)}
                   />
-                {:else}
+                {/if}
+                {#if stashes.data !== undefined || lastStashesRepositoryId === selectedRepositoryId}
                   <StashPanel
-                    stashes={stashes.data?.stashes ?? []}
-                    disabled={mutationBusy}
+                    stashes={displayedStashes}
+                    disabled={mutationBusy ||
+                      stashes.isError ||
+                      stashes.data === undefined}
                     busy={mutationBusy}
                     message={stashResult}
                     onCreate={onStashCreate}

@@ -82,6 +82,28 @@ test.describe("stash and tag workbench", () => {
     await expect(page.getByTestId("stash-list")).toHaveCount(0);
   });
 
+  test("keeps a destructive confirmation armed across a transient stash read failure", async ({
+    page,
+  }) => {
+    // Prevents: a background metadata retry unmounting ConfirmAction after the user
+    // armed a destructive action, forcing the user to guess whether the first click
+    // did anything and making a second click unsafe to reason about.
+    await repo.write("a.txt", "stashed\n");
+    await repo.git(["stash", "push", "-m", "to keep armed"]);
+    await page.goto(service.pairingUrl);
+    await expect(page.getByTestId("stash-list")).toContainText("to keep armed");
+
+    await page.getByTestId("drop-stash-stash@{0}").click();
+    // Stop only after the confirmation is armed. The next background metadata read
+    // then fails through the real browser/service boundary, as it did in the long run.
+    await service.stop();
+    await expect(page.getByText("Could not read stashes")).toBeVisible();
+    await expect(
+      page.getByTestId("drop-stash-stash@{0}-confirm"),
+    ).toBeVisible();
+    await expect(page.getByTestId("stash-list")).toContainText("to keep armed");
+  });
+
   test("creates and deletes a tag through the panel", async ({ page }) => {
     await page.goto(service.pairingUrl);
     await expect(page.getByTestId("tag-panel")).toBeVisible();

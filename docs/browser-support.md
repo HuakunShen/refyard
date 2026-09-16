@@ -87,6 +87,14 @@ The two are not mutually exclusive: a page whose reads are all failing with `Net
 answered the capabilities read with a failure, which is one more way for `writesAllowed` to
 change under the panel.
 
+### Background read failures do not erase armed actions
+
+The stash panel now keeps its last successful rows mounted while a background stash read is
+pending or failed. An already armed destructive confirmation stays visible, while the confirm
+button is disabled until the read is healthy again; the error is shown alongside the stale rows.
+The failure-injected case in `tests/e2e/stash.spec.ts` passes in Chromium, Firefox and WebKit,
+so a transient API outage cannot make a user's first confirmation click disappear.
+
 ## What the app needs
 
 | API                              | Used for                                  | If missing                                                                                                                  |
@@ -108,7 +116,8 @@ The Cloudflare shape is opt-in and still keeps the trust boundaries separate. Th
 only the static PWA; it cannot reach a user's loopback by itself. A remote browser therefore needs
 an operator-owned HTTPS tunnel to the CLI and a pairing URL containing the tunnel's browser-visible
 `--api-origin`. The CLI must receive the exact Worker origin in `--allow-origin` and `--ui-origin`.
-The API remains bearer- and ticket-authenticated; no cookie or Worker secret is used for the Git
+The API remains bearer- and ticket-authenticated; non-loopback pairing additionally requires the
+environment-only `REFYARD_HOSTED_PASSWORD`, and no cookie or Worker secret is used for the Git
 session. A live Cloudflare account, domain, and tunnel were not exercised by this repository run.
 
 If a browser or an extension gets in the way, the answer is to make the request

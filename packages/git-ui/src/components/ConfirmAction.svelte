@@ -56,7 +56,7 @@
     <Button
       size="sm"
       variant={tone === "danger" ? "destructive" : "default"}
-      disabled={busy}
+      disabled={busy || disabled}
       onclick={confirm}
       data-testid={testId === undefined ? undefined : `${testId}-confirm`}
     >
