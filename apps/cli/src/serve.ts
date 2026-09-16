@@ -510,6 +510,7 @@ export async function runService(
     return url.toString();
   };
   const pairingUrl = pairingUrlFor();
+  const localUi = options.webRoot !== undefined && options.webRoot !== null;
 
   /**
    * Two output modes, and the difference is who is reading.
@@ -531,12 +532,12 @@ export async function runService(
         repositoryId: assembly.repositoryId,
         repositoryIds: [...assembly.repositoryIds],
         allowedRootIds: [...assembly.allowedRootIds],
-        ui: null,
-        apiOnly: true,
+        ui: localUi ? origin : null,
+        apiOnly: !localUi,
       }),
     );
     note(`pairing URL (single use): ${pairingUrl}`);
-    if (options.openBrowser && options.uiOrigin !== undefined) {
+    if (options.openBrowser && (localUi || options.uiOrigin !== undefined)) {
       const opened = await openInBrowser(pairingUrl);
       if (!opened.ok) {
         note(`could not open a browser: ${opened.reason}`);
@@ -576,7 +577,11 @@ export async function runService(
   options.write(
     `  ticket ttl: ${options.ticketTtlSeconds}s${options.ticketTtlSeconds === DEFAULT_TICKET_TTL_SECONDS ? "" : " (--ticket-ttl)"}`,
   );
-  options.write("  ui:         API-only (deploy apps/web separately)");
+  options.write(
+    localUi
+      ? `  ui:         ${origin} (bundled local workbench)`
+      : "  ui:         API-only (use a hosted UI or integration client)",
+  );
   options.write("");
   options.write(`  open this URL in your browser to pair this session:`);
   options.write(`    ${pairingUrl}`);
@@ -589,7 +594,7 @@ export async function runService(
   );
   options.write(`  press Ctrl+C to stop`);
 
-  if (options.openBrowser && options.uiOrigin !== undefined) {
+  if (options.openBrowser && (localUi || options.uiOrigin !== undefined)) {
     const opened = await openInBrowser(pairingUrl);
     if (!opened.ok) {
       // The URL is already printed, so a missing browser is a note, not a failure.
