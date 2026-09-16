@@ -1206,6 +1206,24 @@
     );
   }
 
+  function onRemoteUpdate(
+    remoteName: string,
+    changes: {
+      readonly newName: string | null;
+      readonly fetchUrl: string | null;
+      readonly pushUrl: string | null;
+    },
+  ): void {
+    void performWrite(
+      "update-remote",
+      () => ({ kind: "updateRemote", remoteName, ...changes }),
+      (result) => {
+        remoteMessage = result;
+      },
+      "repository",
+    );
+  }
+
   function onRemoteRemove(remoteName: string): void {
     void performWrite(
       "remove-remote",
@@ -2082,6 +2100,7 @@
                     busy={mutationBusy}
                     message={remoteMessage}
                     onAdd={onRemoteAdd}
+                    onUpdate={onRemoteUpdate}
                     onRemove={onRemoteRemove}
                     {onFetch}
                     {onPush}
