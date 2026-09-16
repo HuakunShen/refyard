@@ -90,6 +90,16 @@
     observeBrowserConnectivity,
     startWorkbenchEventStream,
   } from "$lib/workbench/connectivity.js";
+  import {
+    clearInspectableSelection,
+    clearRepositoryIfSelected,
+    createWorkbenchSelectionState,
+    reconcileRepositorySelection,
+    selectCommit,
+    selectDiffPath,
+    selectRepository,
+    selectStatusPath,
+  } from "$lib/workbench/selection.js";
   import { followOperation } from "$lib/operation-follow.js";
   import {
     backgroundRead,
@@ -188,8 +198,7 @@
 
   function disconnect(): void {
     clearWorkbenchCredentials(session, sessionPorts);
-    selectedOid = null;
-    selectedPath = null;
+    clearInspectableSelection(selection);
     queryClient.clear();
   }
 
@@ -276,17 +285,12 @@
     };
   });
 
-  let selectedRepositoryId = $state<string | null>(null);
-  let selectedOid = $state<string | null>(null);
-  let selectedPath = $state<StatusEntry | null>(null);
-  /**
-   * The file selected inside the current change set.
-   *
-   * A diff is read in two steps on purpose: the change set first (paths and counts), then
-   * one file's patch, which is how the host bounds the work. This is the second step's
-   * argument.
-   */
-  let selectedDiffPathId = $state<string | null>(null);
+  const selection = $state(createWorkbenchSelectionState());
+  const selectedRepositoryId = $derived(selection.repositoryId);
+  const selectedOid = $derived(selection.commitOid);
+  const selectedPath = $derived(selection.statusPath);
+  /** The file selected inside the current change set's second-step diff request. */
+  const selectedDiffPathId = $derived(selection.diffPathId);
 
   const repositoryList = $derived(repositories.data?.repositories ?? []);
 
@@ -313,17 +317,10 @@
   );
 
   $effect(() => {
-    if (repositoryList.length === 0) {
-      return;
-    }
-    const stillThere = repositoryList.some(
-      (entry) => entry.repositoryId === selectedRepositoryId,
+    reconcileRepositorySelection(
+      selection,
+      repositoryList.map((entry) => entry.repositoryId),
     );
-    if (!stillThere) {
-      selectedRepositoryId = repositoryList[0]?.repositoryId ?? null;
-      selectedOid = null;
-      selectedPath = null;
-    }
   });
 
   const status = createQuery(() => {
@@ -867,9 +864,7 @@
         entry.displayPath.endsWith(relativeDestination),
       );
       if (created !== undefined) {
-        selectedRepositoryId = created.repositoryId;
-        selectedOid = null;
-        selectedPath = null;
+        selectRepository(selection, created.repositoryId);
         await queryClient.invalidateQueries({ queryKey: ["status"] });
         await queryClient.invalidateQueries({ queryKey: ["refs"] });
       }
@@ -923,9 +918,7 @@
         (entry) => entry.displayPath === path,
       );
       if (added !== undefined) {
-        selectedRepositoryId = added.repositoryId;
-        selectedOid = null;
-        selectedPath = null;
+        selectRepository(selection, added.repositoryId);
       }
     } catch (error) {
       repositoryAccessMessage = describeClientProblem(error);
@@ -949,11 +942,7 @@
       }
       await client.revokeRepository(repositoryId);
       repositoryAccessMessage = `revoked ${repositoryId}`;
-      if (selectedRepositoryId === repositoryId) {
-        selectedRepositoryId = null;
-        selectedOid = null;
-        selectedPath = null;
-      }
+      clearRepositoryIfSelected(selection, repositoryId);
       await repositories.refetch();
     } catch (error) {
       repositoryAccessMessage = describeClientProblem(error);
@@ -1809,9 +1798,7 @@
                 repositories={repositoryList}
                 selectedId={selectedRepositoryId}
                 onSelect={(repositoryId) => {
-                  selectedRepositoryId = repositoryId;
-                  selectedOid = null;
-                  selectedPath = null;
+                  selectRepository(selection, repositoryId);
                 }}
               />
             {/if}
@@ -1872,9 +1859,7 @@
                   snapshot={status.data}
                   selectedPathId={selectedPath?.pathId ?? null}
                   onSelect={(entry) => {
-                    selectedPath = entry;
-                    selectedOid = null;
-                    selectedDiffPathId = null;
+                    selectStatusPath(selection, entry);
                   }}
                 />
               {/if}
@@ -2250,9 +2235,7 @@
             shallow={historyNotices.shallow}
             laneCount={graph.laneCount}
             onSelect={(commit) => {
-              selectedOid = commit.oid;
-              selectedPath = null;
-              selectedDiffPathId = null;
+              selectCommit(selection, commit.oid);
             }}
             onLoadMore={() => void history.fetchNextPage()}
             class="min-h-0 flex-1"
@@ -2332,7 +2315,7 @@
                 patch={diffPatch.data ?? null}
                 selectedPathId={selectedDiffPathId}
                 onSelectPath={(file) => {
-                  selectedDiffPathId = file.pathId;
+                  selectDiffPath(selection, file.pathId);
                 }}
                 class="p-3"
               />

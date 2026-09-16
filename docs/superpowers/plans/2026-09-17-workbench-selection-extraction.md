@@ -1,6 +1,6 @@
 # Workbench Selection Extraction Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Centralize repository/commit/status-path/diff-file selection transitions so every UI entry point applies the same reset rules.
 
@@ -25,24 +25,24 @@
 - Create: `apps/web/src/lib/workbench/selection.ts`
 - Create: `tests/unit/workbench-selection.test.ts`
 
-- [ ] Write RED unit cases for repository, commit, status-path, diff-file, disconnect, reconciliation, and revocation transitions.
-- [ ] Implement the pure state machine.
-- [ ] Run focused unit tests and `pnpm check`.
-- [ ] Commit `refactor(web): extract workbench selection state`.
+- [x] Write RED unit cases for repository, commit, status-path, diff-file, disconnect, reconciliation, and revocation transitions.
+- [x] Implement the pure state machine.
+- [x] Run focused unit tests and `pnpm check`.
+- [x] Commit `refactor(web): extract workbench selection state`.
 
 ### Task 2: Replace page-local selection assignments
 
 **Files:**
 - Modify: `apps/web/src/routes/+page.svelte`
 
-- [ ] Wrap the selection state in `$state` and keep derived aliases for query/render call sites.
-- [ ] Replace repository reconciliation, create/register/revoke handlers, list selection, status selection, commit selection, and diff-file selection with transition helpers.
-- [ ] Run `pnpm check`, focused unit tests, Chromium read-only/workspace specs, full unit suite, and `git diff --check`.
-- [ ] Commit `refactor(web): use extracted selection controller`.
+- [x] Wrap the selection state in `$state` and keep derived aliases for query/render call sites.
+- [x] Replace repository reconciliation, create/register/revoke handlers, list selection, status selection, commit selection, and diff-file selection with transition helpers.
+- [x] Run `pnpm check`, focused unit tests, Chromium read-only/workspace specs, full unit suite, and `git diff --check`.
+- [x] Commit `refactor(web): use extracted selection controller`.
 
 ## Final verification
 
-- [ ] `pnpm check`
-- [ ] `pnpm test:unit`
-- [ ] `pnpm exec playwright test tests/e2e/read-only.spec.ts tests/e2e/workspace.spec.ts --project=chromium`
-- [ ] `git diff --check`
+- [x] `pnpm check`
+- [x] `pnpm test:unit`
+- [x] `pnpm exec playwright test tests/e2e/read-only.spec.ts tests/e2e/workspace.spec.ts --project=chromium`
+- [x] `git diff --check`
