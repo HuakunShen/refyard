@@ -1,112 +1,135 @@
 # Refyard
 
-A browser-native Git workbench. Git runs on the machine that owns the repository; the UI is a
-static Svelte app; a small Node service is the only thing that talks to `git`.
+**A local-first Git workbench for people who want a beautiful graph without giving a hosted
+service their repository.**
 
+[![npm version](https://img.shields.io/npm/v/refyard?logo=npm&label=npm)](https://www.npmjs.com/package/refyard)
+[![npm downloads](https://img.shields.io/npm/dm/refyard?logo=npm&label=downloads)](https://www.npmjs.com/package/refyard)
+[![CI](https://github.com/HuakunShen/refyard/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/HuakunShen/refyard/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/HuakunShen/refyard)](LICENSE)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/HuakunShen/refyard)
+
+![Refyard showing the VS Code history graph](docs/assets/vscode-history.png)
+
+_A real read-only session against the public Microsoft VS Code checkout: merge lanes, refs,
+authors, and the selected repository all remain visible. The image is a demo fixture, not bundled
+Git data._
+
+## The idea
+
+Refyard keeps the privileged part on the machine that owns the repository. Git runs as you, with
+your hooks, filters, credential helpers, and SSH configuration; the browser receives a closed JSON
+contract and authenticated SSE updates.
+
+```text
+your repository + your git + your Node host
+                    │ authenticated JSON/SSE
+                    ▼
+            your browser / your Cloudflare UI
 ```
-Browser (SvelteKit static SPA)
-      │  GitService: JSON DTO + HTTP + authenticated SSE
-Node coordinator: auth, scope, jobs, journal, lifecycle
-      │  trusted TypeScript Git Core: planners / parsers / workflows
-      │  GitHostPort: commands, approved I/O, text codec, cancellation
-system git CLI → this machine's repository, credentials, hooks
-```
 
-> **`refyard` is a working name.** It is not a published npm package, domain, or organization.
-> Do not run a remote package that happens to share the name; integration testing uses locally
-> built artifacts.
+The Cloudflare Worker is an asset-only UI host. It has no Git binding, repository path, shell,
+credential store, bearer token, or API proxy. The Worker never receives Git contents. A self-
+deployed UI can reach a backend only through an HTTPS endpoint that its owner configured and
+allowed explicitly.
 
-## Status
+## What ships
 
-**V2 — the local API and hosted PWA boundary.** The service starts, authenticates a browser, and
-reads a real repository: status, history graph, diff, refs, worktrees, submodules and stashes. It
-also exposes explicitly registered mutation effects and managed-workspace approval through the
-closed GitService contract, with Hono/OpenAPI/Scalar/read-only MCP, the Cloudflare Worker hosting
-the static PWA, and the CLI remaining API-only.
+| Surface               | Where it runs                           | What it owns                                          |
+| --------------------- | --------------------------------------- | ----------------------------------------------------- |
+| `refyard` npm package | Your Node machine                       | Authenticated API, Git process, approved repositories |
+| Refyard PWA           | Your browser or your Cloudflare account | UI, session negotiation, local presentation           |
+| Git Core              | Trusted TypeScript runtime              | Git intentions, parsers, planners, safety rules       |
+| Cloudflare Worker     | Cloudflare edge                         | Static assets and secure response headers only        |
 
-The current round also records the Xross and Kunkun integration seams, and closes the native-host
-question with a measured decision to stay on Node. A real Xross peer, out-of-tree Kunkun install,
-live Cloudflare deployment, and WebKit-on-Linux dependency install remain separately identified
-as unverified.
+The current release line is `0.1.x`. The next package release prepared in this repository is
+`0.1.2`; it is published only by the tag-triggered `publish.yml` workflow after its gates pass.
 
-## Usage forms
+## Run it locally
 
-Refyard is meant to be used in four ways. Forms 1 and 2 ship locally; form 3 has an opt-in
-password-gated path but no live deployment; form 4 is deliberately deferred after the measured
-decision to stay on Node. The requirements and evidence boundaries live in `docs/product/north-star.md`.
+Development uses Node 26.x and pnpm 11:
 
-| #   | Form                                    | Status                                           |
-| --- | --------------------------------------- | ------------------------------------------------ |
-| 1   | Local workbench (`refyard open <path>`) | Implemented with reads and registered writes   |
-| 2   | Managed workspaces (many repositories)  | Implemented — explicit approval, never scanning |
-| 3   | Hosted UI against a local host          | Local exact-origin + password path; live deployment unverified |
-| 4   | Embedded core inside a native host      | Measured decision: stay on Node; no native shell |
-
-The machine-facing API is discoverable through an OpenAPI document (`hono-openapi`) and Scalar;
-`@hono/mcp` exposes only bounded read tools — never `run_git(args)` or a mutation escape hatch.
-
-## Getting started
-
-Requires **Node 26.x** (`nvm use`) and pnpm 11.
-
-```bash
+```sh
 pnpm install
-pnpm check            # types across every package
-pnpm test             # contract, core, graph, node, integration
-pnpm test:portable    # neutral-runtime smoke for the host-free core
-pnpm build            # static web bundle + CLI bundle
+pnpm check
+pnpm test
+pnpm build
 ```
 
-Run the read-only service against a repository:
+Start the API for one explicitly chosen repository:
 
-```bash
-pnpm cli open ~/code/your-repo     # starts the service and prints a pairing URL
-pnpm cli serve --no-open --repo .  # service only
+```sh
+pnpm cli open /absolute/path/to/repository
 ```
 
-The pairing URL carries a single-use ticket in its query or fragment; the page exchanges it for an
-in-memory bearer token and clears the URL. Hosted origins additionally require the environment-only
-`REFYARD_HOSTED_PASSWORD` during that one exchange. Reads are authenticated too, and the service
-binds to loopback only unless an exact origin and HTTPS/tunnel setup are explicitly configured.
+For a machine-readable supervisor or a separately served UI:
 
-## Repository layout
+```sh
+pnpm cli serve --repo /absolute/path/to/repository --no-open --json
+```
 
-| Path                    | Responsibility                                                         |
-| ----------------------- | ---------------------------------------------------------------------- |
-| `apps/web`              | SvelteKit shell: routes, runtime connection config, static adapter     |
-| `apps/cli`              | argv parsing, `doctor`, `open`/`serve` lifecycle                       |
-| `packages/git-contract` | public Zod schemas, inferred DTOs, semantic validation (single source) |
-| `packages/git-core`     | bytes / parse / plan / workflows — no host APIs                        |
-| `packages/git-graph`    | pure DAG lane layout                                                   |
-| `packages/host-node`    | process, filesystem, registry, coordinator, journal, HTTP host         |
-| `packages/git-client`   | browser and Node HTTP + SSE client for `GitService`                    |
-| `packages/git-ui`       | Svelte 5 components behind an injected `GitService`; no `$app/*`       |
-| `tests/`                | contract, core, graph, node, integration, portable, e2e, security      |
-| `docs/`                 | `product/north-star.md`, `plans/`, `goals/`, `evidence/`, `research/`  |
+The terminal prints a single-use pairing URL. Reads are authenticated too; the token stays in the
+browser session and is never placed in `localStorage`. Multiple repositories require repeated,
+explicit `--repo` arguments—Refyard never scans a parent directory.
 
-## Safety rules that outrank convenience
+After the npm release, the installed form is:
 
-These are enforced in code and reviewed in every task; `AGENTS.md` states them in full.
+```sh
+npm install --global refyard
+refyard open /absolute/path/to/repository
+```
 
-- Every test that writes Git state uses an isolated temporary repository. No experiment runs in a
-  real repository.
-- Destructive operations require explicit confirmation, back up what can be lost first, and fail
-  closed when a precondition cannot be verified.
-- Discard restores tracked working-tree files to the **index** — never to HEAD, never untracked or
-  ignored files, never `git clean`.
-- User hooks, signing configuration, filters and SSH host verification are preserved. No
-  `--no-verify`, no `commit.gpgSign=false`, no rewriting global Git config.
-- Unknown results are reported as unknown. An operation that may have had a side effect is never
-  retried automatically and never labelled `succeeded`.
-- The browser sends intentions; only trusted core turns them into `git` argv. No `runGit`, shell,
-  `cwd` or `env` crosses a network boundary, ever.
+## Deploy the UI to your own Cloudflare account
 
-## Documentation
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/HuakunShen/refyard)
 
-- `docs/product/north-star.md` — the four forms, the invariant spine, and the decisions that keep
-  them compatible.
-- `docs/plans/0001-refyard-v2-m1-read-only.md` — the active plan (T01–T07).
-- `docs/goals/` — the goal brief for the current round.
-- `docs/evidence/` — verification records for completed milestones.
-- `docs/discussions/` — raw records of design conversations, kept non-normative.
-- `references/ai-chat/2026-09-14/` — the delivered v2 design package (read-only baseline).
+The button creates a Worker deployment in your Cloudflare account from this public repository.
+It deploys the static PWA only; it does not move a repository or install the Node API. The same
+flow is available from a checkout:
+
+```sh
+pnpm deploy
+```
+
+The initial `PUBLIC_API_ORIGINS` value is empty by design. If you connect the UI to a remote
+machine, expose that machine's loopback API through your own HTTPS tunnel, configure that exact
+origin in the Worker, and start the CLI with matching `--allow-origin`, `--ui-origin`, and
+`--api-origin` values plus the environment-only `REFYARD_HOSTED_PASSWORD`. There is no central
+Refyard relay.
+
+## Release and trust
+
+`ci.yml` is the test workflow. `publish.yml` is the only npm publisher and runs on `v*` tags after
+the package build and smoke tests. It uses npm Trusted Publishing through GitHub OIDC with
+`environment: publish`; no `NPM_TOKEN` or `NODE_AUTH_TOKEN` is needed.
+
+The package and repository are licensed under the [GNU Affero General Public License v3.0 only](LICENSE).
+If you run a modified Refyard service for users over a network, AGPLv3's corresponding-source
+requirements apply to that deployment.
+
+## Safety boundary
+
+- Repository roots are approved explicitly and kept separate.
+- Destructive actions require confirmation, a backup where possible, and a verified precondition.
+- Unknown Git outcomes are reported as unknown and are never retried automatically.
+- The browser sends Git intentions; only trusted core creates Git arguments.
+- No raw `runGit(args, cwd)`, shell, `cwd`, or `env` crosses the HTTP or browser boundary.
+- The complete operation set is the one reported by `GET /api/v1/capabilities`.
+
+## Repository map
+
+| Path                    | Responsibility                                                           |
+| ----------------------- | ------------------------------------------------------------------------ |
+| `apps/web`              | SvelteKit shell, static adapter, PWA, asset-only Worker                  |
+| `apps/cli`              | CLI grammar, `doctor`, `open`/`serve` lifecycle                          |
+| `packages/git-contract` | Public Zod schemas and JSON Schema                                       |
+| `packages/git-core`     | Host-free bytes, parsers, planners, workflows                            |
+| `packages/host-node`    | Processes, filesystem, registries, coordinator, HTTP host                |
+| `packages/git-client`   | Browser/Node HTTP and SSE client                                         |
+| `packages/git-ui`       | Reusable Svelte 5 components                                             |
+| `packages/npm-dist`     | API-only publication staging                                             |
+| `tests`                 | Contract, core, integration, security, browser, compatibility, packaging |
+| `docs`                  | Product decisions, plans, goals, evidence, release instructions          |
+
+More detail lives in [`docs/installation.md`](docs/installation.md), [`docs/releasing.md`](docs/releasing.md),
+and [`docs/evidence/release-matrix.md`](docs/evidence/release-matrix.md).
