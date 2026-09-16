@@ -66,91 +66,91 @@ export interface E2eService {
 
 export interface E2eServiceOptions {
   readonly repo: GitFixtureRepo;
+  /** Local is the product default; hosted keeps UI and API on separate origins. */
+  readonly mode?: "local" | "hosted";
   /** 0 asks the OS for a free port, which is what a spec normally wants. */
   readonly port?: number;
-  /** Reuse a static UI authority when a test restarts only the backend. */
+  /** Reuse a hosted static UI authority when a test restarts only the backend. */
   readonly uiPort?: number;
 }
 
 export async function startE2eService(
   options: E2eServiceOptions,
 ): Promise<E2eService> {
+  const mode = options.mode ?? "local";
   const webRoot = join(REPO_ROOT, "apps", "web", "build");
-  let assets: ReturnType<typeof createAssetServer> | null = null;
-  const webServer = createServer((request, response) => {
-    if (request.method !== "GET" && request.method !== "HEAD") {
-      response.writeHead(405, { allow: "GET, HEAD" });
-      response.end();
-      return;
-    }
-    if (assets === null) {
-      response.writeHead(503);
-      response.end();
-      return;
-    }
-    void assets
-      .serve({
-        path: request.url?.split("?", 1)[0] ?? "/",
-        response,
-        headOnly: request.method === "HEAD",
-      })
-      .then((served) => {
-        if (served === "served") {
-          return;
-        }
-        response.writeHead(served === "refused" ? 403 : 404);
+  let webServer: Server | null = null;
+  let webPort: number | null = null;
+  let webOrigin: string | null = null;
+  let hostedAssets: ReturnType<typeof createAssetServer> | null = null;
+
+  if (mode === "hosted") {
+    webServer = createServer((request, response) => {
+      if (request.method !== "GET" && request.method !== "HEAD") {
+        response.writeHead(405, { allow: "GET, HEAD" });
         response.end();
-      })
-      .catch(() => {
-        if (!response.headersSent) {
-          response.writeHead(500);
-        }
+        return;
+      }
+      if (hostedAssets === null) {
+        response.writeHead(503);
         response.end();
-      });
-  });
-  const webPort = await listen(webServer, options.uiPort ?? 0);
-  const webOrigin = `http://127.0.0.1:${webPort}`;
-  let webClosed = false;
-  const closeWeb = async (): Promise<void> => {
-    if (webClosed) {
-      return;
-    }
-    webClosed = true;
-    await new Promise<void>((resolve, reject) => {
-      webServer.close((error) =>
-        error === undefined ? resolve() : reject(error),
-      );
+        return;
+      }
+      void hostedAssets
+        .serve({
+          path: request.url?.split("?", 1)[0] ?? "/",
+          response,
+          headOnly: request.method === "HEAD",
+        })
+        .then((served) => {
+          if (served === "served") return;
+          response.writeHead(served === "refused" ? 403 : 404);
+          response.end();
+        })
+        .catch(() => {
+          if (!response.headersSent) response.writeHead(500);
+          response.end();
+        });
     });
-  };
+    webPort = await listen(webServer, options.uiPort ?? 0);
+    webOrigin = `http://127.0.0.1:${webPort}`;
+  }
+
   const repositoryPath = await realpath(options.repo.root);
-  const child = spawn(
-    process.execPath,
-    [
-      CLI_BUNDLE,
-      "serve",
-      "--no-open",
-      "--port",
-      String(options.port ?? 0),
-      "--repo",
-      repositoryPath,
-      "--allow-origin",
-      webOrigin,
-      "--ui-origin",
-      webOrigin,
-      "--json",
-    ],
-    {
-      cwd: REPO_ROOT,
-      env: {
-        ...options.repo.env,
-        // The journal, the backups and the registry live beside the fixture, so a spec
-        // can never read another run's state — or leave any behind.
-        REFYARD_STATE_DIR: join(options.repo.scratchRoot, "state"),
-        NO_COLOR: "1",
-      },
-      stdio: ["ignore", "pipe", "pipe"],
+  const args =
+    mode === "local"
+      ? [
+          CLI_BUNDLE,
+          "open",
+          repositoryPath,
+          "--no-open",
+          "--port",
+          String(options.port ?? 0),
+          "--json",
+        ]
+      : [
+          CLI_BUNDLE,
+          "serve",
+          "--no-open",
+          "--port",
+          String(options.port ?? 0),
+          "--repo",
+          repositoryPath,
+          "--allow-origin",
+          webOrigin ?? "",
+          "--ui-origin",
+          webOrigin ?? "",
+          "--json",
+        ];
+  const child = spawn(process.execPath, args, {
+    cwd: REPO_ROOT,
+    env: {
+      ...options.repo.env,
+      REFYARD_STATE_DIR: join(options.repo.scratchRoot, "state"),
+      NO_COLOR: "1",
     },
-  );
+    stdio: ["ignore", "pipe", "pipe"],
+  });
 
   let stdout = "";
   let stderr = "";
@@ -163,58 +163,63 @@ export async function startE2eService(
 
   let stopping = false;
   child.on("exit", (code, signal) => {
-    if (stopping) {
-      return;
-    }
-    // A service that exits before the spec stopped it is a failure nobody asked for, and its
-    // stderr is the only place the reason is written. Printing it here is what turns the next
-    // occurrence from "NetworkError when attempting to fetch resource" in the browser into an
-    // explanation in the test output — one Firefox case failed exactly that way once, and the
-    // service's own words were lost because this listener did not exist.
+    if (stopping) return;
     console.error(
       `e2e service exited early (code ${code ?? "null"}, signal ${signal ?? "none"}):\n${stderr.slice(-2000)}`,
     );
   });
+
+  const closeWeb = async (): Promise<void> => {
+    if (webServer === null) return;
+    const server = webServer;
+    webServer = null;
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) =>
+        error === undefined ? resolve() : reject(error),
+      );
+    });
+  };
 
   const deadline = Date.now() + 30_000;
   for (;;) {
     const line = stdout
       .split("\n")
       .find((candidate) => candidate.trim().startsWith("{"));
-    const ticket = /pair=([A-Za-z0-9_-]+)/.exec(stderr)?.[1];
-    if (line !== undefined && ticket !== undefined) {
+    const pairingUrl = /pairing URL \(single use\): (https?:\/\/\S+)/.exec(
+      stderr,
+    )?.[1];
+    if (line !== undefined && pairingUrl !== undefined) {
       const ready = JSON.parse(line) as {
         serviceInstanceId: string;
         port: number;
         url: string;
       };
-      assets = createAssetServer({
-        webRoot,
-        connectOrigins: [new URL(ready.url).origin],
-      });
+      if (mode === "hosted") {
+        hostedAssets = createAssetServer({
+          webRoot,
+          connectOrigins: [new URL(ready.url).origin],
+        });
+      }
       const handle: E2eService = {
-        pairingUrl: `${webOrigin}/?api=${encodeURIComponent(ready.url)}&pair=${ticket}`,
+        pairingUrl,
         origin: ready.url,
         port: ready.port,
-        uiPort: webPort,
+        uiPort: webPort ?? ready.port,
         instanceId: ready.serviceInstanceId,
         async stop(): Promise<void> {
           stopping = true;
-          if (child.exitCode !== null || child.signalCode !== null) {
-            return;
-          }
-          const exited = new Promise<void>((resolve) => {
-            child.once("exit", () => {
-              resolve();
+          if (child.exitCode === null && child.signalCode === null) {
+            const exited = new Promise<void>((resolve) => {
+              child.once("exit", () => resolve());
             });
-          });
-          child.kill("SIGTERM");
-          await exited;
+            child.kill("SIGTERM");
+            await exited;
+          }
           await closeWeb();
         },
       };
       started.add({
-        label: `service on port ${ready.port} for ${options.repo.root}`,
+        label: `${mode} service on port ${ready.port} for ${options.repo.root}`,
         output: () =>
           `stdout:\n${stdout.slice(-4000)}\nstderr:\n${stderr.slice(-4000)}`,
       });
