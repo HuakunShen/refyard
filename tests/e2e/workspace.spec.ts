@@ -101,6 +101,7 @@ test.describe("repository creation", () => {
     // First: a destination that already holds the user's files. Git refuses it, and the
     // panel must show *that* — not a rewritten failure, and not a silent success.
     await repo.write("occupied/keep.txt", "mine\n");
+    await expect(page.getByTestId("repository-mode-clone")).toBeEnabled();
     await page.getByTestId("repository-mode-clone").click();
     await page.getByTestId("repository-destination").fill("occupied");
     await page.getByTestId("repository-remote-url").fill(remote.path);
@@ -132,6 +133,7 @@ test.describe("repository creation", () => {
     // user's selected mode and any remote/destination values.
     await page.goto(service.pairingUrl);
     await expect(page.getByTestId("repository-panel")).toBeVisible();
+    await expect(page.getByTestId("repository-mode-clone")).toBeEnabled();
     await page.getByTestId("repository-mode-clone").click();
     await page.getByTestId("repository-remote-url").fill("/tmp/example.git");
 
