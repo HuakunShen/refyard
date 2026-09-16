@@ -147,6 +147,8 @@ export { default as StatusList } from "./components/StatusList.svelte";
 export { default as SubmodulePanel } from "./components/SubmodulePanel.svelte";
 export { default as TagPanel } from "./components/TagPanel.svelte";
 export { default as WorktreePanel } from "./components/WorktreePanel.svelte";
+export { default as WorkbenchNav } from "./components/WorkbenchNav.svelte";
+export type { WorkbenchNavItem } from "./components/WorkbenchNav.svelte";
 
 export * from "./lib/format.js";
 export * from "./lib/geometry.js";
