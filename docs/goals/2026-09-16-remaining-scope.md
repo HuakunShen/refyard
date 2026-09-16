@@ -14,9 +14,10 @@ Three sources, each with its own authority, and nothing here invents scope:
    required outputs now exist under `integrations/xross/`, `integrations/kunkun/`, and
    `docs/research/native-host-evaluation.md`.
 2. **`docs/product/north-star.md`**, whose decision table remains the product authority. Form 2's
-   approval flow is implemented locally; the password-gated form 3 is not shipped; form 4 stays on
-   Node by decision. The HTTP layer is now Hono with `hono-openapi` + Scalar, with read-only MCP
-   tools via `@hono/mcp`. Form 2 remains an approval flow, never a scan or a wider default.
+   approval flow and form 3's password-gated exact-origin path are implemented locally; live
+   hosted deployment remains unverified; form 4 stays on Node by decision. The HTTP layer is now
+   Hono with `hono-openapi` + Scalar, with read-only MCP tools via `@hono/mcp`. Form 2 remains an
+   approval flow, never a scan or a wider default.
 3. **This repository's own evidence**, from the platform runs and the API probes of the last two
    days: defects that are open, rules the code breaks, and rows that say "unverified" for a reason
    that can now be removed.
@@ -33,7 +34,7 @@ A form is done when it has **its own evidence**, not when the code exists (north
 | --- | --- | --- |
 | Form 1 — one repository, loopback, paired | **shipped** (0.1.1) | unchanged; every change below must keep it |
 | **Form 2 — managed workspaces (many repositories)** | **implemented locally** | a user adds a repository from the UI or CLI, the grant grows **by approval only**, each addition is journaled, revocation exists, and the UI never invents a repository |
-| Form 3 — hosted UI | **not shipped** | opt-in, password-gated, origin-allowlisted; **never the first place a mutation appears**. Needs the owner's go-ahead to ship, and says so |
+| Form 3 — hosted UI | **implemented locally; live unverified** | opt-in, password-gated, origin-allowlisted; **never the first place a mutation appears**. `REFYARD_HOSTED_PASSWORD` is environment-only and the live tunnel/browser path remains unverified |
 | Form 4 — native host | **decided: stay on Node** | an evidence-backed decision, or an equally evidence-backed "stay on Node". **No implementation without explicit approval** |
 | **Cloudflare UI deployment** | **implemented locally; live unverified** | the built static SPA and PWA assets deploy through a versioned Cloudflare Worker; the CLI serves no UI, and API access from the Worker is TLS- and exact-origin-gated |
 | T16 Xross | **partial** — fixed authorized exec/forward seam and policy outcomes pass; real peer launch is unverified | the launch rides an exec call held open for the session, the ticket comes back on that authorized stream, and the browser reaches the service through the peer's forward. A dependency report says what the peer's refusal actually means, and the README names the concept Xross does not have |

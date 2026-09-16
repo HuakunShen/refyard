@@ -227,6 +227,7 @@ describe("authentication", () => {
     const hosted = await startTestService({
       repo,
       allowedOrigins: ["https://ui.example.test"],
+      hostedPassword: "correct-hosted-password-2026",
     });
     try {
       const hostedOrigin = "https://ui.example.test";
@@ -252,7 +253,10 @@ describe("authentication", () => {
         {
           method: "POST",
           headers: { "content-type": "application/json", origin: hostedOrigin },
-          body: JSON.stringify({ ticket }),
+          body: JSON.stringify({
+            ticket,
+            password: "correct-hosted-password-2026",
+          }),
         },
       );
       expect(exchange.status).toBe(200);
@@ -276,6 +280,70 @@ describe("authentication", () => {
       });
       expect(rejected.status).toBe(403);
       expect(rejected.headers.get("access-control-allow-origin")).toBeNull();
+    } finally {
+      await hosted.close();
+    }
+  });
+
+  it("requires the hosted password and rate-limits guesses before issuing a bearer", async () => {
+    // Prevents: a leaked hosted pairing URL being sufficient to enter the API, or an
+    // attacker trying unlimited guesses against the same loopback-forwarded origin.
+    const hostedOrigin = "https://password-ui.example.test";
+    const rateOrigin = "https://rate-ui.example.test";
+    const hosted = await startTestService({
+      repo,
+      allowedOrigins: [hostedOrigin, rateOrigin],
+      hostedPassword: "correct-hosted-password-2026",
+    });
+    try {
+      const ticket = ticketFrom(hosted.http.pairingUrl(hostedOrigin));
+      const exchange = (password?: string): Promise<Response> =>
+        fetch(`${hosted.baseUrl}/api/v1/session/exchange`, {
+          method: "POST",
+          headers: { "content-type": "application/json", origin: hostedOrigin },
+          body: JSON.stringify(
+            password === undefined ? { ticket } : { ticket, password },
+          ),
+        });
+
+      expect((await exchange()).status).toBe(401);
+      expect((await exchange("wrong-hosted-password-2026")).status).toBe(401);
+      const accepted = await exchange("correct-hosted-password-2026");
+      expect(accepted.status).toBe(200);
+      expect(hosted.log.join("\n")).not.toContain(
+        "correct-hosted-password-2026",
+      );
+
+      const rateTicket = ticketFrom(hosted.http.pairingUrl(rateOrigin));
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        expect(
+          (
+            await fetch(`${hosted.baseUrl}/api/v1/session/exchange`, {
+              method: "POST",
+              headers: {
+                "content-type": "application/json",
+                origin: rateOrigin,
+              },
+              body: JSON.stringify({
+                ticket: rateTicket,
+                password: "wrong-hosted-password-2026",
+              }),
+            })
+          ).status,
+        ).toBe(401);
+      }
+      const limited = await fetch(`${hosted.baseUrl}/api/v1/session/exchange`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: rateOrigin },
+        body: JSON.stringify({
+          ticket: rateTicket,
+          password: "wrong-hosted-password-2026",
+        }),
+      });
+      expect(limited.status).toBe(429);
+      expect(limited.headers.get("access-control-allow-origin")).toBe(
+        rateOrigin,
+      );
     } finally {
       await hosted.close();
     }

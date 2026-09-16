@@ -215,6 +215,28 @@ export function createHonoHttpApp(options: HonoHttpAppOptions): HonoHttpApp {
     await next();
   });
 
+  app.use(
+    "/api/v1/session/exchange",
+    rateLimiter({
+      windowMs: 60_000,
+      limit: 10,
+      standardHeaders: "draft-7",
+      // The Node listener is loopback-only, so an untrusted forwarded address is
+      // not a useful identity. The exact browser origin is the stable key for a
+      // hosted page and cannot be widened by a request header.
+      keyGenerator: (context) => context.req.header("origin") ?? "anonymous",
+      message: {
+        problem: {
+          code: "ResourceBusy",
+          message:
+            "too many hosted pairing attempts; request a fresh ticket later",
+          retryable: true,
+        },
+      },
+      statusCode: 429,
+    }),
+  );
+
   app.onError((error, context) => {
     const correlationId = newCorrelationId();
     log(
@@ -304,6 +326,7 @@ export function createHonoHttpApp(options: HonoHttpAppOptions): HonoHttpApp {
         ticket: parsed.value.ticket,
         origin: context.req.header("origin") ?? "",
         serviceInstanceId: options.serviceInstanceId,
+        password: parsed.value.password,
       });
       if (!exchanged.ok) {
         logRequestProblem(context, now, log, exchanged.problem);

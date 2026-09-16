@@ -24,6 +24,9 @@ const result = await main(process.argv.slice(2), {
   cliDirectory: dirname(fileURLToPath(import.meta.url)),
   gitPath: resolveGitPath(),
   cwd: process.cwd(),
+  ...(process.env["REFYARD_HOSTED_PASSWORD"] === undefined
+    ? {}
+    : { hostedPassword: process.env["REFYARD_HOSTED_PASSWORD"] }),
 });
 
 process.exitCode = result.exitCode;

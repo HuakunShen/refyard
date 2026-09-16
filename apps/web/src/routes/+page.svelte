@@ -121,6 +121,8 @@
 
   let baseUrl = $state(initial.baseUrl);
   let ticket = $state(initial.ticket ?? "");
+  /** A hosted password is entered for one exchange and is never persisted. */
+  let hostedPassword = $state("");
   const hadTicketOnLoad = initial.ticket !== null;
   let token = $state<string | null>(browser ? readStoredToken() : null);
   /** The instance this tab paired with, as recorded when the token was stored. */
@@ -174,8 +176,12 @@
     pairPhase = "connecting";
     pairMessage = undefined;
     try {
-      const session = await client.exchangeTicket(value);
+      const session = await client.exchangeTicket(
+        value,
+        hostedPassword.length === 0 ? undefined : hostedPassword,
+      );
       token = session.token;
+      hostedPassword = "";
       storeToken(session.token);
       // Remembering the instance is what lets a later load notice that the address now
       // answers with a different service.
@@ -190,7 +196,12 @@
       pairPhase = "failed";
       pairMessage = describeProblem(error);
     } finally {
-      ticket = "";
+      // Keep a password-rejected ticket in memory so the user can correct the
+      // password without asking the CLI for another one. The URL is still scrubbed
+      // immediately, so the ticket never remains in browser history or a referrer.
+      if (token !== null) {
+        ticket = "";
+      }
       if (browser) {
         // The ticket is spent or was attempted; leaving it in the address bar would replay a dead value on
         // reload and leave a credential in the browser's history.
@@ -1773,6 +1784,8 @@
       <ConnectionPanel
         {baseUrl}
         {ticket}
+        hosted={!baseUrlIsDefault}
+        password={hostedPassword}
         phase={pairPhase}
         message={pairMessage}
         {baseUrlIsDefault}
@@ -1781,6 +1794,9 @@
         }}
         onTicket={(value) => {
           ticket = value;
+        }}
+        onPassword={(value) => {
+          hostedPassword = value;
         }}
         onConnect={() => void pair()}
       />

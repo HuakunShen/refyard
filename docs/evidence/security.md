@@ -5,7 +5,7 @@ This file records the security-relevant tests that exist, what each one prevents
 attacks that were constructed here against a loopback service on one developer machine, plus an
 explicit list of the work nobody has done yet.
 
-Last run: 2026-09-15, macOS 26.6 arm64, Node 26.8.2, Git 2.50.1 (Apple Git-155) — see
+Last run: 2026-09-16, macOS 26.6 arm64, Node 26.8.2, Git 2.50.1 (Apple Git-155) — see
 `release-matrix.md` for which platforms were _not_ exercised.
 
 ## The surface being defended
@@ -82,6 +82,17 @@ single-use ticket, and read with its bearer; an unlisted origin receives no CORS
 refused. `--api-origin` only changes the browser-visible address in the pairing URL; it does not
 change where the Node listener binds or bypass authentication.
 
+### Hosted password exchange — `tests/integration/auth.test.ts`, `tests/integration/cli.test.ts`
+
+The hosted form is enabled only when a non-loopback origin is explicitly allowed and
+`REFYARD_HOSTED_PASSWORD` is present in the CLI environment. The password is hashed with scrypt at
+startup, compared against a fixed-size digest, and sent only on the ticket exchange. The bearer
+issued after that exchange remains in memory; the UI does not persist the password, and the service
+does not log it. A missing or wrong password leaves the ticket retryable in memory, while the Hono
+exchange route limits one origin to 10 attempts per minute. The integration cases cover missing,
+wrong and correct passwords, the 429 limit, no secret in logs, and the CLI refusal when an external
+origin has no configured password. Passing `--hosted-password` is not part of the argument grammar.
+
 ### Bounds and refusals elsewhere in the suite
 
 - **Approved roots**: handle resolution refuses relative escapes, handles whose directory became a
@@ -138,6 +149,7 @@ Stated plainly, because a release page must not imply otherwise:
 | No hostile-remote testing (malicious servers, huge/odd protocol responses) | remote error handling is exercised with local path remotes and crafted failures, not a real adversary         |
 | No multi-user deployment model                                             | the trust model still assumes one OS user on one machine                                                   |
 | No deployed hosted UI or tunnel                                            | the static Worker configuration and exact-origin runtime path are locally dry-run/tested, but no Cloudflare account, domain, or tunnel was used here |
+| No real browser through a public hosted tunnel                              | local HTTP integration and separate static-host browser runs passed; Local Network Access, TLS termination, and a public tunnel remain unverified |
 | No credential or SSH-agent testing                                         | hooks, signing and host verification were deliberately left untouched; that also means they are untested here |
 | No resource-exhaustion campaign                                            | request bodies, job counts, and read sizes are bounded in the contract, but no sustained load was applied     |
 

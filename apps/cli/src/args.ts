@@ -131,6 +131,8 @@ options:
   --allow-origin <origin> exact hosted browser origin allowed to call the API (repeatable)
   --ui-origin <origin>    separately deployed UI origin that receives the pairing URL
   --api-origin <origin>   browser-visible API origin (required for a remote UI)
+  REFYARD_HOSTED_PASSWORD environment-only secret required for non-loopback origins;
+                    it is never accepted as an argument, placed in a URL, or logged
   --no-open         do not open a browser
   --json            machine-readable output; for \`open\`/\`serve\` it prints one JSON
                     object on stdout (no ticket) and sends the pairing URL to stderr

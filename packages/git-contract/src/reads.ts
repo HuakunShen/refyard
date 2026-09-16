@@ -61,11 +61,15 @@ export const healthResponseSchema = z
 export const sessionExchangeRequestSchema = z
   .strictObject({
     ticket: z.string().min(16).max(512),
+    password: z.string().min(1).max(512).optional().meta({
+      description:
+        "Only required for an explicitly configured hosted origin; never persisted or reused after this exchange.",
+    }),
   })
   .meta({
     id: "SessionExchangeRequest",
     description:
-      "Body of POST /api/v1/session/exchange. The ticket is single-use, short-lived and bound to one instance, origin, actor and resource set.",
+      "Body of POST /api/v1/session/exchange. The ticket is single-use, short-lived and bound to one instance, origin, actor and resource set; an explicitly configured hosted origin also requires a password.",
   });
 
 export const sessionExchangeResponseSchema = z

@@ -275,7 +275,7 @@ revision has not been published or deployed. Local evidence is:
 | Worker boundary          | `pnpm test:web-host` passed 4/4: asset delegation/security headers, JSON `/api/*` 404, and non-GET refusal.                       |
 | Backend-only package     | `pnpm build:release`, `pnpm test:pack`, and external `pnpm pack:smoke` passed; the tarball had 5 entries and no `web/` directory. |
 | Browser topology         | `pnpm test:e2e` passed 99/99 across Chromium, Firefox and WebKit against the separate static host and API-only CLI.               |
-| Hosted API path          | Exact-origin CORS, ticket exchange and bearer read passed in the local isolated service; no public tunnel was exercised.          |
+| Hosted API path          | Exact-origin CORS, password-gated ticket exchange and bearer read passed in local isolated services; no public tunnel was exercised. |
 | Live deployment          | **Unverified.** No Cloudflare account, domain, Worker deployment, or tunnel credentials were used.                                |
 
 The pairing URL has two explicit addresses in hosted mode: `--ui-origin` is the Worker page origin,
@@ -308,6 +308,21 @@ Local evidence on the isolated macOS fixtures:
 | MCP tools intentionally absent | `search_commits` and `get_file_history` are not advertised because the current ReadService has no corresponding bounded query; no mutation tool is registered.            |
 | Security                       | Existing exact Host/Origin, bearer, repository scope, request-limit, JSON 404 and no-SPA-fallthrough cases remain green; MCP sessions reject a different Refyard bearer.  |
 | Live external MCP client       | **Unverified.** The protocol case uses a real HTTP JSON-RPC client against the real service; no third-party MCP client or deployed endpoint was exercised.                |
+
+## Hosted password form
+
+R13's hosted form is now an explicit opt-in at the CLI boundary. A non-loopback origin is refused
+at startup unless `REFYARD_HOSTED_PASSWORD` is supplied by the environment; the secret is never an
+argv value, URL field, log value, `localStorage` entry, or Worker binding. The password is scrypt-
+hashed in memory, is accepted only with the single ticket exchange, and is replaced by the normal
+in-memory bearer for subsequent requests. The exchange route limits each exact origin to 10
+attempts per minute.
+
+The local isolated integration evidence covers missing and wrong passwords, successful exchange,
+retrying the same ticket after a password failure, the 429 limit, no password in logs, and CLI
+refusal when the hosted secret is absent. The browser UI exposes a password input only when the API
+address is separate from the page and does not persist it. A real public HTTPS tunnel, browser
+Local Network Access prompt, and live Cloudflare deployment remain **unverified**.
 
 ## Documentation truth
 

@@ -2,11 +2,10 @@
   /**
    * Pairing the page with a running service.
    *
-   * The form takes a *ticket*, not a password: the CLI prints a URL that carries a
-   * single-use, 60-second ticket, and the page pairs itself on load. Pasting the whole
-   * URL is therefore expected and is handled — the component extracts the ticket itself
-   * so a user cannot be told "invalid ticket" for pasting the thing the CLI actually
-   * printed.
+   * The normal form takes a *ticket*: the CLI prints a URL that carries a single-use,
+   * 60-second ticket, and the page pairs itself on load. A separately hosted service may
+   * also require a second password, which is typed for this exchange only and never
+   * stored by the component.
    *
    * The service address defaults to this page's own origin, because the service serving
    * the page is the service that will answer; a different address is only for the case
@@ -24,23 +23,29 @@
   interface Props {
     baseUrl: string;
     ticket: string;
+    hosted: boolean;
+    password: string;
     phase: "idle" | "connecting" | "failed";
     message?: string;
     /** True when the service address came from this page's own origin. */
     baseUrlIsDefault: boolean;
     onBaseUrl: (value: string) => void;
     onTicket: (value: string) => void;
+    onPassword: (value: string) => void;
     onConnect: () => void;
   }
 
   let {
     baseUrl,
     ticket,
+    hosted,
+    password,
     phase,
     message,
     baseUrlIsDefault,
     onBaseUrl,
     onTicket,
+    onPassword,
     onConnect,
   }: Props = $props();
 
@@ -122,6 +127,36 @@
         </p>
       </div>
 
+      {#if hosted}
+        <div class="flex flex-col gap-1">
+          <label
+            class="text-xs font-medium text-ink-muted"
+            for="refyard-hosted-password"
+          >
+            Hosted service password
+          </label>
+          <Input
+            id="refyard-hosted-password"
+            type="password"
+            autocomplete="current-password"
+            placeholder="Enter the password configured on the CLI"
+            value={password}
+            oninput={(event: Event) =>
+              onPassword(inputText(event.currentTarget))}
+            onkeydown={(event: KeyboardEvent) => {
+              if (event.key === "Enter") {
+                onConnect();
+              }
+            }}
+          />
+          <p class="text-xs text-ink-faint">
+            Required for a non-loopback origin when the CLI enables hosted
+            access. It is used once to obtain a bearer session and is not saved
+            in this browser.
+          </p>
+        </div>
+      {/if}
+
       <div class="flex flex-col gap-1">
         <label class="text-xs font-medium text-ink-muted" for="refyard-ticket">
           Pairing ticket
@@ -179,7 +214,9 @@
         If Refyard is running in your terminal, press <kbd
           class="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[11px] text-ink"
           >p</kbd
-        > + <kbd
+        >
+        +
+        <kbd
           class="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[11px] text-ink"
           >Enter</kbd
         > to print a fresh single-use pairing URL.
@@ -189,7 +226,8 @@
         in the repository you want to inspect.
       </li>
       <li>
-        Once paired, your session is remembered in this browser, so reopening or opening new tabs will connect automatically without requiring a ticket.
+        Once paired, your session is remembered in this browser, so reopening or
+        opening new tabs will connect automatically without requiring a ticket.
       </li>
     </ul>
   </div>

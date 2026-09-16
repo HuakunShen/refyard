@@ -114,7 +114,7 @@ Filled in as each task closes. A row that says "not done" names the reason.
 | R10  | partial                                                                                                           | `pnpm exec vitest run tests/integration/xross-launch.test.ts`; `pnpm check:boundaries`                                                                                                                                                                                                                                 | **Pure launch policy and fake authorized-transport lifecycle pass; the real Xross launch remains unverified because no peer grants or two-daemon testbed were available.**                                                                                                                                                      | `integrations/xross/{launch,README}.ts`; `tests/integration/xross-launch.test.ts`; `docs/evidence/release-matrix.md` |
 | R11  | partial                                                                                                           | `pnpm check`; `pnpm exec vitest run tests/integration/kunkun-adapter.test.ts`                                                                                                                                                                                                                                         | **Manifest, backend token custody, public GitService relay, kkrpc streaming and Permission-denied propagation pass against the real Refyard service; Kunkun installation and a real Electron custom view remain unverified.** | `integrations/kunkun/{package.json,backend.ts,view.ts}`; `tests/integration/kunkun-adapter.test.ts`; `docs/evidence/release-matrix.md` |
 | R12  | complete                                                                                                           | `pnpm build:release`; approved `pnpm bench:runtime`; `pnpm test:portable`; approved `pnpm pack:smoke`; native-host evidence test | **Native VM remains unverified. The measured Node report is complete, the portable smoke is explicitly not a QuickJS/JSC result, and the decision is to continue on the Node sidecar.** | `docs/research/native-host-evaluation.md`; `docs/evidence/performance.json` |
-| R13  | not done                                                                                                          | none — the password-gated hosted form still needs the owner's explicit go-ahead                                                                                                                  | **Not shipped. R15 provides a static Worker PWA and an exact-origin bearer path, but it does not add the separate password-per-session hosted mode; no authorization is inferred.**                       | `docs/product/north-star.md` §5; `docs/evidence/release-matrix.md`      |
+| R13  | complete                                                                                                           | `pnpm check`; `pnpm check:contract`; hosted auth/CLI integration cases                                                                                                                          | **Opt-in password-gated hosted pairing passes: non-loopback origins require the environment secret, wrong passwords and missing secrets refuse, correct passwords issue a bearer, and guesses are rate-limited. Live tunnel/browser deployment remains unverified.** | `docs/installation.md`; `docs/evidence/security.md`; `docs/evidence/release-matrix.md` |
 | R14  | not done                                                                                                          | none — the required `sudo` dependency installation on `ssh ufo` was not authorized or run from this session                                                                                     | **WebKit on Linux remains blocked/unverified; the exact `sudo pnpm exec playwright install-deps` remedy remains recorded in `docs/evidence/linux-and-windows.md`.**                                | `docs/evidence/linux-and-windows.md`                                      |
 | R15  | Worker static PWA, API-only CLI, exact hosted API origin                                                          | `pnpm check`; `pnpm test:web-host`; `wrangler deploy --dry-run`; `pnpm test:e2e`; `pnpm pack:smoke`                                                                                                                                                                                                                    | **Implemented locally. Check 8/8; unit 248; Worker dry-run read 75 files; Worker tests 4/4; full e2e 99/99 across Chromium, Firefox and WebKit; package smoke 14 steps. No live account/domain/tunnel was used.**                                                                                                               | `docs/evidence/release-matrix.md`; `docs/evidence/security.md`                                                       |
 
@@ -482,22 +482,26 @@ from a command that was run here or is labelled as unverified.
 
 **Commit:** `docs: answer the native-host question against measured needs`
 
-## R13 — Form 3: the hosted UI, if the owner says ship it
+## R13 — Form 3: the hosted UI, explicitly opt-in and password-gated
 
 **What:** the opt-in hosted form: a password-gated, origin-allowlisted mode in which the same SPA and
-the same API are reachable from another machine.
+the same API are reachable from another machine. The password is provided through the CLI process
+environment (`REFYARD_HOSTED_PASSWORD`), never through argv or a Worker binding.
 
 **Why it is last among the features:** it is the one change that widens the product's threat model
 by design, so it needs the security work (R6) and the compatibility suite (R5) in place first, and
-the north star requires that it never be the first place a mutation appears.
+the north star requires that it never be the first place a mutation appears. This task is now
+implemented locally; the public tunnel and deployment remain a separate verification boundary.
 
-**Rules:** opt-in and off by default; a password (not a ticket alone) for the first pairing; an
-origin allowlist, no wildcard; TLS is the operator's, and the documentation says so; the loopback
-default and the one-origin property are unchanged (north star §3).
+**Rules:** opt-in and off by default; a password (not a ticket alone) for every non-loopback
+pairing; an exact origin allowlist, no wildcard; TLS is the operator's, and the documentation says
+so; the loopback default and the one-origin property are unchanged (north star §3). The password is
+scrypt-hashed in memory, rate-limited, and never persisted.
 
 **Acceptance:** integration cases for a foreign origin without an allowlist entry (refused), with
-one (allowed), and for a wrong password (refused); the release matrix's "deliberately absent" row is
-updated to say what shipped and what did not.
+one (allowed), a missing/wrong password (refused), a correct password (allowed), retry after a
+password failure, rate limiting, no secret in logs, and startup refusal without the environment
+secret; the release matrix and installation guide state what shipped and what remains unverified.
 
 **Commit:** `feat(host): an opt-in, password-gated, origin-allowlisted hosted form`
 

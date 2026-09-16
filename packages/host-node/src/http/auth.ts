@@ -21,11 +21,16 @@
  *   restart invalidates them and nothing about a session survives in a file.
  * - **Comparison in constant time.** A ticket is a secret; comparing it with `===`
  *   leaks its prefix through timing to a caller that can retry.
+ * - **Hosted second factor.** A non-loopback ticket can be marked as requiring a
+ *   password. The password is scrypt-hashed at startup, compared to a fixed-size
+ *   digest, and never retained or returned after the exchange.
  *
  * There is no refresh token and no "remember me": when a session expires the user
- * pairs again, which is exactly the moment a human is present.
+ * pairs again, which is exactly the moment a human is present. A password-rejected
+ * hosted ticket stays in memory for a bounded retry window; the endpoint rate limiter
+ * prevents it becoming an unlimited guessing oracle.
  */
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import type { Problem } from "@refyard/git-contract";
 
 export interface SessionGrants {
@@ -41,6 +46,8 @@ export interface BootstrapTicket {
   readonly origin: string;
   readonly actor: string;
   readonly grants: SessionGrants;
+  /** External-origin tickets require the separately configured hosted password. */
+  readonly passwordRequired: boolean;
   readonly expiresAtMs: number;
 }
 
@@ -63,6 +70,8 @@ export interface AuthStoreOptions {
   readonly sessionTtlSeconds?: number;
   readonly maxTickets?: number;
   readonly maxSessions?: number;
+  /** Plaintext is accepted only at startup and immediately reduced to a memory-only hash. */
+  readonly hostedPassword?: string;
 }
 
 export type ExchangeResult =
@@ -79,12 +88,14 @@ export interface AuthStore {
     readonly origin: string;
     readonly actor: string;
     readonly grants: SessionGrants;
+    readonly passwordRequired?: boolean;
   }): BootstrapTicket;
-  /** Redeem a ticket. A ticket is consumed whether or not the exchange succeeds. */
+  /** Redeem a ticket; a hosted password failure keeps it retryable until expiry. */
   exchange(input: {
     readonly ticket: string;
     readonly origin: string;
     readonly serviceInstanceId: string;
+    readonly password?: string;
   }): ExchangeResult;
   /** Resolve a bearer token. */
   authorize(input: {
@@ -123,6 +134,51 @@ export interface AuthStore {
 
 const DEFAULT_TICKET_TTL_SECONDS = 60;
 const DEFAULT_SESSION_TTL_SECONDS = 8 * 60 * 60;
+const HOSTED_PASSWORD_MIN_LENGTH = 12;
+const HOSTED_PASSWORD_MAX_LENGTH = 512;
+const PASSWORD_KEY_BYTES = 32;
+const PASSWORD_SCRYPT_OPTIONS = {
+  N: 16_384,
+  r: 8,
+  p: 1,
+  maxmem: 32 * 1024 * 1024,
+} as const;
+
+interface PasswordHash {
+  readonly salt: Buffer;
+  readonly digest: Buffer;
+}
+
+function hashHostedPassword(password: string): PasswordHash {
+  if (
+    password.length < HOSTED_PASSWORD_MIN_LENGTH ||
+    password.length > HOSTED_PASSWORD_MAX_LENGTH
+  ) {
+    throw new Error(
+      `the hosted password must be between ${HOSTED_PASSWORD_MIN_LENGTH} and ${HOSTED_PASSWORD_MAX_LENGTH} characters`,
+    );
+  }
+  const salt = randomBytes(16);
+  return {
+    salt,
+    digest: scryptSync(
+      password,
+      salt,
+      PASSWORD_KEY_BYTES,
+      PASSWORD_SCRYPT_OPTIONS,
+    ),
+  };
+}
+
+function passwordMatches(given: string, expected: PasswordHash): boolean {
+  const digest = scryptSync(
+    given,
+    expected.salt,
+    expected.digest.byteLength,
+    PASSWORD_SCRYPT_OPTIONS,
+  );
+  return timingSafeEqual(digest, expected.digest);
+}
 
 export function createAuthStore(options: AuthStoreOptions): AuthStore {
   const now = options.now ?? Date.now;
@@ -132,6 +188,10 @@ export function createAuthStore(options: AuthStoreOptions): AuthStore {
     (options.sessionTtlSeconds ?? DEFAULT_SESSION_TTL_SECONDS) * 1000;
   const maxTickets = options.maxTickets ?? 64;
   const maxSessions = options.maxSessions ?? 16;
+  const hostedPasswordHash =
+    options.hostedPassword === undefined
+      ? null
+      : hashHostedPassword(options.hostedPassword);
   const tickets = new Map<string, BootstrapTicket>();
   const sessions = new Map<string, Session>();
 
@@ -189,6 +249,7 @@ export function createAuthStore(options: AuthStoreOptions): AuthStore {
         origin: input.origin,
         actor: input.actor,
         grants: copyGrants(input.grants),
+        passwordRequired: input.passwordRequired === true,
         expiresAtMs: now() + ticketTtlMs,
       };
       tickets.set(record.ticket, record);
@@ -209,10 +270,8 @@ export function createAuthStore(options: AuthStoreOptions): AuthStore {
           },
         };
       }
-      // Consumed on first sight, whatever the outcome: a wrong-origin attempt must
-      // not leave the ticket alive for a second try.
-      tickets.delete(record.ticket);
       if (record.expiresAtMs <= now()) {
+        tickets.delete(record.ticket);
         return {
           ok: false,
           problem: {
@@ -223,6 +282,7 @@ export function createAuthStore(options: AuthStoreOptions): AuthStore {
         };
       }
       if (record.serviceInstanceId !== input.serviceInstanceId) {
+        tickets.delete(record.ticket);
         return {
           ok: false,
           problem: {
@@ -234,6 +294,7 @@ export function createAuthStore(options: AuthStoreOptions): AuthStore {
         };
       }
       if (record.origin !== input.origin) {
+        tickets.delete(record.ticket);
         return {
           ok: false,
           problem: {
@@ -243,6 +304,25 @@ export function createAuthStore(options: AuthStoreOptions): AuthStore {
           },
         };
       }
+      if (record.passwordRequired) {
+        // A hosted password failure is retryable with the same ticket, but the
+        // request-rate limiter around the endpoint bounds guessing. Invalid origin,
+        // instance and expiry failures above still consume the ticket on first sight.
+        if (
+          hostedPasswordHash === null ||
+          !passwordMatches(input.password ?? "", hostedPasswordHash)
+        ) {
+          return {
+            ok: false,
+            problem: {
+              code: "Unauthenticated",
+              message: "hosted pairing requires the correct password",
+              retryable: true,
+            },
+          };
+        }
+      }
+      tickets.delete(record.ticket);
       const session: Session = {
         token: `rfs_${randomBytes(32).toString("base64url")}`,
         sessionId: `sess_${randomBytes(12).toString("base64url")}`,

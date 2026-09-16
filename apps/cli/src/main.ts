@@ -24,6 +24,8 @@ export interface MainIO {
   readonly cliDirectory: string;
   readonly gitPath: string;
   readonly cwd: string;
+  /** Optional hosted pairing secret supplied by the process environment, never argv. */
+  readonly hostedPassword?: string;
 }
 
 export const EXIT_OK = 0;
@@ -87,6 +89,9 @@ async function runServeCommand(
       ticketTtlSeconds: command.ticketTtlSeconds,
       allowedOrigins: command.allowedOrigins,
       ...(command.uiOrigin === null ? {} : { uiOrigin: command.uiOrigin }),
+      ...(io.hostedPassword === undefined
+        ? {}
+        : { hostedPassword: io.hostedPassword }),
       allowRoot: command.allowRoot,
       json: command.json,
       write: io.write,

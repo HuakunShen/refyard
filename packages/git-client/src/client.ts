@@ -102,7 +102,10 @@ export class GitClientError extends Error {
 }
 
 export interface GitClient {
-  exchangeTicket(ticket: string): Promise<{
+  exchangeTicket(
+    ticket: string,
+    password?: string,
+  ): Promise<{
     readonly token: string;
     readonly expiresAt: string;
     readonly sessionId: string;
@@ -231,7 +234,7 @@ export function createGitClient(options: GitClientOptions): GitClient {
   }
 
   return {
-    async exchangeTicket(ticket) {
+    async exchangeTicket(ticket, password) {
       const response = await send(
         "POST",
         "/api/v1/session/exchange",
@@ -240,7 +243,7 @@ export function createGitClient(options: GitClientOptions): GitClient {
           expiresAt: z.string(),
           sessionId: z.string(),
         }),
-        { ticket },
+        password === undefined ? { ticket } : { ticket, password },
       );
       return {
         token: response.token,

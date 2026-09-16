@@ -103,8 +103,8 @@ repository" action.
 
 Goal: `app.refyard.dev` (or any static host) serves the same Svelte artifact, and a user who is
 already running `refyard serve` locally can connect that UI to their machine after entering a
-password. The password lives client-side (e.g. `localStorage`) and is what unlocks the local
-service's endpoints.
+password. The current implementation accepts the password from the CLI process environment and
+keeps it only in the page's live form state for the one ticket exchange; it is not persisted.
 
 This form is genuinely useful and genuinely dangerous, so the requirements are stated up front:
 
@@ -116,10 +116,10 @@ This form is genuinely useful and genuinely dangerous, so the requirements are s
 2. **An exact origin allowlist, never a wildcard.** No `Access-Control-Allow-Origin: *`, no
    reflecting the request's `Origin`, no credentials mode that assumes cookies. The bearer stays in
    an `Authorization` header; cookies are not part of this design.
-3. **Password → session, not password per request.** The user sets a service password once (or the
-   CLI prints a generated one); the client sends it, the host compares it in constant time against
-   a stored hash, rate-limits attempts, and issues the same kind of session token form 1 uses.
-   The password itself is not what every request carries.
+3. **Password → session, not password per request.** The user sets `REFYARD_HOSTED_PASSWORD` in the
+   CLI environment; the client sends it once, the host compares it against a memory-only scrypt
+   hash, rate-limits attempts, and issues the same kind of session token form 1 uses. The password
+   itself is not what every request carries and is never accepted as a CLI argument.
 4. **Writes stay closed until form 1 has them.** A hosted UI in a read-only build can read a
    repository and nothing else. Hosted UI must never be the first place a mutation becomes
    reachable.
@@ -208,11 +208,12 @@ auth/origin/SSE/static boundaries remain covered.
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 2026-09-14 | One runtime for V1: Node 26.x. No Rust/Bun/second engine in the shipped service.                                                                                                                                                                                                                                                                             |
 | 2026-09-14 | Public contract is Zod-first (`packages/git-contract`), exported as JSON Schema.                                                                                                                                                                                                                                                                             |
-| 2026-09-15 | Four usage forms are supported targets; form 1 is the default and the only one shipped so far.                                                                                                                                                                                                                                                               |
+| 2026-09-15 | Four usage forms are supported targets; form 1 is the default and form 2 grows access only by explicit approval.                                                                                                                                                                                                                                               |
 | 2026-09-15 | Multi-repository management (form 2) is a first-class goal, by explicit approval — never scanning.                                                                                                                                                                                                                                                           |
 | 2026-09-15 | Hosted UI (form 3) is opt-in, password-gated, origin-allowlisted, and never the first place a mutation appears.                                                                                                                                                                                                                                              |
 | 2026-09-15 | Core stays dependency-free so a native host can embed it (form 4); bundle growth is a decision.                                                                                                                                                                                                                                                              |
 | 2026-09-15 | HTTP layer moves to Hono with `hono-openapi` + Scalar; MCP via `@hono/mcp` (read tools first).                                                                                                                                                                                                                                                               |
+| 2026-09-16 | Form 2 and the password-gated form 3 path are implemented locally; form 4's measured decision is to stay on Node, and live hosted deployment remains unverified.                                                                                                                                                                                            |
 | 2026-09-15 | Parsing placement: argv, state truth and write permission stay in core; display parsing stays server-side **because it is bounded**, with typed degradation; no browser parsing Worker until the UI parses something heavy. Reopening needs measurements naming a shape the bound cannot serve (`docs/discussions/2026-09-15-frontend-parsing-boundary.md`). |
 
 ## 9. What this file forbids

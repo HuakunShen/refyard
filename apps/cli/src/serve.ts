@@ -402,6 +402,8 @@ export interface RunServiceOptions extends AssembleOptions {
   readonly uiOrigin?: string;
   /** Browser-visible API origin, such as the HTTPS endpoint exposed by a tunnel. */
   readonly apiOrigin?: string;
+  /** Hosted pairing secret, supplied by the environment and never placed in argv or logs. */
+  readonly hostedPassword?: string;
   readonly allowRoot: boolean;
   /**
    * Machine output: one JSON object on stdout, pairing material on stderr only.
@@ -453,6 +455,9 @@ export async function runService(
       ...(options.allowedOrigins ?? []),
       ...(options.uiOrigin === undefined ? [] : [options.uiOrigin]),
     ],
+    ...(options.hostedPassword === undefined
+      ? {}
+      : { hostedPassword: options.hostedPassword }),
     repositoryManagement: assembly.repositoryManagement,
     ...(options.shutdownGraceMs === undefined
       ? {}

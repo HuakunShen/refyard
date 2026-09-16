@@ -87,6 +87,27 @@ test.describe("read-only workbench", () => {
     await expect(page.getByText("metadata only")).toHaveCount(0);
   });
 
+  test("shows the hosted password field without persisting the secret", async ({
+    page,
+  }) => {
+    // Prevents: a separately hosted Worker page collecting a password in a field
+    // that is either hidden from the user or silently copied into durable storage.
+    const pairing = new URL(service.pairingUrl);
+    const api = pairing.searchParams.get("api");
+    if (api === null) {
+      throw new Error(
+        "the separate static-host fixture did not publish an API URL",
+      );
+    }
+    await page.goto(`${pairing.origin}/?api=${encodeURIComponent(api)}`);
+
+    const password = page.getByLabel("Hosted service password");
+    await expect(password).toBeVisible();
+    await password.fill("correct-hosted-password-2026");
+    const stored = await page.evaluate(() => JSON.stringify(localStorage));
+    expect(stored).not.toContain("correct-hosted-password-2026");
+  });
+
   test("survives a reload without leaving the token in localStorage", async ({
     page,
   }) => {

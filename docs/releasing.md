@@ -86,6 +86,10 @@ exactly why every other test uses locally built tarballs.
   `docs/evidence/linux-and-windows.md` are the source, including the rows that say _unverified_.
 - That the service is loopback-only and authenticated, and that it runs the machine's own `git`
   (hooks, filters and credential helpers included) against approved directories.
+- If hosted access is documented, that every non-loopback origin has an exact allowlist and an
+  environment-only `REFYARD_HOSTED_PASSWORD`; the password is used only for the initial exchange,
+  is never placed in CLI arguments or Worker configuration, and any public tunnel/Cloudflare
+  deployment is verified separately from the local dry-run.
 
 ## After the first publish
 

@@ -119,6 +119,8 @@ export interface HttpHostOptions {
   readonly includeIpv6?: boolean;
   /** Exact non-loopback browser origins explicitly approved for hosted UI access. */
   readonly allowedOrigins?: readonly string[];
+  /** Hosted pairing password; accepted only at startup and hashed by the auth store. */
+  readonly hostedPassword?: string;
   readonly webRoot?: string | null;
   /** Document served when there is no web build; see `AssetServerOptions`. */
   readonly inlineDocument?: string;
@@ -170,6 +172,12 @@ export interface HttpHost {
 export async function startHttpHost(
   options: HttpHostOptions,
 ): Promise<HttpHost> {
+  const hostedOrigins = (options.allowedOrigins ?? []).filter(isHostedOrigin);
+  if (hostedOrigins.length > 0 && options.hostedPassword === undefined) {
+    throw new Error(
+      "hosted origins require REFYARD_HOSTED_PASSWORD; the hosted form is never enabled with a ticket alone",
+    );
+  }
   const limits: HttpLimits = { ...DEFAULT_HTTP_LIMITS, ...options.limits };
   const serviceInstanceId =
     options.serviceInstanceId ??
@@ -182,6 +190,9 @@ export async function startHttpHost(
     ...(options.ticketTtlSeconds === undefined
       ? {}
       : { ticketTtlSeconds: options.ticketTtlSeconds }),
+    ...(options.hostedPassword === undefined
+      ? {}
+      : { hostedPassword: options.hostedPassword }),
   });
   const assets = createAssetServer({
     webRoot: options.webRoot ?? null,
@@ -887,6 +898,8 @@ export async function startHttpHost(
         origin,
         actor: options.actor ?? "cli",
         grants: currentGrants,
+        passwordRequired:
+          options.hostedPassword !== undefined && isHostedOrigin(origin),
       });
       // The ticket rides in the query string (the user's 2026-09-15 direction, after a
       // browser flow was observed dropping the fragment). That is safe here because this
@@ -959,6 +972,22 @@ function externalOrigin(
     return null;
   }
   return allowedOrigins.includes(origin) ? origin : null;
+}
+
+/** A non-loopback origin is the hosted form and must have a second pairing factor. */
+function isHostedOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    const hostname = url.hostname.replace(/^\[|\]$/g, "");
+    return (
+      url.protocol !== "http:" ||
+      !new Set(["127.0.0.1", "localhost", "::1"]).has(hostname)
+    );
+  } catch {
+    // The origin policy will refuse malformed request origins; configured malformed
+    // origins still fail closed by requiring the hosted secret at startup.
+    return true;
+  }
 }
 
 /** API and discovery requests are adapted into the Web-standard Hono app. */

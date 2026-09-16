@@ -187,6 +187,22 @@ describe("argument parsing", () => {
     ).toMatchObject({ ok: false });
   });
 
+  it("keeps the hosted password out of the CLI argument grammar", () => {
+    // Prevents: a secret appearing in shell history or process listings. Hosted
+    // authentication is configured through the environment only.
+    expect(
+      parseArgs([
+        "serve",
+        "--repo",
+        "/tmp/repo",
+        "--ui-origin",
+        "https://ui.example.test",
+        "--hosted-password",
+        "correct-hosted-password-2026",
+      ]),
+    ).toMatchObject({ ok: false });
+  });
+
   it("rejects a port that is not a number and one out of range", () => {
     expect(parseArgs(["serve", "--port", "abc"]).ok).toBe(false);
     expect(parseArgs(["serve", "--port", "70000"]).ok).toBe(false);
@@ -419,6 +435,7 @@ describe("serving a repository", () => {
       webRoot: null,
       uiOrigin: "https://ui.example.test",
       apiOrigin: "https://api.example.test",
+      hostedPassword: "correct-hosted-password-2026",
       allowRoot: false,
       installSignalHandlers: false,
       write: () => {},
@@ -428,9 +445,58 @@ describe("serving a repository", () => {
       expect(pairing.origin).toBe("https://ui.example.test");
       expect(pairing.searchParams.get("api")).toBe("https://api.example.test");
       expect(pairing.searchParams.get("pair")).toBeTruthy();
+      const ticket = ticketFrom(running.pairingUrl);
+      const withoutPassword = await fetch(
+        `${running.url}/api/v1/session/exchange`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            origin: "https://ui.example.test",
+          },
+          body: JSON.stringify({ ticket }),
+        },
+      );
+      expect(withoutPassword.status).toBe(401);
+      const withPassword = await fetch(
+        `${running.url}/api/v1/session/exchange`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            origin: "https://ui.example.test",
+          },
+          body: JSON.stringify({
+            ticket,
+            password: "correct-hosted-password-2026",
+          }),
+        },
+      );
+      expect(withPassword.status).toBe(200);
     } finally {
       await running.close();
     }
+  });
+
+  it("refuses a non-loopback origin when no hosted password is configured", async () => {
+    // Prevents: an operator accidentally exposing a ticket-only hosted API by
+    // forgetting the environment-only second factor.
+    await expect(
+      runService({
+        repositoryPath: repo.root,
+        gitPath: fixtureGitPath(),
+        port: 0,
+        portExplicit: true,
+        openBrowser: false,
+        ticketTtlSeconds: 60,
+        webRoot: null,
+        uiOrigin: "https://ui.example.test",
+        apiOrigin: "https://api.example.test",
+        allowRoot: false,
+        installSignalHandlers: false,
+        write: () => {},
+      }),
+    ).rejects.toThrow(/REFYARD_HOSTED_PASSWORD/);
   });
 
   it("serves every repository named with repeated --repo values", async () => {

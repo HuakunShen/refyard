@@ -145,12 +145,16 @@ export interface StartTestServiceOptions {
   readonly ungrantedRootPaths?: readonly string[];
   /** Exact hosted UI origins allowed to call the test service. */
   readonly allowedOrigins?: readonly string[];
+  /** Secret used when the test exercises the password-gated hosted form. */
+  readonly hostedPassword?: string;
 }
 
 export async function startTestService(
   options: StartTestServiceOptions,
 ): Promise<TestService> {
-  const repositoryPath = await realpath(options.subjectPath ?? options.repo.root);
+  const repositoryPath = await realpath(
+    options.subjectPath ?? options.repo.root,
+  );
   const codec = createTextCodec();
   const handles = createHandleRegistry();
   const roots = createRootRegistry({ handles, codec });
@@ -329,6 +333,9 @@ export async function startTestService(
     ...(options.allowedOrigins === undefined
       ? {}
       : { allowedOrigins: options.allowedOrigins }),
+    ...(options.hostedPassword === undefined
+      ? {}
+      : { hostedPassword: options.hostedPassword }),
     log: (line) => {
       log.push(line);
     },

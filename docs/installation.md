@@ -70,6 +70,7 @@ refyard doctor [--json]                     # report what this machine can do
 | `--allow-origin <origin>` | Exact hosted UI origin allowed to call the API; repeatable, never `*`.                                  |
 | `--ui-origin <origin>` | Origin where the separately deployed UI receives the pairing URL.                                          |
 | `--api-origin <origin>` | Browser-visible API origin, normally the HTTPS tunnel URL used by the UI.                                   |
+| `REFYARD_HOSTED_PASSWORD` | Environment-only secret, required for every non-loopback allowed origin; minimum 12 characters, never an argv option. |
 | `--no-open`        | Do not launch a browser.                                                                                      |
 | `--json`           | Machine output: one JSON object on stdout, pairing URL on stderr.                                             |
 | `--allow-root`     | Permit running as root. Off by default, because Git hooks would run with root privileges.                     |
@@ -88,6 +89,12 @@ The ticket is single-use and expires (`--ticket-ttl`). For a second browser — 
 the first one lost its session — press `p` and Enter in the serving terminal to print
 a fresh URL. Each printed URL is single use; the terminal is the channel, so a pairing
 URL never appears in the machine-readable output.
+
+When `--allow-origin` or `--ui-origin` names a non-loopback origin, the CLI refuses to start
+unless `REFYARD_HOSTED_PASSWORD` is set. The hosted page submits that password only with the
+single ticket exchange; the service stores only a memory-only scrypt hash, rate-limits attempts,
+and returns the normal in-memory bearer for later requests. The password is not put in argv, the
+pairing URL, logs, `localStorage`, or a Cloudflare Worker binding.
 
 `--json` keeps stdout parseable and ticket-free. Readiness identifies the process as API-only:
 
@@ -115,6 +122,17 @@ tunnel to the CLI and pass the same exact UI origin to `--allow-origin` and `--u
 the browser-visible tunnel origin to `--api-origin`. Set the Worker `PUBLIC_API_ORIGINS` value to
 that exact HTTPS API origin so its CSP permits only the configured endpoint. The tunnel
 configuration is operator-owned; do not bypass the CLI's Host, Origin, bearer, or ticket checks.
+
+Example backend invocation (the secret is supplied by the environment, not copied into the
+command arguments):
+
+```sh
+REFYARD_HOSTED_PASSWORD='use-a-long-random-value' \
+  refyard serve --repo /path/to/repo --no-open --json \
+  --allow-origin https://app.refyard.example \
+  --ui-origin https://app.refyard.example \
+  --api-origin https://api.refyard.example
+```
 
 ## Stopping
 
