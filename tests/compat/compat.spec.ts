@@ -19,7 +19,7 @@ test.describe("page and service compatibility", () => {
 
   test.beforeEach(async () => {
     repo = await createRepo({ initialCommit: true });
-    service = await startE2eService({ repo });
+    service = await startE2eService({ repo, mode: "hosted" });
   });
 
   test.afterEach(async () => {

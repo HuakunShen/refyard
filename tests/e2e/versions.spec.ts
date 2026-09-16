@@ -89,6 +89,7 @@ async function startService(
 ): Promise<RunningService> {
   return startE2eService({
     repo: fixture,
+    mode: "hosted",
     port,
     ...(uiPort === undefined ? {} : { uiPort }),
   });
