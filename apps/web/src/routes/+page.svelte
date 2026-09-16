@@ -2,8 +2,8 @@
   /**
    * The workbench page.
    *
-   * This is the only place that knows how to talk to a service: it owns the runtime
-   * connection (address, session token, SSE stream) and the query cache, and it composes
+   * This is the composition root for the runtime session/connectivity controllers and the
+   * query cache, and it composes
    * `@refyard/git-ui` components that take plain props. Keeping that split means the
    * components can be reused by another host, and it means the app has no business logic
    * about Git in it — only reads, selection, and the states around them.
@@ -15,7 +15,6 @@
   import { browser } from "$app/environment";
   import {
     GitClientError,
-    createEventStream,
     createGitClient,
     createMutationClient,
   } from "@refyard/git-client";
@@ -86,6 +85,11 @@
     pairWorkbenchSession,
     type WorkbenchSessionPorts,
   } from "$lib/workbench/session.js";
+  import {
+    createWorkbenchConnectivityState,
+    observeBrowserConnectivity,
+    startWorkbenchEventStream,
+  } from "$lib/workbench/connectivity.js";
   import { followOperation } from "$lib/operation-follow.js";
   import {
     backgroundRead,
@@ -128,8 +132,9 @@
   const baseUrl = $derived(session.baseUrl);
   const token = $derived(session.token);
   const pairedInstance = $derived(session.pairedInstance);
-  let streamState = $state<"offline" | "connecting" | "live">("offline");
-  let browserOnline = $state(true);
+  const connectivity = $state(createWorkbenchConnectivityState(true));
+  const streamState = $derived(connectivity.streamState);
+  const browserOnline = $derived(connectivity.browserOnline);
 
   let accent = $state(browser ? readStoredAccent() : "default");
   let background = $state(browser ? readStoredBackground() : "none");
@@ -1503,77 +1508,38 @@
 
   /* ------------------------------------------------------- connection and hints */
 
-  /**
-   * The browser's own online signal.
-   *
-   * It is the only signal that means "the network is gone" rather than "this service is
-   * not answering", and it is what the offline gate reads. A page that trusted a quiet
-   * event stream instead would refuse writes on a service that is perfectly reachable.
-   */
+  // Browser reachability and SSE are separate signals: navigator.onLine gates writes,
+  // while the event stream only reports whether live invalidation hints are arriving.
   $effect(() => {
     if (!browser) {
       return;
     }
-    browserOnline = navigator.onLine;
-    const update = (): void => {
-      browserOnline = navigator.onLine;
-    };
-    window.addEventListener("online", update);
-    window.addEventListener("offline", update);
-    return () => {
-      window.removeEventListener("online", update);
-      window.removeEventListener("offline", update);
-    };
+    return observeBrowserConnectivity(connectivity, {
+      isOnline: () => navigator.onLine,
+      addEventListener: (type, listener) =>
+        window.addEventListener(type, listener),
+      removeEventListener: (type, listener) =>
+        window.removeEventListener(type, listener),
+    });
   });
 
   $effect(() => {
-    if (!browser || token === null) {
-      streamState = "offline";
+    if (!browser) {
+      connectivity.streamState = "offline";
       return;
     }
-    const stream = createEventStream({
+    return startWorkbenchEventStream(connectivity, {
       baseUrl,
-      fetch: (input, init) => fetch(input, init),
       token: () => token,
-      onEvent: (envelope) => {
-        const payload = envelope.payload;
-        if (payload.kind === "repositoryChanged") {
-          // A hint, not a source of truth: the queries re-read and stay correct even if
-          // this call is the only one that ever arrives.
-          void queryClient.invalidateQueries({
-            queryKey: ["status", baseUrl, token, payload.repositoryId],
-          });
-          void queryClient.invalidateQueries({
-            queryKey: ["refs", baseUrl, token, payload.repositoryId],
-          });
-          void queryClient.invalidateQueries({
-            queryKey: ["history", baseUrl, token, payload.repositoryId],
-          });
-        } else if (payload.kind === "eventGap") {
+      fetch: (input, init) => fetch(input, init),
+      invalidate: (queryKey) => {
+        if (queryKey === undefined) {
           void queryClient.invalidateQueries();
+        } else {
+          void queryClient.invalidateQueries({ queryKey });
         }
       },
-      onGap: () => {
-        // Events were missed; nothing cached can be assumed current.
-        void queryClient.invalidateQueries();
-      },
-      onError: () => {
-        streamState = "offline";
-      },
     });
-    streamState = "connecting";
-    void stream
-      .start()
-      .then(() => {
-        streamState = "live";
-      })
-      .catch(() => {
-        streamState = "offline";
-      });
-    return () => {
-      stream.stop();
-      streamState = "offline";
-    };
   });
 
   /* ------------------------------------------------------------------ clock */
