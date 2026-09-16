@@ -144,12 +144,12 @@
 - `Edit…` reuses the existing inline editor.
 - `Remove…` opens `ConfirmDialog` and only confirms into `onRemove`.
 
-- [ ] Add RED Chromium coverage for remote row actions and confirmed removal.
-- [ ] Add the remote context menu using existing callbacks and current-branch state.
-- [ ] Verify Edit opens the existing form, Fetch targets the clicked remote, and Remove does not run before confirmation.
-- [ ] Update the product-direction Phase C status to record context menus as implemented while leaving sidebar/search/history work pending.
-- [ ] Run `pnpm check`, `pnpm check:contract`, `pnpm test:unit`, `pnpm test:integration`, `pnpm exec playwright test --project=chromium`, and `git diff --check`.
-- [ ] Commit `feat(git-ui): add remote context actions`.
+- [x] Add RED Chromium coverage for remote row actions and confirmed removal.
+- [x] Add the remote context menu using existing callbacks and current-branch state.
+- [x] Verify Edit opens the existing form, Fetch targets the clicked remote, and Remove does not run before confirmation.
+- [x] Update the product-direction Phase C status to record context menus as implemented while leaving sidebar/search/history work pending.
+- [x] Run `pnpm check`, `pnpm check:contract`, `pnpm test:unit`, `pnpm test:integration`, `pnpm exec playwright test --project=chromium`, and `git diff --check`.
+- [x] Commit `feat(git-ui): add remote context actions`.
 
 ## Completion Criteria
 

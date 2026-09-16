@@ -1,5 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { createRepo, type GitFixtureRepo } from "../support/repo.js";
+import {
+  createBareRemote,
+  createRepo,
+  type GitFixtureRepo,
+} from "../support/repo.js";
 import { startE2eService } from "../support/e2e-service.js";
 
 test.describe("Git context menus", () => {
@@ -200,5 +204,65 @@ test.describe("Git context menus", () => {
     expect(await repo.readText("a.txt")).toBe("working-copy-change\n");
     await page.getByTestId("path-discard-dialog-confirm").click();
     await expect.poll(() => repo.readText("a.txt")).toBe("second\n");
+  });
+  test("targets the clicked remote and confirms removal", async ({ page }) => {
+    const remote = await createBareRemote();
+    try {
+      await repo.git(["remote", "add", "origin", remote.path]);
+      await repo.git(["remote", "add", "mirror", remote.path]);
+      await repo.git(["push", "origin", "main"]);
+      await page.goto(service.pairingUrl);
+
+      await page.getByLabel("select remote origin").check();
+      const mirrorRow = page.getByTestId("remote-row-mirror");
+      await mirrorRow.click({ button: "right" });
+      await expect(
+        page.getByTestId("remote-context-mirror-edit"),
+      ).toBeVisible();
+      await expect(
+        page.getByTestId("remote-context-mirror-fetch"),
+      ).toBeVisible();
+      await expect(
+        page.getByTestId("remote-context-mirror-pull"),
+      ).toBeVisible();
+      await expect(
+        page.getByTestId("remote-context-mirror-push"),
+      ).toBeVisible();
+      await expect(
+        page.getByTestId("remote-context-mirror-remove"),
+      ).toBeVisible();
+
+      await page.getByTestId("remote-context-mirror-edit").click();
+      await expect(page.getByLabel("remote name for mirror")).toBeVisible();
+      await page.getByTestId("cancel-edit-remote-mirror").click();
+
+      await mirrorRow.click({ button: "right" });
+      await page.getByTestId("remote-context-mirror-fetch").click();
+      await expect(page.getByTestId("remote-message")).toContainText(
+        /fetched mirror/,
+      );
+
+      await mirrorRow.click({ button: "right" });
+      await page.getByTestId("remote-context-mirror-remove").click();
+      await expect(page.getByTestId("remote-remove-dialog")).toBeVisible();
+      expect(
+        new TextDecoder()
+          .decode(await repo.git(["remote"]))
+          .trim()
+          .split("\n"),
+      ).toEqual(["mirror", "origin"]);
+      await page.getByTestId("remote-remove-dialog-confirm").click();
+      await expect(page.getByTestId("remote-message")).toContainText(
+        /removed remote mirror/,
+      );
+      expect(
+        new TextDecoder()
+          .decode(await repo.git(["remote"]))
+          .trim()
+          .split("\n"),
+      ).toEqual(["origin"]);
+    } finally {
+      await remote.dispose();
+    }
   });
 });
