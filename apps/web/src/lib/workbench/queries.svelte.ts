@@ -419,3 +419,5 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
     },
   };
 }
+
+export type WorkbenchQueries = ReturnType<typeof createWorkbenchQueries>;

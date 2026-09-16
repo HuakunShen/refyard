@@ -88,13 +88,13 @@
 - Working Copy contains the current Changes, conflict, Stage & Commit UI in the same order and with the same callbacks/disabled rules.
 - Repositories contains `RepositoryList`, `RepositoryPanel`, and `RepositoryAccessPanel` with the existing loading/error/empty states.
 
-- [ ] Export the query/mutation controller return types.
-- [ ] Move the current left-sidebar markup into `RepositorySidebar.svelte` without changing behavior or callbacks.
-- [ ] Add navigation state/reconciliation and hide inactive available subviews without unmounting them.
-- [ ] Replace the route's large `<aside>` body with `<RepositorySidebar ... />`; leave center and right panes unchanged.
-- [ ] Make the structural ownership test GREEN: route-level code no longer owns the stacked Git feature cards.
-- [ ] Run `pnpm check`, sidebar unit tests and `git diff --check`.
-- [ ] Commit `refactor(web): add repository object sidebar`.
+- [x] Export the query/mutation controller return types.
+- [x] Move the current left-sidebar markup into `RepositorySidebar.svelte` without changing behavior or callbacks.
+- [x] Add navigation state/reconciliation and hide inactive available subviews without unmounting them.
+- [x] Replace the route's large `<aside>` body with `<RepositorySidebar ... />`; leave center and right panes unchanged.
+- [x] Make the structural ownership test GREEN: route-level code no longer owns the stacked Git feature cards.
+- [x] Run `pnpm check`, sidebar unit tests and `git diff --check`.
+- [x] Commit `refactor(web): add repository object sidebar`.
 
 ### Task 4: Verify navigation behavior and state preservation in Chromium
 
