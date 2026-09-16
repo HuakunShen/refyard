@@ -18,45 +18,18 @@
   import {
     AppearanceSettings,
     Badge,
-    BranchPanel,
     Button,
     CommitDetailPanel,
     CommitList,
-    CommitPanel,
-    ConflictPanel,
     ConnectionPanel,
     DiffPanel,
     ModeToggle,
-    RefsPanel,
     RefyardLogo,
-    RepositoryAccessPanel,
-    RemotePanel,
-    RepositoryList,
-    RepositoryPanel,
-    SectionCard,
-    Separator,
-    StagingPanel,
-    StashPanel,
     StateBanner,
-    StatusList,
-    SubmodulePanel,
-    TagPanel,
-    WorktreePanel,
     cn,
     shortOid,
   } from "@refyard/git-ui";
-  import {
-    Archive,
-    Boxes,
-    FileDiff,
-    FolderGit2,
-    GitBranch,
-    GitCommit,
-    Globe,
-    Layers,
-    RefreshCw,
-    Tag,
-  } from "@lucide/svelte";
+  import { FileDiff, FolderGit2, GitBranch, RefreshCw } from "@lucide/svelte";
   import { useQueryClient } from "@tanstack/svelte-query";
   import {
     clearWorkbenchCredentials,
@@ -74,18 +47,16 @@
   } from "$lib/workbench/connectivity.js";
   import {
     clearInspectableSelection,
-    clearRepositoryIfSelected,
     createWorkbenchSelectionState,
     selectCommit,
     selectDiffPath,
-    selectRepository,
-    selectStatusPath,
   } from "$lib/workbench/selection.js";
   import {
     createWorkbenchQueries,
     invalidateWorkbenchBackgroundQueries,
   } from "$lib/workbench/queries.svelte.js";
   import { createWorkbenchMutations } from "$lib/workbench/mutations.svelte.js";
+  import RepositorySidebar from "$lib/components/workbench/RepositorySidebar.svelte";
   import {
     clearStoredSession,
     readStoredAccent,
@@ -210,22 +181,14 @@
     visible: pageVisible,
   });
   const capabilities = queries.capabilities;
-  const repositories = queries.repositories;
   const status = queries.status;
   const refs = queries.refs;
-  const stashes = queries.stashes;
-  const worktrees = queries.worktrees;
-  const submodules = queries.submodules;
   const history = queries.history;
   const diff = queries.diff;
   const diffPatch = queries.diffPatch;
   const identity = queries.identity;
 
-  const repositoryList = $derived(queries.repositoryList);
-  const workspaceRoots = $derived(queries.workspaceRoots);
   const repository = $derived(queries.repository);
-  const displayedStashes = $derived(queries.displayedStashes);
-  const stashPanelAvailable = $derived(queries.stashPanelAvailable);
   const commits = $derived(queries.commits);
   const graph = $derived(queries.graph);
   const historyNotices = $derived(queries.historyNotices);
@@ -299,67 +262,10 @@
   });
 
   const mutationBusy = $derived(writeController.busy);
-  const writesAllowed = $derived(writeController.writesAllowed);
-  const stagingAvailable = $derived(writeController.availability.staging);
-  const commitAvailable = $derived(writeController.availability.commit);
   const branchAvailable = $derived(writeController.availability.branch);
-  const networkAvailable = $derived(writeController.availability.network);
-  const stashAvailable = $derived(writeController.availability.stash);
   const tagAvailable = $derived(writeController.availability.tag);
-  const worktreeAvailable = $derived(writeController.availability.worktree);
-  const submoduleAvailable = $derived(writeController.availability.submodule);
-  const mergeAvailable = $derived(writeController.availability.merge);
-  const repositoryCreationAvailable = $derived(
-    writeController.availability.repositoryCreation,
-  );
-  const operationInProgress = $derived(writeController.operationInProgress);
-  const conflictedPaths = $derived(writeController.conflictedPaths);
-  const branchNames = $derived(writeController.branchNames);
-
-  const repositoryMessage = $derived(writeController.repositoryMessage);
-  const repositoryAccessMessage = $derived(
-    writeController.repositoryAccessMessage,
-  );
-  const stagingMessage = $derived(writeController.stagingMessage);
-  const commitResult = $derived(writeController.commitResult);
-  const branchMessage = $derived(writeController.branchMessage);
-  const remoteMessage = $derived(writeController.remoteMessage);
-  const worktreeMessage = $derived(writeController.worktreeMessage);
-  const submoduleMessage = $derived(writeController.submoduleMessage);
-  const mergeMessage = $derived(writeController.mergeMessage);
-  const stashResult = $derived(writeController.stashResult);
-  const tagResult = $derived(writeController.tagResult);
-
-  const onRepositoryInit = writeController.onRepositoryInit;
-  const onRepositoryClone = writeController.onRepositoryClone;
-  const registerRepository = writeController.registerRepository;
-  const revokeRepository = writeController.revokeRepository;
-  const onStage = writeController.onStage;
-  const onUnstage = writeController.onUnstage;
-  const onDiscard = writeController.onDiscard;
-  const onCommit = writeController.onCommit;
-  const onAmend = writeController.onAmend;
   const onBranchCreate = writeController.onBranchCreate;
-  const onBranchSwitch = writeController.onBranchSwitch;
-  const onBranchRename = writeController.onBranchRename;
-  const onBranchDelete = writeController.onBranchDelete;
-  const onBranchSetUpstream = writeController.onBranchSetUpstream;
-  const onBranchMerge = writeController.onBranchMerge;
-  const onMergeContinue = writeController.onMergeContinue;
-  const onMergeAbort = writeController.onMergeAbort;
-  const onRemoteAdd = writeController.onRemoteAdd;
-  const onRemoteUpdate = writeController.onRemoteUpdate;
-  const onRemoteRemove = writeController.onRemoteRemove;
-  const onFetch = writeController.onFetch;
-  const onPush = writeController.onPush;
-  const onPull = writeController.onPull;
-  const onStashCreate = writeController.onStashCreate;
-  const onStashApply = writeController.onStashApply;
-  const onStashPop = writeController.onStashPop;
-  const onStashDrop = writeController.onStashDrop;
   const onTagCreate = writeController.onTagCreate;
-  const onTagDelete = writeController.onTagDelete;
-  const onTagPush = writeController.onTagPush;
 
   function onCommitCreateBranch(
     commit: CommitSummary,
@@ -382,14 +288,6 @@
     }
     void navigator.clipboard.writeText(commit.oid);
   }
-  const onWorktreeCreate = writeController.onWorktreeCreate;
-  const onWorktreeRemove = writeController.onWorktreeRemove;
-  const onWorktreeLock = writeController.onWorktreeLock;
-  const onWorktreeUnlock = writeController.onWorktreeUnlock;
-  const onSubmoduleAdd = writeController.onSubmoduleAdd;
-  const onSubmoduleUpdate = writeController.onSubmoduleUpdate;
-  const onSubmoduleSync = writeController.onSubmoduleSync;
-
   /* ------------------------------------------------------- connection and hints */
 
   // Browser reachability and SSE are separate signals: navigator.onLine gates writes,
@@ -628,430 +526,13 @@
     <main
       class="relative z-1 grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[18.5rem_minmax(0,1fr)_21rem] xl:grid-cols-[21rem_minmax(0,1fr)_25rem] 2xl:grid-cols-[23rem_minmax(0,1fr)_28rem]"
     >
-      <aside
-        class="flex min-h-0 flex-col gap-2.5 overflow-y-auto border-r border-border/80 bg-canvas/40 p-2.5 custom-scrollbar"
-      >
-        <SectionCard
-          title="Repositories"
-          count={repositoryList.length}
-          open={true}
-        >
-          {#snippet icon()}
-            <FolderGit2 class="size-3.5 text-muted-foreground" />
-          {/snippet}
-          <div class="flex flex-col gap-2">
-            {#if repositories.isPending}
-              <StateBanner state="loading" title="Loading repositories…" />
-            {:else if repositories.isError}
-              <StateBanner
-                state="error"
-                title="Could not list repositories"
-                detail={describeClientProblem(repositories.error)}
-              >
-                {#snippet action()}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onclick={() => void repositories.refetch()}
-                  >
-                    Retry
-                  </Button>
-                {/snippet}
-              </StateBanner>
-            {:else if repositoryList.length === 0}
-              <StateBanner
-                state="empty"
-                title="No repositories"
-                detail="Start the service in a repository (refyard open <path>) to read it here."
-              />
-            {:else}
-              <RepositoryList
-                repositories={repositoryList}
-                selectedId={selectedRepositoryId}
-                onSelect={(repositoryId) => {
-                  selectRepository(selection, repositoryId);
-                }}
-              />
-            {/if}
-            {#if token !== null}
-              <Separator />
-              <RepositoryPanel
-                roots={workspaceRoots}
-                available={repositoryCreationAvailable}
-                disabled={!writesAllowed}
-                busy={mutationBusy}
-                message={repositoryMessage}
-                onInit={onRepositoryInit}
-                onClone={onRepositoryClone}
-              />
-              <Separator />
-              <RepositoryAccessPanel
-                repositories={repositoryList}
-                disabled={!writesAllowed}
-                busy={mutationBusy}
-                message={repositoryAccessMessage}
-                onRegister={(path) => void registerRepository(path)}
-                onRevoke={(repositoryId) => void revokeRepository(repositoryId)}
-              />
-            {/if}
-          </div>
-        </SectionCard>
-
-        {#if repository !== null}
-          <SectionCard
-            title="Changes"
-            count={status.data ? status.data.entries.length : undefined}
-            open={true}
-          >
-            {#snippet icon()}
-              <FileDiff class="size-3.5 text-muted-foreground" />
-            {/snippet}
-            <div class="flex flex-col gap-2">
-              {#if status.isPending}
-                <StateBanner state="loading" title="Reading status…" />
-              {:else if status.isError}
-                <StateBanner
-                  state="error"
-                  title="Could not read status"
-                  detail={describeClientProblem(status.error)}
-                >
-                  {#snippet action()}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onclick={() => void status.refetch()}
-                    >
-                      Retry
-                    </Button>
-                  {/snippet}
-                </StateBanner>
-              {:else if status.data !== undefined}
-                <StatusList
-                  snapshot={status.data}
-                  selectedPathId={selectedPath?.pathId ?? null}
-                  disabled={mutationBusy}
-                  busy={mutationBusy}
-                  {onStage}
-                  {onUnstage}
-                  {onDiscard}
-                  onSelect={(entry) => {
-                    selectStatusPath(selection, entry);
-                  }}
-                />
-              {/if}
-            </div>
-          </SectionCard>
-
-          {#if mergeAvailable && (operationInProgress !== null || mergeMessage !== null)}
-            <ConflictPanel
-              {operationInProgress}
-              conflicted={conflictedPaths}
-              disabled={mutationBusy}
-              busy={mutationBusy}
-              message={mergeMessage}
-              onContinue={onMergeContinue}
-              onAbort={onMergeAbort}
-            />
-          {/if}
-
-          {#if stagingAvailable}
-            <SectionCard
-              title="Stage & commit"
-              count={status.data
-                ? status.data.entries.filter(
-                    (entry) => entry.indexStatus !== ".",
-                  ).length
-                : undefined}
-              open={true}
-            >
-              {#snippet icon()}
-                <GitCommit class="size-3.5 text-muted-foreground" />
-              {/snippet}
-              <div class="flex flex-col gap-3">
-                {#if status.isPending}
-                  <StateBanner state="loading" title="Reading status…" />
-                {:else if status.isError}
-                  <StateBanner
-                    state="error"
-                    title="Could not read status"
-                    detail={describeClientProblem(status.error)}
-                  />
-                {:else if status.data !== undefined}
-                  <StagingPanel
-                    entries={status.data.entries}
-                    disabled={mutationBusy}
-                    busy={mutationBusy}
-                    message={stagingMessage}
-                    {onStage}
-                    {onUnstage}
-                    {onDiscard}
-                  />
-                  {#if commitAvailable}
-                    <Separator />
-                    <CommitPanel
-                      stagedCount={status.data.entries.filter(
-                        (entry) => entry.indexStatus !== ".",
-                      ).length}
-                      disabled={mutationBusy}
-                      busy={mutationBusy}
-                      canAmend={status.data.head.kind === "born"}
-                      message={commitResult}
-                      {onCommit}
-                      {onAmend}
-                    />
-                  {/if}
-                {/if}
-              </div>
-            </SectionCard>
-          {/if}
-
-          {#if branchAvailable}
-            <SectionCard
-              title="Branches"
-              count={refs.data ? refs.data.branches.length : undefined}
-              open={true}
-            >
-              {#snippet icon()}
-                <GitBranch class="size-3.5 text-muted-foreground" />
-              {/snippet}
-              <div class="flex flex-col gap-2">
-                {#if refs.isPending}
-                  <StateBanner state="loading" title="Reading branches…" />
-                {:else if refs.isError}
-                  <StateBanner
-                    state="error"
-                    title="Could not read refs"
-                    detail={describeClientProblem(refs.error)}
-                  />
-                {:else}
-                  <BranchPanel
-                    refs={refs.data ?? null}
-                    disabled={mutationBusy}
-                    busy={mutationBusy}
-                    message={branchMessage}
-                    onCreate={onBranchCreate}
-                    onSwitch={onBranchSwitch}
-                    onRename={onBranchRename}
-                    onDelete={onBranchDelete}
-                    onSetUpstream={onBranchSetUpstream}
-                    onMerge={onBranchMerge}
-                  />
-                {/if}
-              </div>
-            </SectionCard>
-          {/if}
-
-          {#if networkAvailable}
-            <SectionCard
-              title="Remotes & sync"
-              count={refs.data ? refs.data.remotes.length : undefined}
-              open={true}
-            >
-              {#snippet icon()}
-                <Globe class="size-3.5 text-muted-foreground" />
-              {/snippet}
-              <div class="flex flex-col gap-2">
-                {#if refs.isPending}
-                  <StateBanner state="loading" title="Reading remotes…" />
-                {:else if refs.isError}
-                  <StateBanner
-                    state="error"
-                    title="Could not read refs"
-                    detail={describeClientProblem(refs.error)}
-                  />
-                {:else}
-                  <RemotePanel
-                    refs={refs.data ?? null}
-                    disabled={mutationBusy}
-                    busy={mutationBusy}
-                    message={remoteMessage}
-                    onAdd={onRemoteAdd}
-                    onUpdate={onRemoteUpdate}
-                    onRemove={onRemoteRemove}
-                    {onFetch}
-                    {onPush}
-                    {onPull}
-                  />
-                {/if}
-              </div>
-            </SectionCard>
-          {/if}
-
-          {#if stashAvailable}
-            <SectionCard
-              title="Stashes"
-              count={stashes.data ? stashes.data.stashes.length : undefined}
-              open={true}
-            >
-              {#snippet icon()}
-                <Archive class="size-3.5 text-muted-foreground" />
-              {/snippet}
-              <div class="flex flex-col gap-2">
-                {#if stashes.isPending && stashes.data === undefined}
-                  <StateBanner state="loading" title="Reading stashes…" />
-                {/if}
-                {#if stashes.isError}
-                  <StateBanner
-                    state="error"
-                    title="Could not read stashes"
-                    detail={describeClientProblem(stashes.error)}
-                  />
-                {/if}
-                {#if stashPanelAvailable}
-                  <StashPanel
-                    stashes={displayedStashes}
-                    disabled={mutationBusy ||
-                      stashes.isError ||
-                      stashes.data === undefined}
-                    busy={mutationBusy}
-                    message={stashResult}
-                    onCreate={onStashCreate}
-                    onApply={onStashApply}
-                    onPop={onStashPop}
-                    onDrop={onStashDrop}
-                  />
-                {/if}
-              </div>
-            </SectionCard>
-          {/if}
-
-          {#if tagAvailable}
-            <SectionCard
-              title="Tags"
-              count={refs.data ? refs.data.tags.length : undefined}
-              open={true}
-            >
-              {#snippet icon()}
-                <Tag class="size-3.5 text-muted-foreground" />
-              {/snippet}
-              <div class="flex flex-col gap-2">
-                {#if refs.isPending}
-                  <StateBanner state="loading" title="Reading tags…" />
-                {:else if refs.isError}
-                  <StateBanner
-                    state="error"
-                    title="Could not read refs"
-                    detail={describeClientProblem(refs.error)}
-                  />
-                {:else}
-                  <TagPanel
-                    tags={refs.data?.tags ?? []}
-                    remoteName={refs.data?.remotes[0]?.name ?? null}
-                    disabled={mutationBusy}
-                    busy={mutationBusy}
-                    message={tagResult}
-                    onCreate={onTagCreate}
-                    onDelete={onTagDelete}
-                    onPush={onTagPush}
-                  />
-                {/if}
-              </div>
-            </SectionCard>
-          {/if}
-
-          {#if worktreeAvailable}
-            <SectionCard
-              title="Worktrees"
-              count={worktrees.data
-                ? worktrees.data.worktrees.length
-                : undefined}
-              open={true}
-            >
-              {#snippet icon()}
-                <Layers class="size-3.5 text-muted-foreground" />
-              {/snippet}
-              <div class="flex flex-col gap-2">
-                {#if worktrees.isPending}
-                  <StateBanner state="loading" title="Reading worktrees…" />
-                {:else if worktrees.isError}
-                  <StateBanner
-                    state="error"
-                    title="Could not read worktrees"
-                    detail={describeClientProblem(worktrees.error)}
-                  />
-                {:else}
-                  <WorktreePanel
-                    worktrees={worktrees.data?.worktrees ?? []}
-                    branches={branchNames}
-                    disabled={mutationBusy}
-                    busy={mutationBusy}
-                    message={worktreeMessage}
-                    onCreate={onWorktreeCreate}
-                    onRemove={onWorktreeRemove}
-                    onLock={onWorktreeLock}
-                    onUnlock={onWorktreeUnlock}
-                  />
-                {/if}
-              </div>
-            </SectionCard>
-          {/if}
-
-          {#if submoduleAvailable}
-            <SectionCard
-              title="Submodules"
-              count={submodules.data
-                ? submodules.data.submodules.length
-                : undefined}
-              open={true}
-            >
-              {#snippet icon()}
-                <Boxes class="size-3.5 text-muted-foreground" />
-              {/snippet}
-              <div class="flex flex-col gap-2">
-                {#if submodules.isPending}
-                  <StateBanner state="loading" title="Reading submodules…" />
-                {:else if submodules.isError}
-                  <StateBanner
-                    state="error"
-                    title="Could not read submodules"
-                    detail={describeClientProblem(submodules.error)}
-                  />
-                {:else}
-                  <SubmodulePanel
-                    submodules={submodules.data?.submodules ?? []}
-                    disabled={mutationBusy}
-                    busy={mutationBusy}
-                    message={submoduleMessage}
-                    onAdd={onSubmoduleAdd}
-                    onUpdate={onSubmoduleUpdate}
-                    onSync={onSubmoduleSync}
-                  />
-                {/if}
-              </div>
-            </SectionCard>
-          {/if}
-
-          {#if !branchAvailable}
-            <SectionCard
-              title="Refs"
-              count={refs.data
-                ? refs.data.branches.length +
-                  refs.data.remoteBranches.length +
-                  refs.data.tags.length
-                : undefined}
-              open={true}
-            >
-              {#snippet icon()}
-                <GitBranch class="size-3.5 text-muted-foreground" />
-              {/snippet}
-              <div class="flex flex-col gap-2">
-                {#if refs.isPending}
-                  <StateBanner state="loading" title="Reading refs…" />
-                {:else if refs.isError}
-                  <StateBanner
-                    state="error"
-                    title="Could not read refs"
-                    detail={describeClientProblem(refs.error)}
-                  />
-                {:else}
-                  <RefsPanel refs={refs.data ?? null} />
-                {/if}
-              </div>
-            </SectionCard>
-          {/if}
-        {/if}
-      </aside>
-
+      <RepositorySidebar
+        {queries}
+        mutations={writeController}
+        {selection}
+        {token}
+        describeProblem={describeClientProblem}
+      />
       <section class="flex min-h-0 flex-col gap-2 p-3">
         <div class="shrink-0 flex items-center gap-2">
           <h2 class="text-sm font-semibold">History</h2>

@@ -906,3 +906,5 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     onSubmoduleSync,
   };
 }
+
+export type WorkbenchMutations = ReturnType<typeof createWorkbenchMutations>;
