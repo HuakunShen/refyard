@@ -16,6 +16,7 @@
  * Identity comes later. Core returns paths, objects and names; the host registry
  * mints `repositoryId`/`worktreeId`/`pathId` and decides what a session may see.
  */
+import { validateRemoteUrl } from "@refyard/git-contract";
 import {
   parseConfigEntries,
   parseRemoteList,
@@ -207,6 +208,7 @@ export async function readSubmoduleFacts(
     if (bytes !== null) {
       try {
         configured = submodulesFromConfig(parseConfigEntries(bytes));
+        assertSafeSubmoduleUrls(configured, spec.description);
       } catch (error) {
         throw parseFailure(spec.description, error);
       }
@@ -225,6 +227,44 @@ export async function readSubmoduleFacts(
   }
 
   return { configured, gitlinks: entries.filter((entry) => entry.gitlink) };
+}
+
+/** Validate repository-local submodule URLs before any submodule operation uses them. */
+export async function assertSafeSubmoduleConfig(
+  engine: GitEngine,
+  input: { readonly cwdHandle: string },
+): Promise<void> {
+  const spec = planSubmoduleConfig(input);
+  const bytes = await runMeaningfulExit(engine, spec, [1]);
+  if (bytes === null) {
+    return;
+  }
+  let configured: readonly SubmoduleConfigEntry[];
+  try {
+    configured = submodulesFromConfig(parseConfigEntries(bytes));
+  } catch (error) {
+    throw parseFailure(spec.description, error);
+  }
+  assertSafeSubmoduleUrls(configured, spec.description);
+}
+
+function assertSafeSubmoduleUrls(
+  configured: readonly SubmoduleConfigEntry[],
+  command: string,
+): void {
+  for (const entry of configured) {
+    if (entry.url.length === 0) {
+      continue;
+    }
+    const first = validateRemoteUrl(entry.url, "submodule URL")[0];
+    if (first !== undefined) {
+      throw new GitWorkflowError({
+        code: "GitCommandFailed",
+        command,
+        message: `submodule ${entry.name} has an unsafe configured URL: ${first.message}`,
+      });
+    }
+  }
 }
 
 /** Group `submodule.<name>.<key>` config entries into one record per submodule. */

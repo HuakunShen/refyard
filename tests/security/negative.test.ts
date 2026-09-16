@@ -18,7 +18,7 @@
  *   listener it did not create.
  */
 import { createServer, type Server } from "node:net";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
@@ -394,6 +394,131 @@ describe("argument injection", () => {
   });
 });
 
+describe("hostile configured remotes", () => {
+  it("refuses a configured transport helper before fetching", async () => {
+    // Prevents: a repository-local remote added outside this UI from turning the
+    // next fetch into arbitrary helper execution. The API validates new URLs, but
+    // existing Git config is also untrusted input.
+    const repo = await createRepo({ initialCommit: true });
+    await repo.git(["config", "protocol.ext.allow", "always"]);
+    await repo.git(["remote", "add", "evil", "ext::sh -c whoami"]);
+    const service = await startService(repo);
+    try {
+      const before = refsSnapshotSchema.parse(
+        await (
+          await service.fetch(
+            `/api/v1/refs?repositoryId=${service.repositoryId}`,
+          )
+        ).json(),
+      );
+      const record = await submitAndWait(service, {
+        clientRequestId: "sec-configured-remote-ext",
+        target: await repositoryTarget(service),
+        operation: {
+          kind: "fetch",
+          remoteName: "evil",
+          prune: false,
+          tags: "none",
+        },
+      });
+      expect(record.status).toBe("failed");
+      expect(record.problem?.message).toMatch(
+        /transport helper|unsafe configured URL/i,
+      );
+
+      const after = refsSnapshotSchema.parse(
+        await (
+          await service.fetch(
+            `/api/v1/refs?repositoryId=${service.repositoryId}`,
+          )
+        ).json(),
+      );
+      expect(after.remoteBranches).toEqual(before.remoteBranches);
+    } finally {
+      await service.close();
+      await repo.dispose();
+    }
+  });
+
+  it("refuses a hostile .gitmodules URL for reads and sync operations", async () => {
+    // Prevents: a repository-provided submodule URL turning either the read path or
+    // a later sync into transport-helper execution. The URL is deliberately written
+    // outside the public add-submodule form to model a checked-out repository.
+    const repo = await createRepo({ initialCommit: true });
+    await repo.write(
+      ".gitmodules",
+      '[submodule "evil"]\n\tpath = vendor/evil\n\turl = ext::sh -c whoami\n',
+    );
+    const service = await startService(repo);
+    try {
+      const read = await service.fetch(
+        `/api/v1/submodules?repositoryId=${service.repositoryId}`,
+      );
+      expect(read.status).toBe(500);
+      expect(await read.text()).toMatch(
+        /transport helper|unsafe configured URL/i,
+      );
+
+      const status = statusSnapshotSchema.parse(
+        await (
+          await service.fetch(
+            `/api/v1/status?repositoryId=${service.repositoryId}`,
+          )
+        ).json(),
+      );
+      const gitmodules = status.entries.find(
+        (entry) => entry.displayPath === ".gitmodules",
+      );
+      expect(gitmodules?.pathId).toBeDefined();
+      const record = await submitAndWait(service, {
+        clientRequestId: "sec-gitmodules-sync",
+        target: {
+          kind: "worktree",
+          repositoryId: service.repositoryId,
+          worktreeId: status.worktreeId,
+          expectedSnapshotId: status.snapshotId,
+        },
+        operation: {
+          kind: "syncSubmodule",
+          pathIds: [gitmodules?.pathId ?? ""],
+          recursive: false,
+        },
+      });
+      expect(record.status).toBe("failed");
+      expect(record.problem?.message).toMatch(
+        /transport helper|unsafe configured URL/i,
+      );
+      expect(await repo.readText(".gitmodules")).toContain("ext::sh -c whoami");
+    } finally {
+      await service.close();
+      await repo.dispose();
+    }
+  });
+
+  it("refuses a .gitmodules absolute path outside the approved root", async () => {
+    // Prevents: a checked-out repository redirecting a later submodule action to
+    // an arbitrary directory on the machine. Local submodules are allowed only
+    // when their absolute target stays inside the approved root.
+    const repo = await createRepo({ initialCommit: true });
+    const outside = join(repo.scratchRoot, "outside.git");
+    await repo.write(
+      ".gitmodules",
+      `[submodule "outside"]\n\tpath = vendor/outside\n\turl = ${outside}\n`,
+    );
+    const service = await startService(repo);
+    try {
+      const response = await service.fetch(
+        `/api/v1/submodules?repositoryId=${service.repositoryId}`,
+      );
+      expect(response.status).toBe(403);
+      expect(await response.text()).toContain("outside the approved root");
+    } finally {
+      await service.close();
+      await repo.dispose();
+    }
+  });
+});
+
 describe("terminal and document injection", () => {
   it.skipIf(process.platform === "win32")(
     "returns a control character in a path as JSON, never as a raw byte",
@@ -513,20 +638,63 @@ describe("a held Git lock", () => {
       // Nothing changed, and the lock is still there — deleting someone else's lock is
       // how a workbench corrupts a repository it does not own.
       expect(await statusOf(service)).toEqual(before);
-      const stillThere = await repo.gitResult(["status", "--porcelain=v2"]);
-      expect(stillThere.code).toBe(0);
-      await expect(
-        repo.gitResult(["rev-parse", "HEAD"]),
-      ).resolves.toBeDefined();
-      expect(
-        await repo.gitResult(["ls-files", "--error-unmatch", "a.txt"]),
-      ).toBeDefined();
-      await expect(
-        (async () => {
-          await writeFile(lock, "", "utf8");
-          return true;
-        })(),
-      ).resolves.toBe(true);
+      expect((await readFile(lock)).byteLength).toBe(0);
+
+      // Removing a lock is the owner's explicit act, not a service recovery path.
+      // Once it is gone, the same queued writer can proceed normally.
+      await rm(lock);
+      const recovered = await submitAndWait(service, {
+        clientRequestId: "sec-lock-2",
+        target: await target(service),
+        operation: { kind: "commit", message: "after lock removed" },
+      });
+      expect(recovered.status).toBe("succeeded");
+      expect(await repo.headOid()).not.toBe(before.split(":", 1)[0]);
+    } finally {
+      await service.close();
+      await repo.dispose();
+    }
+  });
+});
+
+describe("request limits", () => {
+  it("refuses oversized path selections and bodies without changing Git", async () => {
+    // Prevents: a single browser request allocating unbounded validation work or
+    // queue state before the contract and body limits get a chance to refuse it.
+    const repo = await createRepo({ initialCommit: true });
+    const service = await startService(repo);
+    try {
+      const before = await statusOf(service);
+      const oversized = await submitRaw(service, {
+        clientRequestId: "sec-too-many-paths",
+        target: await target(service),
+        operation: {
+          kind: "unstagePaths",
+          pathIds: Array.from({ length: 1_001 }, (_, index) => `path_${index}`),
+        },
+      });
+      expect(oversized.status).toBe(400);
+      expect(oversized.text).toContain("InvalidRequest");
+      expect(await statusOf(service)).toEqual(before);
+
+      const limited = await startTestService({
+        repo,
+        limits: { maxBodyBytes: 128 },
+      });
+      try {
+        const token = await limited.pair();
+        const response = await limited.fetch("/api/v1/operations", {
+          method: "POST",
+          token,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ payload: "x".repeat(256) }),
+        });
+        expect(response.status).toBe(413);
+        expect(await response.text()).toContain("LimitExceeded");
+        expect(await statusOf(service)).toEqual(before);
+      } finally {
+        await limited.close();
+      }
     } finally {
       await service.close();
       await repo.dispose();

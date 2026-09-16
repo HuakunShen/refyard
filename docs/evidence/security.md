@@ -47,6 +47,9 @@ on time, a widened TTL is honoured, and a ticket is consumed whether or not the 
 | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | "refuses a branch name Git would read as an option"                    | `git branch -D` being spelled where a branch name was meant                                                                                                                                          |
 | "refuses a remote URL that is a transport helper"                      | `ext::` (and friends) turning a "remote URL" into command execution                                                                                                                                  |
+| "refuses a configured transport helper before fetching"                | repository-local Git config bypassing the UI URL validator and reaching a helper protocol                                                  |
+| "refuses a hostile .gitmodules URL for reads and sync operations"       | repository-provided submodule config becoming an executable transport or sync target                                                   |
+| "refuses a .gitmodules absolute path outside the approved root"         | a local submodule URL redirecting access outside the explicitly approved directory                                                   |
 | "refuses a worktree destination that climbs out of the approved root"  | a worktree write landing outside the directory the user approved                                                                                                                                     |
 | "refuses a destination that names the Git directory itself"            | writing into `.git` — hooks are code execution                                                                                                                                                       |
 | "refuses an unknown path id instead of acting on some other path"      | an id from another service being interpreted as "the nearest path"                                                                                                                                   |
@@ -55,6 +58,8 @@ on time, a widened TTL is honoured, and a ticket is consumed whether or not the 
 | "returns a control character in a path as JSON, never as a raw byte"   | a terminal escape in a file name reaching the user's terminal through the API                                                                                                                        |
 | "sends a patch containing an escape sequence as JSON text"             | a file's contents becoming terminal control                                                                                                                                                          |
 | "refuses a write with Git's diagnostic and leaves the lock file alone" | deleting or ignoring `.git/index.lock` to "make it work"                                                                                                                                             |
+| "removes the lock by hand, then lets the next commit proceed"          | treating an external lock as service-owned while still proving recovery after explicit human removal                                  |
+| "refuses oversized path selections and bodies without changing Git"    | request-size abuse allocating validation or queue state before bounds are applied                                                       |
 | "refuses to start rather than attaching to the listener it found"      | a second instance attaching to a port another program already owns                                                                                                                                   |
 
 ### Managed workspace access — `tests/integration/managed-workspaces.test.ts`, `tests/e2e/workspace.spec.ts`
@@ -94,6 +99,10 @@ change where the Node listener binds or bypass authentication.
 - **Offline shell**: "reloads from the cached shell while offline, and says it is not connected" and
   "refuses a write while offline and never replays it after reconnecting" — the page does not
   pretend to have data offline, and no queued write is sent later (`tests/e2e/offline.spec.ts`).
+- **Repository-supplied hooks and prompt controls**: the staging integration case installs a failing
+  `pre-commit` hook and proves the head remains unchanged; the runner unit case proves every Git
+  process receives `GIT_TERMINAL_PROMPT=0` (`tests/integration/staging.test.ts`,
+  `tests/node/runner.test.ts`). A real credential helper or SSH server remains unverified.
 
 ## Invariants held in code, checked by tests or by construction
 

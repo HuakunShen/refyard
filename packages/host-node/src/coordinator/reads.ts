@@ -19,6 +19,7 @@
  * - **Unknown stays unknown.** A Git failure becomes a `Problem` with the exit code
  *   and bounded diagnostics — never a fabricated empty list.
  */
+import { realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 import {
@@ -940,6 +941,27 @@ export function createReadService(options: ReadServiceOptions): ReadService {
           cwdHandle: handle,
           hasGitmodulesFile: await fileExistsIn(worktree.path, ".gitmodules"),
         });
+        const root = await options.roots.requireIntact(record.allowedRootId);
+        const recordedSubmodulePaths = new Set(
+          facts.gitlinks.map((gitlink) => bytesKey(gitlink.path)),
+        );
+        for (const configured of facts.configured) {
+          if (!isAbsoluteRemotePath(configured.url)) {
+            continue;
+          }
+          const target = await canonicalRemotePath(configured.url);
+          const pathKey = bytesKey(new TextEncoder().encode(configured.path));
+          if (
+            relativeTo(root.path, target) === null &&
+            !recordedSubmodulePaths.has(pathKey)
+          ) {
+            throw new ReadProblem({
+              code: "Forbidden",
+              message:
+                "a submodule URL points outside the approved root; approve its directory before using it",
+            });
+          }
+        }
         const head = await readHeadFacts(options.engine, handle);
 
         // Gitlinks are keyed by their raw bytes, so a path that is not valid UTF-8
@@ -1411,6 +1433,21 @@ function relativeTo(root: string, absolute: string): string | null {
     return null;
   }
   return relativePath.split(sep).join("/");
+}
+
+function isAbsoluteRemotePath(value: string): boolean {
+  return isAbsolute(value) || /^(?:[A-Za-z]:[\\/]|\\\\)/.test(value);
+}
+
+async function canonicalRemotePath(value: string): Promise<string> {
+  if (/^(?:[A-Za-z]:[\\/]|\\\\)/.test(value) && process.platform !== "win32") {
+    return value;
+  }
+  try {
+    return await realpath(value);
+  } catch {
+    return resolve(value);
+  }
 }
 
 function bytesKey(bytes: Uint8Array): string {

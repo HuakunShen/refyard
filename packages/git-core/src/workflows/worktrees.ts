@@ -8,7 +8,6 @@
  */
 import type { GitCommandSpec } from "../ports.js";
 import {
-  boundedDiagnostic,
   GitWorkflowError,
   runRequired,
   type GitEngine,
@@ -21,6 +20,7 @@ import {
   planWorktreeUnlock,
   type WorktreeReference,
 } from "../plan/worktrees.js";
+import { assertSafeSubmoduleConfig } from "./repository.js";
 import {
   planSubmoduleAdd,
   planSubmoduleSync,
@@ -39,8 +39,10 @@ export type RepositoryWriteOutcome =
 async function runSpec(
   engine: GitEngine,
   spec: GitCommandSpec,
+  before?: () => Promise<void>,
 ): Promise<RepositoryWriteOutcome> {
   try {
+    await before?.();
     await runRequired(engine, spec);
     return { kind: "done" };
   } catch (error) {
@@ -50,9 +52,7 @@ async function runSpec(
         code: error.code,
         exitCode: error.exitCode,
         diagnostic:
-          error.diagnostic.length > 0
-            ? error.diagnostic
-            : boundedDiagnostic(new Uint8Array(0)),
+          error.diagnostic.length > 0 ? error.diagnostic : error.message,
       };
     }
     throw error;
@@ -118,7 +118,7 @@ export function addSubmodule(
   );
 }
 
-export function updateSubmodules(
+export async function updateSubmodules(
   engine: GitEngine,
   context: { readonly cwdHandle: string },
   input: {
@@ -127,13 +127,17 @@ export function updateSubmodules(
     readonly recursive: boolean;
   },
 ): Promise<RepositoryWriteOutcome> {
-  return runSpec(engine, planSubmoduleUpdate(context, input));
+  return runSpec(engine, planSubmoduleUpdate(context, input), () =>
+    assertSafeSubmoduleConfig(engine, context),
+  );
 }
 
-export function syncSubmodules(
+export async function syncSubmodules(
   engine: GitEngine,
   context: { readonly cwdHandle: string },
   input: { readonly paths: readonly string[]; readonly recursive: boolean },
 ): Promise<RepositoryWriteOutcome> {
-  return runSpec(engine, planSubmoduleSync(context, input));
+  return runSpec(engine, planSubmoduleSync(context, input), () =>
+    assertSafeSubmoduleConfig(engine, context),
+  );
 }

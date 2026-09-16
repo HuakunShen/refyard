@@ -15,6 +15,7 @@
  * that away would turn a precise answer into a bare failure.
  */
 import type { GitCommandSpec } from "../ports.js";
+import { validateRemoteUrl } from "@refyard/git-contract";
 import {
   boundedDiagnostic,
   type GitEngine,
@@ -36,6 +37,8 @@ import {
   planRemoteRename,
   planRemoteSetUrl,
 } from "../plan/remotes.js";
+import { parseRemoteList } from "../parse/meta.js";
+import { planRemotes } from "../plan/refs.js";
 
 export type CommandOutcome =
   | { readonly kind: "done" }
@@ -77,6 +80,67 @@ function failureCodeOf(
     default:
       return "GitCommandFailed";
   }
+}
+
+type RemoteSafety =
+  | { readonly kind: "safe" }
+  | {
+      readonly kind: "refused";
+      readonly code: GitFailureCode;
+      readonly exitCode: number | null;
+      readonly diagnostic: string;
+    };
+
+/** Refuse hostile URLs already present in repository config before network Git runs. */
+async function checkConfiguredRemote(
+  engine: GitEngine,
+  context: { readonly cwdHandle: string },
+  input: { readonly name: string; readonly direction: "fetch" | "push" },
+): Promise<RemoteSafety> {
+  const spec = planRemotes(context);
+  const result = await engine.run(spec);
+  if (result.termination !== "exit" || result.exitCode !== 0) {
+    return {
+      kind: "refused",
+      code: failureCodeOf(result.termination),
+      exitCode: result.exitCode,
+      diagnostic: boundedDiagnostic(result.stderr),
+    };
+  }
+  let records;
+  try {
+    records = parseRemoteList(result.stdout);
+  } catch {
+    return {
+      kind: "refused",
+      code: "GitOutputUnparsable",
+      exitCode: result.exitCode,
+      diagnostic: "the configured remote list could not be parsed safely",
+    };
+  }
+  const matching = records.filter((record) => record.name === input.name);
+  const fetch = matching.find((record) => record.kind === "fetch")?.url;
+  const push = matching.find((record) => record.kind === "push")?.url;
+  const url = input.direction === "push" ? (push ?? fetch) : fetch;
+  if (url === undefined) {
+    return {
+      kind: "refused",
+      code: "GitCommandFailed",
+      exitCode: null,
+      diagnostic: `remote ${input.name} has no configured ${input.direction} URL`,
+    };
+  }
+  const problems = validateRemoteUrl(url, "remote URL");
+  const first = problems[0];
+  if (first !== undefined) {
+    return {
+      kind: "refused",
+      code: "GitCommandFailed",
+      exitCode: null,
+      diagnostic: `remote ${input.name} has an unsafe configured URL: ${first.message}`,
+    };
+  }
+  return { kind: "safe" };
 }
 
 export async function addRemote(
@@ -191,6 +255,13 @@ export async function fetchRemote(
     readonly tags: "none" | "following";
   },
 ): Promise<NetworkOutcome<FetchParseResult>> {
+  const safety = await checkConfiguredRemote(engine, context, {
+    name: input.remoteName,
+    direction: "fetch",
+  });
+  if (safety.kind === "refused") {
+    return safety;
+  }
   const spec = planFetch(context, input);
   const result = await engine.run(spec);
   let parsed: FetchParseResult;
@@ -230,6 +301,13 @@ export async function pushRef(
     readonly setUpstream: boolean;
   },
 ): Promise<NetworkOutcome<PushParseResult>> {
+  const safety = await checkConfiguredRemote(engine, context, {
+    name: input.remoteName,
+    direction: "push",
+  });
+  if (safety.kind === "refused") {
+    return safety;
+  }
   const spec = planPush(context, input);
   const result = await engine.run(spec);
   let parsed: PushParseResult;

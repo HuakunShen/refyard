@@ -7,6 +7,7 @@ packages:
 # workspace is allowed to run install scripts.
 allowBuilds:
   esbuild: true
+  workerd: true
 
 # Every dependency version lives here so a package.json can only ask for a name.
 # The plan forbids silent "latest" upgrades during task execution; bumping a
