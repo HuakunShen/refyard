@@ -6,15 +6,15 @@ registry is the one whose checks ran, not a rebuild on a release machine.
 
 ## What is already in place
 
-- **The publishable package is `packages/npm-dist`.** `pnpm build:release` copies the CLI bundle,
-  its `bin` entry and the built SPA into it; nothing in it is hand-written except its manifest.
+- **The publishable package is `packages/npm-dist`.** `pnpm build:release` stages the API-only CLI
+  bundle and its `bin` entry; the static SPA is deployed separately from `apps/web`.
 - **Its manifest declares no dependencies, no install scripts, no workspace references**, and
   `pnpm pack:smoke` fails the build if it ever does — a package with a postinstall script is a
   package that runs code on someone's machine at install time.
 - **The tarball is checked before it is published**: `pnpm test:pack` (contents and manifest rules)
   and `pnpm pack:smoke`, which installs the tarball through `npm exec` in a temporary directory
   with an isolated `HOME` and cache, then drives the installed CLI: `doctor`, `serve --json`, the
-  packaged UI, the authenticated API, a busy port, tarball contents.
+  API-only 404 boundary, the authenticated API, a busy port, tarball contents.
 - **A dry run was measured on 2026-09-15** from the staged package at revision `ab1d5fb`:
 
   ```
@@ -79,9 +79,9 @@ exactly why every other test uses locally built tarballs.
   on 20.19.0, 22.11.0, 22.23.2, 24.10.0, 25.2.1 and 26.8.2, and the range starts at 22 because
   Node 20 is past end of life), and the `git` functional baseline (2.43;
   `fetch`/`pull` additionally need 2.41+ porcelain and are reported per probe by `refyard doctor`).
-- What the release does **not** do, in the words the evidence file uses: no hosted origin, no
-  terminal, no plugin host, and the write operations listed in `GET /api/v1/capabilities` are the
-  complete set.
+- What the release does **not** do, in the words the evidence file uses: no Git backend in the
+  Cloudflare Worker, no built-in terminal, no plugin host, and the write operations listed in
+  `GET /api/v1/capabilities` are the complete set.
 - The verification status of the platforms it will run on — `docs/evidence/release-matrix.md` and
   `docs/evidence/linux-and-windows.md` are the source, including the rows that say _unverified_.
 - That the service is loopback-only and authenticated, and that it runs the machine's own `git`

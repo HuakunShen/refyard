@@ -162,10 +162,14 @@ await step(
         "the CLI bundle is missing or empty; run `pnpm build:release`",
       );
     }
-    const web = await stat(join(staging, "web"));
-    if (!web.isDirectory()) {
-      throw new Error("the web build is missing; run `pnpm build` first");
+    try {
+      await stat(join(staging, "web"));
+    } catch {
+      return;
     }
+    throw new Error(
+      "the staging tree still contains a web build; the published CLI must be API-only",
+    );
   },
 );
 
@@ -365,6 +369,7 @@ const ready = await step(
           port: number;
           url: string;
           repositoryId: string;
+          apiOnly?: boolean;
         };
       }
       if (serving.exitCode !== null) {
@@ -407,13 +412,18 @@ await step(
   },
 );
 
-await step("the installed build serves the packaged UI", "GET /", async () => {
+await step("the installed CLI does not serve a UI shell", "GET /", async () => {
   const response = await fetch(`${ready.url}/`);
-  const body = await response.text();
-  if (response.status !== 200 || !body.includes("<div")) {
+  const body = (await response.json()) as {
+    problem?: { code?: string };
+  };
+  if (response.status !== 404 || body.problem?.code !== "NotFound") {
     throw new Error(
-      `GET / answered ${response.status} with ${body.slice(0, 120)}`,
+      `GET / answered ${response.status} with ${JSON.stringify(body)}`,
     );
+  }
+  if (ready.apiOnly !== true) {
+    throw new Error("the ready object did not identify the CLI as API-only");
   }
 });
 

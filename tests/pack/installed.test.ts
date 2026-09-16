@@ -11,7 +11,7 @@
  * - there are no `dependencies` and no install scripts: the bundle carries its
  *   workspace packages, so a broken `postinstall` cannot exist and nothing resolves
  *   `workspace:*` at install time;
- * - the `files` whitelist ships the CLI, the UI and nothing else — no sources, no
+ * - the `files` whitelist ships the backend CLI and nothing else — no UI, sources, no
  *   fixtures, no references;
  * - the package is publishable and `UNLICENSED`: publishing makes it installable and
  *   grants nobody a licence, and no licence text is invented on the project's behalf.
@@ -89,9 +89,9 @@ describe("the published manifest", () => {
     expect(Object.keys(manifest.scripts ?? {})).toEqual([]);
   });
 
-  it("ships the CLI, the UI, and nothing else", async () => {
+  it("ships the API-only CLI and nothing else", async () => {
     const manifest = await readManifest();
-    expect(manifest.files).toEqual(["bin", "dist", "web"]);
+    expect(manifest.files).toEqual(["bin", "dist"]);
   });
 
   it("is publishable, and grants no licence by publishing", async () => {

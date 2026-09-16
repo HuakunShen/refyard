@@ -7,6 +7,9 @@
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
+    "deploy": "pnpm build && wrangler deploy",
+    "deploy:dry-run": "pnpm build && wrangler deploy --dry-run",
+    "types": "wrangler types",
     "prepare": "svelte-kit sync",
     "check": "svelte-check --tsconfig ./tsconfig.json --threshold error"
   },
@@ -17,6 +20,7 @@
     "@refyard/git-ui": "workspace:*"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "catalog:",
     "@lucide/svelte": "catalog:",
     "@sveltejs/adapter-static": "catalog:",
     "@sveltejs/kit": "catalog:",
@@ -33,6 +37,7 @@
     "tailwind-variants": "catalog:",
     "tailwindcss": "catalog:",
     "typescript": "catalog:svelte",
-    "vite": "catalog:"
+    "vite": "catalog:",
+    "wrangler": "catalog:"
   }
 }

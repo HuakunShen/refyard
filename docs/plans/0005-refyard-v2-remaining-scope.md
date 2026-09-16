@@ -5,7 +5,7 @@
 > Implements: `docs/goals/2026-09-16-remaining-scope.md`.
 > Source tasks: the design package's T16/T17/T18 (`references/ai-chat/2026-09-14/`), the north
 > star's decision table, and the defects this repository's own platform runs produced. Tasks are
-> numbered **R1…R14** because T01–T15 are delivered and renumbering them would break every
+> numbered **R1…R15** because T01–T15 are delivered and renumbering them would break every
 > reference to them.
 
 ## Where the round starts
@@ -115,7 +115,7 @@ Filled in as each task closes. A row that says "not done" names the reason.
 | R12  | _pending_       |                      |        |          |
 | R13  | _pending_       |                      |        |          |
 | R14  | _pending_       |                      |        |          |
-| R15  | _pending_       |                      |        |          |
+| R15  | Worker static PWA, API-only CLI, exact hosted API origin | `pnpm check`; `pnpm test:web-host`; `wrangler deploy --dry-run`; `pnpm test:e2e`; `pnpm pack:smoke` | **Implemented locally. Check 8/8; unit 248; Worker dry-run read 75 files; Worker tests 4/4; full e2e 99/99 across Chromium, Firefox and WebKit; package smoke 14 steps. No live account/domain/tunnel was used.** | `docs/evidence/release-matrix.md`; `docs/evidence/security.md` |
 
 ## R1 — The session token leaves `localStorage`
 
@@ -553,7 +553,8 @@ modified; a failure found there is fixed with a case or recorded, never skipped.
 SvelteKit SPA and service worker; the npm/CLI artifact owns only the Node Git backend and never
 ships or serves the web bundle. The browser may call a CLI service only through an explicitly
 configured HTTPS endpoint (for example a user-owned Cloudflare Tunnel) whose exact UI origin is
-allowed by the CLI.
+allowed by the CLI. `--api-origin` names the browser-visible HTTPS endpoint; the local listener
+remains loopback and the tunnel must forward to it.
 
 **Files:** `apps/web/wrangler.jsonc`, `apps/web/static/_headers`, `apps/web/package.json`,
 `package.json`, `apps/web/src/lib/connection.ts`, `apps/cli/src/{args,main,serve}.ts`,

@@ -143,6 +143,8 @@ export interface StartTestServiceOptions {
    * handed it. That is the case a scope check exists for.
    */
   readonly ungrantedRootPaths?: readonly string[];
+  /** Exact hosted UI origins allowed to call the test service. */
+  readonly allowedOrigins?: readonly string[];
 }
 
 export async function startTestService(
@@ -324,6 +326,9 @@ export async function startTestService(
       ],
       scopes: ["repository:read"],
     },
+    ...(options.allowedOrigins === undefined
+      ? {}
+      : { allowedOrigins: options.allowedOrigins }),
     log: (line) => {
       log.push(line);
     },

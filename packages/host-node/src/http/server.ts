@@ -115,6 +115,8 @@ export interface HttpHostOptions {
   /** `127.0.0.1` unless the caller explicitly asked for IPv6 loopback too. */
   readonly host?: string;
   readonly includeIpv6?: boolean;
+  /** Exact non-loopback browser origins explicitly approved for hosted UI access. */
+  readonly allowedOrigins?: readonly string[];
   readonly webRoot?: string | null;
   /** Document served when there is no web build; see `AssetServerOptions`. */
   readonly inlineDocument?: string;
@@ -344,9 +346,79 @@ export async function startHttpHost(
       return;
     }
 
+    const requestOrigin = headerValue(request, "origin");
+    const hostedOrigin = externalOrigin(requestOrigin, options.allowedOrigins);
+    if (hostedOrigin !== null) {
+      response.setHeader("access-control-allow-origin", hostedOrigin);
+      response.setHeader(
+        "access-control-allow-headers",
+        "Authorization, Content-Type, Accept",
+      );
+      response.setHeader(
+        "access-control-allow-methods",
+        "GET, POST, OPTIONS",
+      );
+      response.setHeader(
+        "access-control-expose-headers",
+        "x-refyard-correlation",
+      );
+      response.setHeader("access-control-max-age", "300");
+      response.setHeader("vary", "Origin");
+    }
+
     if (method === "OPTIONS") {
-      // No CORS preflight is ever approved: the API is same-origin only, so an
-      // allowed method list would only advertise something that does not exist.
+      if (hostedOrigin !== null) {
+        const requestedMethod = headerValue(
+          request,
+          "access-control-request-method",
+        );
+        if (
+          requestedMethod !== undefined &&
+          requestedMethod !== "GET" &&
+          requestedMethod !== "POST"
+        ) {
+          sendProblem(
+            response,
+            problemFor(
+              "Forbidden",
+              "that hosted request method is not allowed",
+            ),
+          );
+          return;
+        }
+        const requestedHeaders = headerValue(
+          request,
+          "access-control-request-headers",
+        );
+        if (requestedHeaders !== undefined) {
+          const allowedHeaders = new Set([
+            "authorization",
+            "content-type",
+            "accept",
+          ]);
+          const invalid = requestedHeaders
+            .split(",")
+            .map((header) => header.trim().toLowerCase())
+            .find(
+              (header) => header.length > 0 && !allowedHeaders.has(header),
+            );
+          if (invalid !== undefined) {
+            sendProblem(
+              response,
+              problemFor(
+                "Forbidden",
+                `that hosted request header is not allowed: ${invalid}`,
+              ),
+            );
+            return;
+          }
+        }
+        response.writeHead(204);
+        response.end();
+        return;
+      }
+      // Same-origin requests do not need CORS preflight. Keep the old refusal so an
+      // accidental OPTIONS call never advertises a broader API than this host has.
       response.setHeader("allow", "GET, POST");
       response.writeHead(405);
       response.end();
@@ -750,7 +822,10 @@ export async function startHttpHost(
   });
   originPolicy = createOriginPolicy({
     authorities,
-    allowedOrigins: originsFor(authorities),
+    allowedOrigins: [
+      ...originsFor(authorities),
+      ...(options.allowedOrigins ?? []),
+    ],
   });
 
   return {
@@ -830,6 +905,16 @@ function removeGrant(
     ),
     scopes: [...grants.scopes],
   };
+}
+
+function externalOrigin(
+  origin: string | undefined,
+  allowedOrigins: readonly string[] | undefined,
+): string | null {
+  if (origin === undefined || allowedOrigins === undefined) {
+    return null;
+  }
+  return allowedOrigins.includes(origin) ? origin : null;
 }
 
 /**

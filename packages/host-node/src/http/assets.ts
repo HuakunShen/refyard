@@ -23,6 +23,8 @@
  *   CDN, no remote font, no framing by another origin. A document's own inline
  *   bootstrap script is named by hash rather than permitted in general (see `csp.ts`),
  *   which is what lets a static single-page app boot without `'unsafe-inline'`.
+ *   An embedding static host may add exact API origins to `connect-src`; the API's
+ *   own origin and bearer checks remain separate and authoritative.
  */
 import { createReadStream } from "node:fs";
 import { readFile, realpath, stat } from "node:fs/promises";
@@ -53,8 +55,10 @@ export interface AssetServerOptions {
    * browser request with 503 looks broken. This page says what is true — the API is
    * running, the UI is not in this build — and is served only for document-shaped
    * paths, never for a missing asset or an API path.
-   */
+  */
   readonly inlineDocument?: string;
+  /** Exact API origins an embedding static host needs to call from its own origin. */
+  readonly connectOrigins?: readonly string[];
 }
 
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
@@ -82,8 +86,9 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
  * `default-src 'self'` plus `script-src 'self'` is what makes "no external CDN
  * script, no remote font" enforceable rather than aspirational; `object-src 'none'`
  * and `frame-ancestors 'none'` close the two ways a page can be made to load
- * something else. `connect-src 'self'` keeps the API same-origin, which is also why
- * there is no CORS header anywhere in this service.
+ * something else. The default `connect-src 'self'` keeps the API same-origin, which
+ * is also why there is no CORS header anywhere in this service. An embedding host can
+ * opt into exact API origins without changing that default.
  */
 export const HTML_HEADERS: Readonly<Record<string, string>> = {
   "content-type": "text/html; charset=utf-8",
@@ -97,6 +102,7 @@ export const HTML_HEADERS: Readonly<Record<string, string>> = {
 
 export function createAssetServer(options: AssetServerOptions): AssetServer {
   const fallback = options.fallbackDocument ?? "200.html";
+  const htmlHeaders = headersWithConnectOrigins(options.connectOrigins);
   let resolvedRoot: string | null = null;
   let rootReady = false;
   /**
@@ -140,7 +146,7 @@ export function createAssetServer(options: AssetServerOptions): AssetServer {
     ) {
       return cached.headers;
     }
-    let headers: Readonly<Record<string, string>> = HTML_HEADERS;
+    let headers: Readonly<Record<string, string>> = htmlHeaders;
     try {
       const html = await readFile(absolutePath, "utf8");
       const hashes = inlineScriptHashes(html);
@@ -148,16 +154,16 @@ export function createAssetServer(options: AssetServerOptions): AssetServer {
         hashes.length === 0
           ? HTML_HEADERS
           : {
-              ...HTML_HEADERS,
+              ...htmlHeaders,
               "content-security-policy": policyWithInlineScripts(
-                HTML_HEADERS["content-security-policy"] ?? "",
+                htmlHeaders["content-security-policy"] ?? "",
                 hashes,
               ),
             };
     } catch {
       // A document that cannot be read is served (or fails) with the strict policy; a
       // policy is not the place to report an I/O error.
-      headers = HTML_HEADERS;
+      headers = htmlHeaders;
     }
     if (stamp !== null) {
       documentHeaderCache.set(absolutePath, { ...stamp, headers });
@@ -374,7 +380,7 @@ export function createAssetServer(options: AssetServerOptions): AssetServer {
         }
         // No web build in this installation: answer a document request with a page
         // that says exactly that, instead of a 503 that reads like a failure.
-        for (const [name, value] of Object.entries(HTML_HEADERS)) {
+        for (const [name, value] of Object.entries(htmlHeaders)) {
           response.setHeader(name, value);
         }
         response.writeHead(200);
@@ -403,4 +409,36 @@ export function createAssetServer(options: AssetServerOptions): AssetServer {
       return "served";
     },
   };
+}
+
+/** Add only exact configured API origins to the static document's connect policy. */
+function headersWithConnectOrigins(
+  origins: readonly string[] | undefined,
+): Readonly<Record<string, string>> {
+  const valid = [
+    ...new Set((origins ?? []).filter((origin) => isHttpOrigin(origin))),
+  ];
+  if (valid.length === 0) {
+    return HTML_HEADERS;
+  }
+  const policy = HTML_HEADERS["content-security-policy"] ?? "";
+  return {
+    ...HTML_HEADERS,
+    "content-security-policy": policy.replace(
+      "connect-src 'self'",
+      `connect-src 'self' ${valid.join(" ")}`,
+    ),
+  };
+}
+
+function isHttpOrigin(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      url.origin === value
+    );
+  } catch {
+    return false;
+  }
 }

@@ -14,8 +14,11 @@
  *   parsed out of prose. The ticket stays single-use: one service per spec.
  */
 import { spawn } from "node:child_process";
+import { createServer, type Server } from "node:http";
 import { test } from "@playwright/test";
 import { realpath } from "node:fs/promises";
+import { createAssetServer } from "@refyard/host-node";
+import type { AddressInfo } from "node:net";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { GitFixtureRepo } from "./repo.js";
@@ -56,6 +59,7 @@ export interface E2eService {
   readonly pairingUrl: string;
   readonly origin: string;
   readonly port: number;
+  readonly uiPort: number;
   readonly instanceId: string;
   stop(): Promise<void>;
 }
@@ -64,11 +68,60 @@ export interface E2eServiceOptions {
   readonly repo: GitFixtureRepo;
   /** 0 asks the OS for a free port, which is what a spec normally wants. */
   readonly port?: number;
+  /** Reuse a static UI authority when a test restarts only the backend. */
+  readonly uiPort?: number;
 }
 
 export async function startE2eService(
   options: E2eServiceOptions,
 ): Promise<E2eService> {
+  const webRoot = join(REPO_ROOT, "apps", "web", "build");
+  let assets: ReturnType<typeof createAssetServer> | null = null;
+  const webServer = createServer((request, response) => {
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      response.writeHead(405, { allow: "GET, HEAD" });
+      response.end();
+      return;
+    }
+    if (assets === null) {
+      response.writeHead(503);
+      response.end();
+      return;
+    }
+    void assets
+      .serve({
+        path: request.url?.split("?", 1)[0] ?? "/",
+        response,
+        headOnly: request.method === "HEAD",
+      })
+      .then((served) => {
+        if (served === "served") {
+          return;
+        }
+        response.writeHead(served === "refused" ? 403 : 404);
+        response.end();
+      })
+      .catch(() => {
+        if (!response.headersSent) {
+          response.writeHead(500);
+        }
+        response.end();
+      });
+  });
+  const webPort = await listen(webServer, options.uiPort ?? 0);
+  const webOrigin = `http://127.0.0.1:${webPort}`;
+  let webClosed = false;
+  const closeWeb = async (): Promise<void> => {
+    if (webClosed) {
+      return;
+    }
+    webClosed = true;
+    await new Promise<void>((resolve, reject) => {
+      webServer.close((error) =>
+        error === undefined ? resolve() : reject(error),
+      );
+    });
+  };
   const repositoryPath = await realpath(options.repo.root);
   const child = spawn(
     process.execPath,
@@ -80,6 +133,10 @@ export async function startE2eService(
       String(options.port ?? 0),
       "--repo",
       repositoryPath,
+      "--allow-origin",
+      webOrigin,
+      "--ui-origin",
+      webOrigin,
       "--json",
     ],
     {
@@ -130,22 +187,16 @@ export async function startE2eService(
         serviceInstanceId: string;
         port: number;
         url: string;
-        ui: string | null;
       };
-      // A service with no web build serves a placeholder page, and every spec then
-      // fails on a panel that does not exist — thirty confusing failures for one
-      // missing directory. This is the clear failure instead: the e2e suite must never
-      // run against the placeholder.
-      if (ready.ui === null || ready.ui === undefined) {
-        throw new Error(
-          "the service found no web build, so it is serving the placeholder page; " +
-            "run `pnpm build && bun scripts/bundle-cli.ts` first",
-        );
-      }
+      assets = createAssetServer({
+        webRoot,
+        connectOrigins: [new URL(ready.url).origin],
+      });
       const handle: E2eService = {
-        pairingUrl: `${ready.url}/?pair=${ticket}`,
+        pairingUrl: `${webOrigin}/?api=${encodeURIComponent(ready.url)}&pair=${ticket}`,
         origin: ready.url,
         port: ready.port,
+        uiPort: webPort,
         instanceId: ready.serviceInstanceId,
         async stop(): Promise<void> {
           stopping = true;
@@ -159,6 +210,7 @@ export async function startE2eService(
           });
           child.kill("SIGTERM");
           await exited;
+          await closeWeb();
         },
       };
       started.add({
@@ -169,15 +221,32 @@ export async function startE2eService(
       return handle;
     }
     if (child.exitCode !== null) {
+      await closeWeb();
       throw new Error(
         `the service exited with ${child.exitCode}:\n${stderr}${stdout}`,
       );
     }
     if (Date.now() > deadline) {
+      await closeWeb();
       throw new Error(
         `the service never reported readiness:\n${stderr}${stdout}`,
       );
     }
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
+}
+
+/** Bind the separate static UI to a free loopback port for one browser spec. */
+async function listen(server: Server, port: number): Promise<number> {
+  return new Promise<number>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen({ port, host: "127.0.0.1" }, () => {
+      const address = server.address() as AddressInfo | null;
+      if (address === null || typeof address === "string") {
+        reject(new Error("the e2e UI server did not report a port"));
+        return;
+      }
+      resolve(address.port);
+    });
+  });
 }

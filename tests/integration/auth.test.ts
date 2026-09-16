@@ -221,6 +221,66 @@ describe("authentication", () => {
     expect(response.headers.get("access-control-allow-origin")).toBeNull();
   });
 
+  it("allows one configured hosted origin without wildcard CORS", async () => {
+    // Prevents: deploying the static UI by weakening the API to `*`, or allowing an
+    // origin that was never explicitly approved by the operator.
+    const hosted = await startTestService({
+      repo,
+      allowedOrigins: ["https://ui.example.test"],
+    });
+    try {
+      const hostedOrigin = "https://ui.example.test";
+      const ticket = ticketFrom(hosted.http.pairingUrl(hostedOrigin));
+      const preflight = await fetch(`${hosted.baseUrl}/api/v1/repositories`, {
+        method: "OPTIONS",
+        headers: {
+          origin: hostedOrigin,
+          "access-control-request-method": "GET",
+          "access-control-request-headers": "authorization",
+        },
+      });
+      expect(preflight.status).toBe(204);
+      expect(preflight.headers.get("access-control-allow-origin")).toBe(
+        hostedOrigin,
+      );
+      expect(preflight.headers.get("access-control-allow-origin")).not.toBe(
+        "*",
+      );
+
+      const exchange = await fetch(
+        `${hosted.baseUrl}/api/v1/session/exchange`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", origin: hostedOrigin },
+          body: JSON.stringify({ ticket }),
+        },
+      );
+      expect(exchange.status).toBe(200);
+      const session = (await exchange.json()) as { token: string };
+      const allowedRead = await fetch(`${hosted.baseUrl}/api/v1/repositories`, {
+        headers: {
+          authorization: `Bearer ${session.token}`,
+          origin: hostedOrigin,
+        },
+      });
+      expect(allowedRead.status).toBe(200);
+      expect(allowedRead.headers.get("access-control-allow-origin")).toBe(
+        hostedOrigin,
+      );
+
+      const rejected = await fetch(`${hosted.baseUrl}/api/v1/repositories`, {
+        headers: {
+          authorization: `Bearer ${session.token}`,
+          origin: "https://evil.example.test",
+        },
+      });
+      expect(rejected.status).toBe(403);
+      expect(rejected.headers.get("access-control-allow-origin")).toBeNull();
+    } finally {
+      await hosted.close();
+    }
+  });
+
   it("keeps a ticket and a token out of the log lines", async () => {
     // Prevents: pairing material ending up in a log file that is later shared.
     const token = await service.pair();

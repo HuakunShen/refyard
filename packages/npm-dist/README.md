@@ -1,8 +1,8 @@
 # refyard
 
-A browser workbench for a Git repository **on this machine**. It starts a local service that
-serves a web UI and talks to the `git` you already have, against repositories you explicitly
-approve. Nothing is uploaded, and there is no hosted component.
+A backend API for a browser workbench against Git repositories **on this machine**. It runs the
+`git` you already have, against repositories you explicitly approve. The static PWA is deployed
+separately from `apps/web`; this package never ships or serves the UI.
 
 ## Requirements
 
@@ -18,22 +18,32 @@ approve. Nothing is uploaded, and there is no hosted component.
 ## Run it
 
 ```sh
-# Open a repository in the browser (picks the default port, opens the page for you).
-npx refyard open /path/to/repo
-
-# Or start it without opening a browser and print a pairing URL yourself.
+# Start the API and print a pairing URL for a separately served UI.
 npx refyard serve --repo /path/to/repo --no-open --ticket-ttl 600
+
+# Multiple repositories are always approved explicitly, one root per path.
+npx refyard serve --repo /path/to/one --repo /path/to/two --no-open
 ```
 
-The first run prints a **pairing URL** — open it to connect the page to the service. Each ticket is
-single use; `serve` can print another (press `p` then Enter) and `--ticket-ttl` extends how long one
-lives (60 seconds by default).
+The API prints a **pairing URL** for a UI host. Each ticket is single use; `serve` can print another
+(press `p` then Enter) and `--ticket-ttl` extends how long one lives (60 seconds by default).
+
+For the Cloudflare Worker UI, expose the API through an operator-owned HTTPS tunnel and configure
+the exact origins. The tunnel must forward to this loopback listener and preserve the API's
+authentication; it must not expose a second unauthenticated route:
+
+```sh
+npx refyard serve --repo /path/to/repo --no-open \
+  --ui-origin https://ui.example.test \
+  --api-origin https://api.example.test \
+  --allow-origin https://ui.example.test
+```
 
 Installed globally, the command is just `refyard`:
 
 ```sh
 npm install --global refyard
-refyard open /path/to/repo
+refyard serve --repo /path/to/repo --no-open
 ```
 
 Check the installation with:
@@ -44,21 +54,24 @@ refyard doctor --json     # node, git, and one probe per Git feature the service
 
 ## How it behaves
 
-- **Loopback only.** The service binds `127.0.0.1` and refuses foreign `Origin`/`Host` headers.
-  There is no flag that widens this.
+- **Loopback by default.** The service binds `127.0.0.1` and refuses foreign `Origin`/`Host`
+  headers. Hosted browser access is opt-in, requires an exact `--allow-origin`, and still needs
+  an HTTPS endpoint such as an operator-owned tunnel; a public Worker cannot reach loopback by
+  itself.
 - **Everything is authenticated**, reads included. Pairing exchanges a single-use ticket for an
   in-memory bearer token that never touches disk.
 - **It runs your `git`, as you.** Hooks, filters, credential helpers and your SSH configuration all
   apply. Destructive operations (discard, worktree removal, stash drop/pop, branch delete) ask for
   confirmation, back up what could be lost first, and refuse to run when a precondition cannot be
   verified.
-- **Repositories are approved explicitly.** The service can only reach directories you handed it.
+- **Repositories are approved explicitly.** The service can only reach directories you handed it;
+  every `--repo` is its own approved root.
 - **Unknown is reported as unknown.** If Git's outcome cannot be determined, the operation is
   reported as needing attention rather than as succeeded, and it is never retried automatically.
 
 ## What it does not do
 
-No hosted or remote service, no built-in terminal, no plugin host, no credential storage. The
+No Git backend in Cloudflare, no built-in terminal, no plugin host, no credential storage. The
 complete set of operations this build implements is whatever `GET /api/v1/capabilities` returns
 from your installation — anything absent from that list is not implemented, not hidden.
 

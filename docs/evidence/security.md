@@ -10,9 +10,10 @@ Last run: 2026-09-15, macOS 26.6 arm64, Node 26.8.2, Git 2.50.1 (Apple Git-155) 
 
 ## The surface being defended
 
-- The service listens on **loopback only** and authenticates **every** HTTP read, including
-  `GET /api/v1/capabilities`. A browser page is assumed hostile until it has exchanged a
-  single-use pairing ticket for an in-memory bearer.
+- The service listens on **loopback only by default** and authenticates **every** HTTP read,
+  including `GET /api/v1/capabilities`. A browser page is assumed hostile until it has exchanged a
+  single-use pairing ticket for an in-memory bearer. Hosted access is an explicit exact-origin
+  allowlist on top of the same bearer and ticket checks; it is not a wildcard or cookie mode.
 - The browser sends **intentions**, never commands. There is no wire field for `argv`, `cwd`, or
   `env`, and no route that runs Git on behalf of a raw string.
 - Repository content is untrusted input: file names, patches, commit messages, and remote
@@ -66,6 +67,16 @@ on time, a widened TTL is honoured, and a ticket is consumed whether or not the 
 These cases run against isolated temporary repositories on the current macOS machine. They do not
 prove multi-user isolation, a hostile remote server, or a deployed tunnel.
 
+### Separate static Worker and hosted API boundary — `tests/web-host/static-worker.test.ts`, `tests/integration/auth.test.ts`
+
+The Cloudflare Worker has no Git binding, API proxy, bearer secret, or mutation route. Its tests
+exercise the built-asset boundary: normal asset delegation, restrictive headers, SPA-compatible
+asset handling, JSON 404 for `/api/*`, and refusal of non-GET asset methods. The service tests
+exercise the complementary boundary: an exact configured UI origin can preflight, exchange a
+single-use ticket, and read with its bearer; an unlisted origin receives no CORS grant and is
+refused. `--api-origin` only changes the browser-visible address in the pairing URL; it does not
+change where the Node listener binds or bypass authentication.
+
 ### Bounds and refusals elsewhere in the suite
 
 - **Approved roots**: handle resolution refuses relative escapes, handles whose directory became a
@@ -117,7 +128,7 @@ Stated plainly, because a release page must not imply otherwise:
 | No browser other than Chromium                                             | origin/CSP/service-worker behavior in Firefox, WebKit, and mobile browsers is unverified                      |
 | No hostile-remote testing (malicious servers, huge/odd protocol responses) | remote error handling is exercised with local path remotes and crafted failures, not a real adversary         |
 | No multi-user deployment model                                             | the trust model still assumes one OS user on one machine                                                   |
-| No deployed hosted UI or tunnel                                            | the exact-origin runtime path is implemented and locally exercised, but no Cloudflare account/domain/tunnel was used here |
+| No deployed hosted UI or tunnel                                            | the static Worker configuration and exact-origin runtime path are locally dry-run/tested, but no Cloudflare account, domain, or tunnel was used here |
 | No credential or SSH-agent testing                                         | hooks, signing and host verification were deliberately left untouched; that also means they are untested here |
 | No resource-exhaustion campaign                                            | request bodies, job counts, and read sizes are bounded in the contract, but no sustained load was applied     |
 

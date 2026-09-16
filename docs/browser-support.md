@@ -1,9 +1,10 @@
 # Browser support
 
-refyard serves a static SPA over loopback and talks to it with `fetch` and
-`EventSource`. This page records what was actually exercised, what is expected to work,
-and where a browser will refuse — with the recommendation being the same-origin setup
-whenever a mechanism gets in the way, never a way around the mechanism.
+Refyard's browser surface is a static SPA/PWA, deployed independently from the API. It talks to
+the authenticated Node service with `fetch` and `EventSource`. This page records what was actually
+exercised, what is expected to work, and where a browser will refuse — with the recommendation
+being an explicit secure origin configuration whenever a mechanism gets in the way, never a way
+around the mechanism.
 
 ## What was run
 
@@ -96,13 +97,19 @@ change under the panel.
 | Service worker                   | offline app shell                         | Online use is unaffected; a reload with the service gone shows the browser's error page instead of the cached shell.        |
 | `crypto.getRandomValues`         | client request ids                        | Not used for tokens; the host mints those.                                                                                  |
 
-## Same-origin is the supported shape
+## Same-origin and hosted shapes
 
-The service serves the page it protects, so every request is same-origin, there is no
-CORS preflight, no `Sec-Fetch-Site: cross-site` refusal, and no mixed content. That is
-not an accident of packaging: the origin policy in the host refuses an `Origin` that is
-not its own, refuses `null`, and refuses `Sec-Fetch-Site: cross-site` outright, so the
-same-origin path is the only one this build can promise.
+The default local shape is same-origin: a separate static asset server (or a local preview) hosts
+the page, and the CLI API stays on loopback. There is no CORS preflight and no mixed content. The
+host refuses an `Origin` that is not its own, refuses `null`, and refuses `Sec-Fetch-Site:
+cross-site` unless the operator has explicitly configured an exact hosted origin.
+
+The Cloudflare shape is opt-in and still keeps the trust boundaries separate. The Worker serves
+only the static PWA; it cannot reach a user's loopback by itself. A remote browser therefore needs
+an operator-owned HTTPS tunnel to the CLI and a pairing URL containing the tunnel's browser-visible
+`--api-origin`. The CLI must receive the exact Worker origin in `--allow-origin` and `--ui-origin`.
+The API remains bearer- and ticket-authenticated; no cookie or Worker secret is used for the Git
+session. A live Cloudflare account, domain, and tunnel were not exercised by this repository run.
 
 If a browser or an extension gets in the way, the answer is to make the request
 same-origin, not to weaken a check:
@@ -111,7 +118,7 @@ same-origin, not to weaken a check:
 | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ERR_CONNECTION_REFUSED` on a `localhost` bookmark    | The service is not running, or it is on another port.                                          | Start it again, or open the pairing URL the terminal prints — the port there is the real one.                                                                                                                                |
 | "The session is no longer valid" after a restart      | The service has a new instance id, so the old token is worthless.                              | Pair again with a fresh ticket (press `p` + Enter in the terminal).                                                                                                                                                          |
-| Requests to `http://127.0.0.1` blocked by the browser | A public `https://` page cannot call loopback HTTP: Private Network Access, and mixed content. | Open the workbench from the service's own origin. The hosted-page-to-local-API shape is **not implemented** in this build, deliberately: it would need an explicit origin grant on the host and a documented trust decision. |
+| Requests to `http://127.0.0.1` blocked by the browser | A public `https://` page cannot call another machine's loopback HTTP: Private Network Access and mixed content. | Configure an operator-owned HTTPS tunnel and pass its exact URL as `--api-origin`; pass the Worker origin to `--allow-origin` and `--ui-origin`. |
 | "not connected (incompatible service)"                | The page and the service disagree about the API major.                                         | Update whichever is older. The page refuses rather than guessing at semantics.                                                                                                                                               |
 | Event stream never connects                           | A proxy or extension is buffering `text/event-stream`.                                         | Use the page directly; the header shows "no live updates" and everything else still works.                                                                                                                                   |
 

@@ -15,7 +15,7 @@
  * one across tests would either fail or teach the suite to reuse a credential.
  */
 import { expect, test } from "@playwright/test";
-import { mkdir, rm, symlink, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRepo, type GitFixtureRepo } from "../support/repo.js";
@@ -24,8 +24,6 @@ import { startE2eService } from "../support/e2e-service.js";
 const REPO_ROOT = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const CLI_BUNDLE = join(REPO_ROOT, ".refyard-dev", "cli.mjs");
 const WEB_BUILD = join(REPO_ROOT, "apps", "web", "build");
-/** Where the CLI looks for a web build next to its own bundle. */
-const STAGED_WEB = join(REPO_ROOT, ".refyard-dev", "web");
 
 interface RunningService {
   readonly pairingUrl: string;
@@ -237,9 +235,9 @@ async function startService(fixture: GitFixtureRepo): Promise<RunningService> {
 }
 
 /**
- * The e2e run needs the CLI bundle and the web build, both produced by the commands the
- * plan lists before `pnpm test:e2e`. This only reports clearly when one is missing, so a
- * failure is never an unexplained browser error.
+ * The e2e run needs the API-only CLI bundle and the separately built static web assets,
+ * both produced by the commands the plan lists before `pnpm test:e2e`. This only reports
+ * clearly when one is missing, so a failure is never an unexplained browser error.
  */
 async function ensureBuilt(): Promise<void> {
   for (const [label, path] of [
@@ -254,17 +252,4 @@ async function ensureBuilt(): Promise<void> {
       );
     }
   }
-  // The host serves a web build found next to its own bundle; staging a link keeps the
-  // repository root clean and `.refyard-dev/` is already ignored.
-  try {
-    await stat(STAGED_WEB);
-  } catch {
-    await mkdir(dirname(STAGED_WEB), { recursive: true });
-    await symlink(WEB_BUILD, STAGED_WEB, "dir");
-  }
 }
-
-// Remove the staged link even if Playwright's worker is recycled before the suite ends.
-process.on("exit", () => {
-  void rm(STAGED_WEB, { force: true });
-});

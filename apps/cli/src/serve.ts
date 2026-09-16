@@ -24,7 +24,7 @@ import {
   createInterface,
   type Interface as ConsoleInterface,
 } from "node:readline";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { realpath, stat } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import {
@@ -81,7 +81,6 @@ import { DEFAULT_PORT, DEFAULT_TICKET_TTL_SECONDS } from "./args.js";
 import { isPairingCommand } from "./pairing-reprint.js";
 import { reportedVersion } from "./version.js";
 import { openInBrowser } from "./browser.js";
-import { MINIMAL_PAGE } from "./minimal-page.js";
 
 export interface ServiceAssembly {
   readonly read: ReadService;
@@ -395,8 +394,14 @@ export interface RunServiceOptions extends AssembleOptions {
   readonly openBrowser: boolean;
   /** Pairing-ticket lifetime in seconds; 60 unless --ticket-ttl says otherwise. */
   readonly ticketTtlSeconds: number;
-  /** Directory of the built web app; when absent, a placeholder page is served. */
-  readonly webRoot: string | null;
+  /** Optional static root for an embedding host; the CLI itself leaves this absent. */
+  readonly webRoot?: string | null;
+  /** Exact browser origins allowed to call this API in hosted mode. */
+  readonly allowedOrigins?: readonly string[];
+  /** Origin of the separately deployed UI that receives the pairing URL. */
+  readonly uiOrigin?: string;
+  /** Browser-visible API origin, such as the HTTPS endpoint exposed by a tunnel. */
+  readonly apiOrigin?: string;
   readonly allowRoot: boolean;
   /**
    * Machine output: one JSON object on stdout, pairing material on stderr only.
@@ -443,8 +448,11 @@ export async function runService(
     events: assembly.events,
     serviceInstanceId: assembly.serviceInstanceId,
     ticketTtlSeconds: options.ticketTtlSeconds,
-    webRoot: options.webRoot,
-    inlineDocument: MINIMAL_PAGE,
+    webRoot: options.webRoot ?? null,
+    allowedOrigins: [
+      ...(options.allowedOrigins ?? []),
+      ...(options.uiOrigin === undefined ? [] : [options.uiOrigin]),
+    ],
     repositoryManagement: assembly.repositoryManagement,
     ...(options.shutdownGraceMs === undefined
       ? {}
@@ -486,7 +494,17 @@ export async function runService(
   }
 
   const origin = `http://127.0.0.1:${http.port}`;
-  const pairingUrl = http.pairingUrl(origin);
+  const pairingUrlFor = (): string => {
+    const pairingOrigin = options.uiOrigin ?? origin;
+    const issued = http.pairingUrl(pairingOrigin);
+    if (options.uiOrigin === undefined) {
+      return issued;
+    }
+    const url = new URL(issued);
+    url.searchParams.set("api", options.apiOrigin ?? origin);
+    return url.toString();
+  };
+  const pairingUrl = pairingUrlFor();
 
   /**
    * Two output modes, and the difference is who is reading.
@@ -508,15 +526,20 @@ export async function runService(
         repositoryId: assembly.repositoryId,
         repositoryIds: [...assembly.repositoryIds],
         allowedRootIds: [...assembly.allowedRootIds],
-        ui: options.webRoot,
+        ui: null,
+        apiOnly: true,
       }),
     );
     note(`pairing URL (single use): ${pairingUrl}`);
-    if (options.openBrowser) {
-      const opened = await openInBrowser(`${origin}/`);
+    if (options.openBrowser && options.uiOrigin !== undefined) {
+      const opened = await openInBrowser(pairingUrl);
       if (!opened.ok) {
         note(`could not open a browser: ${opened.reason}`);
       }
+    } else if (options.openBrowser) {
+      note(
+        "not opening a browser: this CLI serves the API only; configure the deployed UI origin with --ui-origin",
+      );
     }
     let jsonClosed = false;
     const closeJson = async (): Promise<void> => {
@@ -548,9 +571,7 @@ export async function runService(
   options.write(
     `  ticket ttl: ${options.ticketTtlSeconds}s${options.ticketTtlSeconds === DEFAULT_TICKET_TTL_SECONDS ? "" : " (--ticket-ttl)"}`,
   );
-  options.write(
-    `  ui:         ${options.webRoot === null ? "placeholder page (the Svelte app is built in a later task)" : options.webRoot}`,
-  );
+  options.write("  ui:         API-only (deploy apps/web separately)");
   options.write("");
   options.write(`  open this URL in your browser to pair this session:`);
   options.write(`    ${pairingUrl}`);
@@ -563,14 +584,18 @@ export async function runService(
   );
   options.write(`  press Ctrl+C to stop`);
 
-  if (options.openBrowser) {
-    const opened = await openInBrowser(`${origin}/`);
+  if (options.openBrowser && options.uiOrigin !== undefined) {
+    const opened = await openInBrowser(pairingUrl);
     if (!opened.ok) {
       // The URL is already printed, so a missing browser is a note, not a failure.
       options.write(
         `  note: could not open a browser (${opened.reason}); use the URL above`,
       );
     }
+  } else if (options.openBrowser) {
+    options.write(
+      "  note: not opening a browser: this CLI serves the API only; configure --ui-origin for the deployed UI",
+    );
   }
 
   let closed = false;
@@ -609,7 +634,7 @@ export async function runService(
       if (isPairingCommand(line)) {
         options.write("");
         options.write("  a fresh pairing URL (single use):");
-        options.write(`    ${http.pairingUrl(origin)}`);
+        options.write(`    ${pairingUrlFor()}`);
       }
     });
   }
@@ -621,26 +646,6 @@ export async function runService(
     pairingUrl,
     close,
   };
-}
-
-/** The web build, if this installation has one next to the CLI. */
-export async function findWebRoot(
-  cliDirectory: string,
-): Promise<string | null> {
-  for (const candidate of [
-    join(dirname(cliDirectory), "web"),
-    join(cliDirectory, "web"),
-  ]) {
-    try {
-      const info = await stat(candidate);
-      if (info.isDirectory()) {
-        return candidate;
-      }
-    } catch {
-      continue;
-    }
-  }
-  return null;
 }
 
 export { DEFAULT_PORT };

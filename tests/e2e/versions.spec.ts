@@ -18,6 +18,7 @@ interface RunningService {
   readonly pairingUrl: string;
   readonly origin: string;
   readonly port: number;
+  readonly uiPort: number;
   readonly instanceId: string;
   stop(): Promise<void>;
 }
@@ -50,7 +51,7 @@ test.describe("a service that is not the one we paired with", () => {
     // Same address, different service: the first one is gone and a second copy of
     // refyard is answering on the port its bookmark names.
     await first.stop();
-    const second = await startService(repo, first.port);
+    const second = await startService(repo, first.port, first.uiPort);
     try {
       expect(second.instanceId).not.toEqual(first.instanceId);
       await page.reload();
@@ -84,6 +85,11 @@ test.describe("a service that is not the one we paired with", () => {
 async function startService(
   fixture: GitFixtureRepo,
   port: number,
+  uiPort?: number,
 ): Promise<RunningService> {
-  return startE2eService({ repo: fixture, port });
+  return startE2eService({
+    repo: fixture,
+    port,
+    ...(uiPort === undefined ? {} : { uiPort }),
+  });
 }

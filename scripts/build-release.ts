@@ -3,29 +3,21 @@
  * `pnpm build:release` — stage the publishable tarball contents.
  *
  * The staging directory (`packages/npm-dist`) holds a manifest that is source and
- * everything else that is generated: the CLI bundle, the web build, the bin shim and
- * a build-info file. Two rules shape the output:
+ * everything else that is generated: the CLI bundle, the bin shim and a build-info
+ * file. The static UI is deployed separately by `apps/web` to Cloudflare Workers.
+ * Two rules shape the output:
  *
  * - **The artifact stands alone.** The CLI is bundled with its workspace packages
  *   inside it, so the tarball has no `dependencies` at all and nothing resolves
  *   `workspace:*` or a repository-relative path at run time.
- * - **The web build is required, not optional.** A CLI that starts and serves nothing
- *   is worse than a failed build, so this refuses to stage a package whose UI is
- *   missing rather than shipping a CLI-only install.
+ * - **The CLI is backend-only.** It must not carry a second copy of the SPA; the
+ *   Cloudflare Worker is the only production UI artifact.
  *
  * No license file is written: this package is `UNLICENSED` and `private`, and
  * inventing a license on the project's behalf is not this script's call.
  */
 import { execFile } from "node:child_process";
-import {
-  chmod,
-  cp,
-  mkdir,
-  readFile,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -34,25 +26,8 @@ import { build } from "esbuild";
 const run = promisify(execFile);
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const stagingRoot = join(repoRoot, "packages", "npm-dist");
-const webBuild = join(repoRoot, "apps", "web", "build");
 const distRoot = join(stagingRoot, "dist");
 const binRoot = join(stagingRoot, "bin");
-
-async function requireDirectory(
-  path: string,
-  what: string,
-  hint: string,
-): Promise<void> {
-  try {
-    const info = await stat(path);
-    if (info.isDirectory()) {
-      return;
-    }
-  } catch {
-    // Falls through to the error below.
-  }
-  throw new Error(`${what} is missing at ${path}; ${hint}`);
-}
 
 /** The staged bytes must not name this checkout; a moved directory would break them. */
 async function assertNoRepositoryPaths(
@@ -89,14 +64,9 @@ for (const field of [
   }
 }
 
-await requireDirectory(
-  webBuild,
-  "the web build",
-  "run `pnpm build` first — the tarball ships the UI, and a CLI-only install serves nothing",
-);
-
 await rm(distRoot, { recursive: true, force: true });
 await rm(binRoot, { recursive: true, force: true });
+await rm(join(stagingRoot, "web"), { recursive: true, force: true });
 await mkdir(distRoot, { recursive: true });
 await mkdir(binRoot, { recursive: true });
 
@@ -126,7 +96,7 @@ const result = await build({
   banner: {
     js: [
       "// refyard — generated bundle, not source.",
-      "// This file is the CLI: it serves the UI in ./web and runs this machine's `git`.",
+      "// This file is the API-only CLI: it runs this machine's `git`; the UI is deployed separately.",
     ].join("\n"),
   },
   logLevel: "warning",
@@ -149,8 +119,6 @@ const binPath = join(binRoot, "refyard.mjs");
 await writeFile(binPath, binShim, "utf8");
 await chmod(binPath, 0o755);
 
-await cp(webBuild, join(stagingRoot, "web"), { recursive: true });
-
 const bundleBytes = (await stat(cliOutfile)).size;
 const buildInfo = {
   name: manifest["name"],
@@ -171,5 +139,5 @@ await writeFile(
 await assertNoRepositoryPaths([cliOutfile, binPath]);
 
 console.log(
-  `build:release: staged ${relative(repoRoot, distRoot)} (bundle ${bundleBytes} bytes, commit ${gitCommit}) and ${relative(repoRoot, join(stagingRoot, "web"))}`,
+  `build:release: staged ${relative(repoRoot, distRoot)} (backend bundle ${bundleBytes} bytes, commit ${gitCommit}); UI is deployed from apps/web`,
 );

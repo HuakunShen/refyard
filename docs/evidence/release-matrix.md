@@ -26,13 +26,16 @@ machine. It is one machine, and the report says so in its own fields.
 
 ## Node versions
 
+The following table is historical evidence for published 0.1.x artifacts, which bundled the UI.
+The current R15 artifact is API-only; its replacement evidence is in the section above.
+
 The published `engines` range is **`>=22 <27`**. It is a range rather than one version because
 the runtime has no dependency on anything newer: the packaged CLI was run through its real
 lifecycle under six Node lines, and every one of them produced the same result.
 
 `refyard serve --json` from the `npm pack` tarball, then pair (`session/exchange`), read
-`capabilities`, `status`, `history` and `refs`, fetch the packaged UI, ask for a preview token,
-submit `stagePaths`, and check the file really is staged with `git diff --cached`:
+`capabilities`, `status`, `history` and `refs`, verify the API-only root boundary, ask for a preview
+token, submit `stagePaths`, and check the file really is staged with `git diff --cached`:
 
 | Node     | Capabilities | UI  | History | HEAD  | Stage operation | `git diff --cached` | Status   |
 | -------- | ------------ | --- | ------- | ----- | --------------- | ------------------- | -------- |
@@ -86,9 +89,9 @@ revision this file belongs to.
 | `pnpm test:unit`        | unit suites (contract, core planners/parsers, graph, client, ui, fixtures) — 236 cases, 16 files                                                                                                                                                        | verified |
 | `pnpm test:integration` | real Git in temporary repositories: reads, writes, merge, worktrees, submodules, jobs, restart, auth, concurrency, network, repository creation, the four repository shapes; plus the negative security cases in `tests/security` — 352 cases, 23 files | verified |
 | `pnpm test:portable`    | 4 portability cases in vitest, plus a neutral IIFE build (60,542 bytes) run with no host globals and no Node shims — 11 planner/parser checks                                                                                                           | verified |
-| `pnpm test:e2e`         | 30 Playwright specs in **three engines** (Chromium, Firefox, WebKit) against the built SPA, served by the real host over the packaged static bundle, each on a service with its own state directory                                                     | verified |
+| `pnpm test:e2e`         | 30 Playwright specs in **three engines** (Chromium, Firefox, WebKit) against the built SPA, served by a separate static asset host while the API-only CLI owns the service, each on a service with its own state directory | verified |
 | `pnpm build`            | turbo build of every package plus the static SPA                                                                                                                                                                                                        | verified |
-| `pnpm pack:smoke`       | 14 steps against the `npm pack` tarball: `npm exec` install, doctor, `serve --json`, packaged UI, authenticated API, SIGTERM, busy port, tarball contents                                                                                               | verified |
+| `pnpm pack:smoke`       | 14 steps against the `npm pack` tarball: `npm exec` install, doctor, `serve --json`, API-only 404 boundary, authenticated API, SIGTERM, busy port, tarball contents | verified |
 | `pnpm bench:runtime`    | the packaged CLI on a 100,000-commit fixture, three repeated lifecycles — macOS, Ubuntu, a container, CI (2,000 commits) and, from round two, Windows                                                             | verified |
 
 Verification scope, stated plainly: `pnpm test` (unit + integration) is a single run of the suite
@@ -260,6 +263,26 @@ implied by this row.
 | --- | --- | --- |
 | `POST /api/v1/repositories/register` and `/revoke` | verified | R4 integration and Chromium UI cases; exact paths, refusals, revocation and restart audit |
 
+## Cloudflare Worker and API-only current revision
+
+The 2026-09-16 R15 work changes the packaging boundary from the historical 0.1.x artifact. This
+revision has not been published or deployed. Local evidence is:
+
+| Surface | Result |
+| --- | --- |
+| Static PWA build | `pnpm build` passed; `apps/web/build` contains the SPA, service worker and manifest. |
+| Cloudflare configuration | `pnpm --dir apps/web exec wrangler deploy --dry-run` passed with Wrangler 4.132.0, reading 75 asset files; no publish occurred. |
+| Worker boundary | `pnpm test:web-host` passed 3/3: asset delegation/security headers, JSON `/api/*` 404, and non-GET refusal. |
+| Backend-only package | `pnpm build:release`, `pnpm test:pack`, and external `pnpm pack:smoke` passed; the tarball had 5 entries and no `web/` directory. |
+| Browser topology | `pnpm test:e2e` passed 99/99 across Chromium, Firefox and WebKit against the separate static host and API-only CLI. |
+| Hosted API path | Exact-origin CORS, ticket exchange and bearer read passed in the local isolated service; no public tunnel was exercised. |
+| Live deployment | **Unverified.** No Cloudflare account, domain, Worker deployment, or tunnel credentials were used. |
+
+The pairing URL has two explicit addresses in hosted mode: `--ui-origin` is the Worker page origin,
+and `--api-origin` is the HTTPS API/tunnel origin visible to the browser. The CLI still binds its
+listener to loopback; the operator-owned tunnel must preserve the service's Host/Origin/auth
+checks.
+
 ## Published releases
 
 Both releases were published by the project's owner and then checked against the registry — a
@@ -282,14 +305,15 @@ version can take a few minutes to become installable: right after the `202`, `np
 `npm exec --package refyard@0.1.1` can both report "no matching version" from a stale local
 cache — `npm_config_prefer_online=true npm exec …` revalidates it and works.
 
-## Deliberately absent from this release
+## Deliberately absent from the current scope
 
 These are not gaps in testing; they are decisions, and a release page must not present them as
 features:
 
 | Not shipped                                                  | Why                                                                                         |
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| A hosted/remote origin calling the loopback API              | the host refuses foreign `Origin`, `null`, and cross-site requests, and no flag widens that |
+| A live hosted API/tunnel deployment                            | the exact-origin path is implemented and locally tested, but no Cloudflare account, domain, or tunnel was exercised |
+| A Cloudflare Worker Git backend or API proxy                   | the Worker is static/PWA-only; it has no Git binding, bearer secret, or API route             |
 | Built-in terminal, plugin host, native shell                 | out of scope for V1 by design                                                               |
 | Any write operation not listed in `GET /api/v1/capabilities` | there is no route, no capability, and no button                                             |
 

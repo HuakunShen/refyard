@@ -13,12 +13,16 @@
     "pack:smoke": "bun scripts/pack-smoke.ts",
     "format": "prettier --write \"**/*.{ts,svelte,md,json,yaml}\"",
     "test": "vitest run",
-    "test:unit": "vitest run tests/unit tests/contract tests/core tests/graph",
+    "test:unit": "vitest run tests/unit tests/contract tests/core tests/graph tests/web-host",
+    "test:web-host": "vitest run tests/web-host",
     "test:integration": "vitest run tests/node tests/integration tests/security",
     "test:pack": "vitest run tests/pack",
     "test:portable": "bun scripts/check-portable.ts && vitest run tests/portable",
     "test:e2e": "pnpm build && bun scripts/bundle-cli.ts && playwright test",
-    "bench:runtime": "bun scripts/bench-runtime.ts"
+    "bench:runtime": "bun scripts/bench-runtime.ts",
+    "build:web": "pnpm --dir apps/web build",
+    "deploy:web": "pnpm --dir apps/web deploy",
+    "deploy:web:dry-run": "pnpm --dir apps/web deploy:dry-run"
   },
   "devDependencies": {
     "@playwright/test": "catalog:",

@@ -128,6 +128,65 @@ describe("argument parsing", () => {
     }
   });
 
+  it("parses an exact hosted UI origin and allowlist", () => {
+    // Prevents: a hosted page being enabled without an explicit origin, or a
+    // browser pairing URL pointing at a different page than the CORS allowlist.
+    const parsed = parseArgs(
+      [
+        "serve",
+        "--repo",
+        "/tmp/repo",
+        "--ui-origin",
+        "https://ui.example.test",
+      ],
+      "/tmp",
+    );
+    expect(parsed).toMatchObject({
+      ok: true,
+      command: {
+        uiOrigin: "https://ui.example.test",
+        allowedOrigins: ["https://ui.example.test"],
+      },
+    });
+  });
+
+  it("parses the browser-visible API origin separately from the local listener", () => {
+    // Prevents: an HTTPS Worker page receiving a pairing URL that points at the
+    // CLI's loopback address, which only exists on the machine running the CLI.
+    expect(
+      parseArgs([
+        "serve",
+        "--repo",
+        "/tmp/repo",
+        "--ui-origin",
+        "https://ui.example.test",
+        "--api-origin",
+        "https://api.example.test",
+      ]),
+    ).toMatchObject({
+      ok: true,
+      command: {
+        uiOrigin: "https://ui.example.test",
+        apiOrigin: "https://api.example.test",
+      },
+    });
+  });
+
+  it("rejects an invalid hosted origin instead of widening CORS", () => {
+    expect(
+      parseArgs(["serve", "--repo", "/tmp/repo", "--allow-origin", "*"]),
+    ).toMatchObject({ ok: false });
+    expect(
+      parseArgs([
+        "serve",
+        "--repo",
+        "/tmp/repo",
+        "--ui-origin",
+        "https://ui.example.test/path",
+      ]),
+    ).toMatchObject({ ok: false });
+  });
+
   it("rejects a port that is not a number and one out of range", () => {
     expect(parseArgs(["serve", "--port", "abc"]).ok).toBe(false);
     expect(parseArgs(["serve", "--port", "70000"]).ok).toBe(false);
@@ -341,6 +400,34 @@ describe("serving a repository", () => {
       expect(ready).toBeDefined();
       expect(ready).not.toContain(ticket);
       expect(io.lines.join("\n")).toContain("Ctrl+C");
+    } finally {
+      await running.close();
+    }
+  });
+
+  it("puts the browser-visible API origin in a separately hosted pairing URL", async () => {
+    // Prevents: the Worker UI loading successfully but trying to exchange its
+    // ticket against 127.0.0.1, which names the browser's machine rather than the
+    // CLI host behind the operator's HTTPS tunnel.
+    const running = await runService({
+      repositoryPath: repo.root,
+      gitPath: fixtureGitPath(),
+      port: 0,
+      portExplicit: true,
+      openBrowser: false,
+      ticketTtlSeconds: 60,
+      webRoot: null,
+      uiOrigin: "https://ui.example.test",
+      apiOrigin: "https://api.example.test",
+      allowRoot: false,
+      installSignalHandlers: false,
+      write: () => {},
+    });
+    try {
+      const pairing = new URL(running.pairingUrl);
+      expect(pairing.origin).toBe("https://ui.example.test");
+      expect(pairing.searchParams.get("api")).toBe("https://api.example.test");
+      expect(pairing.searchParams.get("pair")).toBeTruthy();
     } finally {
       await running.close();
     }
@@ -766,7 +853,7 @@ describe("serving a repository", () => {
     }
   });
 
-  it("serves the placeholder page when no web build is installed", async () => {
+  it("does not serve a placeholder UI when no web build is installed", async () => {
     const running = await runService({
       repositoryPath: repo.root,
       gitPath: fixtureGitPath(),
@@ -781,8 +868,42 @@ describe("serving a repository", () => {
     });
     try {
       const response = await fetch(`http://127.0.0.1:${running.http.port}/`);
-      expect(response.status).toBe(200);
-      expect(await response.text()).toContain("no web build");
+      expect(response.status).toBe(404);
+      expect(response.headers.get("content-type")).toContain(
+        "application/json",
+      );
+    } finally {
+      await running.close();
+    }
+  });
+
+  it("runs as an API-only process and does not serve a UI shell", async () => {
+    // Prevents: the npm CLI silently becoming a second UI deployment with stale
+    // assets, which would leave the Cloudflare Worker and the local process on
+    // different builds.
+    const io = collect();
+    const running = await runService({
+      repositoryPath: repo.root,
+      gitPath: fixtureGitPath(),
+      port: 0,
+      portExplicit: true,
+      openBrowser: false,
+      ticketTtlSeconds: 60,
+      webRoot: null,
+      allowRoot: false,
+      installSignalHandlers: false,
+      write: io.write,
+    });
+    try {
+      const origin = `http://127.0.0.1:${running.http.port}`;
+      const response = await fetch(`${origin}/`, {
+        headers: { origin },
+      });
+      expect(response.status).toBe(404);
+      expect(response.headers.get("content-type")).toContain(
+        "application/json",
+      );
+      expect(io.lines.join("\n")).toContain("API-only");
     } finally {
       await running.close();
     }

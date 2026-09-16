@@ -73,6 +73,9 @@ jobs:
       - name: Build
         run: pnpm build:release
 
+      - name: Validate Cloudflare Worker deployment
+        run: pnpm --dir apps/web exec wrangler deploy --dry-run
+
       # All three engines, because `pnpm test:e2e` runs all three: installing only
       # chromium made the second CI run fail the same 60 specs on both platforms —
       # firefox and webkit could not launch. An engine that is not installed is not a
