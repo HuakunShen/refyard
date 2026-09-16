@@ -39,6 +39,8 @@ export interface SidebarNavigationState {
   activeView: SidebarViewId;
   /** Tracks the no-repository -> repository transition that chooses the first daily view. */
   repositoryWasAvailable: boolean;
+  /** Allows an operation start to focus Working Copy once without trapping later navigation. */
+  operationWasInProgress: boolean;
 }
 
 function view(
@@ -93,6 +95,7 @@ export function createSidebarNavigationState(): SidebarNavigationState {
   return {
     activeView: "repositories",
     repositoryWasAvailable: false,
+    operationWasInProgress: false,
   };
 }
 
@@ -107,9 +110,12 @@ export function reconcileSidebarNavigation(
   state: SidebarNavigationState,
   views: readonly SidebarView[],
   hasRepository: boolean,
+  operationInProgress = false,
 ): void {
   const hadRepository = state.repositoryWasAvailable;
+  const hadOperation = state.operationWasInProgress;
   state.repositoryWasAvailable = hasRepository;
+  state.operationWasInProgress = operationInProgress;
 
   if (!hasRepository) {
     state.activeView = "repositories";
@@ -120,6 +126,11 @@ export function reconcileSidebarNavigation(
     state.activeView = isAvailable(views, "working-copy")
       ? "working-copy"
       : "repositories";
+    return;
+  }
+
+  if (operationInProgress && !hadOperation && isAvailable(views, "working-copy")) {
+    state.activeView = "working-copy";
     return;
   }
 

@@ -112,6 +112,25 @@ describe("repository sidebar navigation", () => {
     expect(state.activeView).toBe("repositories");
   });
 
+  it("focuses Working Copy once when a repository operation starts", () => {
+    const state = createSidebarNavigationState();
+    reconcileSidebarNavigation(state, views(), true, false);
+    selectSidebarView(state, "branches", views());
+
+    reconcileSidebarNavigation(state, views(), true, true);
+    expect(state.activeView).toBe("working-copy");
+
+    // Do not trap the user in Working Copy while the same operation remains active.
+    expect(selectSidebarView(state, "branches", views())).toBe(true);
+    reconcileSidebarNavigation(state, views(), true, true);
+    expect(state.activeView).toBe("branches");
+
+    // A later operation gets the same one-time focus behavior.
+    reconcileSidebarNavigation(state, views(), true, false);
+    reconcileSidebarNavigation(state, views(), true, true);
+    expect(state.activeView).toBe("working-copy");
+  });
+
   it("refuses selecting an unavailable destination", () => {
     const state = createSidebarNavigationState();
     reconcileSidebarNavigation(state, views(), true);

@@ -176,7 +176,12 @@
   const activeView = $derived(navigation.activeView);
 
   $effect(() => {
-    reconcileSidebarNavigation(navigation, sidebarViews, repository !== null);
+    reconcileSidebarNavigation(
+      navigation,
+      sidebarViews,
+      repository !== null,
+      operationInProgress !== null,
+    );
   });
 
   function chooseView(id: string): void {
