@@ -1124,6 +1124,23 @@
     );
   }
 
+  function onBranchSetUpstream(
+    branchName: string,
+    upstream: {
+      readonly remoteName: string;
+      readonly branchName: string;
+    } | null,
+  ): void {
+    void performWrite(
+      "set-branch-upstream",
+      () => ({ kind: "setBranchUpstream", branchName, upstream }),
+      (result) => {
+        branchMessage = result;
+      },
+      "repository",
+    );
+  }
+
   /* ------------------------------------------------------------------ merging */
 
   /**
@@ -2032,6 +2049,7 @@
                     onSwitch={onBranchSwitch}
                     onRename={onBranchRename}
                     onDelete={onBranchDelete}
+                    onSetUpstream={onBranchSetUpstream}
                     onMerge={onBranchMerge}
                   />
                 {/if}
