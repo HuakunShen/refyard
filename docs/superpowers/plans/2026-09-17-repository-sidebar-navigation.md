@@ -61,11 +61,11 @@
 - Each item exposes `data-testid="workbench-nav-${id}"`, `aria-current="page"` when active, and a bounded count badge when provided.
 - The component is visual/navigation-only and has no Git knowledge.
 
-- [ ] Write a RED structural test that requires `WorkbenchNav.svelte` to exist and forbids the app page from retaining the old sequence of `SectionCard` titles for Branches/Remotes/Stashes/Tags/Worktrees/Submodules.
-- [ ] Implement `WorkbenchNav` using buttons and existing token classes; do not introduce a new UI dependency.
-- [ ] Export it from `@refyard/git-ui` and run `pnpm check`.
-- [ ] Keep the structural ownership test RED until Task 3 migrates the page.
-- [ ] Commit `feat(git-ui): add workbench navigation list`.
+- [x] Write a RED structural test that requires `WorkbenchNav.svelte` to exist and forbids the app page from retaining the old sequence of `SectionCard` titles for Branches/Remotes/Stashes/Tags/Worktrees/Submodules.
+- [x] Implement `WorkbenchNav` using buttons and existing token classes; do not introduce a new UI dependency.
+- [x] Export it from `@refyard/git-ui` and run `pnpm check`.
+- [x] Keep the structural ownership test RED until Task 3 migrates the page.
+- [x] Commit `feat(git-ui): add workbench navigation list`.
 
 ### Task 3: Extract the app-specific repository sidebar and migrate the page
 
