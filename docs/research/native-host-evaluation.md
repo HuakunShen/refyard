@@ -31,16 +31,16 @@ The report uses the median and records each observed range. The most relevant va
 
 | Measurement | Result | Scope |
 | --- | ---: | --- |
-| Cold start to readiness | 0.469 s | CLI process, including the Git feature probe |
-| Service RSS before reads | 96 MiB | Refyard service only; no browser or Git child |
-| Status throughput | 193.4 reads/s | One service over loopback, concurrency four |
-| Service RSS after 100 status reads | 104 MiB | Same service and read batch |
-| First history page | 388 ms | 100 commits from the 100,000-commit fixture, bounded response |
-| Large-file diff | 121 ms / 1,554,484 bytes | 8,000-line file; time and JSON response payload |
-| Long-line diff | 112 ms / 1,442,557 bytes | One 700,000-character line |
-| Truncated diff | 135 ms / 1,962,008 bytes | 19,995 of 64,000 patch lines delivered, marked truncated |
-| Diff-service RSS after batch | 204 MiB | Service only after large, bounded, long-line and many-file reads |
-| Immediate warm large-file diff | 113 ms | Same diff read again |
+| Cold start to readiness | 0.464 s | CLI process, including the Git feature probe |
+| Service RSS before reads | 95 MiB | Refyard service only; no browser or Git child |
+| Status throughput | 191.6 reads/s | One service over loopback, concurrency four |
+| Service RSS after 100 status reads | 103 MiB | Same service and read batch |
+| First history page | 393 ms | 100 commits from the 100,000-commit fixture, bounded response |
+| Large-file diff | 118 ms / 1,554,484 bytes | 8,000-line file; time and JSON response payload |
+| Long-line diff | 114 ms / 1,442,557 bytes | One 700,000-character line |
+| Truncated diff | 131 ms / 1,962,008 bytes | 19,995 of 64,000 patch lines delivered, marked truncated |
+| Diff-service RSS after batch | 206 MiB | Service only after large, bounded, long-line and many-file reads |
+| Immediate warm large-file diff | 110 ms | Same diff read again |
 | Graceful shutdown | 5 ms | SIGTERM with no request in flight |
 
 These numbers demonstrate a measurable Node process cost and a substantial temporary memory
@@ -98,9 +98,9 @@ the Node host boundary; it is not evidence for a native VM.
 
 The current API-only release staging was measured after `pnpm build:release`:
 
-- `packages/npm-dist/dist/cli.mjs`: 2,205,421 bytes;
+- `packages/npm-dist/dist/cli.mjs`: 2,209,211 bytes;
 - `packages/npm-dist/dist/build-info.json`: version 0.1.1, engines `>=22 <27`, one entry point;
-- `npm pack` package size: 393,309 bytes;
+- `npm pack` package size: 394,396 bytes;
 - `npm pack` unpacked size: 2.2 MB, five files;
 - `pnpm pack:smoke`: the tarball installed and ran successfully in an isolated environment;
 - no web directory is present in the CLI package — the PWA is deployed from `apps/web`.

@@ -368,10 +368,10 @@ and its machine-readable input is the current
 [performance.json](/Volumes/Portable2TB/ExtDev/refyard/docs/evidence/performance.json).
 
 The approved local benchmark completed three lifecycles on macOS arm64 with Node 26.8.2, Git
-2.50.1, a 100,000-commit fixture and no network: cold start 0.469 s, service RSS 96 MiB before
-reads and 104 MiB after 100 status reads, 193.4 status reads/s, first history page 388 ms, and
-diff-service RSS 204 MiB after the large/bounded/long-line/many-file batch. The current API-only
-CLI bundle is 2,205,421 bytes; `npm pack` reported 393,309 bytes compressed and 2.2 MB unpacked.
+2.50.1, a 100,000-commit fixture and no network: cold start 0.464 s, service RSS 95 MiB before
+reads and 103 MiB after 100 status reads, 191.6 status reads/s, first history page 393 ms, and
+diff-service RSS 206 MiB after the large/bounded/long-line/many-file batch. The current API-only
+CLI bundle is 2,209,211 bytes; `npm pack` reported 394,396 bytes compressed and 2.2 MB unpacked.
 These are Node/process measurements, not a native-runtime comparison.
 
 | Native-host question | Status | Evidence |
