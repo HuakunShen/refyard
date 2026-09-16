@@ -47,9 +47,9 @@ on time, a widened TTL is honoured, and a ticket is consumed whether or not the 
 | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | "refuses a branch name Git would read as an option"                    | `git branch -D` being spelled where a branch name was meant                                                                                                                                          |
 | "refuses a remote URL that is a transport helper"                      | `ext::` (and friends) turning a "remote URL" into command execution                                                                                                                                  |
-| "refuses a configured transport helper before fetching"                | repository-local Git config bypassing the UI URL validator and reaching a helper protocol                                                  |
-| "refuses a hostile .gitmodules URL for reads and sync operations"       | repository-provided submodule config becoming an executable transport or sync target                                                   |
-| "refuses a .gitmodules absolute path outside the approved root"         | a local submodule URL redirecting access outside the explicitly approved directory                                                   |
+| "refuses a configured transport helper before fetching"                | repository-local Git config bypassing the UI URL validator and reaching a helper protocol                                                                                                            |
+| "refuses a hostile .gitmodules URL for reads and sync operations"      | repository-provided submodule config becoming an executable transport or sync target                                                                                                                 |
+| "refuses a .gitmodules absolute path outside the approved root"        | a local submodule URL redirecting access outside the explicitly approved directory                                                                                                                   |
 | "refuses a worktree destination that climbs out of the approved root"  | a worktree write landing outside the directory the user approved                                                                                                                                     |
 | "refuses a destination that names the Git directory itself"            | writing into `.git` — hooks are code execution                                                                                                                                                       |
 | "refuses an unknown path id instead of acting on some other path"      | an id from another service being interpreted as "the nearest path"                                                                                                                                   |
@@ -58,19 +58,30 @@ on time, a widened TTL is honoured, and a ticket is consumed whether or not the 
 | "returns a control character in a path as JSON, never as a raw byte"   | a terminal escape in a file name reaching the user's terminal through the API                                                                                                                        |
 | "sends a patch containing an escape sequence as JSON text"             | a file's contents becoming terminal control                                                                                                                                                          |
 | "refuses a write with Git's diagnostic and leaves the lock file alone" | deleting or ignoring `.git/index.lock` to "make it work"                                                                                                                                             |
-| "removes the lock by hand, then lets the next commit proceed"          | treating an external lock as service-owned while still proving recovery after explicit human removal                                  |
-| "refuses oversized path selections and bodies without changing Git"    | request-size abuse allocating validation or queue state before bounds are applied                                                       |
+| "removes the lock by hand, then lets the next commit proceed"          | treating an external lock as service-owned while still proving recovery after explicit human removal                                                                                                 |
+| "refuses oversized path selections and bodies without changing Git"    | request-size abuse allocating validation or queue state before bounds are applied                                                                                                                    |
 | "refuses to start rather than attaching to the listener it found"      | a second instance attaching to a port another program already owns                                                                                                                                   |
 
 ### Managed workspace access — `tests/integration/managed-workspaces.test.ts`, `tests/e2e/workspace.spec.ts`
 
-| Case | What it prevents |
-| --- | --- |
+| Case                                                                          | What it prevents                                                                                                                      |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
 | "approves exact paths, revokes access, and preserves the audit after restart" | a browser inventing a repository, silently widening a root, retaining access after revocation, or losing the access record on restart |
-| "approves and revokes a repository from the managed-access panel" | a UI changing the live grant without a visible approval action, or presenting a revoked row as still available |
+| "approves and revokes a repository from the managed-access panel"             | a UI changing the live grant without a visible approval action, or presenting a revoked row as still available                        |
 
 These cases run against isolated temporary repositories on the current macOS machine. They do not
 prove multi-user isolation, a hostile remote server, or a deployed tunnel.
+
+### Operation scopes — `tests/integration/scopes.test.ts`, `tests/node/auth-ttl.test.ts`
+
+Session authority now has two independent dimensions. Repository/root grants decide **where** a
+session may act; operation scopes decide **what kind of action** it may request. The verified scopes
+are `repository:read`, `repository:write`, `repository:network`, and `workspace:manage`. The focused
+cases prove that read-only cannot submit a local write, local-write cannot fetch, network authority
+can fetch without local-write authority, workspace registration is refused without its own scope,
+and SSE/MCP require read authority. `repository:*` satisfies the three repository operation scopes
+but does not grant an unapproved repository id or a workspace root. The normal local CLI grants all
+four scopes explicitly, while repository/root checks remain mandatory.
 
 ### Separate static Worker and hosted API boundary — `tests/web-host/static-worker.test.ts`, `tests/integration/auth.test.ts`
 
@@ -140,18 +151,18 @@ origin has no configured password. Passing `--hosted-password` is not part of th
 
 Stated plainly, because a release page must not imply otherwise:
 
-| Not done                                                                   | Consequence                                                                                                   |
-| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| No third-party security review, audit, or penetration test                 | every claim above rests on tests written by the same authors as the code                                      |
-| No fuzzing or property testing over parsers beyond the unit cases          | a malformed Git output that no hand-written case covers is unverified                                         |
-| No adversarial run on Windows or Linux                                     | the negative cases ran on macOS only                                                                          |
-| No browser other than Chromium                                             | origin/CSP/service-worker behavior in Firefox, WebKit, and mobile browsers is unverified                      |
-| No hostile-remote testing (malicious servers, huge/odd protocol responses) | remote error handling is exercised with local path remotes and crafted failures, not a real adversary         |
-| No multi-user deployment model                                             | the trust model still assumes one OS user on one machine                                                   |
+| Not done                                                                   | Consequence                                                                                                                                          |
+| -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No third-party security review, audit, or penetration test                 | every claim above rests on tests written by the same authors as the code                                                                             |
+| No fuzzing or property testing over parsers beyond the unit cases          | a malformed Git output that no hand-written case covers is unverified                                                                                |
+| No adversarial run on Windows or Linux                                     | the negative cases ran on macOS only                                                                                                                 |
+| No browser other than Chromium                                             | origin/CSP/service-worker behavior in Firefox, WebKit, and mobile browsers is unverified                                                             |
+| No hostile-remote testing (malicious servers, huge/odd protocol responses) | remote error handling is exercised with local path remotes and crafted failures, not a real adversary                                                |
+| No multi-user deployment model                                             | the trust model still assumes one OS user on one machine                                                                                             |
 | No deployed hosted UI or tunnel                                            | the static Worker configuration and exact-origin runtime path are locally dry-run/tested, but no Cloudflare account, domain, or tunnel was used here |
-| No real browser through a public hosted tunnel                              | local HTTP integration and separate static-host browser runs passed; Local Network Access, TLS termination, and a public tunnel remain unverified |
-| No credential or SSH-agent testing                                         | hooks, signing and host verification were deliberately left untouched; that also means they are untested here |
-| No resource-exhaustion campaign                                            | request bodies, job counts, and read sizes are bounded in the contract, but no sustained load was applied     |
+| No real browser through a public hosted tunnel                             | local HTTP integration and separate static-host browser runs passed; Local Network Access, TLS termination, and a public tunnel remain unverified    |
+| No credential or SSH-agent testing                                         | hooks, signing and host verification were deliberately left untouched; that also means they are untested here                                        |
+| No resource-exhaustion campaign                                            | request bodies, job counts, and read sizes are bounded in the contract, but no sustained load was applied                                            |
 
 Threat-model scope, restated: refyard runs on the user's machine, with the user's privileges, against
 repositories the user approved. It does not defend the user's machine from the user, and it does not
