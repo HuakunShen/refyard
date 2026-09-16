@@ -44,6 +44,7 @@ test.describe("worktree workbench", () => {
     page,
   }) => {
     await page.goto(service.pairingUrl);
+    await page.getByTestId("workbench-nav-worktrees").click();
     await expect(page.getByTestId("worktree-panel")).toBeVisible();
 
     await page.getByLabel("worktree destination").fill("linked-tree");
@@ -77,6 +78,7 @@ test.describe("worktree workbench", () => {
     page,
   }) => {
     await page.goto(service.pairingUrl);
+    await page.getByTestId("workbench-nav-worktrees").click();
     await expect(page.getByTestId("worktree-panel")).toBeVisible();
     await expect(page.getByTestId("worktree-list")).toContainText("primary");
     // Git refuses to remove the primary worktree, and the panel does not pretend

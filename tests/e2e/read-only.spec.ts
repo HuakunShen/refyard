@@ -246,15 +246,17 @@ test.describe("read-only workbench", () => {
     // `tests/integration/cli.test.ts` checks the opposite end — the built CLI advertises
     // all of them and names none as missing.
     await expect(page.getByText(/write operations/)).toBeVisible();
-    for (const panel of [
-      "staging-panel",
-      "stash-panel",
-      "tag-panel",
-      "worktree-panel",
-      "submodule-panel",
-      "branch-panel",
-      "repository-panel",
-    ]) {
+    for (const [view, panel] of [
+      ["working-copy", "staging-panel"],
+      ["branches", "branch-panel"],
+      ["remotes", "remote-panel"],
+      ["stashes", "stash-panel"],
+      ["tags", "tag-panel"],
+      ["worktrees", "worktree-panel"],
+      ["submodules", "submodule-panel"],
+      ["repositories", "repository-panel"],
+    ] as const) {
+      await page.getByTestId(`workbench-nav-${view}`).click();
       await expect(page.getByTestId(panel)).toBeVisible();
     }
   });

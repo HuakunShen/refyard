@@ -31,6 +31,7 @@ test.describe("stash and tag workbench", () => {
   test("stashes working changes and pops them back", async ({ page }) => {
     await repo.write("a.txt", "work to stash\n");
     await page.goto(service.pairingUrl);
+    await page.getByTestId("workbench-nav-stashes").click();
     await expect(page.getByTestId("stash-panel")).toBeVisible();
 
     await page.getByLabel("stash message").fill("e2e save");
@@ -55,6 +56,7 @@ test.describe("stash and tag workbench", () => {
     await repo.write("a.txt", "other\n");
     await repo.commitAll("other");
     await page.goto(service.pairingUrl);
+    await page.getByTestId("workbench-nav-stashes").click();
     await expect(page.getByTestId("stash-panel")).toBeVisible();
 
     await page.getByTestId("pop-stash-stash@{0}").click();
@@ -70,6 +72,7 @@ test.describe("stash and tag workbench", () => {
     await repo.write("a.txt", "stashed\n");
     await repo.git(["stash", "push", "-m", "to drop"]);
     await page.goto(service.pairingUrl);
+    await page.getByTestId("workbench-nav-stashes").click();
     await expect(page.getByTestId("stash-panel")).toBeVisible();
 
     // Arming the action does not drop anything yet.
@@ -91,6 +94,7 @@ test.describe("stash and tag workbench", () => {
     await repo.write("a.txt", "stashed\n");
     await repo.git(["stash", "push", "-m", "to keep armed"]);
     await page.goto(service.pairingUrl);
+    await page.getByTestId("workbench-nav-stashes").click();
     await expect(page.getByTestId("stash-list")).toContainText("to keep armed");
 
     await page.getByTestId("drop-stash-stash@{0}").click();
@@ -106,6 +110,7 @@ test.describe("stash and tag workbench", () => {
 
   test("creates and deletes a tag through the panel", async ({ page }) => {
     await page.goto(service.pairingUrl);
+    await page.getByTestId("workbench-nav-tags").click();
     await expect(page.getByTestId("tag-panel")).toBeVisible();
 
     await page.getByLabel("tag name").fill("v9.9.9");
