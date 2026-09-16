@@ -6,7 +6,10 @@
  * lets the test model a version skew without replacing either artifact with a stub.
  */
 import { expect, test, type Route } from "@playwright/test";
-import { UI_API_MAJOR, UI_CONTRACT_VERSION } from "../../apps/web/src/lib/session-negotiation.js";
+import {
+  UI_API_MAJOR,
+  UI_CONTRACT_VERSION,
+} from "../../apps/web/src/lib/session-negotiation.js";
 import { createRepo, type GitFixtureRepo } from "../support/repo.js";
 import { startE2eService, type E2eService } from "../support/e2e-service.js";
 
@@ -29,7 +32,7 @@ test.describe("page and service compatibility", () => {
   }) => {
     // Prevents: a cached page guessing that a changed major still has the same
     // mutation semantics and changing the repository under the wrong contract.
-    await page.route("**/health", async (route) => {
+    await page.route(`${service.origin}/health`, async (route) => {
       await rewriteJson(route, (body) => {
         body.apiMajor = UI_API_MAJOR + 1;
       });
@@ -49,7 +52,7 @@ test.describe("page and service compatibility", () => {
     // Prevents: a minor contract change making an old page either silently mutate
     // with different semantics or discard the reads it still understands.
     let rewritten = 0;
-    await page.route("**/api/v1/capabilities", async (route) => {
+    await page.route(`${service.origin}/api/v1/capabilities`, async (route) => {
       await rewriteJson(route, (body) => {
         body.contractVersion = incrementContractVersion(UI_CONTRACT_VERSION);
       });
@@ -75,12 +78,12 @@ test.describe("page and service compatibility", () => {
     page,
   }) => {
     // Prevents: a harmless additive response field taking an older page offline.
-    await page.route("**/health", async (route) => {
+    await page.route(`${service.origin}/health`, async (route) => {
       await rewriteJson(route, (body) => {
         body.futureServiceField = "ignored";
       });
     });
-    await page.route("**/api/v1/capabilities", async (route) => {
+    await page.route(`${service.origin}/api/v1/capabilities`, async (route) => {
       await rewriteJson(route, (body) => {
         body.futureCapabilityField = { retainedBy: "newer-service" };
       });
@@ -96,6 +99,13 @@ async function rewriteJson(
   route: Route,
   update: (body: Record<string, unknown>) => void,
 ): Promise<void> {
+  // WebKit exposes the cross-origin CORS preflight to page routing. It has no JSON
+  // body, so trying to rewrite it aborts the real GET and makes the page report a
+  // misleading network failure instead of exercising compatibility negotiation.
+  if (route.request().method() !== "GET") {
+    await route.continue();
+    return;
+  }
   const response = await route.fetch();
   const parsed: unknown = JSON.parse(await response.text());
   if (!isJsonObject(parsed)) {

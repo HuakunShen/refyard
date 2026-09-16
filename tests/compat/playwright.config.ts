@@ -11,6 +11,10 @@ export default defineConfig({
   use: {
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
+    // The cases rewrite cross-origin API responses. A WebKit service worker can
+    // otherwise hide those fetches from Playwright routing after it claims the page;
+    // the offline service-worker behavior is covered by the main e2e suite.
+    serviceWorkers: "block",
   },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
