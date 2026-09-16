@@ -2675,7 +2675,7 @@
         "pushUrl"
       ],
       "additionalProperties": false,
-      "description": "Rename a remote and/or change its URLs. At least one change must be present; `pushUrl: null` clears it."
+      "description": "Rename a remote and/or change its URLs. At least one change must be present; null fields are left unchanged."
     },
     "UpdateSubmoduleOperation": {
       "type": "object",

@@ -562,6 +562,20 @@ describe("validation of one request", () => {
     expect(problems[0]?.message).toContain("at least one change");
   });
 
+  it("accepts a push-URL-only remote update", () => {
+    // Prevents: the public contract rejecting a change the trusted workflow can apply.
+    const problems = problemsFor({
+      operation: {
+        kind: "updateRemote",
+        remoteName: "origin",
+        newName: null,
+        fetchUrl: null,
+        pushUrl: "https://push.example.invalid/project.git",
+      },
+    });
+    expect(problems).toEqual([]);
+  });
+
   it("rejects a blank commit message and accepts one with a newline and non-ASCII text", () => {
     expect(
       problemsFor({ operation: { kind: "commit", message: "   \n\t " } })[0]

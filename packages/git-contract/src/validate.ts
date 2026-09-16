@@ -506,10 +506,14 @@ export function validateOperationSemantics(
         operation.remoteName,
         "operation.remoteName",
       );
-      if (operation.newName === null && operation.fetchUrl === null) {
+      if (
+        operation.newName === null &&
+        operation.fetchUrl === null &&
+        operation.pushUrl === null
+      ) {
         problems.push(
           problem(
-            "at least one change is required: newName or fetchUrl (pushUrl alone cannot be applied)",
+            "at least one change is required: newName, fetchUrl, or pushUrl",
             "operation",
           ),
         );

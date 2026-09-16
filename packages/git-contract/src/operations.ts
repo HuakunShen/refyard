@@ -223,7 +223,7 @@ const OPERATION_SCHEMAS = {
     .meta({
       id: "UpdateRemoteOperation",
       description:
-        "Rename a remote and/or change its URLs. At least one change must be present; `pushUrl: null` clears it.",
+        "Rename a remote and/or change its URLs. At least one change must be present; null fields are left unchanged.",
     }),
 
   removeRemote: z
