@@ -1,7 +1,9 @@
 /** Pure decisions shared by the workbench mutation controller. */
 import { describe, expect, it } from "vitest";
 import {
+  branchCreateOperation,
   mutationAvailabilityFor,
+  tagCreateOperation,
   operationIdFromSubmission,
   writeRefusalMessage,
 } from "../../apps/web/src/lib/workbench/mutation-model.js";
@@ -97,6 +99,23 @@ describe("workbench mutation model", () => {
         action: "write",
       }),
     ).toBeNull();
+  });
+
+  it("builds branch and tag operations at an explicit historical commit", () => {
+    expect(branchCreateOperation("topic", "abc123")).toEqual({
+      kind: "createBranch",
+      branchName: "topic",
+      startOid: "abc123",
+      switchToIt: false,
+    });
+    expect(tagCreateOperation("v1", "release note", "def456")).toEqual({
+      kind: "createTag",
+      tagName: "v1",
+      targetOid: "def456",
+      annotation: { message: "release note" },
+    });
+    expect(branchCreateOperation("head", null).startOid).toBeNull();
+    expect(tagCreateOperation("lightweight", null, null).targetOid).toBeNull();
   });
 
   it("extracts the operation id from fresh and duplicate submissions", () => {

@@ -14,6 +14,7 @@
    */
   import { browser } from "$app/environment";
   import { createGitClient } from "@refyard/git-client";
+  import type { CommitSummary } from "@refyard/git-contract";
   import {
     AppearanceSettings,
     Badge,
@@ -359,6 +360,28 @@
   const onTagCreate = writeController.onTagCreate;
   const onTagDelete = writeController.onTagDelete;
   const onTagPush = writeController.onTagPush;
+
+  function onCommitCreateBranch(
+    commit: CommitSummary,
+    branchName: string,
+  ): void {
+    onBranchCreate(branchName, commit.oid);
+  }
+
+  function onCommitCreateTag(
+    commit: CommitSummary,
+    tagName: string,
+    annotation: string | null,
+  ): void {
+    onTagCreate(tagName, annotation, commit.oid);
+  }
+
+  function onCommitCopyOid(commit: CommitSummary): void {
+    if (!browser || navigator.clipboard === undefined) {
+      return;
+    }
+    void navigator.clipboard.writeText(commit.oid);
+  }
   const onWorktreeCreate = writeController.onWorktreeCreate;
   const onWorktreeRemove = writeController.onWorktreeRemove;
   const onWorktreeLock = writeController.onWorktreeLock;
@@ -1086,6 +1109,12 @@
               selectCommit(selection, commit.oid);
             }}
             onLoadMore={() => void history.fetchNextPage()}
+            contextDisabled={mutationBusy}
+            onCreateBranchAt={branchAvailable
+              ? onCommitCreateBranch
+              : undefined}
+            onCreateTagAt={tagAvailable ? onCommitCreateTag : undefined}
+            onCopyOid={onCommitCopyOid}
             class="min-h-0 flex-1"
           />
         {/if}

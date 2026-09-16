@@ -78,3 +78,28 @@ export function operationIdFromSubmission(
     ? submission.accepted.operationId
     : submission.record.operationId;
 }
+
+export function branchCreateOperation(
+  branchName: string,
+  startOid: string | null = null,
+) {
+  return {
+    kind: "createBranch" as const,
+    branchName,
+    startOid,
+    switchToIt: false,
+  };
+}
+
+export function tagCreateOperation(
+  tagName: string,
+  annotation: string | null,
+  targetOid: string | null = null,
+) {
+  return {
+    kind: "createTag" as const,
+    tagName,
+    targetOid,
+    annotation: annotation === null ? null : { message: annotation },
+  };
+}

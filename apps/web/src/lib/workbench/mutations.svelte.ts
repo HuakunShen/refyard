@@ -18,8 +18,10 @@ import {
 } from "./selection.js";
 import type { createWorkbenchQueries } from "./queries.svelte.js";
 import {
+  branchCreateOperation,
   mutationAvailabilityFor,
   operationIdFromSubmission,
+  tagCreateOperation,
   writeRefusalMessage,
 } from "./mutation-model.js";
 
@@ -372,15 +374,13 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     );
   }
 
-  function onBranchCreate(branchName: string): void {
+  function onBranchCreate(
+    branchName: string,
+    startOid: string | null = null,
+  ): void {
     void performWrite(
       "create-branch",
-      () => ({
-        kind: "createBranch",
-        branchName,
-        startOid: null,
-        switchToIt: false,
-      }),
+      () => branchCreateOperation(branchName, startOid),
       (result) => {
         branchMessage = result;
       },
@@ -627,15 +627,14 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     );
   }
 
-  function onTagCreate(tagName: string, annotation: string | null): void {
+  function onTagCreate(
+    tagName: string,
+    annotation: string | null,
+    targetOid: string | null = null,
+  ): void {
     void performWrite(
       "tag-create",
-      () => ({
-        kind: "createTag",
-        tagName,
-        targetOid: null,
-        annotation: annotation === null ? null : { message: annotation },
-      }),
+      () => tagCreateOperation(tagName, annotation, targetOid),
       (result) => {
         tagResult = result;
       },
