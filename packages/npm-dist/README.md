@@ -4,6 +4,9 @@ A backend API for a browser workbench against Git repositories **on this machine
 `git` you already have, against repositories you explicitly approve. The static PWA is deployed
 separately from `apps/web`; this package never ships or serves the UI.
 
+This release is `0.1.2`. The package is published from the tagged GitHub Actions workflow using
+npm Trusted Publishing (OIDC); no npm token is required in the repository.
+
 ## Requirements
 
 - **Node 22 or newer** (`engines`: `>=22 <27`). Development and releases run on 26.8.2. The
@@ -77,5 +80,6 @@ from your installation — anything absent from that list is not implemented, no
 
 ## License
 
-`UNLICENSED` — this package is proprietary. Publishing it here makes it **installable**, not
-usable: no license is granted to use, copy, modify or redistribute it. See the package metadata.
+This package is licensed under the GNU Affero General Public License v3.0 only
+([AGPL-3.0-only](https://spdx.org/licenses/AGPL-3.0-only.html)). See the repository's
+[LICENSE](https://github.com/HuakunShen/refyard/blob/main/LICENSE) for the complete terms.

@@ -13,8 +13,8 @@
  *   `workspace:*` at install time;
  * - the `files` whitelist ships the backend CLI and nothing else — no UI, sources, no
  *   fixtures, no references;
- * - the package is publishable and `UNLICENSED`: publishing makes it installable and
- *   grants nobody a licence, and no licence text is invented on the project's behalf.
+ * - the package is publishable and carries the repository's AGPLv3-only license, so the
+ *   registry metadata and the public checkout grant the same permissions;
  *
  * The staged-tree checks run only when a build exists, since `packages/npm-dist/dist`
  * is generated output; the manifest checks always run.
@@ -94,13 +94,13 @@ describe("the published manifest", () => {
     expect(manifest.files).toEqual(["bin", "dist"]);
   });
 
-  it("is publishable, and grants no licence by publishing", async () => {
+  it("is publishable, and carries the repository's AGPLv3 license", async () => {
     const manifest = await readManifest();
     // The manifest is the thing that reaches the registry, so the release identity is
-    // asserted here: `private` would make `npm publish` refuse, and `UNLICENSED` is the
-    // deliberate choice that publishing makes the package *installable*, not usable.
+    // asserted here: `private` would make `npm publish` refuse, and the package license
+    // must agree with the public repository.
     expect(manifest.private).toBeUndefined();
-    expect(manifest.license).toEqual("UNLICENSED");
+    expect(manifest.license).toEqual("AGPL-3.0-only");
     expect(manifest.version).not.toEqual("0.0.0");
   });
 });
