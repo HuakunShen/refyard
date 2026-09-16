@@ -1,6 +1,6 @@
 # Workbench Connectivity Extraction Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Move browser online/offline observation and SSE live-update lifecycle out of `+page.svelte` without changing cache invalidation or write gating.
 
@@ -25,10 +25,10 @@
 - Create: `apps/web/src/lib/workbench/connectivity.ts`
 - Create: `tests/unit/workbench-connectivity.test.ts`
 
-- [ ] Write RED cases for browser online observation, no-token behavior, stream readiness/error/cleanup, repository invalidations, and gap invalidation.
-- [ ] Implement the pure controller with injected event-stream and DOM ports.
-- [ ] Run focused unit tests and `pnpm check`.
-- [ ] Commit `refactor(web): extract workbench connectivity state`.
+- [x] Write RED cases for browser online observation, no-token behavior, stream readiness/error/cleanup, repository invalidations, and gap invalidation.
+- [x] Implement the pure controller with injected event-stream and DOM ports.
+- [x] Run focused unit tests and `pnpm check`.
+- [x] Commit `refactor(web): extract workbench connectivity state`.
 
 ### Task 2: Replace page-level online/SSE effects
 
@@ -37,16 +37,16 @@
 - Test: `tests/e2e/live-updates.spec.ts`
 - Test: `tests/e2e/offline.spec.ts`
 
-- [ ] Wrap `createWorkbenchConnectivityState()` in page `$state` and expose derived aliases.
-- [ ] Replace raw window online/offline listeners with `observeBrowserConnectivity`.
-- [ ] Replace page-owned `createEventStream` logic with `startWorkbenchEventStream`.
-- [ ] Run `pnpm check`, focused units, Chromium live-updates and offline specs.
-- [ ] Run full unit suite and `git diff --check`.
-- [ ] Commit `refactor(web): use extracted connectivity controller`.
+- [x] Wrap `createWorkbenchConnectivityState()` in page `$state` and expose derived aliases.
+- [x] Replace raw window online/offline listeners with `observeBrowserConnectivity`.
+- [x] Replace page-owned `createEventStream` logic with `startWorkbenchEventStream`.
+- [x] Run `pnpm check`, focused units, Chromium live-updates and offline specs.
+- [x] Run full unit suite and `git diff --check`.
+- [x] Commit `refactor(web): use extracted connectivity controller`.
 
 ## Final verification
 
-- [ ] `pnpm check`
-- [ ] `pnpm test:unit`
-- [ ] `pnpm exec playwright test tests/e2e/live-updates.spec.ts tests/e2e/offline.spec.ts --project=chromium`
-- [ ] `git diff --check`
+- [x] `pnpm check`
+- [x] `pnpm test:unit`
+- [x] `pnpm exec playwright test tests/e2e/live-updates.spec.ts tests/e2e/offline.spec.ts --project=chromium`
+- [x] `git diff --check`
