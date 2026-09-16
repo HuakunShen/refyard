@@ -143,6 +143,8 @@ export interface StartTestServiceOptions {
    * handed it. That is the case a scope check exists for.
    */
   readonly ungrantedRootPaths?: readonly string[];
+  /** Session scopes; defaults to the complete local-workbench authority. */
+  readonly scopes?: readonly string[];
   /** Exact hosted UI origins allowed to call the test service. */
   readonly allowedOrigins?: readonly string[];
   /** Secret used when the test exercises the password-gated hosted form. */
@@ -328,7 +330,12 @@ export async function startTestService(
         record.repositoryId,
         ...(options.extraRepositoryIds ?? []),
       ],
-      scopes: ["repository:read"],
+      scopes: options.scopes ?? [
+        "repository:read",
+        "repository:write",
+        "repository:network",
+        "workspace:manage",
+      ],
     },
     ...(options.allowedOrigins === undefined
       ? {}

@@ -100,3 +100,62 @@ describe("ticket TTL", () => {
     expect(exchange(store, ticket.ticket).ok).toBe(false);
   });
 });
+
+describe("repository grants and broad scopes", () => {
+  it("lets repository:* satisfy repository operation scopes but not workspace management", () => {
+    const store = createAuthStore({ serviceInstanceId: SERVICE });
+    const ticket = store.mintTicket({
+      origin: ORIGIN,
+      actor: "cli",
+      grants: {
+        allowedRootIds: ["root_1"],
+        repositoryIds: ["repo_1"],
+        scopes: ["repository:*"],
+      },
+    });
+    const exchanged = store.exchange({
+      ticket: ticket.ticket,
+      origin: ORIGIN,
+      serviceInstanceId: SERVICE,
+    });
+    expect(exchanged.ok).toBe(true);
+    if (!exchanged.ok) {
+      return;
+    }
+    expect(store.allowsScope(exchanged.session, "repository:read")).toBe(true);
+    expect(store.allowsScope(exchanged.session, "repository:write")).toBe(true);
+    expect(store.allowsScope(exchanged.session, "repository:network")).toBe(
+      true,
+    );
+    expect(store.allowsScope(exchanged.session, "workspace:manage")).toBe(
+      false,
+    );
+  });
+
+  it("does not let repository:* grant a repository id the session was never given", () => {
+    // Prevents: a broad operation scope silently turning into access to every repository
+    // registered in the process. Resource grants and operation scopes are independent axes.
+    const store = createAuthStore({ serviceInstanceId: SERVICE });
+    const ticket = store.mintTicket({
+      origin: ORIGIN,
+      actor: "cli",
+      grants: {
+        allowedRootIds: [],
+        repositoryIds: [],
+        scopes: ["repository:*"],
+      },
+    });
+    const exchanged = store.exchange({
+      ticket: ticket.ticket,
+      origin: ORIGIN,
+      serviceInstanceId: SERVICE,
+    });
+    expect(exchanged.ok).toBe(true);
+    if (!exchanged.ok) {
+      return;
+    }
+    expect(store.allowsRepository(exchanged.session, "repo_not_granted")).toBe(
+      false,
+    );
+  });
+});

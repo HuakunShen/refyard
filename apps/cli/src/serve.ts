@@ -467,7 +467,12 @@ export async function runService(
     grants: {
       allowedRootIds: [...assembly.allowedRootIds],
       repositoryIds: [...assembly.repositoryIds],
-      scopes: ["repository:read"],
+      scopes: [
+        "repository:read",
+        "repository:write",
+        "repository:network",
+        "workspace:manage",
+      ],
     },
     log: (line) => {
       // Service logs are diagnostics, not data: a machine reading stdout must not

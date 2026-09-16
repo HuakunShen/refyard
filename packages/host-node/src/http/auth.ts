@@ -33,6 +33,19 @@
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import type { Problem } from "@refyard/git-contract";
 
+export type AuthorizationScope =
+  | "repository:read"
+  | "repository:write"
+  | "repository:network"
+  | "workspace:manage";
+
+export const AUTHORIZATION_SCOPES: readonly AuthorizationScope[] = [
+  "repository:read",
+  "repository:write",
+  "repository:network",
+  "workspace:manage",
+];
+
 export interface SessionGrants {
   readonly allowedRootIds: readonly string[];
   readonly repositoryIds: readonly string[];
@@ -102,7 +115,9 @@ export interface AuthStore {
     readonly authorization: string | undefined;
     readonly serviceInstanceId: string;
   }): AuthorizeResult;
-  /** Does this session's grant cover the repository? */
+  /** Does this session carry the requested operation authority? */
+  allowsScope(session: Session, scope: AuthorizationScope): boolean;
+  /** Does this session's resource grant cover the repository? */
   allowsRepository(session: Session, repositoryId: string): boolean;
   /**
    * Does this session's grant cover the approved root?
@@ -387,17 +402,21 @@ export function createAuthStore(options: AuthStoreOptions): AuthStore {
       return { ok: true, session };
     },
 
-    allowsRepository(session, repositoryId): boolean {
-      if (session.grants.scopes.includes("repository:*")) {
+    allowsScope(session, scope): boolean {
+      if (session.grants.scopes.includes(scope)) {
         return true;
       }
+      return (
+        scope.startsWith("repository:") &&
+        session.grants.scopes.includes("repository:*")
+      );
+    },
+
+    allowsRepository(session, repositoryId): boolean {
       return session.grants.repositoryIds.includes(repositoryId);
     },
 
     allowsRoot(session, allowedRootId): boolean {
-      // Deliberately *not* covered by `repository:*`: that scope is about acting on
-      // repositories that exist, and creating one inside a directory the session was
-      // never handed is a different permission.
       return session.grants.allowedRootIds.includes(allowedRootId);
     },
 
