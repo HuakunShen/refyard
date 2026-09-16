@@ -1,8 +1,9 @@
 # Goal — close the remaining scope: forms 2–4, the deferred tasks, and the defects the platform runs found
 
 > Written 2026-09-16. The standalone V1 has shipped (published 0.1.0 and 0.1.1, CI green on both
-> runners). Everything that was deferred *because* V1 had not shipped is now unblocked, and this
-> round is the one that finishes them.
+> runners). Everything that was deferred _because_ V1 had not shipped is now unblocked. This
+> round also prepares the AGPLv3-only 0.1.2 package, its tag-triggered npm publisher, and the
+> user-owned Cloudflare self-deploy path; external publication remains an explicit release action.
 
 ## Where this comes from
 
@@ -25,23 +26,27 @@ Three sources, each with its own authority, and nothing here invents scope:
    static/PWA deployment; the CLI is a backend API process only. The Worker never receives Git
    authority, and a hosted browser reaches a CLI only through an explicitly configured secure
    endpoint and exact origin allowlist.
+5. **The owner's release direction in this round:** the repository and package use AGPLv3-only;
+   `ci.yml` remains verification, while `publish.yml` publishes `packages/npm-dist` through npm
+   Trusted Publishing only after a matching `v<package-version>` tag.
 
 ## What "done" means
 
 A form is done when it has **its own evidence**, not when the code exists (north star §9). So:
 
-| Form / item | Today | Done means |
-| --- | --- | --- |
-| Form 1 — one repository, loopback, paired | **shipped** (0.1.1) | unchanged; every change below must keep it |
-| **Form 2 — managed workspaces (many repositories)** | **implemented locally** | a user adds a repository from the UI or CLI, the grant grows **by approval only**, each addition is journaled, revocation exists, and the UI never invents a repository |
-| Form 3 — hosted UI | **implemented locally; live unverified** | opt-in, password-gated, origin-allowlisted; **never the first place a mutation appears**. `REFYARD_HOSTED_PASSWORD` is environment-only and the live tunnel/browser path remains unverified |
-| Form 4 — native host | **decided: stay on Node** | an evidence-backed decision, or an equally evidence-backed "stay on Node". **No implementation without explicit approval** |
-| **Cloudflare UI deployment** | **implemented locally; live unverified** | the built static SPA and PWA assets deploy through a versioned Cloudflare Worker; the CLI serves no UI, and API access from the Worker is TLS- and exact-origin-gated |
-| T16 Xross | **partial** — fixed authorized exec/forward seam and policy outcomes pass; real peer launch is unverified | the launch rides an exec call held open for the session, the ticket comes back on that authorized stream, and the browser reaches the service through the peer's forward. A dependency report says what the peer's refusal actually means, and the README names the concept Xross does not have |
-| T17 Kunkun | **partial** — manifest, privileged backend, kkrpc relay and permission propagation pass; out-of-tree Electron install is unverified | `integrations/kunkun/` owns the refyard session inside its own backend process, mounts the existing components against a kkrpc channel, and surfaces a `Permission denied` refusal unchanged. Reusing the UI means swapping its connection seam and replacing SSE with kkrpc streaming |
-| Security work the security doc names as missing | **partial** — hostile configuration and limit-abuse cases pass; real SSH/credential-server proof remains unverified | hostile-remote, credential-prompt, hostile-hook and limit-abuse cases exist and are named in `docs/evidence/security.md` |
-| Windows in CI | **workflow added; green hosted run unverified** | a `windows-latest` job runs the same gates, so the platform rows stop depending on one machine's afternoon |
-| WebKit on Linux | **blocked/unverified** | blocked becomes verified, or stays named as blocked with the command that would end it |
+| Form / item                                         | Today                                                                                                                               | Done means                                                                                                                                                                                                                                                                                      |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Form 1 — one repository, loopback, paired           | **shipped** (0.1.1; 0.1.2 prepared)                                                                                                 | unchanged; every change below must keep it                                                                                                                                                                                                                                                      |
+| **Form 2 — managed workspaces (many repositories)** | **implemented locally**                                                                                                             | a user adds a repository from the UI or CLI, the grant grows **by approval only**, each addition is journaled, revocation exists, and the UI never invents a repository                                                                                                                         |
+| Form 3 — hosted UI                                  | **implemented locally; live unverified**                                                                                            | opt-in, password-gated, origin-allowlisted; **never the first place a mutation appears**. `REFYARD_HOSTED_PASSWORD` is environment-only and the live tunnel/browser path remains unverified                                                                                                     |
+| Form 4 — native host                                | **decided: stay on Node**                                                                                                           | an evidence-backed decision, or an equally evidence-backed "stay on Node". **No implementation without explicit approval**                                                                                                                                                                      |
+| **Cloudflare UI deployment**                        | **implemented locally; current-head live unverified**                                                                               | the built static SPA and PWA assets deploy through a versioned Cloudflare Worker; the CLI serves no UI, and API access from the Worker is TLS- and exact-origin-gated                                                                                                                           |
+| **Public npm release**                              | **0.1.2 prepared; external run pending**                                                                                            | AGPLv3-only metadata, local package smoke, tag/version guard and npm Trusted Publishing workflow are verified; a public-repository push and successful GitHub Actions/npm run are still required                                                                                                |
+| T16 Xross                                           | **partial** — fixed authorized exec/forward seam and policy outcomes pass; real peer launch is unverified                           | the launch rides an exec call held open for the session, the ticket comes back on that authorized stream, and the browser reaches the service through the peer's forward. A dependency report says what the peer's refusal actually means, and the README names the concept Xross does not have |
+| T17 Kunkun                                          | **partial** — manifest, privileged backend, kkrpc relay and permission propagation pass; out-of-tree Electron install is unverified | `integrations/kunkun/` owns the refyard session inside its own backend process, mounts the existing components against a kkrpc channel, and surfaces a `Permission denied` refusal unchanged. Reusing the UI means swapping its connection seam and replacing SSE with kkrpc streaming          |
+| Security work the security doc names as missing     | **partial** — hostile configuration and limit-abuse cases pass; real SSH/credential-server proof remains unverified                 | hostile-remote, credential-prompt, hostile-hook and limit-abuse cases exist and are named in `docs/evidence/security.md`                                                                                                                                                                        |
+| Windows in CI                                       | **workflow added; green hosted run unverified**                                                                                     | a `windows-latest` job runs the same gates, so the platform rows stop depending on one machine's afternoon                                                                                                                                                                                      |
+| WebKit on Linux                                     | **blocked/unverified**                                                                                                              | blocked becomes verified, or stays named as blocked with the command that would end it                                                                                                                                                                                                          |
 
 ## What this round will not do
 
@@ -54,7 +59,9 @@ A form is done when it has **its own evidence**, not when the code exists (north
   repository paths, Git credentials, bearer tokens, or raw command authority.
 - **No rewriting T01–T15.** The existing suites are the guard for every change here; a task that
   cannot keep them green stops and reports.
-- **Nothing is published automatically.** Publication stays the owner's step (`docs/releasing.md`).
+- **Publication is owner-triggered, not automatic.** `publish.yml` runs only for a matching release
+  tag and uses npm Trusted Publishing; no public push, tag, or npm publication is claimed until its
+  external run is verified (`docs/releasing.md`).
 
 ## Rules this round inherits (unchanged)
 
@@ -74,3 +81,6 @@ retried; evidence files updated in the same commit as the behaviour they describ
    unverified.
 4. Form 2 has its own evidence file, because it changes a security-relevant default: what was
    approved, by whom, when it is journaled, and what refuses.
+5. The public-release path has local evidence for the AGPLv3 package, npm OIDC workflow, official
+   Cloudflare Deploy button, and API-only Worker boundary; external visibility/publication and
+   current-head live deployment are reported separately until verified.

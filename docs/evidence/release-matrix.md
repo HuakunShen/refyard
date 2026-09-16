@@ -19,7 +19,7 @@ unverified is a row nobody has run yet, and it stays that way until a gate runs 
 | Git              | 2.50.1 (Apple Git-155)                      | verified |
 | pnpm             | 11.25.0                                     | verified |
 | bun              | 1.4.2 (dev scripts only; never the product) | verified |
-| Date             | 2026-09-15                                  | verified |
+| Date             | 2026-09-16                                  | verified |
 
 Every number in `docs/evidence/performance.json` and every test result below comes from this
 machine. It is one machine, and the report says so in its own fields.
@@ -265,18 +265,22 @@ implied by this row.
 
 ## Cloudflare Worker and API-only current revision
 
-The 2026-09-16 R15 work changes the packaging boundary from the historical 0.1.x artifact. This
-revision has not been published or deployed. Local evidence is:
+The 2026-09-16 R15 work changes the packaging boundary from the historical 0.1.x artifact. The
+current local release evidence is at commit `0c3cd6d`; it has not been published, and no current-
+head live Worker deployment has been verified.
 
-| Surface                  | Result                                                                                                                            |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| Static PWA build         | `pnpm build` passed; `apps/web/build` contains the SPA, service worker and manifest.                                              |
-| Cloudflare configuration | `pnpm --dir apps/web exec wrangler deploy --dry-run` passed with Wrangler 4.132.0, reading 75 asset files; no publish occurred.   |
-| Worker boundary          | `pnpm test:web-host` passed 4/4: asset delegation/security headers, JSON `/api/*` 404, and non-GET refusal.                       |
-| Backend-only package     | `pnpm build:release`, `pnpm test:pack`, and external `pnpm pack:smoke` passed; the tarball had 5 entries and no `web/` directory. |
-| Browser topology         | `pnpm test:e2e` passed 105/105 across Chromium, Firefox and WebKit against the separate static host and API-only CLI.             |
-| Hosted API path          | Exact-origin CORS, password-gated ticket exchange and bearer read passed in local isolated services; no public tunnel was exercised. |
-| Live deployment          | **Unverified.** No Cloudflare account, domain, Worker deployment, or tunnel credentials were used.                                |
+| Surface                  | Result                                                                                                                                                                                                    |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Static PWA build         | `pnpm build` and `pnpm build:release` passed; `apps/web/build` contains the SPA, service worker and manifest.                                                                                             |
+| Cloudflare configuration | `pnpm --dir apps/web exec wrangler deploy --dry-run --config ../../wrangler.jsonc` passed with Wrangler 4.132.0, reading 87 asset files; no upload occurred.                                              |
+| Worker boundary          | `pnpm test:web-host` passed 4/4: asset delegation/security headers, JSON `/api/*` 404, and non-GET refusal.                                                                                               |
+| Backend-only package     | Package `refyard@0.1.2` has AGPL-3.0-only metadata; `pnpm test:pack` passed 17/17 and `pnpm pack:smoke` passed all 14 steps, with no `web/` directory.                                                    |
+| Browser topology         | The latest full `pnpm test:e2e` run passed 105/105 across Chromium, Firefox and WebKit against the separate static host and API-only CLI.                                                                 |
+| Compatibility            | `pnpm test:compat` passed 9/9 across Chromium, Firefox and WebKit; the WebKit response-rewrite isolation is part of the test harness.                                                                     |
+| Runtime benchmark        | `pnpm bench:runtime` passed against the rebuilt `refyard@0.1.2` artifact: 100,000-commit fixture, 100 reads at concurrency 4, three measured lifecycles; see [performance.json](performance.json).        |
+| Hosted API path          | Exact-origin CORS, password-gated ticket exchange and bearer read passed in local isolated services; no public HTTPS tunnel was exercised.                                                                |
+| npm publication          | **Pending external verification.** `publish.yml` and its local workflow contract test are present; no public-repository push, release tag, GitHub Actions publish run, or registry update is claimed yet. |
+| Live deployment          | **Unverified for current HEAD.** A current-head Cloudflare Worker deployment, domain mapping, and hosted browser/tunnel path still require a separate external run.                                       |
 
 The pairing URL has two explicit addresses in hosted mode: `--ui-origin` is the Worker page origin,
 and `--api-origin` is the HTTPS API/tunnel origin visible to the browser. The CLI still binds its
@@ -289,7 +293,7 @@ checks.
 real host response is rewritten only at the browser test boundary to model a page/service pair
 from different revisions. The three engines passed 9/9: a major mismatch refused writes, a newer
 same-major contract kept history reads working while disabling writes, and additive health and
-capabilities fields were ignored. The full e2e gate separately passed 99/99.
+capabilities fields were ignored. The full e2e gate separately passed 105/105.
 
 ## Hono, OpenAPI, Scalar and MCP
 
@@ -374,13 +378,13 @@ diff-service RSS 208 MiB after the large/bounded/long-line/many-file batch. The 
 CLI bundle is 2,209,211 bytes; `npm pack` reported 394,396 bytes compressed and 2.2 MB unpacked.
 These are Node/process measurements, not a native-runtime comparison.
 
-| Native-host question | Status | Evidence |
-| --- | --- | --- |
-| QuickJS/JSC/WASI/native VM version | **unverified** | No native VM was built, installed, or run. |
-| Async, cancellation, bytes and cleanup inside that VM | **unverified** | The 60,550-byte neutral IIFE and 11 planner/parser checks are a portability smoke only. |
-| Same-workload native memory and complete engine/bridge/process cost | **unverified** | No native comparator or long-time/idle measurement exists. |
-| Xross native size and permission delta | **unverified** | The current adapter's real peer launch is still unverified; 512 KiB / 5 MiB are review rules only. |
-| Release decision | **verified** | No explicit native implementation approval; continue with the Node sidecar. |
+| Native-host question                                                | Status         | Evidence                                                                                           |
+| ------------------------------------------------------------------- | -------------- | -------------------------------------------------------------------------------------------------- |
+| QuickJS/JSC/WASI/native VM version                                  | **unverified** | No native VM was built, installed, or run.                                                         |
+| Async, cancellation, bytes and cleanup inside that VM               | **unverified** | The 60,550-byte neutral IIFE and 11 planner/parser checks are a portability smoke only.            |
+| Same-workload native memory and complete engine/bridge/process cost | **unverified** | No native comparator or long-time/idle measurement exists.                                         |
+| Xross native size and permission delta                              | **unverified** | The current adapter's real peer launch is still unverified; 512 KiB / 5 MiB are review rules only. |
+| Release decision                                                    | **verified**   | No explicit native implementation approval; continue with the Node sidecar.                        |
 
 ## Published releases
 
@@ -415,7 +419,7 @@ features:
 | A Cloudflare Worker Git backend or API proxy                 | the Worker is static/PWA-only; it has no Git binding, bearer secret, or API route                                   |
 | Built-in terminal, plugin host, native shell                 | out of scope for V1 by design                                                                                       |
 | Any write operation not listed in `GET /api/v1/capabilities` | there is no route, no capability, and no button                                                                     |
-| QuickJS/JSC/native-host runtime                              | T18 measured Node needs and deferred the native implementation; no native VM result exists                        |
+| QuickJS/JSC/native-host runtime                              | T18 measured Node needs and deferred the native implementation; no native VM result exists                          |
 
 ## Reproducing this matrix
 
