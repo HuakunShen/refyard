@@ -1,6 +1,6 @@
 # Workbench Session Extraction Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Move pairing, stored-session, URL-scrubbing, and credential invalidation logic out of `+page.svelte` without changing Refyard's browser behavior.
 
@@ -34,11 +34,11 @@
 - `isDefaultSessionBaseUrl(state)` reports whether the selected service is still the page's default origin.
 - `describeClientProblem(error)` centralizes the existing `GitClientError` display formatting.
 
-- [ ] Write unit cases for initialization, successful pairing, password failure, already-paired URL scrubbing, and credential clearing.
-- [ ] Run the focused unit file RED because the module does not exist.
-- [ ] Implement the minimal state machine and injected ports.
-- [ ] Run the focused unit file GREEN and `pnpm check`.
-- [ ] Commit `refactor(web): extract workbench session state`.
+- [x] Write unit cases for initialization, successful pairing, password failure, already-paired URL scrubbing, and credential clearing.
+- [x] Run the focused unit file RED because the module does not exist.
+- [x] Implement the minimal state machine and injected ports.
+- [x] Run the focused unit file GREEN and `pnpm check`.
+- [x] Commit `refactor(web): extract workbench session state`.
 
 ### Task 2: Replace route-level session orchestration
 
@@ -52,18 +52,18 @@
 - Existing query keys continue to consume derived `baseUrl` and `token` aliases from `session`.
 - `disconnect()` remains a page wrapper so it can clear selected commit/path and TanStack Query state after `clearWorkbenchCredentials()`.
 
-- [ ] Replace local pairing/base-url/token/instance state with the session state machine.
-- [ ] Replace the page's pairing and auto-pair implementation with `pairWorkbenchSession` / `consumeInitialPairingUrl`.
-- [ ] Replace different-instance credential clearing with `clearWorkbenchCredentials`.
-- [ ] Remove the route-local `describeProblem` implementation in favor of `describeClientProblem`.
-- [ ] Run `pnpm check` and focused unit tests.
-- [ ] Build the local workbench and run Chromium `read-only.spec.ts` plus `offline.spec.ts`.
-- [ ] Run `git diff --check` and confirm `+page.svelte` is smaller with no behavior changes.
-- [ ] Commit `refactor(web): use extracted session controller`.
+- [x] Replace local pairing/base-url/token/instance state with the session state machine.
+- [x] Replace the page's pairing and auto-pair implementation with `pairWorkbenchSession` / `consumeInitialPairingUrl`.
+- [x] Replace different-instance credential clearing with `clearWorkbenchCredentials`.
+- [x] Remove the route-local `describeProblem` implementation in favor of `describeClientProblem`.
+- [x] Run `pnpm check` and focused unit tests.
+- [x] Build the local workbench and run Chromium `read-only.spec.ts` plus `offline.spec.ts`.
+- [x] Run `git diff --check` and confirm `+page.svelte` is smaller with no behavior changes.
+- [x] Commit `refactor(web): use extracted session controller`.
 
 ## Final verification
 
-- [ ] `pnpm check`
-- [ ] `pnpm test:unit`
-- [ ] `pnpm exec playwright test tests/e2e/read-only.spec.ts tests/e2e/offline.spec.ts --project=chromium`
-- [ ] `git diff --check`
+- [x] `pnpm check`
+- [x] `pnpm test:unit`
+- [x] `pnpm exec playwright test tests/e2e/read-only.spec.ts tests/e2e/offline.spec.ts --project=chromium`
+- [x] `git diff --check`
