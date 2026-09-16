@@ -40,9 +40,13 @@ export default {
     for (const [name, value] of Object.entries(COMMON_HEADERS)) {
       headers.set(name, value);
     }
+    const inlineHashes =
+      request.method === "GET" && isHtmlResponse(asset)
+        ? await inlineScriptHashes(await asset.clone().text())
+        : [];
     headers.set(
       "content-security-policy",
-      contentSecurityPolicy(env.PUBLIC_API_ORIGINS),
+      contentSecurityPolicy(env.PUBLIC_API_ORIGINS, inlineHashes),
     );
     headers.set("cache-control", cacheControl(url.pathname));
     return new Response(asset.body, {
@@ -89,7 +93,10 @@ function cacheControl(pathname: string): string {
   return "public, max-age=300";
 }
 
-function contentSecurityPolicy(configured: string): string {
+function contentSecurityPolicy(
+  configured: string,
+  inlineHashes: readonly string[],
+): string {
   const origins = configured
     .split(",")
     .map((value) => value.trim())
@@ -101,7 +108,7 @@ function contentSecurityPolicy(configured: string): string {
       : ["'self'", ...new Set(origins)];
   return [
     "default-src 'self'",
-    "script-src 'self'",
+    `script-src 'self'${inlineHashes.length > 0 ? ` ${inlineHashes.join(" ")}` : ""}`,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data:",
     "font-src 'self'",
@@ -111,6 +118,41 @@ function contentSecurityPolicy(configured: string): string {
     "frame-ancestors 'none'",
     "form-action 'none'",
   ].join("; ");
+}
+
+function isHtmlResponse(response: Response): boolean {
+  return (
+    response.headers
+      .get("content-type")
+      ?.toLowerCase()
+      .startsWith("text/html") ?? false
+  );
+}
+
+/** Hash the inline scripts in the exact HTML document the Worker is about to serve. */
+async function inlineScriptHashes(html: string): Promise<readonly string[]> {
+  const hashes: string[] = [];
+  const inlineScript = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi;
+  for (const match of html.matchAll(inlineScript)) {
+    const body = match[1] ?? "";
+    if (body.trim().length === 0) {
+      continue;
+    }
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(body),
+    );
+    hashes.push(`'sha256-${base64(new Uint8Array(digest))}'`);
+  }
+  return hashes;
+}
+
+function base64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
 }
 
 function isHttpsOrigin(value: string): boolean {

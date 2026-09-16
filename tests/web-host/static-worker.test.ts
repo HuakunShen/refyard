@@ -5,6 +5,7 @@
  * Static Assets binding, refuse API-looking paths before SPA fallback can answer them with
  * HTML, and attach security headers without receiving Git or bearer state.
  */
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import worker from "../../apps/web/src/worker.js";
 
@@ -54,6 +55,27 @@ describe("Cloudflare static UI Worker", () => {
     expect(response.headers.get("content-security-policy")).toContain(
       "connect-src 'self' https://api.example.test",
     );
+  });
+
+  it("names the HTML bootstrap script in CSP without allowing arbitrary inline code", async () => {
+    // Prevents: SvelteKit's inline bootstrap being blocked in production while a broad
+    // `unsafe-inline` exception would let an injected script execute as well.
+    const calls: string[] = [];
+    const inline = "\n  console.log('boot');\n";
+    const response = await worker.fetch(
+      new Request("https://ui.example.test/"),
+      environment(calls, `<!doctype html><script>${inline}</script>`),
+    );
+
+    const expected = createHash("sha256")
+      .update(inline, "utf8")
+      .digest("base64");
+    const policy = response.headers.get("content-security-policy") ?? "";
+    expect(policy).toContain(`script-src 'self' 'sha256-${expected}'`);
+    const scriptSource = policy
+      .split(";")
+      .find((part) => part.trim().startsWith("script-src"));
+    expect(scriptSource).not.toContain("'unsafe-inline'");
   });
 
   it("returns a JSON 404 for API-looking paths instead of SPA HTML", async () => {
