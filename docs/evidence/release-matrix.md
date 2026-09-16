@@ -37,14 +37,14 @@ lifecycle under six Node lines, and every one of them produced the same result.
 `capabilities`, `status`, `history` and `refs`, verify the API-only root boundary, ask for a preview
 token, submit `stagePaths`, and check the file really is staged with `git diff --cached`:
 
-| Node     | Capabilities | UI  | History | HEAD  | Stage operation | `git diff --cached` | Status   |
-| -------- | ------------ | --- | ------- | ----- | --------------- | ------------------- | -------- |
-| 20.19.0  | 35 kinds     | 200 | 2 commits | `main` | `succeeded`   | `b.txt`             | verified |
-| 22.11.0  | 35 kinds     | 200 | 2 commits | `main` | `succeeded`   | `b.txt`             | verified |
-| 22.23.2  | 35 kinds     | 200 | 2 commits | `main` | `succeeded`   | `b.txt`             | verified |
-| 24.10.0  | 35 kinds     | 200 | 2 commits | `main` | `succeeded`   | `b.txt`             | verified |
-| 25.2.1   | 35 kinds     | 200 | 2 commits | `main` | `succeeded`   | `b.txt`             | verified |
-| 26.8.2   | 35 kinds     | 200 | 2 commits | `main` | `succeeded`   | `b.txt`             | verified |
+| Node    | Capabilities | UI  | History   | HEAD   | Stage operation | `git diff --cached` | Status   |
+| ------- | ------------ | --- | --------- | ------ | --------------- | ------------------- | -------- |
+| 20.19.0 | 35 kinds     | 200 | 2 commits | `main` | `succeeded`     | `b.txt`             | verified |
+| 22.11.0 | 35 kinds     | 200 | 2 commits | `main` | `succeeded`     | `b.txt`             | verified |
+| 22.23.2 | 35 kinds     | 200 | 2 commits | `main` | `succeeded`     | `b.txt`             | verified |
+| 24.10.0 | 35 kinds     | 200 | 2 commits | `main` | `succeeded`     | `b.txt`             | verified |
+| 25.2.1  | 35 kinds     | 200 | 2 commits | `main` | `succeeded`     | `b.txt`             | verified |
+| 26.8.2  | 35 kinds     | 200 | 2 commits | `main` | `succeeded`     | `b.txt`             | verified |
 
 Three things this table is and is not:
 
@@ -75,7 +75,6 @@ printed a summary line instead of the log — and the immediate re-run on the sa
 **90 of 90 in 10.6 m**, on the harness this revision ships. That unknown failure is the third
 sighting of one flaky case per long run (see `browser-support.md`), not a Node-22 finding.
 
-
 ## Gates
 
 Each row is a root script from the project's command contract, run from a clean checkout of the
@@ -89,10 +88,10 @@ revision this file belongs to.
 | `pnpm test:unit`        | unit suites (contract, core planners/parsers, graph, client, ui, fixtures) — 236 cases, 16 files                                                                                                                                                        | verified |
 | `pnpm test:integration` | real Git in temporary repositories: reads, writes, merge, worktrees, submodules, jobs, restart, auth, concurrency, network, repository creation, the four repository shapes; plus the negative security cases in `tests/security` — 352 cases, 23 files | verified |
 | `pnpm test:portable`    | 4 portability cases in vitest, plus a neutral IIFE build (60,542 bytes) run with no host globals and no Node shims — 11 planner/parser checks                                                                                                           | verified |
-| `pnpm test:e2e`         | 30 Playwright specs in **three engines** (Chromium, Firefox, WebKit) against the built SPA, served by a separate static asset host while the API-only CLI owns the service, each on a service with its own state directory | verified |
+| `pnpm test:e2e`         | 30 Playwright specs in **three engines** (Chromium, Firefox, WebKit) against the built SPA, served by a separate static asset host while the API-only CLI owns the service, each on a service with its own state directory                              | verified |
 | `pnpm build`            | turbo build of every package plus the static SPA                                                                                                                                                                                                        | verified |
-| `pnpm pack:smoke`       | 14 steps against the `npm pack` tarball: `npm exec` install, doctor, `serve --json`, API-only 404 boundary, authenticated API, SIGTERM, busy port, tarball contents | verified |
-| `pnpm bench:runtime`    | the packaged CLI on a 100,000-commit fixture, three repeated lifecycles — macOS, Ubuntu, a container, CI (2,000 commits) and, from round two, Windows                                                             | verified |
+| `pnpm pack:smoke`       | 14 steps against the `npm pack` tarball: `npm exec` install, doctor, `serve --json`, API-only 404 boundary, authenticated API, SIGTERM, busy port, tarball contents                                                                                     | verified |
+| `pnpm bench:runtime`    | the packaged CLI on a 100,000-commit fixture, three repeated lifecycles — macOS, Ubuntu, a container, CI (2,000 commits) and, from round two, Windows                                                                                                   | verified |
 
 Verification scope, stated plainly: `pnpm test` (unit + integration) is a single run of the suite
 on this machine; it is not a soak, not a fuzz campaign, and not a property test over arbitrary
@@ -101,18 +100,18 @@ absence of races that were not constructed.
 
 ## Platforms
 
-| Platform                       | Status     | Notes                                                                                                                                                                                                                                              |
-| ------------------------------ | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| macOS arm64 (this machine)     | verified   | everything in this file                                                                                                                                                                                                                            |
-| macOS x64                      | unverified | not run; no Intel machine was used                                                                                                                                                                                                                 |
-| Linux arm64, container         | verified   | `node:26-trixie` (Node 26.8.2, Git 2.47.3), all ten gates, as a non-root user — see below                                                                                                                                                          |
-| Linux x64, native              | verified   | Ubuntu 24.04, Node 26.8.2, Git 2.43.0: all ten gates, plus chromium **and Firefox** e2e (30 of 30 each; WebKit is blocked there on one apt package) — `linux-and-windows.md` |
-| Linux x64 (CI, ubuntu-latest)  | verified   | `ci` run 35009027364, 2026-09-15, revision `180f515`: all ten gates, 90 of 90 e2e cases (three engines) in 11.7m, `pack:smoke` 14 steps — see "Continuous integration" below                                                       |
-| macOS arm64 (CI, macos-latest) | verified   | the same run: all ten gates, 90 of 90 e2e cases in 10.7m, `pack:smoke` 14 steps                                                                                                                                            |
+| Platform                       | Status     | Notes                                                                                                                                                                                                                                                                 |
+| ------------------------------ | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| macOS arm64 (this machine)     | verified   | everything in this file                                                                                                                                                                                                                                               |
+| macOS x64                      | unverified | not run; no Intel machine was used                                                                                                                                                                                                                                    |
+| Linux arm64, container         | verified   | `node:26-trixie` (Node 26.8.2, Git 2.47.3), all ten gates, as a non-root user — see below                                                                                                                                                                             |
+| Linux x64, native              | verified   | Ubuntu 24.04, Node 26.8.2, Git 2.43.0: all ten gates, plus chromium **and Firefox** e2e (30 of 30 each; WebKit is blocked there on one apt package) — `linux-and-windows.md`                                                                                          |
+| Linux x64 (CI, ubuntu-latest)  | verified   | `ci` run 35009027364, 2026-09-15, revision `180f515`: all ten gates, 90 of 90 e2e cases (three engines) in 11.7m, `pack:smoke` 14 steps — see "Continuous integration" below                                                                                          |
+| macOS arm64 (CI, macos-latest) | verified   | the same run: all ten gates, 90 of 90 e2e cases in 10.7m, `pack:smoke` 14 steps                                                                                                                                                                                       |
 | Windows (native)               | verified   | Windows 10.0.26200, Node 26.5.0, Git 2.55.0.windows.3: nine gates, `pack:smoke` (15 steps, one skipped — Windows has no signals) and, from round two, the **e2e suite 90 of 90 in three engines in 4.9 m** plus `bench:runtime` at full size — `linux-and-windows.md` |
-| Windows (GitHub Actions)       | unverified | `.github/workflows/ci.yml` now runs the same matrix on `windows-latest`; no hosted green run id exists yet for this revision. |
-| WSL                            | unverified | not run                                                                                                                                                                                                                                            |
-| Container/CI runner            | verified   | `bun scripts/container-gates.ts --image node:26-trixie`, 2026-09-15                                                                                                                                                                                |
+| Windows (GitHub Actions)       | unverified | `.github/workflows/ci.yml` now runs the same matrix on `windows-latest`; no hosted green run id exists yet for this revision.                                                                                                                                         |
+| WSL                            | unverified | not run                                                                                                                                                                                                                                                               |
+| Container/CI runner            | verified   | `bun scripts/container-gates.ts --image node:26-trixie`, 2026-09-15                                                                                                                                                                                                   |
 
 ### Linux, in a container
 
@@ -193,16 +192,16 @@ runner's own checkout — it is not committed from there).
 `pnpm test:e2e`, 2026-09-15, Playwright 1.63.0, one worker: **90 passed, 0 failed (11.9 m)** —
 the same 30 specs in each of three engines, against the built bundle and a real service.
 
-| Browser                             | Status     | Notes                                                                                                                                                                                                                                                          |
-| ----------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Chromium 153 (Playwright bundled)   | verified   | 30 cases: reads, staging, stash, branch, merge, worktrees, versions, live updates, offline reload, repository creation                                                                                                                                         |
+| Browser                             | Status     | Notes                                                                                                                                                                                                                                                                 |
+| ----------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Chromium 153 (Playwright bundled)   | verified   | 30 cases: reads, staging, stash, branch, merge, worktrees, versions, live updates, offline reload, repository creation                                                                                                                                                |
 | Firefox 155 (Playwright bundled)    | verified   | the same 30 cases in this run. Later runs of the same 90 came back 89 passed / 1 failed twice — one Firefox workspace case and one WebKit one, passing again on re-run in 7.2 s and 14.4 s; `browser-support.md` keeps them as an open question, not a browser defect |
-| WebKit 26.6 (Playwright bundled)    | verified   | the same 30 cases; 90 of 90 on Node 22.23.2 in 10.6 m, and 90 of 90 on Windows 10.0.26200 in 4.9 m. Two WebKit-only limits were found in the _tests_; both are in `browser-support.md`. On Linux the engine is blocked by a missing `libavif16` | |
-| Safari (the installed macOS app)    | unverified | Playwright's WebKit is the engine, not Apple's build; nobody has opened the app in Safari                                                                                                                                                                      |
-| Safari on iOS                       | unverified | not run                                                                                                                                                                                                                                                        |
-| Chrome on Android                   | unverified | not run                                                                                                                                                                                                                                                        |
-| Mobile viewports (any)              | unverified | the e2e projects are desktop-sized only                                                                                                                                                                                                                        |
-| Screen readers / accessibility tree | unverified | no assistive-technology run                                                                                                                                                                                                                                    |
+| WebKit 26.6 (Playwright bundled)    | verified   | the same 30 cases; 90 of 90 on Node 22.23.2 in 10.6 m, and 90 of 90 on Windows 10.0.26200 in 4.9 m. Two WebKit-only limits were found in the _tests_; both are in `browser-support.md`. On Linux the engine is blocked by a missing `libavif16`                       |     |
+| Safari (the installed macOS app)    | unverified | Playwright's WebKit is the engine, not Apple's build; nobody has opened the app in Safari                                                                                                                                                                             |
+| Safari on iOS                       | unverified | not run                                                                                                                                                                                                                                                               |
+| Chrome on Android                   | unverified | not run                                                                                                                                                                                                                                                               |
+| Mobile viewports (any)              | unverified | the e2e projects are desktop-sized only                                                                                                                                                                                                                               |
+| Screen readers / accessibility tree | unverified | no assistive-technology run                                                                                                                                                                                                                                           |
 
 What "verified" does not mean: nothing here says the UI looks right on a phone, that Apple's
 Safari build behaves like Playwright's WebKit, or that a screen reader can drive the app. Those
@@ -260,8 +259,8 @@ the Chromium UI flow. The current service grants every named path explicitly, re
 in `docs/evidence/form2-managed-workspaces.md`. No multi-user or deployed hosted evidence is
 implied by this row.
 
-| Surface | Status | Evidence |
-| --- | --- | --- |
+| Surface                                            | Status   | Evidence                                                                                  |
+| -------------------------------------------------- | -------- | ----------------------------------------------------------------------------------------- |
 | `POST /api/v1/repositories/register` and `/revoke` | verified | R4 integration and Chromium UI cases; exact paths, refusals, revocation and restart audit |
 
 ## Cloudflare Worker and API-only current revision
@@ -269,15 +268,15 @@ implied by this row.
 The 2026-09-16 R15 work changes the packaging boundary from the historical 0.1.x artifact. This
 revision has not been published or deployed. Local evidence is:
 
-| Surface | Result |
-| --- | --- |
-| Static PWA build | `pnpm build` passed; `apps/web/build` contains the SPA, service worker and manifest. |
-| Cloudflare configuration | `pnpm --dir apps/web exec wrangler deploy --dry-run` passed with Wrangler 4.132.0, reading 75 asset files; no publish occurred. |
-| Worker boundary | `pnpm test:web-host` passed 3/3: asset delegation/security headers, JSON `/api/*` 404, and non-GET refusal. |
-| Backend-only package | `pnpm build:release`, `pnpm test:pack`, and external `pnpm pack:smoke` passed; the tarball had 5 entries and no `web/` directory. |
-| Browser topology | `pnpm test:e2e` passed 99/99 across Chromium, Firefox and WebKit against the separate static host and API-only CLI. |
-| Hosted API path | Exact-origin CORS, ticket exchange and bearer read passed in the local isolated service; no public tunnel was exercised. |
-| Live deployment | **Unverified.** No Cloudflare account, domain, Worker deployment, or tunnel credentials were used. |
+| Surface                  | Result                                                                                                                            |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| Static PWA build         | `pnpm build` passed; `apps/web/build` contains the SPA, service worker and manifest.                                              |
+| Cloudflare configuration | `pnpm --dir apps/web exec wrangler deploy --dry-run` passed with Wrangler 4.132.0, reading 75 asset files; no publish occurred.   |
+| Worker boundary          | `pnpm test:web-host` passed 3/3: asset delegation/security headers, JSON `/api/*` 404, and non-GET refusal.                       |
+| Backend-only package     | `pnpm build:release`, `pnpm test:pack`, and external `pnpm pack:smoke` passed; the tarball had 5 entries and no `web/` directory. |
+| Browser topology         | `pnpm test:e2e` passed 99/99 across Chromium, Firefox and WebKit against the separate static host and API-only CLI.               |
+| Hosted API path          | Exact-origin CORS, ticket exchange and bearer read passed in the local isolated service; no public tunnel was exercised.          |
+| Live deployment          | **Unverified.** No Cloudflare account, domain, Worker deployment, or tunnel credentials were used.                                |
 
 The pairing URL has two explicit addresses in hosted mode: `--ui-origin` is the Worker page origin,
 and `--api-origin` is the HTTPS API/tunnel origin visible to the browser. The CLI still binds its
@@ -301,14 +300,14 @@ endpoint uses `@hono/mcp` with stateful in-memory sessions bound to the same Ref
 
 Local evidence on the isolated macOS fixtures:
 
-| Surface | Result |
-| --- | --- |
-| OpenAPI | `/openapi.json` returns an OpenAPI 3.1 document with the GitService paths, contract-derived response schemas and exact BearerAuth scheme. |
-| Scalar | `/scalar` returns the reference UI and contains no repository id or snapshot. |
-| MCP | 4 protocol cases pass: initialize, `tools/list`, `repo_status`, and missing-bearer refusal; all 373 Node/integration/security cases pass after the adapter was installed. |
-| MCP tools intentionally absent | `search_commits` and `get_file_history` are not advertised because the current ReadService has no corresponding bounded query; no mutation tool is registered. |
-| Security | Existing exact Host/Origin, bearer, repository scope, request-limit, JSON 404 and no-SPA-fallthrough cases remain green; MCP sessions reject a different Refyard bearer. |
-| Live external MCP client | **Unverified.** The protocol case uses a real HTTP JSON-RPC client against the real service; no third-party MCP client or deployed endpoint was exercised. |
+| Surface                        | Result                                                                                                                                                                    |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OpenAPI                        | `/openapi.json` returns an OpenAPI 3.1 document with the GitService paths, contract-derived response schemas and exact BearerAuth scheme.                                 |
+| Scalar                         | `/scalar` returns the reference UI and contains no repository id or snapshot.                                                                                             |
+| MCP                            | 4 protocol cases pass: initialize, `tools/list`, `repo_status`, and missing-bearer refusal; all 373 Node/integration/security cases pass after the adapter was installed. |
+| MCP tools intentionally absent | `search_commits` and `get_file_history` are not advertised because the current ReadService has no corresponding bounded query; no mutation tool is registered.            |
+| Security                       | Existing exact Host/Origin, bearer, repository scope, request-limit, JSON 404 and no-SPA-fallthrough cases remain green; MCP sessions reject a different Refyard bearer.  |
+| Live external MCP client       | **Unverified.** The protocol case uses a real HTTP JSON-RPC client against the real service; no third-party MCP client or deployed endpoint was exercised.                |
 
 ## Documentation truth
 
@@ -320,16 +319,30 @@ versioned copies under `apps/web/static/` are the ones the build ships. The form
 `packages/npm-dist/web/web-hidden/` directory is absent and the current release script has no writer
 for it.
 
+## Xross integration
+
+R10's adapter targets the Xross APIs present at revision
+`97925a3f74cf2b95b21389cd7db1c2dcca94d2e7`: an authorized `xross.exec.v1` stream held open for
+the session and an authorized `OpenForward` to the peer's loopback port. The fixed command, policy
+classification, readiness parsing, API-origin rewrite and cleanup order pass in
+`tests/integration/xross-launch.test.ts`.
+
+The real launch is **unverified**. This session had no peer with the Refyard executable in
+`shell-allow`, no peer `egress-allow` for the service port, and no two-daemon Xross testbed. The
+adapter makes no install attempt and does not weaken Refyard's Host/Origin checks; the raw-forward
+authority caveat and the missing app/dependency registry are recorded in
+`integrations/xross/README.md`.
+
 ## Published releases
 
 Both releases were published by the project's owner and then checked against the registry — a
 distinct step from the gates above, because it is the only one that looks at what a user actually
 installs.
 
-| Version | First available (UTC)            | `dist.integrity` (sha512)                  | Verified after publishing                                                                                                                                                                                                                                        |
-| ------- | -------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0.1.0   | 2026-09-15T19:40:39Z             | `8IbSWpd921gnt…K0+zO18aqUPyA==`            | `refyard doctor --json` from the registry install; the full lifecycle probe (serve, pair, capabilities, status, history, refs, the packaged UI, a preview token, `stagePaths`, `git diff --cached`) on Node 26.8.2 and 22.23.2 — identical to the locally built tarball |
-| 0.1.1   | 2026-09-15T21:24Z (`PUT 202`)    | `zMNGWNvozu9Nk…QVVc+gPIGeH4Q==`            | the same lifecycle probe on the same two Node lines, and the check this release exists for: with `core.autocrlf=true` in the session's global config the discard operation writes `base\r\n`, with an empty config it writes `base\n`                                              |
+| Version | First available (UTC)         | `dist.integrity` (sha512)       | Verified after publishing                                                                                                                                                                                                                                               |
+| ------- | ----------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0.1.0   | 2026-09-15T19:40:39Z          | `8IbSWpd921gnt…K0+zO18aqUPyA==` | `refyard doctor --json` from the registry install; the full lifecycle probe (serve, pair, capabilities, status, history, refs, the packaged UI, a preview token, `stagePaths`, `git diff --cached`) on Node 26.8.2 and 22.23.2 — identical to the locally built tarball |
+| 0.1.1   | 2026-09-15T21:24Z (`PUT 202`) | `zMNGWNvozu9Nk…QVVc+gPIGeH4Q==` | the same lifecycle probe on the same two Node lines, and the check this release exists for: with `core.autocrlf=true` in the session's global config the discard operation writes `base\r\n`, with an empty config it writes `base\n`                                   |
 
 Each `dist.integrity` was compared against the dry run made before publishing, byte for byte, and
 the tarball's own `dist/build-info.json` was read back (`0.1.1`: version 0.1.1, engines `>=22 <27`,
@@ -347,12 +360,12 @@ cache — `npm_config_prefer_online=true npm exec …` revalidates it and works.
 These are not gaps in testing; they are decisions, and a release page must not present them as
 features:
 
-| Not shipped                                                  | Why                                                                                         |
-| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| A live hosted API/tunnel deployment                            | the exact-origin path is implemented and locally tested, but no Cloudflare account, domain, or tunnel was exercised |
-| A Cloudflare Worker Git backend or API proxy                   | the Worker is static/PWA-only; it has no Git binding, bearer secret, or API route             |
-| Built-in terminal, plugin host, native shell                 | out of scope for V1 by design                                                               |
-| Any write operation not listed in `GET /api/v1/capabilities` | there is no route, no capability, and no button                                             |
+| Not shipped                                                  | Why                                                                                                                 |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| A live hosted API/tunnel deployment                          | the exact-origin path is implemented and locally tested, but no Cloudflare account, domain, or tunnel was exercised |
+| A Cloudflare Worker Git backend or API proxy                 | the Worker is static/PWA-only; it has no Git binding, bearer secret, or API route                                   |
+| Built-in terminal, plugin host, native shell                 | out of scope for V1 by design                                                                                       |
+| Any write operation not listed in `GET /api/v1/capabilities` | there is no route, no capability, and no button                                                                     |
 
 ## Reproducing this matrix
 
