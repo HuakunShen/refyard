@@ -41,10 +41,10 @@
 - `reconcileSidebarNavigation(state, views, hasRepository)` selects Working Copy when possible after a repository appears and only falls back when the current view is unavailable.
 - `selectSidebarView(state, viewId, views)` changes active view only when that view is available.
 
-- [ ] Write RED unit cases for repo-less default, Working Copy default after first repository selection, stable active view, capability hiding, refs fallback, counts/order, and fallback after the active capability disappears.
-- [ ] Implement the pure navigation model with no Svelte or DOM dependency.
-- [ ] Run the focused unit test and `pnpm check` under Node 26.
-- [ ] Commit `refactor(web): add sidebar navigation model`.
+- [x] Write RED unit cases for repo-less default, Working Copy default after first repository selection, stable active view, capability hiding, refs fallback, counts/order, and fallback after the active capability disappears.
+- [x] Implement the pure navigation model with no Svelte or DOM dependency.
+- [x] Run the focused unit test and `pnpm check` under Node 26.
+- [x] Commit `refactor(web): add sidebar navigation model`.
 
 ### Task 2: Add the reusable navigation list UI
 
