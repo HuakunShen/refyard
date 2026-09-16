@@ -272,7 +272,7 @@ revision has not been published or deployed. Local evidence is:
 | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
 | Static PWA build         | `pnpm build` passed; `apps/web/build` contains the SPA, service worker and manifest.                                              |
 | Cloudflare configuration | `pnpm --dir apps/web exec wrangler deploy --dry-run` passed with Wrangler 4.132.0, reading 75 asset files; no publish occurred.   |
-| Worker boundary          | `pnpm test:web-host` passed 3/3: asset delegation/security headers, JSON `/api/*` 404, and non-GET refusal.                       |
+| Worker boundary          | `pnpm test:web-host` passed 4/4: asset delegation/security headers, JSON `/api/*` 404, and non-GET refusal.                       |
 | Backend-only package     | `pnpm build:release`, `pnpm test:pack`, and external `pnpm pack:smoke` passed; the tarball had 5 entries and no `web/` directory. |
 | Browser topology         | `pnpm test:e2e` passed 99/99 across Chromium, Firefox and WebKit against the separate static host and API-only CLI.               |
 | Hosted API path          | Exact-origin CORS, ticket exchange and bearer read passed in the local isolated service; no public tunnel was exercised.          |
@@ -345,6 +345,28 @@ unchanged `Permission denied` propagation pass in `tests/integration/kunkun-adap
 Out-of-tree installation, backend packaging, and a real Electron Kunkun custom-view launch are
 **unverified** because this session did not install or modify the Kunkun checkout.
 
+## Native-host evaluation
+
+R12 closes T18 as an evidence-backed **stay on Node** decision. The current measurement is
+[native-host-evaluation.md](/Volumes/Portable2TB/ExtDev/refyard/docs/research/native-host-evaluation.md),
+and its machine-readable input is the current
+[performance.json](/Volumes/Portable2TB/ExtDev/refyard/docs/evidence/performance.json).
+
+The approved local benchmark completed three lifecycles on macOS arm64 with Node 26.8.2, Git
+2.50.1, a 100,000-commit fixture and no network: cold start 0.469 s, service RSS 96 MiB before
+reads and 104 MiB after 100 status reads, 193.4 status reads/s, first history page 388 ms, and
+diff-service RSS 204 MiB after the large/bounded/long-line/many-file batch. The current API-only
+CLI bundle is 2,205,421 bytes; `npm pack` reported 393,309 bytes compressed and 2.2 MB unpacked.
+These are Node/process measurements, not a native-runtime comparison.
+
+| Native-host question | Status | Evidence |
+| --- | --- | --- |
+| QuickJS/JSC/WASI/native VM version | **unverified** | No native VM was built, installed, or run. |
+| Async, cancellation, bytes and cleanup inside that VM | **unverified** | The 60,550-byte neutral IIFE and 11 planner/parser checks are a portability smoke only. |
+| Same-workload native memory and complete engine/bridge/process cost | **unverified** | No native comparator or long-time/idle measurement exists. |
+| Xross native size and permission delta | **unverified** | The current adapter's real peer launch is still unverified; 512 KiB / 5 MiB are review rules only. |
+| Release decision | **verified** | No explicit native implementation approval; continue with the Node sidecar. |
+
 ## Published releases
 
 Both releases were published by the project's owner and then checked against the registry — a
@@ -378,6 +400,7 @@ features:
 | A Cloudflare Worker Git backend or API proxy                 | the Worker is static/PWA-only; it has no Git binding, bearer secret, or API route                                   |
 | Built-in terminal, plugin host, native shell                 | out of scope for V1 by design                                                                                       |
 | Any write operation not listed in `GET /api/v1/capabilities` | there is no route, no capability, and no button                                                                     |
+| QuickJS/JSC/native-host runtime                              | T18 measured Node needs and deferred the native implementation; no native VM result exists                        |
 
 ## Reproducing this matrix
 

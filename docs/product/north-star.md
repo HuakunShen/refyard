@@ -17,13 +17,13 @@ what they are allowed to ask for**.
 
 | #   | Form                                    | Who runs    | Transport to the host          | Status                                                                   |
 | --- | --------------------------------------- | ----------- | ------------------------------ | ------------------------------------------------------------------------ |
-| 1   | Local workbench (default)               | one machine | loopback HTTP, ticket → bearer | **Implemented for reads** — `pnpm test:integration`, see §3              |
-| 2   | Managed workspaces (many repositories)  | one machine | same, plus a registration API  | **Not implemented** — §4 (registry + session grant need to grow)         |
-| 3   | Hosted UI against a local host (opt-in) | two origins | cross-origin HTTP + password   | **Not implemented** — §5 (T14-class slice; needs real browser evidence)  |
-| 4   | Embedded core inside a native host      | no Node     | no HTTP at all                 | **Already the rule** — `pnpm check:boundaries && pnpm test:portable`, §6 |
+| 1   | Local workbench (default)               | one machine | loopback HTTP, ticket → bearer | **Implemented for reads** — `pnpm test:integration`, see §3                              |
+| 2   | Managed workspaces (many repositories)  | one machine | same, plus a registration API  | **Implemented locally** — explicit register/revoke evidence in §4                         |
+| 3   | Hosted UI against a local host (opt-in) | two origins | cross-origin HTTP + password   | **Not shipped** — exact-origin bearer infrastructure exists; password mode needs approval |
+| 4   | Embedded core inside a native host      | no Node     | no HTTP at all                 | **Decision: stay on Node** — T18 evidence in §6                                           |
 
-Form 1 is the product today. Forms 2–4 are the reasons the shape below must not be compromised
-now: each of them is cheap to add later only if a rule is respected today.
+Forms 1 and 2 are implemented locally. Form 3 remains an opt-in product decision, and form 4 has
+an evidence-backed decision to stay on Node for V1; the rules below keep both doors honest later.
 
 ## 2. The invariant spine (holds in every form)
 
@@ -93,10 +93,11 @@ hand over `~/projects`. Form 2 keeps that instinct and changes only the mechanis
 - **A live worktree elsewhere stays listed but unreadable** until its own root is approved — that
   behaviour already exists in the CLI's startup message and must survive into the UI.
 
-Shape to build towards (not yet in the contract): a management surface for roots and repositories
-alongside the read API, plus a UI affordance ("Add repository") that appears only when the host
-publishes the capability. A build without it must keep showing an empty/one-repository list rather
-than a dead button.
+The management surface is now part of the contract and is exposed only through explicit host
+capabilities. Its evidence covers nested registration, a new approved root, duplicate and invalid
+paths, revocation, restart durability, and the CLI's multi-repository form. A build without the
+management capability keeps showing its current repository list rather than inventing an "Add
+repository" action.
 
 ## 5. Form 3 — Hosted UI against a local host (opt-in, later)
 
@@ -151,8 +152,8 @@ This is already true and must stay true:
 
 - `git-core` has **no runtime dependencies**; it imports the contract with `import type` only, so
   Zod is erased from a core-only bundle.
-- The portability smoke builds a neutral IIFE of **60,542 bytes** and runs 11 planner/parser checks
-  with no host globals and no Node shims (`pnpm test:portable`, run 2026-09-15).
+- The portability smoke builds a neutral IIFE of **60,550 bytes** and runs 11 planner/parser checks
+  with no host globals and no Node shims (`pnpm test:portable`, run 2026-09-16).
 - `packages/git-graph` is equally host-free, so a native host can lay out the commit graph itself.
 
 Rules that keep the door open:
@@ -180,25 +181,26 @@ without running both implementations over the same fixtures.
 Forms 1–4 are about _people_. A second surface matters to _agents and tools_, and it is decided
 here so it does not get improvised later:
 
-- **Hono is the HTTP layer** for the versioned API, replacing the hand-written `node:http` router
-  when the API grows an OpenAPI document and an MCP endpoint. `@hono/node-server` runs it on Node;
-  the Git domain and application layers do not import Hono, so core stays portable (§2.6).
+- **Hono is the HTTP layer** for the versioned API's API and discovery routes. `@hono/node-server`
+  runs it on Node; the Git domain and application layers do not import Hono, so core stays portable
+  (§2.6). The static asset boundary remains separate.
 - **OpenAPI generation uses `hono-openapi`** (preferred over `@hono/zod-openapi`), and the API
   reference UI is **Scalar** (`@scalar/hono-api-reference`), not Swagger UI. Exact wiring proven in
   `~/Dev/kunkun/packages/local-api-server/src/openapi.ts`: `openAPIRouteHandler(app, {…})` for
   `/openapi.json`, `Scalar({ url: "/openapi.json", … })` for `/scalar`.
 - **MCP uses `@hono/mcp` + `@modelcontextprotocol/sdk`** — Kunkun already runs `StreamableHTTPTransport`
-  this way (`packages/local-api-server/src/{browser,listenflow,workspace}-mcp.ts`). When Refyard
-  exposes MCP it exposes the _read_ tools first (`repo_status`, `list_branches`, `list_worktrees`,
-  `get_diff`, `get_commit`, `search_commits`, `get_file_history`), with an explicit policy
-  principal separate from a browser session, and it never exposes `run_git(args)` or a shell.
+  this way (`packages/local-api-server/src/{browser,listenflow,workspace}-mcp.ts`). Refyard exposes
+  the bounded read tools currently backed by `ReadService` (`repo_status`, `list_branches`,
+  `list_worktrees`, `get_diff`, `get_commit`), with an explicit policy principal bound to the
+  bearer session, and it never exposes `run_git(args)` or a shell. Search/history tools remain
+  absent until the contract has bounded queries for them.
 - The OpenAPI document describes the _same_ `GitService` contract that the UI uses — generated from
   the Zod schemas in `packages/git-contract` (`z.toJSONSchema` already produces them,
   `pnpm check:contract`).
 
-Status: **decided, not built.** M1 keeps the raw `node:http` host that is already verified; the
-Hono migration is a scheduled task (§8 in the plan), and its acceptance criterion is that the
-existing auth/origin/SSE/static tests pass unchanged.
+Status: **implemented locally; externally deployed MCP remains unverified.** The Hono adapter,
+OpenAPI document, Scalar reference page and read-only MCP protocol cases pass while the existing
+auth/origin/SSE/static boundaries remain covered.
 
 ## 8. Decision log
 
