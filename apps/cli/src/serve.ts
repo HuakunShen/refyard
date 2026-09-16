@@ -422,7 +422,7 @@ export interface RunningService {
   readonly http: HttpHost;
   readonly assembly: ServiceAssembly;
   readonly url: string;
-  /** The pairing URL, which carries the one-time ticket in its fragment. */
+  /** The pairing URL carrying the one-time ticket. */
   readonly pairingUrl: string;
   close(): Promise<void>;
 }

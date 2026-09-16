@@ -220,8 +220,8 @@
     queryClient.clear();
   }
 
-  // A pairing URL is meant to work by being opened. Doing the exchange on load is the
-  // whole point of the fragment; asking the user to press a button would be theatre.
+  // A pairing URL is meant to work by being opened. Query and legacy-fragment
+  // tickets are exchanged on load; asking the user to press a button would be theatre.
   $effect(() => {
     if (
       browser &&

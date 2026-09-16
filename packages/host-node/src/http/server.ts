@@ -128,7 +128,7 @@ export interface HttpHost {
   readonly auth: AuthStore;
   readonly assets: AssetServer;
   readonly events: EventRing;
-  /** A pairing URL for a browser: origin plus the ticket in the fragment. */
+  /** A browser pairing URL carrying one short-lived ticket. */
   pairingUrl(origin: string): string;
   close(): Promise<void>;
 }
