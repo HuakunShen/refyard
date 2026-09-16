@@ -27,6 +27,13 @@
     onSwitch: (branchName: string) => void;
     onRename: (branchName: string, newName: string) => void;
     onDelete: (branchName: string) => void;
+    onSetUpstream: (
+      branchName: string,
+      upstream: {
+        readonly remoteName: string;
+        readonly branchName: string;
+      } | null,
+    ) => void;
     /** Merge the named branch into the current one; `noFf` forces a merge commit. */
     onMerge: (branchName: string, noFf: boolean) => void;
     class?: string;
@@ -41,6 +48,7 @@
     onSwitch,
     onRename,
     onDelete,
+    onSetUpstream,
     onMerge,
     class: className = "",
   }: Props = $props();
@@ -48,9 +56,45 @@
   let newBranch = $state("");
   let renaming = $state<string | null>(null);
   let renameValue = $state("");
+  let editingUpstream = $state<string | null>(null);
+  let upstreamValue = $state("");
   let mergeNoFf = $state(false);
 
   const branches = $derived(refs?.branches ?? []);
+  const remoteBranches = $derived(
+    (refs?.remoteBranches ?? []).filter(
+      (entry) => entry.name.slice(entry.remoteName.length + 1) !== "HEAD",
+    ),
+  );
+
+  function editUpstream(branch: (typeof branches)[number]): void {
+    editingUpstream = branch.name;
+    renaming = null;
+    const current =
+      branch.upstream?.fullName.replace(/^refs\/remotes\//, "") ?? "";
+    upstreamValue = remoteBranches.some((entry) => entry.name === current)
+      ? current
+      : "";
+  }
+
+  function saveUpstream(branchName: string): void {
+    if (upstreamValue.length === 0) {
+      onSetUpstream(branchName, null);
+      editingUpstream = null;
+      return;
+    }
+    const selected = remoteBranches.find(
+      (entry) => entry.name === upstreamValue,
+    );
+    if (selected === undefined) {
+      return;
+    }
+    onSetUpstream(branchName, {
+      remoteName: selected.remoteName,
+      branchName: selected.name.slice(selected.remoteName.length + 1),
+    });
+    editingUpstream = null;
+  }
 </script>
 
 <div class={cn("flex flex-col gap-2.5", className)} data-testid="branch-panel">
@@ -128,6 +172,39 @@
               {/if}
             </div>
 
+            {#if editingUpstream === branch.name}
+              <div
+                class="flex items-center gap-1.5 rounded-md border border-border/40 bg-background/50 p-1.5"
+              >
+                <select
+                  class="min-w-0 flex-1 rounded border border-input bg-background px-2 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  aria-label={`upstream for ${branch.name}`}
+                  bind:value={upstreamValue}
+                  disabled={disabled || busy}
+                >
+                  <option value="">No upstream</option>
+                  {#each remoteBranches as remoteBranch (remoteBranch.fullName)}
+                    <option value={remoteBranch.name}
+                      >{remoteBranch.name}</option
+                    >
+                  {/each}
+                </select>
+                <Button
+                  size="sm"
+                  class="h-7 px-2.5 text-xs"
+                  disabled={disabled || busy}
+                  onclick={() => saveUpstream(branch.name)}
+                  data-testid={`save-upstream-${branch.name}`}>Save</Button
+                >
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  class="h-7 px-2 text-xs"
+                  onclick={() => (editingUpstream = null)}>Cancel</Button
+                >
+              </div>
+            {/if}
+
             <div
               class="flex flex-wrap items-center gap-1.5 pt-0.5 border-t border-border/20"
             >
@@ -157,6 +234,16 @@
                   Merge in
                 </Button>
               {/if}
+              <Button
+                size="sm"
+                variant="ghost"
+                class="h-6 px-2 text-xs text-ink-muted hover:text-ink"
+                disabled={disabled || busy}
+                onclick={() => editUpstream(branch)}
+                data-testid={`edit-upstream-${branch.name}`}
+              >
+                Upstream…
+              </Button>
               <Button
                 size="sm"
                 variant="ghost"

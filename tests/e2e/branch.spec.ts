@@ -80,6 +80,51 @@ test.describe("branch workbench", () => {
     expect(remaining).not.toContain("feature-e2e");
   });
 
+  test("sets and clears the current branch upstream from observed remote refs", async ({
+    page,
+  }) => {
+    // Prevents: advertising setBranchUpstream in capabilities while leaving users no
+    // safe GUI path to choose one of the remote-tracking refs already on screen.
+    await repo.git(["remote", "add", "origin", remote.path]);
+    await repo.git(["push", "origin", "main"]);
+    await repo.git(["fetch", "origin"]);
+
+    await page.goto(service.pairingUrl);
+    await expect(page.getByTestId("branch-panel")).toBeVisible();
+    await page.getByTestId("edit-upstream-main").click();
+    await page.getByLabel("upstream for main").selectOption("origin/main");
+    await page.getByTestId("save-upstream-main").click();
+    await expect(page.getByTestId("branch-message")).toContainText(
+      "set main to track origin/main",
+    );
+
+    const configured = new TextDecoder()
+      .decode(
+        await repo.git([
+          "for-each-ref",
+          "--format=%(upstream:short)",
+          "refs/heads/main",
+        ]),
+      )
+      .trim();
+    expect(configured).toEqual("origin/main");
+
+    await page.getByTestId("edit-upstream-main").click();
+    await page.getByLabel("upstream for main").selectOption("");
+    await page.getByTestId("save-upstream-main").click();
+    await expect(page.getByTestId("branch-message")).toContainText(/upstream/i);
+    const cleared = new TextDecoder()
+      .decode(
+        await repo.git([
+          "for-each-ref",
+          "--format=%(upstream:short)",
+          "refs/heads/main",
+        ]),
+      )
+      .trim();
+    expect(cleared).toEqual("");
+  });
+
   test("pushes the current branch to the selected remote and nothing else", async ({
     page,
   }) => {
