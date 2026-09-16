@@ -1,6 +1,6 @@
 # Workbench Mutation Extraction Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Move write gating, operation submission/follow, mutation messages, capability-derived controls, and semantic Git mutation handlers out of `+page.svelte` without changing any Git intention or UI behavior.
 
@@ -28,10 +28,10 @@
 - Create: `tests/unit/workbench-mutation-model.test.ts`
 - Create: `tests/unit/workbench-mutation-boundary.test.ts`
 
-- [ ] Write RED tests for capability availability, unknown repository-creation capability, write refusal messages, and operation-id extraction.
-- [ ] Write a RED structural test requiring `+page.svelte` to stop owning mutation-client/follow/write-runner logic.
-- [ ] Implement pure helpers and make only model tests GREEN; leave ownership RED until Task 2.
-- [ ] Commit `refactor(web): extract workbench mutation model`.
+- [x] Write RED tests for capability availability, unknown repository-creation capability, write refusal messages, and operation-id extraction.
+- [x] Write a RED structural test requiring `+page.svelte` to stop owning mutation-client/follow/write-runner logic.
+- [x] Implement pure helpers and make only model tests GREEN; leave ownership RED until Task 2.
+- [x] Commit `refactor(web): extract workbench mutation model`.
 
 ### Task 2: Extract mutation application controller
 
@@ -39,18 +39,18 @@
 - Create: `apps/web/src/lib/workbench/mutations.svelte.ts`
 - Modify: `apps/web/src/routes/+page.svelte`
 
-- [ ] Move mutation client, busy/message state, capability-derived state, write runner, workspace creation/access, preview tokens, and all semantic handlers into `createWorkbenchMutations`.
-- [ ] Keep session negotiation and credential invalidation in the page; inject negotiation/browser-online/token getters into the controller.
-- [ ] Replace page mutation implementation with controller aliases/wiring.
-- [ ] Run ownership/model units and `pnpm check`.
-- [ ] Build and run the full Chromium E2E suite.
-- [ ] Run full unit + integration/security suites and `git diff --check`.
-- [ ] Commit `refactor(web): extract workbench mutations`.
+- [x] Move mutation client, busy/message state, capability-derived state, write runner, workspace creation/access, preview tokens, and all semantic handlers into `createWorkbenchMutations`.
+- [x] Keep session negotiation and credential invalidation in the page; inject negotiation/browser-online/token getters into the controller.
+- [x] Replace page mutation implementation with controller aliases/wiring.
+- [x] Run ownership/model units and `pnpm check`.
+- [x] Build and run the full Chromium E2E suite.
+- [x] Run full unit + integration/security suites and `git diff --check`.
+- [x] Commit `refactor(web): extract workbench mutations`.
 
 ## Final verification
 
-- [ ] `pnpm check`
-- [ ] `pnpm test:unit`
-- [ ] `pnpm test:integration`
-- [ ] `pnpm exec playwright test --project=chromium`
-- [ ] `git diff --check`
+- [x] `pnpm check`
+- [x] `pnpm test:unit`
+- [x] `pnpm test:integration`
+- [x] `pnpm exec playwright test --project=chromium`
+- [x] `git diff --check`
