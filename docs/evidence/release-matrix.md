@@ -274,7 +274,7 @@ revision has not been published or deployed. Local evidence is:
 | Cloudflare configuration | `pnpm --dir apps/web exec wrangler deploy --dry-run` passed with Wrangler 4.132.0, reading 75 asset files; no publish occurred.   |
 | Worker boundary          | `pnpm test:web-host` passed 4/4: asset delegation/security headers, JSON `/api/*` 404, and non-GET refusal.                       |
 | Backend-only package     | `pnpm build:release`, `pnpm test:pack`, and external `pnpm pack:smoke` passed; the tarball had 5 entries and no `web/` directory. |
-| Browser topology         | `pnpm test:e2e` passed 99/99 across Chromium, Firefox and WebKit against the separate static host and API-only CLI.               |
+| Browser topology         | `pnpm test:e2e` passed 105/105 across Chromium, Firefox and WebKit against the separate static host and API-only CLI.             |
 | Hosted API path          | Exact-origin CORS, password-gated ticket exchange and bearer read passed in local isolated services; no public tunnel was exercised. |
 | Live deployment          | **Unverified.** No Cloudflare account, domain, Worker deployment, or tunnel credentials were used.                                |
 
@@ -304,7 +304,7 @@ Local evidence on the isolated macOS fixtures:
 | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | OpenAPI                        | `/openapi.json` returns an OpenAPI 3.1 document with the GitService paths, contract-derived response schemas and exact BearerAuth scheme.                                 |
 | Scalar                         | `/scalar` returns the reference UI and contains no repository id or snapshot.                                                                                             |
-| MCP                            | 4 protocol cases pass: initialize, `tools/list`, `repo_status`, and missing-bearer refusal; all 373 Node/integration/security cases pass after the adapter was installed. |
+| MCP                            | 4 protocol cases pass: initialize, `tools/list`, `repo_status`, and missing-bearer refusal; all 383 Node/integration/security cases pass after the adapter was installed. |
 | MCP tools intentionally absent | `search_commits` and `get_file_history` are not advertised because the current ReadService has no corresponding bounded query; no mutation tool is registered.            |
 | Security                       | Existing exact Host/Origin, bearer, repository scope, request-limit, JSON 404 and no-SPA-fallthrough cases remain green; MCP sessions reject a different Refyard bearer.  |
 | Live external MCP client       | **Unverified.** The protocol case uses a real HTTP JSON-RPC client against the real service; no third-party MCP client or deployed endpoint was exercised.                |
@@ -368,9 +368,9 @@ and its machine-readable input is the current
 [performance.json](/Volumes/Portable2TB/ExtDev/refyard/docs/evidence/performance.json).
 
 The approved local benchmark completed three lifecycles on macOS arm64 with Node 26.8.2, Git
-2.50.1, a 100,000-commit fixture and no network: cold start 0.464 s, service RSS 95 MiB before
-reads and 103 MiB after 100 status reads, 191.6 status reads/s, first history page 393 ms, and
-diff-service RSS 206 MiB after the large/bounded/long-line/many-file batch. The current API-only
+2.50.1, a 100,000-commit fixture and no network: cold start 0.468 s, service RSS 95 MiB before
+reads and 103 MiB after 100 status reads, 194.6 status reads/s, first history page 402 ms, and
+diff-service RSS 208 MiB after the large/bounded/long-line/many-file batch. The current API-only
 CLI bundle is 2,209,211 bytes; `npm pack` reported 394,396 bytes compressed and 2.2 MB unpacked.
 These are Node/process measurements, not a native-runtime comparison.
 

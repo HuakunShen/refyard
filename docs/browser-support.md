@@ -8,14 +8,15 @@ around the mechanism.
 
 ## What was run
 
-`pnpm test:e2e`, 2026-09-15, one worker, Playwright 1.63.0 pinned by `pnpm-lock.yaml`:
-**90 passed, 0 failed (11.9 m)** — the same 30 specs per engine.
+`pnpm test:e2e`, 2026-09-16, one worker, Playwright 1.63.0 pinned by `pnpm-lock.yaml`:
+**105 passed, 0 failed (11.9 m)** — the same 35 specs per engine, including the hosted-password
+form and background-read confirmation regression.
 
 | Browser                          | Engine version | Result                                                                                                                             |
 | -------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Chromium                         | 153.0.8010.12  | **Verified.** All 30 end-to-end specs, including the offline reload and the instance-change refusal.                               |
-| Firefox                          | 155.0          | **Verified.** All 30.                                                                                                              |
-| WebKit                           | 26.6           | **Verified.** All 30, after the two engine differences below were found and the case was made engine-independent.                  |
+| Chromium                         | 153.0.8010.12  | **Verified.** All 35 end-to-end specs, including the hosted-password form and the instance-change refusal.                        |
+| Firefox                          | 155.0          | **Verified.** All 35.                                                                                                             |
+| WebKit                           | 26.6           | **Verified.** All 35, after the engine differences below were found and the cases were made engine-independent.                  |
 | Safari, Chrome, Edge (installed) | —              | **Unverified.** These are the engines above wearing a different version number and a different shell; nobody has run those builds. |
 | Mobile browsers                  | —              | **Unverified**, and the layout is a desktop workbench, not a phone app.                                                            |
 
@@ -66,6 +67,10 @@ the log, so the failure was thrown away with it. The same revision re-ran immedi
 and came back **90 passed in 10.6 m**, on the harness this revision ships. It is recorded because
 a failure that cannot be described is still a failure, and because it is the reason the harness
 keeps its output now.
+
+After the stash-panel retention and repository-mode readiness fixes, the current revision's full
+run passed **105 of 105** cases across Chromium, Firefox and WebKit; the two previously recurring
+long-run failures did not recur.
 
 In both described occurrences, the mode toggle had been clicked and the form it reveals was not
 there when the spec looked. The service-output candidate remains useful for future failures; the

@@ -19,7 +19,7 @@ The actual commands run for this report were:
 
 | Command | Exit status | What it established |
 | --- | ---: | --- |
-| `pnpm build:release` | 0 | Built the current 0.1.1 API-only CLI bundle at commit `5678442`. |
+| `pnpm build:release` | 0 | Built the current 0.1.1 API-only CLI bundle at commit `844307b`. |
 | `pnpm bench:runtime` in the default sandbox | 1 | The fixture completed, but the temporary loopback listener was refused with `EPERM`; this is not a product measurement. |
 | `pnpm bench:runtime` with approved local loopback access | 0 | Completed three lifecycle runs against the full fixture and wrote `performance.json`. |
 | `pnpm test:portable` | 0 | Ran the neutral IIFE smoke and its four Vitest cases. |
@@ -31,15 +31,15 @@ The report uses the median and records each observed range. The most relevant va
 
 | Measurement | Result | Scope |
 | --- | ---: | --- |
-| Cold start to readiness | 0.464 s | CLI process, including the Git feature probe |
+| Cold start to readiness | 0.468 s | CLI process, including the Git feature probe |
 | Service RSS before reads | 95 MiB | Refyard service only; no browser or Git child |
-| Status throughput | 191.6 reads/s | One service over loopback, concurrency four |
+| Status throughput | 194.6 reads/s | One service over loopback, concurrency four |
 | Service RSS after 100 status reads | 103 MiB | Same service and read batch |
-| First history page | 393 ms | 100 commits from the 100,000-commit fixture, bounded response |
+| First history page | 402 ms | 100 commits from the 100,000-commit fixture, bounded response |
 | Large-file diff | 118 ms / 1,554,484 bytes | 8,000-line file; time and JSON response payload |
-| Long-line diff | 114 ms / 1,442,557 bytes | One 700,000-character line |
-| Truncated diff | 131 ms / 1,962,008 bytes | 19,995 of 64,000 patch lines delivered, marked truncated |
-| Diff-service RSS after batch | 206 MiB | Service only after large, bounded, long-line and many-file reads |
+| Long-line diff | 110 ms / 1,442,557 bytes | One 700,000-character line |
+| Truncated diff | 133 ms / 1,962,008 bytes | 19,995 of 64,000 patch lines delivered, marked truncated |
+| Diff-service RSS after batch | 208 MiB | Service only after large, bounded, long-line and many-file reads |
 | Immediate warm large-file diff | 110 ms | Same diff read again |
 | Graceful shutdown | 5 ms | SIGTERM with no request in flight |
 
