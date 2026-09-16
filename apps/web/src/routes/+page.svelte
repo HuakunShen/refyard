@@ -13,20 +13,8 @@
    * clients, and capabilities decide which controls are visible.
    */
   import { browser } from "$app/environment";
-  import {
-    GitClientError,
-    createGitClient,
-    createMutationClient,
-  } from "@refyard/git-client";
-  import type {
-    CommitDetail,
-    CommitSummary,
-    DiffResponse,
-    ParsedMutationRequest,
-    StatusEntry,
-    StashesResponse,
-  } from "@refyard/git-contract";
-  import { layoutPages, type GraphCommit } from "@refyard/git-graph";
+  import { createGitClient, createMutationClient } from "@refyard/git-client";
+  import type { ParsedMutationRequest } from "@refyard/git-contract";
   import {
     AppearanceSettings,
     Badge,
@@ -71,11 +59,7 @@
     RefreshCw,
     Tag,
   } from "@lucide/svelte";
-  import {
-    createInfiniteQuery,
-    createQuery,
-    useQueryClient,
-  } from "@tanstack/svelte-query";
+  import { useQueryClient } from "@tanstack/svelte-query";
   import {
     clearWorkbenchCredentials,
     consumeInitialPairingUrl,
@@ -94,7 +78,6 @@
     clearInspectableSelection,
     clearRepositoryIfSelected,
     createWorkbenchSelectionState,
-    reconcileRepositorySelection,
     selectCommit,
     selectDiffPath,
     selectRepository,
@@ -102,10 +85,9 @@
   } from "$lib/workbench/selection.js";
   import { followOperation } from "$lib/operation-follow.js";
   import {
-    backgroundRead,
-    createReadTimer,
-    timedRead,
-  } from "$lib/background-poll.js";
+    createWorkbenchQueries,
+    invalidateWorkbenchBackgroundQueries,
+  } from "$lib/workbench/queries.svelte.js";
   import {
     clearStoredSession,
     readStoredAccent,
@@ -126,8 +108,6 @@
     negotiateSession,
     type Negotiation,
   } from "$lib/session-negotiation.js";
-
-  const HISTORY_PAGE_SIZE = 100;
 
   /* ------------------------------------------------------- runtime connection */
 
@@ -212,371 +192,64 @@
 
   /* ------------------------------------------------------------------- reads */
 
-  const enabled = $derived(token !== null);
-  /**
-   * The last successful duration of each background read, which is what decides whether a
-   * repository is paced at 2 s or at 30 s (see `$lib/background-poll.ts`).
-   */
-  const readTimer = createReadTimer();
+  const selection = $state(createWorkbenchSelectionState());
+  const selectedRepositoryId = $derived(selection.repositoryId);
+  const selectedOid = $derived(selection.commitOid);
+  const selectedPath = $derived(selection.statusPath);
+  const selectedDiffPathId = $derived(selection.diffPathId);
 
-  /**
-   * Re-read the background queries the moment the tab becomes visible again.
-   *
-   * Hidden tabs poll every 15 s, so without this a user who comes back after an hour could
-   * look at up to 15 seconds of stale repository. Only the background keys are refreshed —
-   * a selected diff or path preview is read for the thing the user is looking at, and
-   * re-reading all of them on every tab switch would be work nobody asked for.
-   */
-  $effect(() => {
-    if (!browser) {
-      return;
-    }
-    const onVisibility = (): void => {
-      if (document.visibilityState !== "visible") {
-        return;
-      }
-      for (const prefix of [
-        "repositories",
-        "status",
-        "refs",
-        "stashes",
-        "worktrees",
-        "submodules",
-        "history",
-      ]) {
-        void queryClient.invalidateQueries({ queryKey: [prefix] });
-      }
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
-  });
-  /**
-   * Whether the page is visible right now.
-   *
-   * The DOM read lives here, in the app that owns the browser, rather than in the polling
-   * module: that module is the cadence arithmetic and is imported by a Node test, where
-   * `document` does not exist. `ssr = false` means the guard is for that test, not for SSR.
-   */
   function pageVisible(): boolean {
     return (
       typeof document === "undefined" || document.visibilityState !== "hidden"
     );
   }
-  /** The cadence options a background read carries, for one query key. */
-  const polled = (key: readonly unknown[]) =>
-    backgroundRead({ key, timer: readTimer, visible: pageVisible });
 
-  const capabilities = createQuery(() => ({
-    queryKey: ["capabilities", baseUrl, token],
-    queryFn: () => client.capabilities(),
-    enabled,
-  }));
-  const repositories = createQuery(() => {
-    const key = ["repositories", baseUrl, token];
-    return {
-      queryKey: key,
-      queryFn: timedRead({
-        key,
-        timer: readTimer,
-        run: () => client.repositories(),
-      }),
-      enabled,
-      ...polled(key),
-    };
+  const queries = createWorkbenchQueries({
+    client: () => client,
+    baseUrl: () => baseUrl,
+    token: () => token,
+    selection,
+    visible: pageVisible,
   });
+  const capabilities = queries.capabilities;
+  const repositories = queries.repositories;
+  const status = queries.status;
+  const refs = queries.refs;
+  const stashes = queries.stashes;
+  const worktrees = queries.worktrees;
+  const submodules = queries.submodules;
+  const history = queries.history;
+  const diff = queries.diff;
+  const diffPatch = queries.diffPatch;
+  const identity = queries.identity;
 
-  const selection = $state(createWorkbenchSelectionState());
-  const selectedRepositoryId = $derived(selection.repositoryId);
-  const selectedOid = $derived(selection.commitOid);
-  const selectedPath = $derived(selection.statusPath);
-  /** The file selected inside the current change set's second-step diff request. */
-  const selectedDiffPathId = $derived(selection.diffPathId);
+  const repositoryList = $derived(queries.repositoryList);
+  const workspaceRoots = $derived(queries.workspaceRoots);
+  const repository = $derived(queries.repository);
+  const displayedStashes = $derived(queries.displayedStashes);
+  const stashPanelAvailable = $derived(queries.stashPanelAvailable);
+  const commits = $derived(queries.commits);
+  const graph = $derived(queries.graph);
+  const historyNotices = $derived(queries.historyNotices);
+  const selectedCommit = $derived(queries.selectedCommit);
+  const detail = $derived(queries.detail);
+  const diffRequest = $derived(queries.diffRequest);
+  const sessionExpired = $derived(queries.sessionExpired);
+  const primaryWorktreeId = $derived(queries.primaryWorktreeId);
 
-  const repositoryList = $derived(repositories.data?.repositories ?? []);
-
-  /**
-   * The approved roots this session may create a repository in.
-   *
-   * A workspace target needs a root id, and the service reports one per repository it
-   * knows — so the roots are read from there rather than invented or typed by hand. A
-   * root the service never approved cannot be addressed, and a UI that offered one
-   * would be offering a request that is refused every time.
-   */
-  const workspaceRoots = $derived([
-    ...new Map(
-      repositoryList.map((entry) => [
-        entry.allowedRootId,
-        { allowedRootId: entry.allowedRootId, displayPath: entry.displayPath },
-      ]),
-    ).values(),
-  ]);
-  const repository = $derived(
-    repositoryList.find(
-      (entry) => entry.repositoryId === selectedRepositoryId,
-    ) ?? null,
-  );
-
+  // The DOM listener stays at the composition root; query ownership only exposes the
+  // invalidation intent and never reaches for `document` itself.
   $effect(() => {
-    reconcileRepositorySelection(
-      selection,
-      repositoryList.map((entry) => entry.repositoryId),
-    );
-  });
-
-  const status = createQuery(() => {
-    const key = ["status", baseUrl, token, selectedRepositoryId];
-    return {
-      queryKey: key,
-      queryFn: timedRead({
-        key,
-        timer: readTimer,
-        run: () =>
-          client.status({
-            repositoryId: selectedRepositoryId ?? "",
-            worktreeId: repository?.primaryWorktreeId,
-          }),
-      }),
-      enabled: enabled && selectedRepositoryId !== null,
-      ...polled(key),
-    };
-  });
-
-  const refs = createQuery(() => {
-    const key = ["refs", baseUrl, token, selectedRepositoryId];
-    return {
-      queryKey: key,
-      queryFn: timedRead({
-        key,
-        timer: readTimer,
-        run: () => client.refs({ repositoryId: selectedRepositoryId ?? "" }),
-      }),
-      enabled: enabled && selectedRepositoryId !== null,
-      ...polled(key),
-    };
-  });
-
-  const stashes = createQuery(() => {
-    const key = ["stashes", baseUrl, token, selectedRepositoryId];
-    return {
-      queryKey: key,
-      queryFn: timedRead({
-        key,
-        timer: readTimer,
-        run: () => client.stashes({ repositoryId: selectedRepositoryId ?? "" }),
-      }),
-      enabled: enabled && selectedRepositoryId !== null,
-      ...polled(key),
-    };
-  });
-
-  /**
-   * Keep the last known stash rows while a background read is pending or failed.
-   * Query data is authoritative when it arrives, but the panel owns destructive
-   * confirmation state and must not be remounted just because a retry is in flight.
-   */
-  let lastStashesRepositoryId = $state<string | null>(null);
-  let lastStashes = $state<StashesResponse["stashes"]>([]);
-  $effect(() => {
-    const data = stashes.data;
-    const repositoryId = selectedRepositoryId;
-    if (data === undefined || repositoryId === null) {
+    if (!browser) {
       return;
     }
-    lastStashesRepositoryId = repositoryId;
-    lastStashes = data.stashes;
-  });
-  const displayedStashes = $derived(
-    lastStashesRepositoryId === selectedRepositoryId
-      ? lastStashes
-      : (stashes.data?.stashes ?? []),
-  );
-
-  const worktrees = createQuery(() => {
-    const key = ["worktrees", baseUrl, token, selectedRepositoryId];
-    return {
-      queryKey: key,
-      queryFn: timedRead({
-        key,
-        timer: readTimer,
-        run: () =>
-          client.worktrees({ repositoryId: selectedRepositoryId ?? "" }),
-      }),
-      enabled: enabled && selectedRepositoryId !== null,
-      ...polled(key),
-    };
-  });
-
-  /**
-   * Submodule state of the primary worktree.
-   *
-   * The panel shows the worktree the write operations actually address, so the list
-   * and the buttons cannot disagree about which checkout they mean.
-   */
-  const submodules = createQuery(() => {
-    const worktreeId = repository?.primaryWorktreeId;
-    const key = [
-      "submodules",
-      baseUrl,
-      token,
-      selectedRepositoryId,
-      worktreeId,
-    ];
-    return {
-      queryKey: key,
-      queryFn: timedRead({
-        key,
-        timer: readTimer,
-        run: () =>
-          client.submodules({
-            repositoryId: selectedRepositoryId ?? "",
-            worktreeId: worktreeId ?? "",
-          }),
-      }),
-      enabled:
-        enabled && selectedRepositoryId !== null && worktreeId !== undefined,
-      ...polled(key),
-    };
-  });
-
-  const history = createInfiniteQuery(() => {
-    const key = ["history", baseUrl, token, selectedRepositoryId];
-    return {
-      queryKey: key,
-      queryFn: ({ pageParam }) =>
-        timedRead({
-          key: [...key, pageParam],
-          timer: readTimer,
-          run: () =>
-            client.history({
-              repositoryId: selectedRepositoryId ?? "",
-              limit: HISTORY_PAGE_SIZE,
-              ...(pageParam === null ? {} : { cursor: pageParam }),
-            }),
-        })(),
-      initialPageParam: null as string | null,
-      getNextPageParam: (lastPage) => lastPage.nextCursor,
-      enabled: enabled && selectedRepositoryId !== null,
-      ...polled(key),
-    };
-  });
-
-  const historyPages = $derived(history.data?.pages ?? []);
-  const commits = $derived(historyPages.flatMap((page) => page.commits));
-  // The fold is per page: page two starts from page one's lanes, so a merge that spans a
-  // boundary is drawn as one line instead of two that do not meet.
-  const graph = $derived(
-    layoutPages(historyPages.map((page) => page.commits.map(toGraphCommit))),
-  );
-  const newestPage = $derived(historyPages[0] ?? null);
-  // Page-level notices are combined over every loaded page: one truncated or shallow page
-  // means the history on screen is incomplete, wherever in the list it happened.
-  const historyNotices = $derived({
-    truncated: historyPages.some((page) => page.truncated),
-    tipsMoved: historyPages.some((page) => page.tipsMoved),
-    shallow: historyPages.some((page) => page.shallow),
-  });
-  const selectedCommit = $derived(
-    commits.find((commit) => commit.oid === selectedOid) ?? null,
-  );
-
-  const commitDetail = createQuery(() => ({
-    queryKey: ["commit", baseUrl, token, selectedRepositoryId, selectedOid],
-    queryFn: () =>
-      client.history({
-        repositoryId: selectedRepositoryId ?? "",
-        detailOid: selectedOid ?? "",
-        limit: 1,
-      }),
-    enabled: enabled && selectedRepositoryId !== null && selectedOid !== null,
-  }));
-  const detail: CommitDetail | null = $derived(
-    commitDetail.data?.detail ?? null,
-  );
-
-  /**
-   * What to diff for the current selection.
-   *
-   * A status path is diffed against the side that actually changed: the index when Git
-   * says the index differs, the working tree otherwise, and the working tree as
-   * synthesized text when the file is untracked. An ignored path is not diffed at all —
-   * Git does not report content for it, so the pane explains that instead of showing an
-   * empty patch that looks like an error.
-   */
-  const diffRequest = $derived.by(
-    (): {
-      kind: "commit" | "staged" | "unstaged" | "untracked";
-      oid?: string;
-      pathId?: string;
-    } | null => {
-      if (selectedPath !== null && selectedPath.kind !== "ignored") {
-        if (selectedPath.kind === "untracked") {
-          return { kind: "untracked", pathId: selectedPath.pathId };
-        }
-        return selectedPath.indexStatus === "."
-          ? { kind: "unstaged", pathId: selectedPath.pathId }
-          : { kind: "staged", pathId: selectedPath.pathId };
+    const onVisibility = (): void => {
+      if (document.visibilityState === "visible") {
+        invalidateWorkbenchBackgroundQueries(queryClient);
       }
-      if (selectedOid !== null) {
-        return { kind: "commit", oid: selectedOid };
-      }
-      return null;
-    },
-  );
-
-  /** The change set: what changed, and by how much. No patch unless a path is named. */
-  const diff = createQuery(() => {
-    const request = diffRequest;
-    return {
-      queryKey: ["diff", baseUrl, token, selectedRepositoryId, request],
-      queryFn: async (): Promise<DiffResponse> => {
-        if (request === null) {
-          throw new Error("no diff selected");
-        }
-        return client.diff({
-          repositoryId: selectedRepositoryId ?? "",
-          ...request,
-        });
-      },
-      enabled: enabled && selectedRepositoryId !== null && request !== null,
     };
-  });
-
-  /**
-   * The selected file's patch.
-   *
-   * A separate read because the host does not fetch a patch per file for a whole change
-   * set: an untracked file already arrives with its patch (there is no Git object to diff
-   * against), and everything else is asked for by path once the user picks a file.
-   */
-  const diffPatch = createQuery(() => {
-    const request = diffRequest;
-    const pathId = selectedDiffPathId;
-    return {
-      queryKey: [
-        "diff-patch",
-        baseUrl,
-        token,
-        selectedRepositoryId,
-        request,
-        pathId,
-      ],
-      queryFn: async (): Promise<DiffResponse> => {
-        if (request === null || pathId === null) {
-          throw new Error("no path selected");
-        }
-        return client.diff({
-          repositoryId: selectedRepositoryId ?? "",
-          ...request,
-          pathId,
-        });
-      },
-      enabled:
-        enabled &&
-        selectedRepositoryId !== null &&
-        request !== null &&
-        pathId !== null &&
-        request.kind !== "untracked",
-    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
   });
 
   /* --------------------------------------------------------------- mutations */
@@ -602,20 +275,6 @@
   let worktreeMessage = $state<string | null>(null);
   let submoduleMessage = $state<string | null>(null);
   let mergeMessage = $state<string | null>(null);
-
-  /**
-   * Ask the service who it is, without a token.
-   *
-   * `/health` is the one endpoint that answers without authentication, which is what
-   * makes it the right probe here: a stale token must not be able to hide the fact that
-   * the address now belongs to a different service — `capabilities` would answer 401,
-   * and the page would blame the session instead of the instance.
-   */
-  const identity = createQuery(() => ({
-    queryKey: ["identity", baseUrl],
-    queryFn: () => client.health(),
-    enabled,
-  }));
 
   /**
    * What this page is allowed to do with the service it found.
@@ -1545,30 +1204,6 @@
 
   /* --------------------------------------------------------------- helpers */
 
-  function toGraphCommit(commit: CommitSummary): GraphCommit {
-    return {
-      id: commit.oid,
-      parentIds: commit.parents,
-      refNames: commit.refNames,
-    };
-  }
-
-  function problemCode(error: unknown): string | null {
-    return error instanceof GitClientError ? error.code : null;
-  }
-
-  const authErrors = $derived(
-    [
-      repositories.error,
-      capabilities.error,
-      status.error,
-      refs.error,
-      history.error,
-    ].filter((error) => problemCode(error) === "Unauthenticated"),
-  );
-  const sessionExpired = $derived(authErrors.length > 0);
-
-  const primaryWorktreeId = $derived(repository?.primaryWorktreeId ?? null);
   /** True while the chosen address is still this page's own origin. */
   const baseUrlIsDefault = $derived(isDefaultSessionBaseUrl(session));
 </script>
@@ -2021,7 +1656,7 @@
                     detail={describeClientProblem(stashes.error)}
                   />
                 {/if}
-                {#if stashes.data !== undefined || lastStashesRepositoryId === selectedRepositoryId}
+                {#if stashPanelAvailable}
                   <StashPanel
                     stashes={displayedStashes}
                     disabled={mutationBusy ||

@@ -1,6 +1,6 @@
 # Workbench Query Extraction Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Move TanStack read-query composition and read-derived workbench models out of `+page.svelte` while preserving polling, pagination, diff selection, and cache semantics.
 
@@ -26,10 +26,10 @@
 - Create: `tests/unit/workbench-query-model.test.ts`
 - Create: `tests/unit/workbench-query-boundary.test.ts`
 
-- [ ] Write RED helper tests for workspace-root dedupe, status/commit diff intent, ignored paths, and history notices.
-- [ ] Write a RED structural test requiring `+page.svelte` to stop owning TanStack query constructors and polling helpers.
-- [ ] Implement pure query-model helpers and make only the helper tests GREEN; keep the ownership test RED until Task 2.
-- [ ] Commit `refactor(web): extract workbench query model`.
+- [x] Write RED helper tests for workspace-root dedupe, status/commit diff intent, ignored paths, and history notices.
+- [x] Write a RED structural test requiring `+page.svelte` to stop owning TanStack query constructors and polling helpers.
+- [x] Implement pure query-model helpers and make only the helper tests GREEN; keep the ownership test RED until Task 2.
+- [x] Commit `refactor(web): extract workbench query model`.
 
 ### Task 2: Extract TanStack query composition
 
@@ -37,18 +37,18 @@
 - Create: `apps/web/src/lib/workbench/queries.svelte.ts`
 - Modify: `apps/web/src/routes/+page.svelte`
 
-- [ ] Move capabilities, repositories, status, refs, stashes, worktrees, submodules, history, commit detail, diff, diff patch, and identity query composition into `createWorkbenchQueries`.
-- [ ] Move read-derived repository list/root/current repository/stash retention/history graph/notices/selected commit/detail/diff request/session-expired state behind reactive getters.
-- [ ] Export `invalidateWorkbenchBackgroundQueries(queryClient)` and keep the page's DOM visibility listener as a thin adapter.
-- [ ] Replace page-local read composition with stable query-object aliases and `$derived` getter aliases.
-- [ ] Run ownership/helper units and `pnpm check`.
-- [ ] Build and run Chromium read-only, live-updates, offline, workspace, and versions specs.
-- [ ] Run full unit suite and `git diff --check`.
-- [ ] Commit `refactor(web): extract workbench read queries`.
+- [x] Move capabilities, repositories, status, refs, stashes, worktrees, submodules, history, commit detail, diff, diff patch, and identity query composition into `createWorkbenchQueries`.
+- [x] Move read-derived repository list/root/current repository/stash retention/history graph/notices/selected commit/detail/diff request/session-expired state behind reactive getters.
+- [x] Export `invalidateWorkbenchBackgroundQueries(queryClient)` and keep the page's DOM visibility listener as a thin adapter.
+- [x] Replace page-local read composition with stable query-object aliases and `$derived` getter aliases.
+- [x] Run ownership/helper units and `pnpm check`.
+- [x] Build and run Chromium read-only, live-updates, offline, workspace, and versions specs.
+- [x] Run full unit suite and `git diff --check`.
+- [x] Commit `refactor(web): extract workbench read queries`.
 
 ## Final verification
 
-- [ ] `pnpm check`
-- [ ] `pnpm test:unit`
-- [ ] `pnpm exec playwright test tests/e2e/read-only.spec.ts tests/e2e/live-updates.spec.ts tests/e2e/offline.spec.ts tests/e2e/workspace.spec.ts tests/e2e/versions.spec.ts --project=chromium`
-- [ ] `git diff --check`
+- [x] `pnpm check`
+- [x] `pnpm test:unit`
+- [x] `pnpm exec playwright test tests/e2e/read-only.spec.ts tests/e2e/live-updates.spec.ts tests/e2e/offline.spec.ts tests/e2e/workspace.spec.ts tests/e2e/versions.spec.ts --project=chromium`
+- [x] `git diff --check`
