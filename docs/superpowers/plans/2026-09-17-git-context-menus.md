@@ -96,13 +96,13 @@
 - `Rename…` and `Upstream…` reuse the panel's existing inline editors.
 - `Delete…` opens `ConfirmDialog` and only `onConfirm` calls `onDelete`.
 
-- [ ] Add RED Chromium expectations for current vs non-current branch menu availability.
-- [ ] Build branch action descriptors from the existing branch state and callbacks.
-- [ ] Add context triggers to branch rows without removing existing buttons.
-- [ ] Add confirmed deletion through `ConfirmDialog`.
-- [ ] Extend E2E to rename from the context menu and delete only after confirmation.
-- [ ] Run `pnpm check` and Chromium branch/context-menu specs.
-- [ ] Commit `feat(git-ui): add branch context actions`.
+- [x] Add RED Chromium expectations for current vs non-current branch menu availability.
+- [x] Build branch action descriptors from the existing branch state and callbacks.
+- [x] Add context triggers to branch rows without removing existing buttons.
+- [x] Add confirmed deletion through `ConfirmDialog`.
+- [x] Extend E2E to rename from the context menu and delete only after confirmation.
+- [x] Run `pnpm check` and Chromium branch/context-menu specs.
+- [x] Commit `feat(git-ui): add branch context actions`.
 
 ### Task 4: Add working-copy path context actions
 

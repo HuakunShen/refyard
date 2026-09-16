@@ -88,4 +88,65 @@ test.describe("Git context menus", () => {
       )
       .toBe(historicalOid);
   });
+
+  test("offers branch actions by branch state and confirms deletion", async ({
+    page,
+  }) => {
+    const topicOid = await repo.headOid();
+    await repo.git(["branch", "topic-menu"]);
+    await page.goto(service.pairingUrl);
+
+    const current = page.getByTestId("branch-row-main");
+    await current.click({ button: "right" });
+    await expect(
+      page.getByTestId("branch-context-main-upstream"),
+    ).toBeVisible();
+    await expect(page.getByTestId("branch-context-main-rename")).toBeVisible();
+    await expect(page.getByTestId("branch-context-main-switch")).toHaveCount(0);
+    await expect(page.getByTestId("branch-context-main-merge")).toHaveCount(0);
+    await expect(page.getByTestId("branch-context-main-delete")).toHaveCount(0);
+
+    const topic = page.getByTestId("branch-row-topic-menu");
+    await topic.click({ button: "right" });
+    await expect(
+      page.getByTestId("branch-context-topic-menu-switch"),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId("branch-context-topic-menu-merge"),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId("branch-context-topic-menu-delete"),
+    ).toBeVisible();
+    await page.getByTestId("branch-context-topic-menu-rename").click();
+
+    await page.getByLabel("new name for topic-menu").fill("renamed-menu");
+    await page.getByTestId("save-rename-topic-menu").click();
+    await expect(page.getByTestId("branch-message")).toContainText(
+      /renamed topic-menu to renamed-menu/,
+    );
+    expect(
+      new TextDecoder()
+        .decode(await repo.git(["rev-parse", "refs/heads/renamed-menu"]))
+        .trim(),
+    ).toBe(topicOid);
+
+    const renamed = page.getByTestId("branch-row-renamed-menu");
+    await renamed.click({ button: "right" });
+    await page.getByTestId("branch-context-renamed-menu-delete").click();
+    await expect(page.getByTestId("branch-delete-dialog")).toBeVisible();
+    expect(
+      new TextDecoder()
+        .decode(await repo.git(["branch", "--list", "renamed-menu"]))
+        .trim(),
+    ).toBe("renamed-menu");
+    await page.getByTestId("branch-delete-dialog-confirm").click();
+    await expect(page.getByTestId("branch-message")).toContainText(
+      /deleted branch renamed-menu/,
+    );
+    expect(
+      new TextDecoder()
+        .decode(await repo.git(["branch", "--list", "renamed-menu"]))
+        .trim(),
+    ).toBe("");
+  });
 });
