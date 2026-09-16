@@ -46,13 +46,13 @@
 - `ContextActionMenu` takes `actions`, a trigger `children` snippet, optional `triggerClass`, and optional `data-testid` prefix.
 - `ConfirmDialog` takes `open`, title, description, confirm label, busy/disabled state, and `onConfirm`.
 
-- [ ] Write a RED unit test proving `compactContextActions` removes invalid separators but preserves disabled/destructive actions and callback identity.
-- [ ] Implement the action type and compaction helper.
-- [ ] Adapt the existing generated dropdown-menu wrappers to Bits UI `ContextMenu`, reusing the same visual tokens and portal behavior.
-- [ ] Implement `ContextActionMenu` and `ConfirmDialog` without Git-specific knowledge.
-- [ ] Export the new primitive and components from `@refyard/git-ui`.
-- [ ] Run `pnpm check` and the focused unit test.
-- [ ] Commit `feat(git-ui): add context action menu primitives`.
+- [x] Write a RED unit test proving `compactContextActions` removes invalid separators but preserves disabled/destructive actions and callback identity.
+- [x] Implement the action type and compaction helper.
+- [x] Adapt the existing generated dropdown-menu wrappers to Bits UI `ContextMenu`, reusing the same visual tokens and portal behavior.
+- [x] Implement `ContextActionMenu` and `ConfirmDialog` without Git-specific knowledge.
+- [x] Export the new primitive and components from `@refyard/git-ui`.
+- [x] Run `pnpm check` and the focused unit test.
+- [x] Commit `feat(git-ui): add context action menu primitives`.
 
 ### Task 2: Add commit context actions
 
