@@ -46,8 +46,14 @@ test.describe("merge workbench", () => {
   }) => {
     const other = await diverge();
     await page.goto(service.pairingUrl);
+    await page.getByTestId("workbench-nav-branches").click();
 
     await page.getByTestId(`merge-${other}`).click();
+    // A stopped merge pulls the sidebar back to Working Copy, where conflict + staging live.
+    await expect(page.getByTestId("workbench-nav-working-copy")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
     // The panel names the conflict and the path, and the merge stays in progress.
     await expect(page.getByTestId("conflict-panel")).toBeVisible();
     await expect(page.getByTestId("conflicted-paths")).toContainText("a.txt");
@@ -81,8 +87,13 @@ test.describe("merge workbench", () => {
     const other = await diverge();
     const before = (await repo.headOid()).trim();
     await page.goto(service.pairingUrl);
+    await page.getByTestId("workbench-nav-branches").click();
 
     await page.getByTestId(`merge-${other}`).click();
+    await expect(page.getByTestId("workbench-nav-working-copy")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
     await expect(page.getByTestId("conflict-panel")).toBeVisible();
 
     // Aborting is two steps: the first one arms, and the merge is still in progress
