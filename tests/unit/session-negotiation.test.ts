@@ -84,4 +84,18 @@ describe("session negotiation", () => {
     );
     expect(verdict.kind).toEqual("incompatible");
   });
+
+  it("keeps reads available but blocks writes for a newer compatible contract", () => {
+    // Prevents: an older static page sending mutations after the service adds
+    // fields or changes minor semantics that the page cannot know about.
+    const verdict = negotiateSession(
+      { instanceId: "srvc_a", hasToken: true },
+      {
+        ...service,
+        contractVersion: "1.1.0",
+      },
+    );
+    expect(verdict.kind).toEqual("readOnlyCompatibility");
+    expect(blocksWrites(verdict)).toBe(true);
+  });
 });

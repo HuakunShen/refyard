@@ -45,6 +45,15 @@ import {
   type HealthResponse,
 } from "@refyard/git-contract";
 
+/**
+ * Older pages tolerate additive fields from a newer service at the top level. The
+ * contract remains strict for the service and for generated JSON Schema; this is the
+ * browser client's forward-compatible read boundary, where unknown data is not needed.
+ */
+const clientHealthResponseSchema = healthResponseSchema.loose();
+const clientCapabilitiesResponseSchema = capabilitiesResponseSchema.loose();
+const clientRepositoriesResponseSchema = repositoriesResponseSchema.loose();
+
 export interface GitClientOptions {
   /** Base URL of the service, e.g. `http://127.0.0.1:9595`. */
   readonly baseUrl: string;
@@ -247,25 +256,30 @@ export function createGitClient(options: GitClientOptions): GitClient {
      * API major to decide whether a remembered session still belongs here, and a
      * hand-rolled shape is exactly how a field goes missing when the host adds one.
      */
-    health: () => send("GET", "/health", healthResponseSchema),
+    health: () => send("GET", "/health", clientHealthResponseSchema),
 
     capabilities: () =>
-      send("GET", "/api/v1/capabilities", capabilitiesResponseSchema),
+      send("GET", "/api/v1/capabilities", clientCapabilitiesResponseSchema),
     repositories: () =>
-      send("GET", "/api/v1/repositories", repositoriesResponseSchema),
+      send("GET", "/api/v1/repositories", clientRepositoriesResponseSchema),
 
     registerRepository: (path) =>
       send(
         "POST",
         "/api/v1/repositories/register",
-        repositoriesResponseSchema,
+        clientRepositoriesResponseSchema,
         { path },
       ),
 
     revokeRepository: (repositoryId) =>
-      send("POST", "/api/v1/repositories/revoke", repositoriesResponseSchema, {
-        repositoryId,
-      }),
+      send(
+        "POST",
+        "/api/v1/repositories/revoke",
+        clientRepositoriesResponseSchema,
+        {
+          repositoryId,
+        },
+      ),
 
     status: (query) =>
       send(

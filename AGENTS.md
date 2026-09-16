@@ -166,7 +166,7 @@ references/                the delivered v2 design package (read-only)
    cannot pass, report the evidence and stop that thread.
 3. Root script contract (implemented in T01, kept true afterwards):
    `pnpm check`, `pnpm check:boundaries`, `pnpm check:contract`, `pnpm test:unit`,
-   `pnpm test:integration`, `pnpm test:e2e`, `pnpm test:portable`, `pnpm build`, `pnpm pack:smoke`,
+   `pnpm test:integration`, `pnpm test:e2e`, `pnpm test:compat`, `pnpm test:portable`, `pnpm build`, `pnpm pack:smoke`,
    `pnpm bench:runtime`.
 4. Every source file starts with a short module header saying what it is responsible for (JSON
    config and lockfiles exempt). Comments explain constraints the code cannot show — never narrate

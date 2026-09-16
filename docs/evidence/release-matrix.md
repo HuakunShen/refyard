@@ -283,6 +283,14 @@ and `--api-origin` is the HTTPS API/tunnel origin visible to the browser. The CL
 listener to loopback; the operator-owned tunnel must preserve the service's Host/Origin/auth
 checks.
 
+## Compatibility suite
+
+`pnpm test:compat` uses the built SPA, the API-only CLI and a separate static asset host. The
+real host response is rewritten only at the browser test boundary to model a page/service pair
+from different revisions. The three engines passed 9/9: a major mismatch refused writes, a newer
+same-major contract kept history reads working while disabling writes, and additive health and
+capabilities fields were ignored. The full e2e gate separately passed 99/99.
+
 ## Published releases
 
 Both releases were published by the project's owner and then checked against the registry — a

@@ -49,6 +49,13 @@ export type Negotiation =
       readonly message: string;
       readonly serviceMajor: number;
       readonly uiMajor: number;
+    }
+  | {
+      /** A compatible major with a newer contract: reads stay safe, writes stop. */
+      readonly kind: "readOnlyCompatibility";
+      readonly message: string;
+      readonly serviceContractVersion: string;
+      readonly uiContractVersion: string;
     };
 
 /**
@@ -80,6 +87,14 @@ export function negotiateSession(
       message:
         "the service at this address is not the one this tab paired with (it restarted, or another instance is running here); pair again to continue",
       previousInstanceId: remembered.instanceId,
+    };
+  }
+  if (service.contractVersion !== UI_CONTRACT_VERSION) {
+    return {
+      kind: "readOnlyCompatibility",
+      message: `this page speaks contract ${UI_CONTRACT_VERSION}, and the service at this address speaks ${service.contractVersion}; reads remain available, but writes are disabled until both are updated`,
+      serviceContractVersion: service.contractVersion,
+      uiContractVersion: UI_CONTRACT_VERSION,
     };
   }
   return { kind: "ok" };

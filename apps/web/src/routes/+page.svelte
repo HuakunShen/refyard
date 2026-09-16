@@ -1725,13 +1725,15 @@
         </span>
         {!browserOnline
           ? "not connected (offline)"
-          : negotiation.kind !== "ok"
+          : negotiation.kind === "incompatible"
             ? "not connected (incompatible service)"
-            : streamState === "live"
-              ? "live updates"
-              : streamState === "connecting"
-                ? "connecting…"
-                : "no live updates"}
+            : negotiation.kind === "readOnlyCompatibility"
+              ? "read-only (contract update available)"
+              : streamState === "live"
+                ? "live updates"
+                : streamState === "connecting"
+                  ? "connecting…"
+                  : "no live updates"}
       </Badge>
       <span
         class="hidden font-mono text-xs text-ink-faint 2xl:inline"

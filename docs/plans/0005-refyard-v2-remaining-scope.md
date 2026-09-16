@@ -69,6 +69,7 @@ task names, in the same commit. Commit only that task's files, with the message 
 pnpm check && pnpm check:boundaries && pnpm check:contract
 pnpm test:unit && pnpm test:integration && pnpm test:pack && pnpm test:portable
 pnpm test:e2e          # builds the SPA and the CLI bundle first; ~11 min, three engines
+pnpm test:compat       # built SPA plus version-skew rewrites against a real host
 pnpm build:release && pnpm pack:smoke
 pnpm bench:runtime     # rewrites docs/evidence/performance.json — commit it or `git checkout` it
 ```
@@ -105,7 +106,7 @@ Filled in as each task closes. A row that says "not done" names the reason.
 | R2   | the repository panel stays mounted for a paired session and disables writes while offline | `pnpm build`; `bun scripts/bundle-cli.ts`; `pnpm exec playwright test tests/e2e/workspace.spec.ts --project=chromium` | **3 passed, including the new offline/reconnect clone-form regression; the new case failed against the old implementation with `aria-pressed=false`.** | `tests/e2e/workspace.spec.ts`; `docs/browser-support.md` |
 | R3   | `serve --repo A --repo B` explicitly approves and serves both repositories with separate roots and grants | `pnpm exec vitest run tests/integration/cli.test.ts` | **32 passed, including the new multi-repository CLI integration case; the case first failed against the old assembly with an undefined singular path, then exposed and was corrected for canonical real paths.** | `apps/cli/src/{args,main,serve}.ts`; `tests/integration/cli.test.ts` |
 | R4   | runtime registration and revocation through the authenticated API, with explicit roots and a durable access audit | `pnpm exec vitest run tests/integration/managed-workspaces.test.ts`; `pnpm exec vitest run tests/integration/auth.test.ts tests/integration/managed-workspaces.test.ts tests/integration/cli.test.ts`; `pnpm exec playwright test tests/e2e/workspace.spec.ts --project=chromium`; `pnpm check`; `pnpm check:contract` | **60 integration cases passed across auth, managed workspaces and CLI; Chromium workspace 4/4; check 8/8; contract 441 schemas. The former `/register` 501 assertion was updated to the correct wrong-method 404.** | `docs/evidence/form2-managed-workspaces.md`; `docs/evidence/security.md`; `docs/evidence/release-matrix.md` |
-| R5   | _pending_       |                      |        |          |
+| R5   | real SPA/host compatibility suite; additive fields tolerated, major skew refused, newer same-major writes blocked | `pnpm check`; `pnpm test:compat` | **9/9 passed across Chromium, Firefox and WebKit against the built SPA, separate static host and real API-only CLI; the new unit negotiation case passes.** | `tests/compat/compat.spec.ts`; `tests/unit/session-negotiation.test.ts`; `docs/evidence/release-matrix.md` |
 | R6   | _pending_       |                      |        |          |
 | R7   | _pending_       |                      |        |          |
 | R8   | _pending_       |                      |        |          |
