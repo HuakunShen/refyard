@@ -149,4 +149,56 @@ test.describe("Git context menus", () => {
         .trim(),
     ).toBe("");
   });
+  test("stages, unstages and confirms discard from a path context menu", async ({
+    page,
+  }) => {
+    await repo.write("a.txt", "working-copy-change\n");
+    await page.goto(service.pairingUrl);
+
+    const pathRow = page
+      .locator('[data-testid^="status-row-"]')
+      .filter({ hasText: "a.txt" });
+    await expect(pathRow).toBeVisible();
+    await pathRow.click({ button: "right" });
+    const pathMenu = page.locator('[data-testid^="status-context-"]:visible');
+    await expect(pathMenu.getByText("Stage", { exact: true })).toBeVisible();
+    await pathMenu.getByText("Stage", { exact: true }).click();
+    await expect
+      .poll(async () =>
+        new TextDecoder()
+          .decode(await repo.git(["diff", "--cached", "--name-only"]))
+          .trim(),
+      )
+      .toContain("a.txt");
+
+    await expect(pathRow).toBeVisible();
+    await pathRow.click({ button: "right" });
+    await expect(
+      page
+        .locator('[data-testid^="status-context-"]:visible')
+        .getByText("Unstage", { exact: true }),
+    ).toBeVisible();
+    await page
+      .locator('[data-testid^="status-context-"]:visible')
+      .getByText("Unstage", { exact: true })
+      .click();
+    await expect
+      .poll(async () =>
+        new TextDecoder()
+          .decode(await repo.git(["diff", "--cached", "--name-only"]))
+          .trim(),
+      )
+      .not.toContain("a.txt");
+
+    await expect(pathRow).toBeVisible();
+    await pathRow.click({ button: "right" });
+    await page
+      .locator('[data-testid^="status-context-"]:visible')
+      .getByText("Discard…", { exact: true })
+      .click();
+    await expect(page.getByTestId("path-discard-dialog")).toBeVisible();
+    expect(await repo.readText("a.txt")).toBe("working-copy-change\n");
+    await page.getByTestId("path-discard-dialog-confirm").click();
+    await expect.poll(() => repo.readText("a.txt")).toBe("second\n");
+  });
 });

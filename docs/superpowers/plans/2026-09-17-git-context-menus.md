@@ -121,13 +121,13 @@
 - Discard is enabled only for representable tracked paths with a working-tree change; it opens `ConfirmDialog` before calling `onDiscard([pathId])`.
 - Selecting a context action must not silently change the multi-select state in `StagingPanel`.
 
-- [ ] Add RED Chromium coverage for a modified path's Stage/Discard actions and a staged path's Unstage action.
-- [ ] Add the optional action props and pure per-entry availability derivation in `StatusList`.
-- [ ] Render the path context menu and confirmed discard flow.
-- [ ] Wire existing mutation callbacks from the workbench page.
-- [ ] Verify stage, unstage, and discard on real fixture files, including that discard requires the confirmation click.
-- [ ] Run `pnpm check`, context-menu Chromium, and staging Chromium specs.
-- [ ] Commit `feat(git-ui): add working-copy context actions`.
+- [x] Add RED Chromium coverage for a modified path's Stage/Discard actions and a staged path's Unstage action.
+- [x] Add the optional action props and pure per-entry availability derivation in `StatusList`.
+- [x] Render the path context menu and confirmed discard flow.
+- [x] Wire existing mutation callbacks from the workbench page.
+- [x] Verify stage, unstage, and discard on real fixture files, including that discard requires the confirmation click.
+- [x] Run `pnpm check`, context-menu Chromium, and staging Chromium specs.
+- [x] Commit `feat(git-ui): add working-copy context actions`.
 
 ### Task 5: Add remote context actions and run the release-quality gate
 
