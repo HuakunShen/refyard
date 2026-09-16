@@ -436,10 +436,12 @@ The direction should be delivered in product-sized slices rather than one giant 
 ### Phase C — daily-driver interaction
 
 1. Replace the stacked-card sidebar with the repository/object navigation model.
-2. Add consistent context menus.
+2. Add consistent context menus. **Implemented:** commit, branch, working-copy path and remote rows now share one right-click action layer; destructive actions retain explicit confirmation.
 3. Add history search and filters.
 4. Add keyboard navigation and command palette.
 5. Improve contextual feedback for branch/network/operation state.
+
+Status as of 2026-09-17: item 2 is implemented. Items 1, 3, 4 and 5 remain Phase C work.
 
 ### Phase D — stronger Git workflows
 
