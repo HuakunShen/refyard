@@ -435,13 +435,13 @@ The direction should be delivered in product-sized slices rather than one giant 
 
 ### Phase C — daily-driver interaction
 
-1. Replace the stacked-card sidebar with the repository/object navigation model.
+1. Replace the stacked-card sidebar with the repository/object navigation model. **Implemented:** the left pane now keeps a persistent Repositories / Working Copy / Branches / Remotes / Stashes / Tags / Worktrees / Submodules (or Refs fallback) navigation list above one focused object view. Working Copy is the default once a repository is selected. Available views stay mounted and are hidden while inactive, so panel-local rename drafts and destructive-confirmation state survive navigation changes; when a repository operation starts, Working Copy receives one-time focus so conflict and staging controls are immediately visible without trapping later navigation; the center History and right Inspector remain persistent.
 2. Add consistent context menus. **Implemented:** commit, branch, working-copy path and remote rows now share one right-click action layer; destructive actions retain explicit confirmation.
 3. Add history search and filters.
 4. Add keyboard navigation and command palette.
 5. Improve contextual feedback for branch/network/operation state.
 
-Status as of 2026-09-17: item 2 is implemented. Items 1, 3, 4 and 5 remain Phase C work.
+Status as of 2026-09-17: items 1 and 2 are implemented. Items 3, 4 and 5 remain Phase C work.
 
 ### Phase D — stronger Git workflows
 

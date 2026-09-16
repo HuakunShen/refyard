@@ -125,13 +125,13 @@
 - Modify: `docs/product/git-client-direction.md`
 - Modify: `docs/superpowers/plans/2026-09-17-repository-sidebar-navigation.md`
 
-- [ ] Mark Phase C item 1 as implemented and describe the mounted-but-hidden subview model; leave history search, keyboard/command palette and feedback work pending.
-- [ ] Run Node 26 `pnpm check`.
-- [ ] Run `pnpm check:contract` and confirm schema artifacts remain unchanged.
-- [ ] Run `pnpm test:unit` and `pnpm test:integration`.
-- [ ] Run a fresh `pnpm build`, `bun scripts/bundle-cli.ts`, and full `pnpm exec playwright test --project=chromium`.
-- [ ] Run `git diff --check`, inspect `git status`, and confirm only intended files remain.
-- [ ] Commit `docs(product): record repository sidebar navigation`.
+- [x] Mark Phase C item 1 as implemented and describe the mounted-but-hidden subview model; leave history search, keyboard/command palette and feedback work pending.
+- [x] Run Node 26 `pnpm check`.
+- [x] Run `pnpm check:contract` and confirm schema artifacts remain unchanged.
+- [x] Run `pnpm test:unit` and `pnpm test:integration`.
+- [x] Run a fresh `pnpm build`, `bun scripts/bundle-cli.ts`, and full `pnpm exec playwright test --project=chromium`.
+- [x] Run `git diff --check`, inspect `git status`, and confirm only intended files remain.
+- [x] Commit `docs(product): record repository sidebar navigation`.
 
 ## Completion Criteria
 
