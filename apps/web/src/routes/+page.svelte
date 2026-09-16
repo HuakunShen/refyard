@@ -729,6 +729,11 @@
                 <StatusList
                   snapshot={status.data}
                   selectedPathId={selectedPath?.pathId ?? null}
+                  disabled={mutationBusy}
+                  busy={mutationBusy}
+                  {onStage}
+                  {onUnstage}
+                  {onDiscard}
                   onSelect={(entry) => {
                     selectStatusPath(selection, entry);
                   }}
