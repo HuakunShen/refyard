@@ -23,6 +23,7 @@
     "test:compat": "pnpm build && bun scripts/bundle-cli.ts && playwright test --config tests/compat/playwright.config.ts",
     "bench:runtime": "bun scripts/bench-runtime.ts",
     "build:web": "pnpm --dir apps/web build",
+    "deploy": "pnpm build:web && pnpm --dir apps/web exec wrangler deploy --config ../../wrangler.jsonc",
     "deploy:web": "pnpm --dir apps/web deploy",
     "deploy:web:dry-run": "pnpm --dir apps/web deploy:dry-run"
   },
