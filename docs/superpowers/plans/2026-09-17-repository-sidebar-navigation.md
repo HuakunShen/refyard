@@ -112,11 +112,11 @@
 - Branch context menu remains functional after entering Branches through navigation.
 - Navigation counts track the loaded repository state without becoming a second source of truth.
 
-- [ ] Write the Chromium E2E file and prove at least the default-active test fails before the migrated sidebar bundle is used.
-- [ ] Build/bundle and run the navigation spec against local same-origin mode.
-- [ ] Fix only navigation/sidebar integration issues surfaced by the spec; do not redesign existing panels.
-- [ ] Run the navigation spec plus `read-only.spec.ts`, `branch.spec.ts`, `staging.spec.ts`, `stash.spec.ts`, `workspace.spec.ts`, and `worktree.spec.ts` on Chromium.
-- [ ] Commit `test(e2e): cover repository sidebar navigation`.
+- [x] Write the Chromium E2E file and prove at least the default-active test fails before the migrated sidebar bundle is used.
+- [x] Build/bundle and run the navigation spec against local same-origin mode.
+- [x] Fix only navigation/sidebar integration issues surfaced by the spec; do not redesign existing panels.
+- [x] Run the navigation spec plus `read-only.spec.ts`, `branch.spec.ts`, `staging.spec.ts`, `stash.spec.ts`, `workspace.spec.ts`, and `worktree.spec.ts` on Chromium.
+- [x] Commit `test(e2e): cover repository sidebar navigation`.
 
 ### Task 5: Update product status and run the full release-quality gate
 

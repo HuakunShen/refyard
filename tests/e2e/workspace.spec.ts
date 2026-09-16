@@ -51,6 +51,7 @@ test.describe("repository creation", () => {
     page,
   }) => {
     await page.goto(service.pairingUrl);
+    await page.getByTestId("workbench-nav-repositories").click();
     await expect(page.getByTestId("repository-panel")).toBeVisible();
 
     await page.getByTestId("repository-destination").fill("e2e-created");
@@ -96,6 +97,7 @@ test.describe("repository creation", () => {
     remote = await createBareRemote();
     await repo.git(["push", "--quiet", remote.path, "main"]);
     await page.goto(service.pairingUrl);
+    await page.getByTestId("workbench-nav-repositories").click();
     await expect(page.getByTestId("repository-panel")).toBeVisible();
 
     // First: a destination that already holds the user's files. Git refuses it, and the
@@ -132,6 +134,7 @@ test.describe("repository creation", () => {
     // Prevents: a transient browser signal destroys the panel and silently loses the
     // user's selected mode and any remote/destination values.
     await page.goto(service.pairingUrl);
+    await page.getByTestId("workbench-nav-repositories").click();
     await expect(page.getByTestId("repository-panel")).toBeVisible();
     await expect(page.getByTestId("repository-mode-clone")).toBeEnabled();
     await page.getByTestId("repository-mode-clone").click();
@@ -159,6 +162,7 @@ test.describe("repository creation", () => {
       // Prevents: the UI inventing candidates or changing a live grant without an
       // explicit path approval, and prevents revocation from leaving the row readable.
       await page.goto(service.pairingUrl);
+      await page.getByTestId("workbench-nav-repositories").click();
       await expect(page.getByTestId("repository-access-panel")).toBeVisible();
       await page.getByTestId("repository-register-path").fill(secondPath);
       await page.getByTestId("repository-register").click();

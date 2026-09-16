@@ -99,6 +99,7 @@ test.describe("Git context menus", () => {
     const topicOid = await repo.headOid();
     await repo.git(["branch", "topic-menu"]);
     await page.goto(service.pairingUrl);
+    await page.getByTestId("workbench-nav-branches").click();
 
     const current = page.getByTestId("branch-row-main");
     await current.click({ button: "right" });
@@ -212,6 +213,7 @@ test.describe("Git context menus", () => {
       await repo.git(["remote", "add", "mirror", remote.path]);
       await repo.git(["push", "origin", "main"]);
       await page.goto(service.pairingUrl);
+      await page.getByTestId("workbench-nav-remotes").click();
 
       await page.getByLabel("select remote origin").check();
       const mirrorRow = page.getByTestId("remote-row-mirror");

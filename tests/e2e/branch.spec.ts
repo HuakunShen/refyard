@@ -41,6 +41,7 @@ test.describe("branch workbench", () => {
     page,
   }) => {
     await page.goto(service.pairingUrl);
+    await page.getByTestId("workbench-nav-branches").click();
     await expect(page.getByTestId("branch-panel")).toBeVisible();
 
     await page.getByLabel("new branch name").fill("feature-e2e");
@@ -90,6 +91,7 @@ test.describe("branch workbench", () => {
     await repo.git(["fetch", "origin"]);
 
     await page.goto(service.pairingUrl);
+    await page.getByTestId("workbench-nav-branches").click();
     await expect(page.getByTestId("branch-panel")).toBeVisible();
     await page.getByTestId("edit-upstream-main").click();
     await page.getByLabel("upstream for main").selectOption("origin/main");
@@ -137,6 +139,7 @@ test.describe("branch workbench", () => {
     await repo.git(["remote", "set-url", "--push", "origin", originalPush]);
 
     await page.goto(service.pairingUrl);
+    await page.getByTestId("workbench-nav-remotes").click();
     await expect(page.getByTestId("remote-panel")).toBeVisible();
     await page.getByTestId("edit-remote-origin").click();
     await expect(page.getByLabel("remote name for origin")).toHaveValue(
@@ -186,6 +189,7 @@ test.describe("branch workbench", () => {
   }) => {
     await repo.git(["branch", "do-not-push"]);
     await page.goto(service.pairingUrl);
+    await page.getByTestId("workbench-nav-remotes").click();
     await expect(page.getByTestId("remote-panel")).toBeVisible();
 
     await page
@@ -218,6 +222,7 @@ test.describe("branch workbench", () => {
     await repo.git(["remote", "add", "origin", remote.path]);
     await repo.git(["remote", "add", "mirror", remote.path]);
     await page.goto(service.pairingUrl);
+    await page.getByTestId("workbench-nav-remotes").click();
     await expect(page.getByTestId("remote-panel")).toBeVisible();
 
     // Two remotes, none selected: no default, so nothing can be published by accident.
