@@ -25,22 +25,22 @@ contract and authenticated SSE updates.
 your repository + your git + your Node host
                     │ authenticated JSON/SSE
                     ▼
-            your browser / your Cloudflare UI
+       bundled local UI / hosted Cloudflare UI
 ```
 
-The Cloudflare Worker is an asset-only UI host. It has no Git binding, repository path, shell,
-credential store, bearer token, or API proxy. The Worker never receives Git contents. A self-
-deployed UI can reach a backend only through an HTTPS endpoint that its owner configured and
-allowed explicitly.
+By default the npm package serves the same static Svelte UI from the loopback Git service, so
+`refyard open` is a one-command local workbench. The Cloudflare Worker is an optional asset-only
+remote UI host: it has no Git binding, repository path, shell, credential store, bearer token, or
+API proxy, and it never receives Git contents.
 
 ## What ships
 
-| Surface               | Where it runs                           | What it owns                                          |
-| --------------------- | --------------------------------------- | ----------------------------------------------------- |
-| `refyard` npm package | Your Node machine                       | Authenticated API, Git process, approved repositories |
-| Refyard PWA           | Your browser or your Cloudflare account | UI, session negotiation, local presentation           |
-| Git Core              | Trusted TypeScript runtime              | Git intentions, parsers, planners, safety rules       |
-| Cloudflare Worker     | Cloudflare edge                         | Static assets and secure response headers only        |
+| Surface               | Where it runs                             | What it owns                                    |
+| --------------------- | ----------------------------------------- | ----------------------------------------------- |
+| `refyard` npm package | Your Node machine                         | Git service plus bundled local workbench        |
+| Refyard PWA           | Local loopback or your Cloudflare account | UI, session negotiation, presentation           |
+| Git Core              | Trusted TypeScript runtime                | Git intentions, parsers, planners, safety rules |
+| Cloudflare Worker     | Cloudflare edge                           | Static assets and secure response headers only  |
 
 The current release line is `0.1.x`. The next package release prepared in this repository is
 `0.1.2`; it is published only by the tag-triggered `publish.yml` workflow after its gates pass.
@@ -56,13 +56,15 @@ pnpm test
 pnpm build
 ```
 
-Start the API for one explicitly chosen repository:
+Start the complete local workbench for one explicitly chosen repository. It serves the bundled UI
+and opens the pairing URL in your browser:
 
 ```sh
 pnpm cli open /absolute/path/to/repository
 ```
 
-For a machine-readable supervisor or a separately served UI:
+For a machine-readable supervisor, Xross/Kunkun integration, or separately hosted UI, use the
+explicit API-only command:
 
 ```sh
 pnpm cli serve --repo /absolute/path/to/repository --no-open --json
@@ -75,7 +77,8 @@ explicit `--repo` arguments—Refyard never scans a parent directory.
 After the npm release, the installed form is:
 
 ```sh
-npm install --global refyard
+npx refyard /absolute/path/to/repository
+# or, after a global install:
 refyard open /absolute/path/to/repository
 ```
 
@@ -127,7 +130,7 @@ requirements apply to that deployment.
 | `packages/host-node`    | Processes, filesystem, registries, coordinator, HTTP host                |
 | `packages/git-client`   | Browser/Node HTTP and SSE client                                         |
 | `packages/git-ui`       | Reusable Svelte 5 components                                             |
-| `packages/npm-dist`     | API-only publication staging                                             |
+| `packages/npm-dist`     | Self-contained CLI + local-workbench publication staging                 |
 | `tests`                 | Contract, core, integration, security, browser, compatibility, packaging |
 | `docs`                  | Product decisions, plans, goals, evidence, release instructions          |
 

@@ -14,9 +14,9 @@ form and background-read confirmation regression.
 
 | Browser                          | Engine version | Result                                                                                                                             |
 | -------------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Chromium                         | 153.0.8010.12  | **Verified.** All 35 end-to-end specs, including the hosted-password form and the instance-change refusal.                        |
-| Firefox                          | 155.0          | **Verified.** All 35.                                                                                                             |
-| WebKit                           | 26.6           | **Verified.** All 35, after the engine differences below were found and the cases were made engine-independent.                  |
+| Chromium                         | 153.0.8010.12  | **Verified.** All 35 end-to-end specs, including the hosted-password form and the instance-change refusal.                         |
+| Firefox                          | 155.0          | **Verified.** All 35.                                                                                                              |
+| WebKit                           | 26.6           | **Verified.** All 35, after the engine differences below were found and the cases were made engine-independent.                    |
 | Safari, Chrome, Edge (installed) | —              | **Unverified.** These are the engines above wearing a different version number and a different shell; nobody has run those builds. |
 | Mobile browsers                  | —              | **Unverified**, and the layout is a desktop workbench, not a phone app.                                                            |
 
@@ -112,8 +112,8 @@ so a transient API outage cannot make a user's first confirmation click disappea
 
 ## Same-origin and hosted shapes
 
-The default local shape is same-origin: a separate static asset server (or a local preview) hosts
-the page, and the CLI API stays on loopback. There is no CORS preflight and no mixed content. The
+The default local shape is same-origin: `refyard open` serves the packaged static SPA and the API
+from the same loopback listener. There is no CORS preflight and no mixed content. The
 host refuses an `Origin` that is not its own, refuses `null`, and refuses `Sec-Fetch-Site:
 cross-site` unless the operator has explicitly configured an exact hosted origin.
 
@@ -123,18 +123,21 @@ an operator-owned HTTPS tunnel to the CLI and a pairing URL containing the tunne
 `--api-origin`. The CLI must receive the exact Worker origin in `--allow-origin` and `--ui-origin`.
 The API remains bearer- and ticket-authenticated; non-loopback pairing additionally requires the
 environment-only `REFYARD_HOSTED_PASSWORD`, and no cookie or Worker secret is used for the Git
-session. A live Cloudflare account, domain, and tunnel were not exercised by this repository run.
+session. On the 2026-09-16 local-workbench candidate, `pnpm test:e2e` passed **108/108 in 11.8 m**
+across Chromium, Firefox and WebKit with the harness defaulting to bundled local mode; explicit
+hosted-pairing and service-replacement cases kept the split-origin shape. A live Cloudflare account,
+domain, and tunnel were not exercised by this repository run.
 
 If a browser or an extension gets in the way, the answer is to make the request
 same-origin, not to weaken a check:
 
-| Symptom                                               | What is happening                                                                              | What to do                                                                                                                                                                                                                   |
-| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ERR_CONNECTION_REFUSED` on a `localhost` bookmark    | The service is not running, or it is on another port.                                          | Start it again, or open the pairing URL the terminal prints — the port there is the real one.                                                                                                                                |
-| "The session is no longer valid" after a restart      | The service has a new instance id, so the old token is worthless.                              | Pair again with a fresh ticket (press `p` + Enter in the terminal).                                                                                                                                                          |
+| Symptom                                               | What is happening                                                                                               | What to do                                                                                                                                       |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ERR_CONNECTION_REFUSED` on a `localhost` bookmark    | The service is not running, or it is on another port.                                                           | Start it again, or open the pairing URL the terminal prints — the port there is the real one.                                                    |
+| "The session is no longer valid" after a restart      | The service has a new instance id, so the old token is worthless.                                               | Pair again with a fresh ticket (press `p` + Enter in the terminal).                                                                              |
 | Requests to `http://127.0.0.1` blocked by the browser | A public `https://` page cannot call another machine's loopback HTTP: Private Network Access and mixed content. | Configure an operator-owned HTTPS tunnel and pass its exact URL as `--api-origin`; pass the Worker origin to `--allow-origin` and `--ui-origin`. |
-| "not connected (incompatible service)"                | The page and the service disagree about the API major.                                         | Update whichever is older. The page refuses rather than guessing at semantics.                                                                                                                                               |
-| Event stream never connects                           | A proxy or extension is buffering `text/event-stream`.                                         | Use the page directly; the header shows "no live updates" and everything else still works.                                                                                                                                   |
+| "not connected (incompatible service)"                | The page and the service disagree about the API major.                                                          | Update whichever is older. The page refuses rather than guessing at semantics.                                                                   |
+| Event stream never connects                           | A proxy or extension is buffering `text/event-stream`.                                                          | Use the page directly; the header shows "no live updates" and everything else still works.                                                       |
 
 ## Offline behaviour
 
