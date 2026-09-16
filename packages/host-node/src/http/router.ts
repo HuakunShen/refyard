@@ -12,9 +12,10 @@
  * - **Authentication happens before a handler runs.** The server resolves a session
  *   and checks the session's grant against the repository the request names; a
  *   handler only ever sees an authorized session.
- * - **Unimplemented paths are absent, not stubbed.** `operations`, `events` and
- *   `previews` are known names that answer 501, so a client is told the truth
- *   instead of receiving a plausible-looking empty answer.
+ * - **Unimplemented paths are absent, not stubbed.** Implemented reads, previews,
+ *   operations and events are declared here; a future known-but-unimplemented path
+ *   must be added to `UNIMPLEMENTED_PATHS` and answer 501 rather than a plausible
+ *   empty success.
  */
 import { z } from "zod";
 import {

@@ -8,9 +8,9 @@
    * components can be reused by another host, and it means the app has no business logic
    * about Git in it — only reads, selection, and the states around them.
    *
-   * Everything here is a read. There is no submit, no stage, no discard: M1's capability
-   * list has no write operations, and the UI reflects that rather than offering a control
-   * that would be refused.
+   * Reads, explicit approvals and submitted operations are composed here. The page does
+   * not build Git commands: it sends closed contract intentions through the injected
+   * clients, and capabilities decide which controls are visible.
    */
   import { browser } from "$app/environment";
   import {

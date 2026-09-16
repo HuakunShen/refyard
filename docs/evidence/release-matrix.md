@@ -310,6 +310,16 @@ Local evidence on the isolated macOS fixtures:
 | Security | Existing exact Host/Origin, bearer, repository scope, request-limit, JSON 404 and no-SPA-fallthrough cases remain green; MCP sessions reject a different Refyard bearer. |
 | Live external MCP client | **Unverified.** The protocol case uses a real HTTP JSON-RPC client against the real service; no third-party MCP client or deployed endpoint was exercised. |
 
+## Documentation truth
+
+R9 re-verified the source comments and evidence index after the write and hosted-PWA rounds. The
+performance report is [performance.json](/Volumes/Portable2TB/ExtDev/refyard/docs/evidence/performance.json),
+with [performance.md](/Volumes/Portable2TB/ExtDev/refyard/docs/evidence/performance.md) as its human
+entry point. The SVGs under `packages/logo/` are explicitly non-runtime design assets; the SPA's
+versioned copies under `apps/web/static/` are the ones the build ships. The former generated
+`packages/npm-dist/web/web-hidden/` directory is absent and the current release script has no writer
+for it.
+
 ## Published releases
 
 Both releases were published by the project's owner and then checked against the registry — a

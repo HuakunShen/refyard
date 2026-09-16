@@ -18,10 +18,10 @@ system git CLI → this machine's repository, credentials, hooks
 
 ## Status
 
-**M1 — the read-only loop.** The service starts, authenticates a browser, and reads a real
-repository: status, history graph, diff, refs, worktrees, submodules, stashes. The journal, queue,
-idempotency and precondition machinery for writes exists and is tested, but **no mutation is
-exposed**: the capability list omits it, there is no route, and the UI has no button for it.
+**V2 — the local API and hosted PWA boundary.** The service starts, authenticates a browser, and
+reads a real repository: status, history graph, diff, refs, worktrees, submodules and stashes. It
+also exposes the explicitly registered mutation effects through the closed GitService contract,
+with the Cloudflare Worker hosting the static PWA and the CLI remaining API-only.
 
 Round 1 covers T01–T07 of `docs/plans/0001-refyard-v2-m1-read-only.md`. Writes (T08+), packaging
 (T13), the PWA shell (T14), release gates (T15), and the Xross/Kunkun/native-host integrations are
@@ -35,13 +35,13 @@ impossible.
 
 | #   | Form                                    | Status                                           |
 | --- | --------------------------------------- | ------------------------------------------------ |
-| 1   | Local workbench (`refyard open <path>`) | Implemented for reads                            |
-| 2   | Managed workspaces (many repositories)  | Planned — explicit approval, never disk scanning |
-| 3   | Hosted UI against a local host          | Planned — opt-in, origin allowlist, password     |
-| 4   | Embedded core inside a native host      | Core is already host-free; no native shell yet   |
+| 1   | Local workbench (`refyard open <path>`) | Implemented with reads and registered writes   |
+| 2   | Managed workspaces (many repositories)  | Implemented — explicit approval, never scanning |
+| 3   | Hosted UI against a local host          | Local exact-origin path implemented; deployment unverified |
+| 4   | Embedded core inside a native host      | Core is host-free; no native shell yet          |
 
-A separate axis, also decided but not built: an OpenAPI document (`hono-openapi`) with a Scalar API
-reference, and an MCP endpoint (`@hono/mcp`) exposing read tools only — never `run_git(args)`.
+The machine-facing API is discoverable through an OpenAPI document (`hono-openapi`) and Scalar;
+`@hono/mcp` exposes only bounded read tools — never `run_git(args)` or a mutation escape hatch.
 
 ## Getting started
 

@@ -20,10 +20,10 @@
  *   `IdempotencyConflict`, never a silent acceptance of the new payload.
  * - **No automatic retry, ever.** A failed or unknown operation stays that way. The
  *   only way it changes is a human submitting a new operation.
- * - **No write without a registered effect.** In this build the registry is empty
- *   outside tests, so `submit` refuses every real mutation with
- *   `UnsupportedOperation`; the capability list is derived from the registry, which
- *   is why the two can never disagree.
+ * - **No write without a registered effect.** The CLI registers the effects this
+ *   build can run, and `submit` refuses every other kind with `UnsupportedOperation`;
+ *   the capability list is derived from the same registry, which is why the two can
+ *   never disagree.
  *
  * Events are emitted from the same place that writes the journal record, so a client
  * that reconnects and queries the operation sees the same state the event carried.

@@ -110,7 +110,7 @@ Filled in as each task closes. A row that says "not done" names the reason.
 | R6   | hostile remote/submodule configuration, hooks, lock recovery and request-limit cases | `pnpm check`; `vitest tests/security/negative.test.ts` | **19 negative cases are present; the new configured-remote, hostile `.gitmodules`, absolute-outside-root, limit-abuse and lock-recovery cases pass on isolated macOS fixtures. Hook and `GIT_TERMINAL_PROMPT=0` coverage remains in the existing staging/runner suites; real SSH/credential-server attacks remain unverified.** | `tests/security/negative.test.ts`; `docs/evidence/security.md` |
 | R7   | same release gates on `windows-latest` | workflow change; GitHub Actions run | **Workflow updated to include `windows-latest` with the same install, static, unit, integration, portability, packaging, Worker dry-run, compatibility, e2e and benchmark steps. A new green hosted run id is not available from this local session, so the CI result remains unverified.** | `.github/workflows/ci.yml`; `docs/evidence/release-matrix.md` |
 | R8   | complete        | `pnpm check`; `pnpm test:integration` | **Hono API adapter, OpenAPI/Scalar discovery and read-only MCP are wired; 4 Hono/MCP cases and all 373 Node/integration/security cases pass.** | `packages/host-node/src/http/hono-app.ts`; `tests/integration/hono.test.ts`; `docs/evidence/release-matrix.md` |
-| R9   | _pending_       |                      |        |          |
+| R9   | complete        | `pnpm check`; stale-sentence grep; release-script audit | **Source comments now describe the registered effects and UI submissions; `docs/evidence/performance.md` points to the canonical JSON report; `packages/logo/README.md` records its non-runtime status; and no current writer or directory for `web-hidden` remains.** | `docs/evidence/performance.md`; `packages/logo/README.md`; `scripts/build-release.ts` |
 | R10  | _pending_       |                      |        |          |
 | R11  | _pending_       |                      |        |          |
 | R12  | _pending_       |                      |        |          |
@@ -366,36 +366,14 @@ deliberately absent from the MCP surface.
 
 ## R9 — Documentation truth pass
 
-**The list, with the evidence that found it** (re-verify each before editing — some may have been
-fixed by another task in this plan):
+**The list, with the evidence that found it:** the source comments were stale after the write and
+managed-workspace rounds; the performance evidence had a JSON report but no documented entry point;
+the logo SVG directory had no ownership note; and the old `packages/npm-dist/web/web-hidden/`
+directory was a generated leftover with no writer in the current release script.
 
-- `packages/host-node/src/http/router.ts` — the header comment still says `previews`/`operations`/`events`
-  are names that "answer 501". All three are implemented routes; `UNIMPLEMENTED_PATHS` has one entry.
-- `packages/host-node/src/coordinator/jobs.ts` — header says the effect registry "is empty outside
-  tests, so `submit` refuses every real mutation". False since T08–T12: `serve.ts` registers five
-  effect factories, and `implementedKinds()` is what `capabilities` reports.
-- `apps/web/src/routes/+page.svelte` — header says "Everything here is a read. There is no submit, no
-  stage, no discard". The same file imports the mutation client and submits operations.
-- `docs/evidence/performance.md` — the reference plan names this file; what exists is
-  `performance.json` (the machine-written report) plus the release matrix's summary of it. Decide and
-  write the decision down: either a short `.md` that reads the JSON, or a note in the matrix saying
-  the JSON *is* the report.
-- `packages/logo/` — three SVGs, no `package.json`, not a workspace member, and nothing references
-  them; the app ships its own copies in `apps/web/static/`. Decide: wire it, delete it, or leave it
-  with a README saying what it is for.
-- `packages/npm-dist/web/web-hidden/` — a second complete copy of the staged web build, produced by
-  the release build with no source reference to the name. Find out what writes it and why (start at
-  `scripts/build-release.ts`); either it is deliberate (and gets a comment and a test) or it is a
-  leftover (and goes).
-
-**What:** the drift the inventory found, fixed at the source: `packages/host-node/src/http/router.ts`
-still calls `previews`/`operations`/`events` unimplemented 501 names;
-`packages/host-node/src/coordinator/jobs.ts` says the effect registry is empty outside tests;
-`apps/web/src/routes/+page.svelte` says "Everything here is a read. There is no submit, no stage, no
-discard"; `docs/evidence/performance.md` is named by the reference plan and does not exist while the
-JSON report does; `packages/logo` is not a workspace package and nothing references it; and
-`packages/npm-dist/web/web-hidden/` holds a second copy of the staged web build with no source
-reference to the name.
+**What:** correct the source comments, add `docs/evidence/performance.md` as a pointer to the
+canonical JSON report, document `packages/logo` as intentionally non-runtime design assets, and
+keep the obsolete `web-hidden` copy removed by R15's API-only release staging.
 
 **Why:** a comment that contradicts the code is worse than no comment — it is a statement this
 repository's rules would have a reader believe.
@@ -404,8 +382,8 @@ repository's rules would have a reader believe.
 sentence (the logo package, the `web-hidden` directory), the decision is written down in the same
 commit.
 
-**Acceptance:** `pnpm check` clean; a grep for the stale sentences returns nothing; the evidence
-index in `release-matrix.md` points at files that exist.
+**Acceptance:** `pnpm check` clean; the stale sentences are gone; the evidence index points at files
+that exist; and the release script contains no writer for the removed `web-hidden` path.
 
 **Commit:** `docs: correct what the code says about itself`
 
