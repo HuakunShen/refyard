@@ -3,10 +3,11 @@
  *
  * The problem this solves is that a local service has no user directory. It cannot
  * ask "who is this"; it can only ask "does this caller hold the secret the CLI
- * just created". So the CLI mints a 256-bit ticket, hands it to the browser in the
- * URL **fragment** (never a query string: fragments are not sent to a server, do
- * not appear in `Referer`, and stay out of access logs), and the page exchanges it
- * once for a session token.
+ * just created". So the CLI mints a 256-bit ticket and hands it to the browser in a
+ * short-lived pairing URL. The current CLI uses `?pair=` because some browser flows
+ * dropped fragments; the page still accepts the older fragment spelling. The host
+ * never logs query strings, documents use `Referrer-Policy: no-referrer`, and the
+ * page removes the ticket from the address bar immediately after exchange.
  *
  * Each rule below closes a specific hole:
  *
@@ -257,8 +258,8 @@ export function createAuthStore(options: AuthStoreOptions): AuthStore {
     mintTicket(input): BootstrapTicket {
       prune();
       const record: BootstrapTicket = {
-        // 256 bits, URL-safe: the fragment it travels in has no escaping rules to
-        // get wrong and no character a shell would eat.
+        // 256 bits and base64url-safe for the pairing URL. The ticket may appear in
+        // either the current query spelling or the legacy fragment spelling.
         ticket: randomBytes(32).toString("base64url"),
         serviceInstanceId: options.serviceInstanceId,
         origin: input.origin,

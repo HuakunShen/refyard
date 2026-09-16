@@ -54,7 +54,7 @@ ship a feature is the failure mode this file exists to prevent.
 refyard open ~/code/xross
    │ approves exactly that repository directory
    ├─ Node service on 127.0.0.1:9595 (loopback only, exact Host/Origin checks)
-   ├─ single-use bootstrap ticket (60 s) in the URL fragment → bearer token
+   ├─ single-use bootstrap ticket (60 s) in `?pair=`; legacy fragment accepted → bearer token
    ├─ static SvelteKit app served by the same service (one origin, so no CORS)
    └─ reads plus capability-gated Git mutations through the same closed intention contract
 ```
