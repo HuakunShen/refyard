@@ -4,20 +4,29 @@
  *
  * The staging directory (`packages/npm-dist`) holds a manifest that is source and
  * everything else that is generated: the CLI bundle, the bin shim and a build-info
- * file. The static UI is deployed separately by `apps/web` to Cloudflare Workers.
+ * file. The same static UI is copied beside the CLI for local use and is also deployable
+ * independently from `apps/web` to Cloudflare Workers.
  * Two rules shape the output:
  *
  * - **The artifact stands alone.** The CLI is bundled with its workspace packages
  *   inside it, so the tarball has no `dependencies` at all and nothing resolves
  *   `workspace:*` or a repository-relative path at run time.
- * - **The CLI is backend-only.** It must not carry a second copy of the SPA; the
- *   Cloudflare Worker is the only production UI artifact.
+ * - **One UI source, two delivery forms.** The already-built `apps/web/build` artifact is copied
+ *   beside the CLI for the default local workbench and deployed independently for hosted use.
  *
  * No license file is written: this package is `UNLICENSED` and `private`, and
  * inventing a license on the project's behalf is not this script's call.
  */
 import { execFile } from "node:child_process";
-import { chmod, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  cp,
+  mkdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -66,9 +75,18 @@ for (const field of [
 
 await rm(distRoot, { recursive: true, force: true });
 await rm(binRoot, { recursive: true, force: true });
-await rm(join(stagingRoot, "web"), { recursive: true, force: true });
 await mkdir(distRoot, { recursive: true });
 await mkdir(binRoot, { recursive: true });
+
+const webSource = join(repoRoot, "apps", "web", "build");
+const webFallback = join(webSource, "200.html");
+const webInfo = await stat(webFallback).catch(() => null);
+if (webInfo?.isFile() !== true) {
+  throw new Error(
+    "apps/web/build/200.html is missing; run the web build before staging the release",
+  );
+}
+await cp(webSource, join(distRoot, "web"), { recursive: true });
 
 const builtAt = new Date().toISOString();
 let gitCommit = "unknown";
@@ -96,7 +114,7 @@ const result = await build({
   banner: {
     js: [
       "// refyard — generated bundle, not source.",
-      "// This file is the API-only CLI: it runs this machine's `git`; the UI is deployed separately.",
+      "// This file runs this machine's `git`; the bundled local workbench lives beside it in ./web.",
     ].join("\n"),
   },
   logLevel: "warning",
@@ -139,5 +157,5 @@ await writeFile(
 await assertNoRepositoryPaths([cliOutfile, binPath]);
 
 console.log(
-  `build:release: staged ${relative(repoRoot, distRoot)} (backend bundle ${bundleBytes} bytes, commit ${gitCommit}); UI is deployed from apps/web`,
+  `build:release: staged ${relative(repoRoot, distRoot)} (backend bundle ${bundleBytes} bytes + local web, commit ${gitCommit})`,
 );
