@@ -9,18 +9,28 @@
  * the CLI can also be exercised by Node itself.
  *
  * The output is generated build material under `.refyard-dev/`, which is ignored by
- * Git; nothing here is published. The separately deployed web Worker owns the static
- * UI; this bundle contains only the backend API entry point.
+ * Git; nothing here is published. The already-built static SPA is copied beside the CLI so
+ * `pnpm cli` exercises the same local-workbench layout as the published package.
  */
-import { mkdir } from "node:fs/promises";
+import { cp, mkdir, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
 const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const outfile = join(repositoryRoot, ".refyard-dev", "cli.mjs");
+const webSource = join(repositoryRoot, "apps", "web", "build");
+const webOut = join(repositoryRoot, ".refyard-dev", "web");
 
+const webInfo = await stat(join(webSource, "200.html")).catch(() => null);
+if (webInfo?.isFile() !== true) {
+  throw new Error(
+    "apps/web/build/200.html is missing; run `pnpm build:web` before bundling the CLI",
+  );
+}
 await mkdir(dirname(outfile), { recursive: true });
+await rm(webOut, { recursive: true, force: true });
+await cp(webSource, webOut, { recursive: true });
 const result = await build({
   entryPoints: [join(repositoryRoot, "apps/cli/src/bin.ts")],
   outfile,
@@ -42,4 +52,4 @@ if (result.errors.length > 0) {
   console.error(`bundle-cli: ${result.errors.length} error(s)`);
   process.exit(1);
 }
-console.log(`bundle-cli: wrote ${outfile}`);
+console.log(`bundle-cli: wrote ${outfile} and ${webOut}`);

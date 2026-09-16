@@ -11,8 +11,8 @@
  * - there are no `dependencies` and no install scripts: the bundle carries its
  *   workspace packages, so a broken `postinstall` cannot exist and nothing resolves
  *   `workspace:*` at install time;
- * - the `files` whitelist ships the backend CLI and nothing else — no UI, sources, no
- *   fixtures, no references;
+ * - the `files` whitelist ships one self-contained CLI distribution: the bundled backend plus
+ *   the same static SPA used by the hosted PWA, with no sources, fixtures, or references;
  * - the package is publishable and carries the repository's AGPLv3-only license, so the
  *   registry metadata and the public checkout grant the same permissions;
  *
@@ -89,7 +89,7 @@ describe("the published manifest", () => {
     expect(Object.keys(manifest.scripts ?? {})).toEqual([]);
   });
 
-  it("ships the API-only CLI and nothing else", async () => {
+  it("ships one self-contained CLI distribution and nothing outside bin/dist", async () => {
     const manifest = await readManifest();
     expect(manifest.files).toEqual(["bin", "dist"]);
   });
@@ -116,6 +116,15 @@ describe("the staged artifact", () => {
     const shim = await readFile(join(staging, "bin", "refyard.mjs"), "utf8");
     expect(shim.startsWith("#!/usr/bin/env node\n")).toBe(true);
     expect(shim).toContain("../dist/cli.mjs");
+  });
+
+  it("ships the local workbench beside the CLI when a build has been staged", async () => {
+    if (!(await stagedExists("dist/cli.mjs"))) {
+      return;
+    }
+    // Prevents: publishing `refyard open .` without the SPA it now promises to serve.
+    expect(await stagedExists("dist/web/200.html")).toBe(true);
+    expect(await stagedExists("dist/web/_app")).toBe(true);
   });
 
   it("keeps the build machine's paths out of the bundle", async () => {

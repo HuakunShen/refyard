@@ -162,14 +162,12 @@ await step(
         "the CLI bundle is missing or empty; run `pnpm build:release`",
       );
     }
-    try {
-      await stat(join(staging, "web"));
-    } catch {
-      return;
+    const localUi = await stat(join(staging, "dist", "web", "200.html"));
+    if (!localUi.isFile() || localUi.size === 0) {
+      throw new Error(
+        "the local workbench is missing; run `pnpm build:release`",
+      );
     }
-    throw new Error(
-      "the staging tree still contains a web build; the published CLI must be API-only",
-    );
   },
 );
 
@@ -328,6 +326,92 @@ if (isWindows) {
     },
   );
 }
+
+const openArgs = ["open", repository, "--no-open", "--port", "0", "--json"];
+const localWorkBench =
+  installedCli === null
+    ? spawnNpmExec([
+        "exec",
+        "--yes",
+        "--package",
+        tarballPath,
+        "--",
+        "refyard",
+        ...openArgs,
+      ])
+    : spawn(node, [installedCli, ...openArgs], {
+        cwd: consumer,
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+let localStdout = "";
+let localStderr = "";
+localWorkBench.stdout.on("data", (chunk: Buffer) => {
+  localStdout += chunk.toString("utf8");
+});
+localWorkBench.stderr.on("data", (chunk: Buffer) => {
+  localStderr += chunk.toString("utf8");
+});
+const localReady = await step(
+  "refyard open serves the packaged local workbench",
+  "npm exec --package <tarball> -- refyard open <dir> --no-open --port 0 --json",
+  async () => {
+    const deadline = Date.now() + 30_000;
+    for (;;) {
+      const line = localStdout
+        .split("\n")
+        .find((candidate) => candidate.trim().startsWith("{"));
+      if (line !== undefined) {
+        const parsed = JSON.parse(line) as {
+          url: string;
+          ui?: string | null;
+          apiOnly?: boolean;
+        };
+        const response = await fetch(`${parsed.url}/`);
+        const body = await response.text();
+        if (
+          response.status !== 200 ||
+          !response.headers.get("content-type")?.includes("text/html") ||
+          !body.toLowerCase().includes("refyard")
+        ) {
+          throw new Error(
+            `the local workbench answered ${response.status} ${response.headers.get("content-type")}`,
+          );
+        }
+        if (parsed.apiOnly !== false || parsed.ui !== parsed.url) {
+          throw new Error(
+            `open did not identify its same-origin UI: ${JSON.stringify(parsed)}`,
+          );
+        }
+        return parsed;
+      }
+      if (localWorkBench.exitCode !== null) {
+        throw new Error(
+          `open exited with ${localWorkBench.exitCode}\nstdout: ${localStdout}\nstderr: ${localStderr}`,
+        );
+      }
+      if (Date.now() > deadline) {
+        throw new Error(
+          `open produced no readiness object\nstdout: ${localStdout}\nstderr: ${localStderr}`,
+        );
+      }
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 100));
+    }
+  },
+);
+void localReady;
+if (localWorkBench.pid !== undefined && !isWindows) {
+  process.kill(-localWorkBench.pid, "SIGTERM");
+} else {
+  localWorkBench.kill();
+}
+await new Promise<void>((resolvePromise) => {
+  if (localWorkBench.exitCode !== null || localWorkBench.signalCode !== null) {
+    resolvePromise();
+    return;
+  }
+  localWorkBench.once("exit", () => resolvePromise());
+});
 
 const serving =
   installedCli === null
