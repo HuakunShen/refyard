@@ -15,7 +15,6 @@
  * that away would turn a precise answer into a bare failure.
  */
 import type { GitCommandSpec } from "../ports.js";
-import { validateRemoteUrl } from "@refyard/git-contract";
 import {
   boundedDiagnostic,
   type GitEngine,
@@ -39,6 +38,7 @@ import {
 } from "../plan/remotes.js";
 import { parseRemoteList } from "../parse/meta.js";
 import { planRemotes } from "../plan/refs.js";
+import { unsafeRemoteUrlReason } from "../validate/remote-url.js";
 
 export type CommandOutcome =
   | { readonly kind: "done" }
@@ -119,9 +119,9 @@ async function checkConfiguredRemote(
     };
   }
   const matching = records.filter((record) => record.name === input.name);
-  const fetch = matching.find((record) => record.kind === "fetch")?.url;
-  const push = matching.find((record) => record.kind === "push")?.url;
-  const url = input.direction === "push" ? (push ?? fetch) : fetch;
+  const fetchUrl = matching.find((record) => record.kind === "fetch")?.url;
+  const pushUrl = matching.find((record) => record.kind === "push")?.url;
+  const url = input.direction === "push" ? (pushUrl ?? fetchUrl) : fetchUrl;
   if (url === undefined) {
     return {
       kind: "refused",
@@ -130,14 +130,13 @@ async function checkConfiguredRemote(
       diagnostic: `remote ${input.name} has no configured ${input.direction} URL`,
     };
   }
-  const problems = validateRemoteUrl(url, "remote URL");
-  const first = problems[0];
-  if (first !== undefined) {
+  const reason = unsafeRemoteUrlReason(url);
+  if (reason !== null) {
     return {
       kind: "refused",
       code: "GitCommandFailed",
       exitCode: null,
-      diagnostic: `remote ${input.name} has an unsafe configured URL: ${first.message}`,
+      diagnostic: `remote ${input.name} has an unsafe configured URL: ${reason}`,
     };
   }
   return { kind: "safe" };

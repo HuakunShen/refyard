@@ -16,7 +16,6 @@
  * Identity comes later. Core returns paths, objects and names; the host registry
  * mints `repositoryId`/`worktreeId`/`pathId` and decides what a session may see.
  */
-import { validateRemoteUrl } from "@refyard/git-contract";
 import {
   parseConfigEntries,
   parseRemoteList,
@@ -53,6 +52,7 @@ import {
 } from "./engine.js";
 import { planRepositoryClone, planRepositoryInit } from "../plan/repository.js";
 import type { GitCommandSpec, GitTermination } from "../ports.js";
+import { unsafeRemoteUrlReason } from "../validate/remote-url.js";
 
 /* --------------------------------------------------------------------- refs */
 
@@ -256,12 +256,12 @@ function assertSafeSubmoduleUrls(
     if (entry.url.length === 0) {
       continue;
     }
-    const first = validateRemoteUrl(entry.url, "submodule URL")[0];
-    if (first !== undefined) {
+    const reason = unsafeRemoteUrlReason(entry.url);
+    if (reason !== null) {
       throw new GitWorkflowError({
         code: "GitCommandFailed",
         command,
-        message: `submodule ${entry.name} has an unsafe configured URL: ${first.message}`,
+        message: `submodule ${entry.name} has an unsafe configured URL: ${reason}`,
       });
     }
   }

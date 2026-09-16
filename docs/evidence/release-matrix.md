@@ -292,6 +292,24 @@ from different revisions. The three engines passed 9/9: a major mismatch refused
 same-major contract kept history reads working while disabling writes, and additive health and
 capabilities fields were ignored. The full e2e gate separately passed 99/99.
 
+## Hono, OpenAPI, Scalar and MCP
+
+The Node listener now adapts API and discovery requests into Hono. The static asset server remains
+the separate trusted bundle boundary; it is not exposed as an MCP capability. `hono-openapi`
+describes the route table and contract response schemas, Scalar serves `/scalar`, and the MCP
+endpoint uses `@hono/mcp` with stateful in-memory sessions bound to the same Refyard bearer session.
+
+Local evidence on the isolated macOS fixtures:
+
+| Surface | Result |
+| --- | --- |
+| OpenAPI | `/openapi.json` returns an OpenAPI 3.1 document with the GitService paths, contract-derived response schemas and exact BearerAuth scheme. |
+| Scalar | `/scalar` returns the reference UI and contains no repository id or snapshot. |
+| MCP | 4 protocol cases pass: initialize, `tools/list`, `repo_status`, and missing-bearer refusal; all 373 Node/integration/security cases pass after the adapter was installed. |
+| MCP tools intentionally absent | `search_commits` and `get_file_history` are not advertised because the current ReadService has no corresponding bounded query; no mutation tool is registered. |
+| Security | Existing exact Host/Origin, bearer, repository scope, request-limit, JSON 404 and no-SPA-fallthrough cases remain green; MCP sessions reject a different Refyard bearer. |
+| Live external MCP client | **Unverified.** The protocol case uses a real HTTP JSON-RPC client against the real service; no third-party MCP client or deployed endpoint was exercised. |
+
 ## Published releases
 
 Both releases were published by the project's owner and then checked against the registry — a

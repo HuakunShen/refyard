@@ -118,6 +118,99 @@ export async function readJsonBody(
   return { ok: true, value: parsed };
 }
 
+/**
+ * Read and parse a Web-standard JSON request body.
+ *
+ * Hono and the MCP transport consume `Request` objects, so the same byte bound
+ * must exist on that side of the Node adapter too. Reading through the stream keeps
+ * a declared or undeclared oversized body from becoming an allocation before the
+ * limit is enforced.
+ */
+export async function readJsonRequest(
+  request: Request,
+  limits: HttpLimits,
+): Promise<ReadBodyResult> {
+  const declared = Number.parseInt(request.headers.get("content-length") ?? "", 10);
+  if (Number.isFinite(declared) && declared > limits.maxBodyBytes) {
+    return {
+      ok: false,
+      problem: {
+        code: "LimitExceeded",
+        message: `the request body may not exceed ${limits.maxBodyBytes} bytes`,
+        details: { maxBodyBytes: limits.maxBodyBytes },
+        retryable: false,
+      },
+    };
+  }
+
+  if (request.body === null) {
+    return {
+      ok: false,
+      problem: {
+        code: "InvalidRequest",
+        message: "a JSON body is required",
+        retryable: false,
+      },
+    };
+  }
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const next = await reader.read();
+      if (next.done) {
+        break;
+      }
+      total += next.value.byteLength;
+      if (total > limits.maxBodyBytes) {
+        await reader.cancel();
+        return {
+          ok: false,
+          problem: {
+            code: "LimitExceeded",
+            message: `the request body may not exceed ${limits.maxBodyBytes} bytes`,
+            details: { maxBodyBytes: limits.maxBodyBytes },
+            retryable: false,
+          },
+        };
+      }
+      chunks.push(next.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (total === 0) {
+    return {
+      ok: false,
+      problem: {
+        code: "InvalidRequest",
+        message: "a JSON body is required",
+        retryable: false,
+      },
+    };
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return { ok: true, value: JSON.parse(new TextDecoder().decode(bytes)) };
+  } catch {
+    return {
+      ok: false,
+      problem: {
+        code: "InvalidRequest",
+        message: "the request body is not valid JSON",
+        retryable: false,
+      },
+    };
+  }
+}
+
 /** Validate a value against a contract schema, converting the issues to a problem. */
 export function validate<T>(
   schema: ZodType<T>,

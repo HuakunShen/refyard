@@ -197,6 +197,7 @@ export {
   DEFAULT_HTTP_LIMITS,
   logLine,
   parseQuery,
+  readJsonRequest,
   readJsonBody,
   redactUrl,
   validate,
@@ -209,6 +210,11 @@ export {
   statusForProblem,
 } from "./http/errors.js";
 export { readRoutes, type RouteDefinition } from "./http/router.js";
+export {
+  createHonoHttpApp,
+  type HonoHttpApp,
+  type HonoHttpAppOptions,
+} from "./http/hono-app.js";
 export {
   createJournalStore,
   canonicalJson,

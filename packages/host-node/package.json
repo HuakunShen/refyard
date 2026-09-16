@@ -11,7 +11,15 @@
     "check": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@hono/mcp": "catalog:",
+    "@hono/node-server": "catalog:",
+    "@modelcontextprotocol/sdk": "catalog:",
+    "@scalar/hono-api-reference": "catalog:",
     "@refyard/git-contract": "workspace:*",
-    "@refyard/git-core": "workspace:*"
+    "@refyard/git-core": "workspace:*",
+    "hono": "catalog:",
+    "hono-openapi": "catalog:",
+    "hono-rate-limiter": "catalog:",
+    "zod": "catalog:"
   }
 }

@@ -28,6 +28,7 @@ import {
 } from "node:http";
 import type { AddressInfo } from "node:net";
 import { randomBytes } from "node:crypto";
+import { getRequestListener } from "@hono/node-server";
 import {
   eventsQuerySchema,
   healthResponseSchema,
@@ -76,6 +77,7 @@ import {
   originsFor,
   type OriginPolicy,
 } from "./origins.js";
+import { createHonoHttpApp } from "./hono-app.js";
 /**
  * The port a taken listener holds, as its own error type.
  *
@@ -230,6 +232,26 @@ export async function startHttpHost(
         }),
   };
   let originPolicy: OriginPolicy | null = null;
+  const honoHttp = createHonoHttpApp({
+    read: options.read,
+    services,
+    auth,
+    events,
+    serviceInstanceId,
+    originPolicy: () => originPolicy,
+    ...(options.allowedOrigins === undefined
+      ? {}
+      : { allowedOrigins: options.allowedOrigins }),
+    ...(options.repositoryRootOf === undefined
+      ? {}
+      : { repositoryRootOf: options.repositoryRootOf }),
+    limits,
+    now,
+    log,
+  });
+  const honoListener = getRequestListener((request) =>
+    honoHttp.app.fetch(request),
+  );
 
   /**
    * Requests that have started and not finished.
@@ -245,6 +267,27 @@ export async function startHttpHost(
     response.on("close", () => {
       inFlight -= 1;
     });
+    if (isHonoPath(request.url)) {
+      void honoListener(request, response).catch((error: unknown) => {
+        const correlationId = newCorrelationId();
+        log(
+          `internal failure ${correlationId}: ${error instanceof Error ? error.message : "unknown"}`,
+        );
+        if (!response.headersSent) {
+          sendProblem(
+            response,
+            problemFor(
+              "InternalError",
+              `the service failed; correlation ${correlationId}`,
+            ),
+            correlationId,
+          );
+        } else {
+          response.end();
+        }
+      });
+      return;
+    }
     void handle(request, response).catch((error: unknown) => {
       const correlationId = newCorrelationId();
       log(
@@ -855,6 +898,7 @@ export async function startHttpHost(
     },
 
     async close(): Promise<void> {
+      await honoHttp.close();
       await closeQuietly(server, {
         inFlight: () => inFlight,
         ...(options.shutdownGraceMs === undefined
@@ -915,6 +959,19 @@ function externalOrigin(
     return null;
   }
   return allowedOrigins.includes(origin) ? origin : null;
+}
+
+/** API and discovery requests are adapted into the Web-standard Hono app. */
+function isHonoPath(rawUrl: string | undefined): boolean {
+  const rawPath = (rawUrl ?? "/").split("?", 1)[0]?.split("#", 1)[0] ?? "/";
+  return (
+    rawPath === "/health" ||
+    rawPath === "/openapi.json" ||
+    rawPath === "/scalar" ||
+    rawPath === "/mcp" ||
+    rawPath === "/api" ||
+    rawPath.startsWith("/api/")
+  );
 }
 
 /**
