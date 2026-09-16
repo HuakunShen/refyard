@@ -78,10 +78,14 @@
     useQueryClient,
   } from "@tanstack/svelte-query";
   import {
-    extractTicketFromText,
-    parseSessionConfig,
-    stripTicket,
-  } from "$lib/connection.js";
+    clearWorkbenchCredentials,
+    consumeInitialPairingUrl,
+    createWorkbenchSessionState,
+    describeClientProblem,
+    isDefaultSessionBaseUrl,
+    pairWorkbenchSession,
+    type WorkbenchSessionPorts,
+  } from "$lib/workbench/session.js";
   import { followOperation } from "$lib/operation-follow.js";
   import {
     backgroundRead,
@@ -113,25 +117,17 @@
 
   /* ------------------------------------------------------- runtime connection */
 
-  const initial = browser
-    ? parseSessionConfig({
-        href: window.location.href,
-        storedBaseUrl: readStoredBaseUrl(),
-      })
-    : { baseUrl: "http://127.0.0.1:47831", ticket: null, overridden: false };
-
-  let baseUrl = $state(initial.baseUrl);
-  let ticket = $state(initial.ticket ?? "");
-  /** A hosted password is entered for one exchange and is never persisted. */
-  let hostedPassword = $state("");
-  const hadTicketOnLoad = initial.ticket !== null;
-  let token = $state<string | null>(browser ? readStoredToken() : null);
-  /** The instance this tab paired with, as recorded when the token was stored. */
-  let pairedInstance = $state<string | null>(
-    browser ? readStoredInstance() : null,
+  const session = $state(
+    createWorkbenchSessionState({
+      href: browser ? window.location.href : "http://127.0.0.1:47831/",
+      storedBaseUrl: browser ? readStoredBaseUrl() : null,
+      storedToken: browser ? readStoredToken() : null,
+      storedInstance: browser ? readStoredInstance() : null,
+    }),
   );
-  let pairPhase = $state<"idle" | "connecting" | "failed">("idle");
-  let pairMessage = $state<string | undefined>(undefined);
+  const baseUrl = $derived(session.baseUrl);
+  const token = $derived(session.token);
+  const pairedInstance = $derived(session.pairedInstance);
   let streamState = $state<"offline" | "connecting" | "live">("offline");
   let browserOnline = $state(true);
 
@@ -165,82 +161,38 @@
     }),
   );
 
-  async function pair(): Promise<void> {
-    const rawValue = ticket.trim();
-    if (rawValue.length === 0) {
-      return;
-    }
-    const value = extractTicketFromText(rawValue);
-    if (value.length === 0) {
-      return;
-    }
-    pairPhase = "connecting";
-    pairMessage = undefined;
-    try {
-      const session = await client.exchangeTicket(
-        value,
-        hostedPassword.length === 0 ? undefined : hostedPassword,
-      );
-      token = session.token;
-      hostedPassword = "";
-      storeToken(session.token);
-      // Remembering the instance is what lets a later load notice that the address now
-      // answers with a different service.
-      const who = await client.health();
-      pairedInstance = who.serviceInstanceId;
-      storeInstance(who.serviceInstanceId);
-      storeBaseUrl(
-        initial.overridden || baseUrl !== initial.baseUrl ? baseUrl : null,
-      );
-      pairPhase = "idle";
-    } catch (error) {
-      pairPhase = "failed";
-      pairMessage = describeProblem(error);
-    } finally {
-      // Keep a password-rejected ticket in memory so the user can correct the
-      // password without asking the CLI for another one. The URL is still scrubbed
-      // immediately, so the ticket never remains in browser history or a referrer.
-      if (token !== null) {
-        ticket = "";
-      }
+  const sessionPorts: WorkbenchSessionPorts = {
+    exchangeTicket: (value, password) => client.exchangeTicket(value, password),
+    health: () => client.health(),
+    storeToken,
+    storeInstance,
+    storeBaseUrl,
+    clearStoredSession,
+    currentHref: () =>
+      browser ? window.location.href : `${session.initialBaseUrl}/`,
+    replaceHref: (href) => {
       if (browser) {
-        // The ticket is spent or was attempted; leaving it in the address bar would replay a dead value on
-        // reload and leave a credential in the browser's history.
-        window.history.replaceState({}, "", stripTicket(window.location.href));
+        window.history.replaceState({}, "", href);
       }
-    }
+    },
+  };
+
+  async function pair(): Promise<void> {
+    await pairWorkbenchSession(session, sessionPorts);
   }
 
   function disconnect(): void {
-    token = null;
-    pairedInstance = null;
-    clearStoredSession();
+    clearWorkbenchCredentials(session, sessionPorts);
     selectedOid = null;
     selectedPath = null;
     queryClient.clear();
   }
 
-  // A pairing URL is meant to work by being opened. Query and legacy-fragment
-  // tickets are exchanged on load; asking the user to press a button would be theatre.
+  // A pairing URL is meant to work by being opened. The controller handles both the
+  // current query spelling and legacy fragments, including immediate URL scrubbing.
   $effect(() => {
-    if (
-      browser &&
-      hadTicketOnLoad &&
-      token === null &&
-      ticket.length > 0 &&
-      pairPhase === "idle"
-    ) {
-      void pair();
-    } else if (
-      browser &&
-      hadTicketOnLoad &&
-      token !== null &&
-      ticket.length > 0
-    ) {
-      // Already authenticated with a valid session: strip the pairing ticket from the URL
-      // so it does not linger in the address bar or history.
-      ticket = "";
-      window.history.replaceState({}, "", stripTicket(window.location.href));
+    if (browser) {
+      void consumeInitialPairingUrl(session, sessionPorts);
     }
   });
 
@@ -703,9 +655,7 @@
     // Once per change: forgetting the session is what makes the notice disappear and
     // the pairing panel appear, so the state itself is the guard.
     if (verdict.kind === "differentInstance" && token !== null) {
-      token = null;
-      pairedInstance = null;
-      clearStoredSession();
+      clearWorkbenchCredentials(session, sessionPorts);
       queryClient.clear();
       return;
     }
@@ -859,7 +809,7 @@
         queryKey: ["submodules", baseUrl, token, selectedRepositoryId],
       });
     } catch (error) {
-      report(describeProblem(error));
+      report(describeClientProblem(error));
     } finally {
       mutationBusy = false;
     }
@@ -919,7 +869,7 @@
         await queryClient.invalidateQueries({ queryKey: ["refs"] });
       }
     } catch (error) {
-      repositoryMessage = describeProblem(error);
+      repositoryMessage = describeClientProblem(error);
     } finally {
       mutationBusy = false;
     }
@@ -973,7 +923,7 @@
         selectedPath = null;
       }
     } catch (error) {
-      repositoryAccessMessage = describeProblem(error);
+      repositoryAccessMessage = describeClientProblem(error);
     } finally {
       mutationBusy = false;
     }
@@ -1001,7 +951,7 @@
       }
       await repositories.refetch();
     } catch (error) {
-      repositoryAccessMessage = describeProblem(error);
+      repositoryAccessMessage = describeClientProblem(error);
     } finally {
       mutationBusy = false;
     }
@@ -1648,15 +1598,6 @@
     };
   }
 
-  function describeProblem(error: unknown): string {
-    if (error instanceof GitClientError) {
-      const correlation =
-        error.correlationId === null ? "" : ` (${error.correlationId})`;
-      return `${error.code}: ${error.message}${correlation}`;
-    }
-    return error instanceof Error ? error.message : String(error);
-  }
-
   function problemCode(error: unknown): string | null {
     return error instanceof GitClientError ? error.code : null;
   }
@@ -1674,9 +1615,7 @@
 
   const primaryWorktreeId = $derived(repository?.primaryWorktreeId ?? null);
   /** True while the chosen address is still this page's own origin. */
-  const baseUrlIsDefault = $derived(
-    !initial.overridden && baseUrl === initial.baseUrl,
-  );
+  const baseUrlIsDefault = $derived(isDefaultSessionBaseUrl(session));
 </script>
 
 <div class="relative flex h-dvh min-h-0 flex-col bg-canvas text-ink">
@@ -1841,20 +1780,20 @@
     <main class="flex-1 overflow-auto p-6">
       <ConnectionPanel
         {baseUrl}
-        {ticket}
+        ticket={session.ticket}
         hosted={!baseUrlIsDefault}
-        password={hostedPassword}
-        phase={pairPhase}
-        message={pairMessage}
+        password={session.hostedPassword}
+        phase={session.pairPhase}
+        message={session.pairMessage}
         {baseUrlIsDefault}
         onBaseUrl={(value) => {
-          baseUrl = value;
+          session.baseUrl = value;
         }}
         onTicket={(value) => {
-          ticket = value;
+          session.ticket = value;
         }}
         onPassword={(value) => {
-          hostedPassword = value;
+          session.hostedPassword = value;
         }}
         onConnect={() => void pair()}
       />
@@ -1881,7 +1820,7 @@
               <StateBanner
                 state="error"
                 title="Could not list repositories"
-                detail={describeProblem(repositories.error)}
+                detail={describeClientProblem(repositories.error)}
               >
                 {#snippet action()}
                   <Button
@@ -1950,7 +1889,7 @@
                 <StateBanner
                   state="error"
                   title="Could not read status"
-                  detail={describeProblem(status.error)}
+                  detail={describeClientProblem(status.error)}
                 >
                   {#snippet action()}
                     <Button
@@ -2008,7 +1947,7 @@
                   <StateBanner
                     state="error"
                     title="Could not read status"
-                    detail={describeProblem(status.error)}
+                    detail={describeClientProblem(status.error)}
                   />
                 {:else if status.data !== undefined}
                   <StagingPanel
@@ -2055,7 +1994,7 @@
                   <StateBanner
                     state="error"
                     title="Could not read refs"
-                    detail={describeProblem(refs.error)}
+                    detail={describeClientProblem(refs.error)}
                   />
                 {:else}
                   <BranchPanel
@@ -2091,7 +2030,7 @@
                   <StateBanner
                     state="error"
                     title="Could not read refs"
-                    detail={describeProblem(refs.error)}
+                    detail={describeClientProblem(refs.error)}
                   />
                 {:else}
                   <RemotePanel
@@ -2128,7 +2067,7 @@
                   <StateBanner
                     state="error"
                     title="Could not read stashes"
-                    detail={describeProblem(stashes.error)}
+                    detail={describeClientProblem(stashes.error)}
                   />
                 {/if}
                 {#if stashes.data !== undefined || lastStashesRepositoryId === selectedRepositoryId}
@@ -2165,7 +2104,7 @@
                   <StateBanner
                     state="error"
                     title="Could not read refs"
-                    detail={describeProblem(refs.error)}
+                    detail={describeClientProblem(refs.error)}
                   />
                 {:else}
                   <TagPanel
@@ -2201,7 +2140,7 @@
                   <StateBanner
                     state="error"
                     title="Could not read worktrees"
-                    detail={describeProblem(worktrees.error)}
+                    detail={describeClientProblem(worktrees.error)}
                   />
                 {:else}
                   <WorktreePanel
@@ -2238,7 +2177,7 @@
                   <StateBanner
                     state="error"
                     title="Could not read submodules"
-                    detail={describeProblem(submodules.error)}
+                    detail={describeClientProblem(submodules.error)}
                   />
                 {:else}
                   <SubmodulePanel
@@ -2275,7 +2214,7 @@
                   <StateBanner
                     state="error"
                     title="Could not read refs"
-                    detail={describeProblem(refs.error)}
+                    detail={describeClientProblem(refs.error)}
                   />
                 {:else}
                   <RefsPanel refs={refs.data ?? null} />
@@ -2320,7 +2259,7 @@
           <StateBanner
             state="error"
             title="Could not read history"
-            detail={describeProblem(history.error)}
+            detail={describeClientProblem(history.error)}
           >
             {#snippet action()}
               <Button
@@ -2408,7 +2347,7 @@
                 <StateBanner
                   state="error"
                   title="Could not read the diff"
-                  detail={describeProblem(diff.error)}
+                  detail={describeClientProblem(diff.error)}
                 >
                   {#snippet action()}
                     <Button
