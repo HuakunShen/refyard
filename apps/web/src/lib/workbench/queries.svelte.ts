@@ -29,6 +29,12 @@ import {
   workspaceRootsFor,
 } from "./query-model.js";
 
+import {
+  historyPageQuery,
+  historyTopologyFor,
+  type AppliedHistoryFilters,
+} from "./history-filters.js";
+
 const HISTORY_PAGE_SIZE = 100;
 const BACKGROUND_PREFIXES = [
   "repositories",
@@ -46,6 +52,8 @@ export interface WorkbenchQueryInputs {
   readonly token: () => string | null;
   readonly selection: WorkbenchSelectionState;
   readonly visible: () => boolean;
+  readonly historyFilters: () => AppliedHistoryFilters;
+  readonly historyRevision: () => number;
 }
 
 export function invalidateWorkbenchBackgroundQueries(
@@ -230,11 +238,14 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
   });
 
   const history = createInfiniteQuery(() => {
+    const filters = input.historyFilters();
     const key = [
       "history",
       input.baseUrl(),
       input.token(),
       selectedRepositoryId,
+      filters,
+      input.historyRevision(),
     ];
     return {
       queryKey: key,
@@ -243,11 +254,17 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
           key: [...key, pageParam],
           timer: readTimer,
           run: () =>
-            input.client().history({
-              repositoryId: selectedRepositoryId ?? "",
-              limit: HISTORY_PAGE_SIZE,
-              ...(pageParam === null ? {} : { cursor: pageParam }),
-            }),
+            input
+              .client()
+              .history(
+                historyPageQuery(
+                  selectedRepositoryId ?? "",
+                  repository?.primaryWorktreeId ?? null,
+                  filters,
+                  pageParam,
+                  HISTORY_PAGE_SIZE,
+                ),
+              ),
         })(),
       initialPageParam: null as string | null,
       getNextPageParam: (lastPage) => lastPage.nextCursor,
@@ -258,8 +275,13 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
 
   const historyPages = $derived(history.data?.pages ?? []);
   const commits = $derived(historyPages.flatMap((page) => page.commits));
+  const historyTopology = $derived(historyTopologyFor(historyPages));
   const graph = $derived(
-    layoutPages(historyPages.map((page) => page.commits.map(graphCommitFor))),
+    historyTopology === "sparse"
+      ? { rows: [], laneCount: 1 }
+      : layoutPages(
+          historyPages.map((page) => page.commits.map(graphCommitFor)),
+        ),
   );
   const historyNotices = $derived(historyNoticesFor(historyPages));
   const selectedCommit = $derived(
@@ -398,6 +420,9 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
     },
     get graph() {
       return graph;
+    },
+    get historyTopology() {
+      return historyTopology;
     },
     get historyNotices() {
       return historyNotices;

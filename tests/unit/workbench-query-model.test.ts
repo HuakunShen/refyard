@@ -87,10 +87,24 @@ describe("workbench query model", () => {
   });
 
   it("combines incomplete-history notices across every loaded page", () => {
-    const pages = [
-      { truncated: false, tipsMoved: true, shallow: false },
-      { truncated: true, tipsMoved: false, shallow: true },
-    ] as HistoryPage[];
+    const page = (
+      truncated: boolean,
+      tipsMoved: boolean,
+      shallow: boolean,
+    ): HistoryPage => ({
+      snapshotId: "snap_test",
+      repositoryId: "repo_test",
+      readAt: "2026-09-17T00:00:00Z",
+      objectFormat: "sha1",
+      topology: "continuous",
+      commits: [],
+      nextCursor: null,
+      detail: null,
+      truncated,
+      tipsMoved,
+      shallow,
+    });
+    const pages = [page(false, true, false), page(true, false, true)];
     expect(historyNoticesFor(pages)).toEqual({
       truncated: true,
       tipsMoved: true,

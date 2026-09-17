@@ -21,6 +21,7 @@
     Button,
     CommitDetailPanel,
     CommitList,
+    HistoryFilterBar,
     ConnectionPanel,
     DiffPanel,
     ModeToggle,
@@ -56,6 +57,13 @@
     invalidateWorkbenchBackgroundQueries,
   } from "$lib/workbench/queries.svelte.js";
   import { createWorkbenchMutations } from "$lib/workbench/mutations.svelte.js";
+  import {
+    applyHistoryFilters,
+    clearHistoryFilters,
+    createHistoryFilterState,
+    historyFiltersActive,
+    historyFilterLabels,
+  } from "$lib/workbench/history-filters.js";
   import RepositorySidebar from "$lib/components/workbench/RepositorySidebar.svelte";
   import {
     clearStoredSession,
@@ -163,6 +171,22 @@
 
   const selection = $state(createWorkbenchSelectionState());
   const selectedRepositoryId = $derived(selection.repositoryId);
+  const historyFilterState = $state(createHistoryFilterState());
+  $effect(() => {
+    if (historyFilterState.repositoryId !== selectedRepositoryId)
+      clearHistoryFilters(historyFilterState, selectedRepositoryId);
+  });
+  function applyHistorySearch(): void {
+    if (applyHistoryFilters(historyFilterState)) {
+      clearInspectableSelection(selection);
+      selection.diffPathId = null;
+    }
+  }
+  function clearHistorySearch(): void {
+    clearHistoryFilters(historyFilterState);
+    clearInspectableSelection(selection);
+    selection.diffPathId = null;
+  }
   const selectedOid = $derived(selection.commitOid);
   const selectedPath = $derived(selection.statusPath);
   const selectedDiffPathId = $derived(selection.diffPathId);
@@ -179,6 +203,11 @@
     token: () => token,
     selection,
     visible: pageVisible,
+    historyFilters: () =>
+      historyFilterState.repositoryId === selectedRepositoryId
+        ? historyFilterState.applied
+        : {},
+    historyRevision: () => historyFilterState.revision,
   });
   const capabilities = queries.capabilities;
   const status = queries.status;
@@ -355,7 +384,7 @@
   {/if}
 
   <header
-    class="relative z-10 flex h-12 shrink-0 items-center justify-between gap-3 border-b border-border/80 bg-panel/90 px-4 backdrop-blur-md"
+    class="relative z-10 flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 py-2 sm:h-12 sm:flex-nowrap sm:py-0 border-b border-border/80 bg-panel/90 px-4 backdrop-blur-md"
   >
     <div class="flex items-center gap-2">
       <RefyardLogo variant="mark" size={22} />
@@ -524,7 +553,7 @@
     </main>
   {:else}
     <main
-      class="relative z-1 grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[18.5rem_minmax(0,1fr)_21rem] xl:grid-cols-[21rem_minmax(0,1fr)_25rem] 2xl:grid-cols-[23rem_minmax(0,1fr)_28rem]"
+      class="relative z-1 flex min-h-0 flex-1 flex-col overflow-y-auto lg:grid lg:overflow-visible lg:grid-cols-[18.5rem_minmax(0,1fr)_21rem] xl:grid-cols-[21rem_minmax(0,1fr)_25rem] 2xl:grid-cols-[23rem_minmax(0,1fr)_28rem]"
     >
       <RepositorySidebar
         {queries}
@@ -533,7 +562,10 @@
         {token}
         describeProblem={describeClientProblem}
       />
-      <section class="flex min-h-0 flex-col gap-2 p-3">
+      <section
+        class="flex h-[44rem] min-h-[32rem] shrink-0 flex-col gap-2 p-3 lg:h-auto lg:min-h-0"
+        data-testid="history-panel"
+      >
         <div class="shrink-0 flex items-center gap-2">
           <h2 class="text-sm font-semibold">History</h2>
           {#if repository !== null}
@@ -559,6 +591,28 @@
           </Button>
         </div>
 
+        <HistoryFilterBar
+          draft={historyFilterState.draft}
+          appliedLabels={historyFilterLabels(historyFilterState)}
+          appliedPath={historyFilterState.appliedPath}
+          error={historyFilterState.error}
+          onDraftChange={(draft) => (historyFilterState.draft = draft)}
+          refs={[
+            ...(refs.data?.branches ?? []),
+            ...(refs.data?.remoteBranches ?? []),
+            ...(refs.data?.tags ?? []),
+          ].map((ref) => ({ fullName: ref.fullName, displayName: ref.name }))}
+          paths={status.data?.entries ?? []}
+          disabled={selectedRepositoryId === null}
+          onApply={applyHistorySearch}
+          onClear={clearHistorySearch}
+        />
+        {#if queries.historyTopology === "sparse"}<p
+            class="shrink-0 text-xs text-muted-foreground"
+          >
+            Filtered history · graph hidden
+          </p>{/if}
+
         {#if selectedRepositoryId === null}
           <StateBanner state="empty" title="No repository selected" />
         {:else if history.isPending}
@@ -582,6 +636,8 @@
         {:else}
           <CommitList
             rows={graph.rows}
+            topology={queries.historyTopology}
+            filtered={historyFiltersActive(historyFilterState.applied)}
             {commits}
             {selectedOid}
             {now}
@@ -607,7 +663,7 @@
       </section>
 
       <section
-        class="flex min-h-0 flex-col border-l border-border bg-canvas/30"
+        class="flex min-h-56 shrink-0 flex-col border-l border-border bg-canvas/30 lg:min-h-0"
       >
         {#if selectedPath !== null && selectedPath.kind === "ignored"}
           <div class="p-3">
