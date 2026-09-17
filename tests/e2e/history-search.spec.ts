@@ -7,6 +7,7 @@ test.describe("history search", () => {
   let repo: GitFixtureRepo;
   let service: Awaited<ReturnType<typeof startE2eService>>;
   let newestOid: string;
+  const releaseOids: string[] = [];
   test.beforeAll(async () => {
     repo = await createRepo({ initialCommit: true });
     await repo.git(["branch", "base-only"]);
@@ -15,6 +16,7 @@ test.describe("history search", () => {
       newestOid = await repo.commitAll(`Release item ${index}`, {
         date: "2026-02-01T12:00:00Z",
       });
+      releaseOids.push(newestOid);
     }
     await repo.write("a.txt", "pending change\n");
   });
@@ -174,6 +176,44 @@ test.describe("history search", () => {
     await expect(
       page.getByText("End of the loaded history", { exact: true }),
     ).toBeVisible();
+    // Prevents page boundaries losing, repeating or reordering commits in the actual UI.
+    const expectedOids = [...releaseOids].reverse();
+    const scrollList = page
+      .getByTestId("history-panel")
+      .locator("div.overflow-auto");
+    const rowHeight = await visibleRows
+      .first()
+      .evaluate((element) => element.getBoundingClientRect().height);
+    expect(rowHeight).toBeGreaterThan(0);
+    const renderedOids: string[] = [];
+    const observedOids = new Set<string>();
+    for (const [index, oid] of expectedOids.entries()) {
+      await scrollList.evaluate((element, top) => {
+        element.scrollTop = top;
+      }, index * rowHeight);
+      await expect(page.getByTestId(`commit-row-${oid}`)).toBeVisible();
+      const windowOids = await visibleRows.evaluateAll((elements) =>
+        elements.map(
+          (element) =>
+            element.getAttribute("data-testid")?.slice("commit-row-".length) ??
+            "",
+        ),
+      );
+      expect(new Set(windowOids).size).toBe(windowOids.length);
+      const firstIndex = expectedOids.indexOf(windowOids[0] ?? "");
+      expect(firstIndex).toBeGreaterThanOrEqual(0);
+      expect(windowOids).toEqual(
+        expectedOids.slice(firstIndex, firstIndex + windowOids.length),
+      );
+      for (const renderedOid of windowOids) {
+        if (!observedOids.has(renderedOid)) {
+          observedOids.add(renderedOid);
+          renderedOids.push(renderedOid);
+        }
+      }
+    }
+    expect(renderedOids).toEqual(expectedOids);
+    expect(renderedOids).toHaveLength(105);
     const restart = page.waitForRequest((request) => {
       const query = new URL(request.url()).searchParams;
       return (
