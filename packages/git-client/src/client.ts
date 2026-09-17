@@ -22,6 +22,7 @@ import {
   healthResponseSchema,
   capabilitiesResponseSchema,
   diffResponseSchema,
+  filesystemEntriesResponseSchema,
   historyPageSchema,
   previewsResponseSchema,
   refsSnapshotSchema,
@@ -32,6 +33,7 @@ import {
   worktreesResponseSchema,
   type CapabilitiesResponse,
   type DiffResponse,
+  type FilesystemEntriesResponse,
   type HistoryPage,
   type HistoryQuery,
   type PreviewsResponse,
@@ -114,6 +116,9 @@ export interface GitClient {
   health(): Promise<HealthResponse>;
   capabilities(): Promise<CapabilitiesResponse>;
   repositories(): Promise<RepositoriesResponse>;
+  filesystemEntries(query?: {
+    readonly path?: string;
+  }): Promise<FilesystemEntriesResponse>;
   registerRepository(path: string): Promise<RepositoriesResponse>;
   revokeRepository(repositoryId: string): Promise<RepositoriesResponse>;
   status(query: {
@@ -259,6 +264,15 @@ export function createGitClient(options: GitClientOptions): GitClient {
       send("GET", "/api/v1/capabilities", clientCapabilitiesResponseSchema),
     repositories: () =>
       send("GET", "/api/v1/repositories", clientRepositoriesResponseSchema),
+
+    filesystemEntries: (query) =>
+      send(
+        "GET",
+        `/api/v1/filesystem/entries${toQueryString({
+          path: query?.path,
+        })}`,
+        filesystemEntriesResponseSchema,
+      ),
 
     registerRepository: (path) =>
       send(

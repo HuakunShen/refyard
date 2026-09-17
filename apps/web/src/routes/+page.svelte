@@ -340,6 +340,10 @@
     });
   }
 
+  async function browseRepositoryPath(path: string) {
+    return client.filesystemEntries({ path });
+  }
+
   function handleRecentRepository(entry: RecentRepository): void {
     const existing = repositoryList.find(
       (item) => item.displayPath === entry.displayPath,
@@ -537,7 +541,7 @@
   {/if}
 
   <header
-    class="relative z-10 flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 py-2 sm:h-12 sm:flex-nowrap sm:py-0 border-b border-border/80 bg-panel/90 px-4 backdrop-blur-md"
+    class="relative z-10 flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 py-2 sm:flex-wrap sm:py-2 border-b border-border/80 bg-panel/90 px-4 backdrop-blur-md"
   >
     <div class="flex items-center gap-2">
       <RefyardLogo variant="mark" size={22} />
@@ -561,7 +565,7 @@
     </div>
 
     {#if token !== null}
-      <div class="min-w-0 flex-1 px-2 lg:px-4">
+      <div class="order-last basis-full min-w-0 border-t border-border/60 pt-1">
         <RepositoryTabs
           tabs={repositoryTabs.tabs}
           activeRepositoryId={repositoryTabs.activeRepositoryId}
@@ -739,6 +743,7 @@
             message={writeController.repositoryAccessMessage ??
               writeController.repositoryMessage}
             onOpen={handleOpenRepository}
+            onBrowse={browseRepositoryPath}
             onRecent={handleRecentRepository}
             onInit={writeController.onRepositoryInit}
             onClone={writeController.onRepositoryClone}

@@ -1,7 +1,7 @@
 /**
  * Explicit runtime repository approval and revocation.
  *
- * A browser supplies one absolute path chosen by a person. This module either places it
+ * A browser supplies one path chosen by a person. This module expands only ~/ shorthand and either places it
  * under an already approved root or approves that exact directory as a new root; it never
  * scans, infers a parent grant, follows a lexical symlink escape or turns a Git directory
  * into a repository. The registry remains the authority for repository identity and the
@@ -18,6 +18,7 @@ import {
 import type { AccessJournal } from "../journal/access.js";
 import type { RepositoryRecord, RepositoryRegistry } from "./repositories.js";
 import type { RootRecord, RootRegistry } from "./roots.js";
+import { expandUserPath } from "../filesystem/user-path.js";
 
 export interface RepositoryApproval {
   readonly repositoryId: string;
@@ -72,7 +73,8 @@ export function createRepositoryApprovalManager(
 
   return {
     async register(input): Promise<RepositoryApprovalResult> {
-      if (!isAbsolute(input.path)) {
+      const requestedPath = expandUserPath(input.path);
+      if (!isAbsolute(requestedPath)) {
         return {
           ok: false,
           code: "InvalidRequest",
@@ -83,7 +85,7 @@ export function createRepositoryApprovalManager(
 
       let resolvedPath: string;
       try {
-        resolvedPath = await realpath(input.path);
+        resolvedPath = await realpath(requestedPath);
       } catch {
         return {
           ok: false,
@@ -100,7 +102,7 @@ export function createRepositoryApprovalManager(
       }
 
       const roots = options.roots.list();
-      const lexicalRoot = containingRoot(input.path, roots);
+      const lexicalRoot = containingRoot(requestedPath, roots);
       if (
         lexicalRoot !== null &&
         !isInsideOrEqual(lexicalRoot.path, resolvedPath)

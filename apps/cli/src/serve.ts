@@ -255,6 +255,7 @@ export async function assembleService(
 
   const reads: readonly ReadKind[] = [
     "capabilities",
+    "filesystem",
     "repositories",
     "status",
     "history",

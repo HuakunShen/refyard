@@ -24,6 +24,7 @@ import {
   cancelOperationRequestSchema,
   capabilitiesQuerySchema,
   diffQuerySchema,
+  filesystemEntriesQuerySchema,
   historyQuerySchema,
   operationAcceptedSchema,
   operationsListQuerySchema,
@@ -117,12 +118,13 @@ function readRoute<Schema extends z.ZodObject<z.ZodRawShape>>(
   path: string,
   schema: Schema,
   run: (query: z.infer<Schema>, services: RouteServices) => Promise<unknown>,
+  requiredScope: AuthorizationScope = "repository:read",
 ): RouteDefinition {
   return {
     method: "GET",
     path,
     schema,
-    requiredScope: () => "repository:read",
+    requiredScope: () => requiredScope,
     async handle({ query, services }) {
       const parsed = schema.safeParse(query);
       if (!parsed.success) {
@@ -153,6 +155,12 @@ export function readRoutes(): readonly RouteDefinition[] {
       "/api/v1/repositories",
       repositoriesQuerySchema,
       async (_query, services) => services.read.repositories(),
+    ),
+    readRoute(
+      "/api/v1/filesystem/entries",
+      filesystemEntriesQuerySchema,
+      async (query, services) => services.read.filesystemEntries(query),
+      "workspace:manage",
     ),
     readRoute("/api/v1/status", worktreeQuerySchema, async (query, services) =>
       services.read.status(query),

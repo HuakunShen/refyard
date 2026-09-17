@@ -21,7 +21,7 @@
 </script>
 
 <div
-  class="flex min-w-0 items-center gap-1 overflow-x-auto"
+  class="flex w-full min-w-0 items-center gap-1 overflow-x-auto"
   data-testid="repository-tabs"
 >
   {#each tabs as tab (tab.repositoryId)}

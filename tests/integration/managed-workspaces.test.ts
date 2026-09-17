@@ -8,7 +8,10 @@
 import { readFile, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { repositoriesResponseSchema } from "@refyard/git-contract";
+import {
+  filesystemEntriesResponseSchema,
+  repositoriesResponseSchema,
+} from "@refyard/git-contract";
 import { runService, type RunningService } from "../../apps/cli/src/serve.js";
 import {
   createRepo,
@@ -65,6 +68,30 @@ async function register(
 }
 
 describe("managed workspaces", () => {
+  it("browses bounded directories for the authenticated local path picker", async () => {
+    const repo = await createRepo({ initialCommit: true });
+    const running = await start(repo);
+    try {
+      const { origin, token } = await pair(running);
+      const response = await fetch(
+        `${origin}/api/v1/filesystem/entries?path=${encodeURIComponent(repo.scratchRoot)}`,
+        { headers: { authorization: `Bearer ${token}`, origin } },
+      );
+      expect(response.status).toBe(200);
+      const body = filesystemEntriesResponseSchema.parse(await response.json());
+      expect(body.path).toBe(await realpath(repo.scratchRoot));
+      expect(body.entries.some((entry) => entry.kind === "repository")).toBe(
+        true,
+      );
+      expect(
+        body.entries.every((entry) => !entry.path.includes("/.git/")),
+      ).toBe(true);
+    } finally {
+      await running.close();
+      await repo.dispose();
+    }
+  });
+
   it("approves exact paths, revokes access, and preserves the audit after restart", async () => {
     const repo = await createRepo({ initialCommit: true });
     const second = await createRepo({ initialCommit: true });

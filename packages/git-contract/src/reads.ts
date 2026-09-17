@@ -102,6 +102,7 @@ export const sessionExchangeResponseSchema = z
 export const readKindSchema = z
   .enum([
     "capabilities",
+    "filesystem",
     "repositories",
     "status",
     "history",
@@ -231,7 +232,42 @@ export const repositoriesResponseSchema = z
       "Registered repositories and the roots they were approved under. Registration is explicit; nothing is discovered by scanning the disk.",
   });
 
-/** A person-chosen absolute path for runtime repository approval. */
+export const filesystemEntriesQuerySchema = z
+  .strictObject({
+    path: z.string().max(4096).optional(),
+  })
+  .meta({
+    id: "FilesystemEntriesQuery",
+    description:
+      "A person-entered local path to browse. The host expands a leading ~/ against its own home directory and returns directories only.",
+  });
+
+export const filesystemEntrySchema = z
+  .strictObject({
+    name: z.string().min(1).max(255),
+    path: displayPathSchema,
+    kind: z.enum(["directory", "repository"]),
+  })
+  .meta({
+    id: "FilesystemEntry",
+    description:
+      "One directory the authenticated local path selector may navigate to or open.",
+  });
+
+export const filesystemEntriesResponseSchema = z
+  .strictObject({
+    path: displayPathSchema,
+    parentPath: displayPathSchema.nullable(),
+    entries: z.array(filesystemEntrySchema),
+    truncated: z.boolean(),
+  })
+  .meta({
+    id: "FilesystemEntriesResponse",
+    description:
+      "Bounded directory entries for the explicit local repository picker; file contents are never returned.",
+  });
+
+/** A person-chosen local path for runtime repository approval. */
 export const registerRepositoryRequestSchema = z
   .strictObject({
     path: z.string().min(1).max(4096),
@@ -239,7 +275,7 @@ export const registerRepositoryRequestSchema = z
   .meta({
     id: "RegisterRepositoryRequest",
     description:
-      "The exact absolute path a person selected for runtime approval. The host checks repository-ness and containment; it never scans for candidates.",
+      "The exact absolute path or ~/ shorthand a person selected for runtime approval. The host checks repository-ness and containment; it never scans for candidates.",
   });
 
 /** The registered repository to remove from this service's live grant. */
@@ -895,22 +931,14 @@ export const historyQuerySchema = z
     limit: z.int().positive().max(LIMITS.historyMaxPageSize).optional(),
     detailOid: objectIdSchema.optional(),
     firstParentOnly: z.boolean().optional(),
-    message: z
-      .string()
-      .max(4096)
-      .optional()
-      .meta({
-        description:
-          "Trimmed single-line literal message search, 1–512 Unicode scalar values; semantic validation rejects NUL, CR/LF and unpaired surrogates.",
-      }),
-    author: z
-      .string()
-      .max(4096)
-      .optional()
-      .meta({
-        description:
-          "Trimmed single-line literal author search, 1–512 Unicode scalar values.",
-      }),
+    message: z.string().max(4096).optional().meta({
+      description:
+        "Trimmed single-line literal message search, 1–512 Unicode scalar values; semantic validation rejects NUL, CR/LF and unpaired surrogates.",
+    }),
+    author: z.string().max(4096).optional().meta({
+      description:
+        "Trimmed single-line literal author search, 1–512 Unicode scalar values.",
+    }),
     oidPrefix: z
       .string()
       .regex(/^[0-9a-f]{4,64}$/)
@@ -1004,6 +1032,13 @@ export type CapabilitiesResponse = z.infer<typeof capabilitiesResponseSchema>;
 export type HeadState = z.infer<typeof headStateSchema>;
 export type RepositorySummary = z.infer<typeof repositorySummarySchema>;
 export type RepositoriesResponse = z.infer<typeof repositoriesResponseSchema>;
+export type FilesystemEntriesQuery = z.infer<
+  typeof filesystemEntriesQuerySchema
+>;
+export type FilesystemEntry = z.infer<typeof filesystemEntrySchema>;
+export type FilesystemEntriesResponse = z.infer<
+  typeof filesystemEntriesResponseSchema
+>;
 export type PathEncoding = z.infer<typeof pathEncodingSchema>;
 export type SubmoduleStatus = z.infer<typeof submoduleStatusSchema>;
 export type UnmergedStage = z.infer<typeof unmergedStageSchema>;

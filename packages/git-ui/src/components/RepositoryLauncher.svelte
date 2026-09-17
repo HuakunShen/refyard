@@ -4,12 +4,15 @@
     Clock3,
     FolderOpen,
     GitBranchPlus,
+    ChevronLeft,
     Search,
     UploadCloud,
   } from "@lucide/svelte";
+  import type { FilesystemEntriesResponse } from "@refyard/git-contract";
   import { Badge } from "./ui/badge/index.js";
   import { Button } from "./ui/button/index.js";
   import { Input } from "./ui/input/index.js";
+  import * as Dialog from "./ui/dialog/index.js";
   import RepositoryPanel, {
     type CloneRequest,
     type InitRequest,
@@ -34,6 +37,7 @@
     busy?: boolean;
     message?: string | null;
     onOpen: (path: string) => void;
+    onBrowse: (path: string) => Promise<FilesystemEntriesResponse>;
     onRecent: (entry: RecentRepository) => void;
     onInit: (request: InitRequest) => void;
     onClone: (request: CloneRequest) => void;
@@ -47,6 +51,7 @@
     busy = false,
     message = null,
     onOpen,
+    onBrowse,
     onRecent,
     onInit,
     onClone,
@@ -55,6 +60,11 @@
   let mode = $state<"open" | "create">("open");
   let path = $state("");
   let query = $state("");
+  let pickerOpen = $state(false);
+  let pickerPath = $state("~");
+  let pickerData = $state<FilesystemEntriesResponse | null>(null);
+  let pickerBusy = $state(false);
+  let pickerError = $state<string | null>(null);
   const filteredRecent = $derived(
     recent.filter((entry) => {
       const needle = query.trim().toLocaleLowerCase();
@@ -66,6 +76,33 @@
       );
     }),
   );
+
+  async function browse(pathToRead: string): Promise<void> {
+    pickerBusy = true;
+    pickerError = null;
+    try {
+      const result = await onBrowse(pathToRead);
+      pickerPath = result.path;
+      pickerData = result;
+    } catch (error) {
+      pickerError =
+        error instanceof Error
+          ? error.message
+          : "Could not read this directory";
+    } finally {
+      pickerBusy = false;
+    }
+  }
+
+  function openPicker(): void {
+    pickerOpen = true;
+    void browse(path.trim().length > 0 ? path.trim() : "~");
+  }
+
+  function chooseRepository(repositoryPath: string): void {
+    path = repositoryPath;
+    pickerOpen = false;
+  }
 </script>
 
 <section
@@ -124,6 +161,9 @@
           {disabled}
         />
       </label>
+      <Button type="button" variant="outline" onclick={openPicker} {disabled}
+        ><FolderOpen data-icon="inline-start" />Browse</Button
+      >
       <Button type="submit" disabled={disabled || path.trim().length === 0}
         ><FolderOpen data-icon="inline-start" />Open repository</Button
       >
@@ -198,3 +238,111 @@
     {/if}
   </div>
 </section>
+
+<Dialog.Root bind:open={pickerOpen}>
+  <Dialog.Content class="max-w-2xl" data-testid="repository-path-picker">
+    <Dialog.Header>
+      <Dialog.Title>Choose a repository folder</Dialog.Title>
+      <Dialog.Description>
+        Browse directories through the local coordinator. Nothing is uploaded
+        and file contents are never returned.
+      </Dialog.Description>
+    </Dialog.Header>
+
+    <form
+      class="flex items-center gap-2"
+      onsubmit={(event) => {
+        event.preventDefault();
+        void browse(pickerPath);
+      }}
+    >
+      <Input
+        class="min-w-0 flex-1 font-mono text-xs"
+        bind:value={pickerPath}
+        aria-label="Path to browse"
+      />
+      <Button type="submit" variant="outline" disabled={pickerBusy}>Go</Button>
+    </form>
+
+    {#if pickerError !== null}
+      <p
+        class="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger"
+      >
+        {pickerError}
+      </p>
+    {:else if pickerData !== null}
+      <div
+        class="flex items-center justify-between gap-3 text-xs text-muted-foreground"
+      >
+        <span class="min-w-0 truncate font-mono" title={pickerData.path}
+          >{pickerData.path}</span
+        >
+        {#if pickerData.parentPath !== null}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onclick={() => void browse(pickerData?.parentPath ?? "~")}
+            disabled={pickerBusy}
+          >
+            <ChevronLeft data-icon="inline-start" />Up
+          </Button>
+        {/if}
+      </div>
+      <div class="max-h-72 overflow-y-auto rounded-md border border-border">
+        {#if pickerData.entries.length === 0}
+          <p class="p-4 text-center text-xs text-muted-foreground">
+            No directories here.
+          </p>
+        {:else}
+          {#each pickerData.entries as entry (entry.path)}
+            <div
+              class="flex items-center gap-2 border-b border-border/60 px-3 py-2 last:border-b-0 hover:bg-muted/40"
+            >
+              <FolderOpen class="size-4 shrink-0 text-primary" />
+              <span class="min-w-0 flex-1 truncate text-sm" title={entry.path}
+                >{entry.name}</span
+              >
+              {#if entry.kind === "repository"}
+                <Button
+                  type="button"
+                  size="sm"
+                  onclick={() => chooseRepository(entry.path)}>Open</Button
+                >
+              {:else}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onclick={() => void browse(entry.path)}
+                  disabled={pickerBusy}>Browse</Button
+                >
+              {/if}
+            </div>
+          {/each}
+        {/if}
+      </div>
+      {#if pickerData.truncated}
+        <p class="text-xs text-muted-foreground">
+          Only the first 200 directories are shown.
+        </p>
+      {/if}
+    {:else if pickerBusy}
+      <p class="p-6 text-center text-xs text-muted-foreground">
+        Reading directories…
+      </p>
+    {/if}
+
+    <Dialog.Footer>
+      <Button variant="ghost" onclick={() => (pickerOpen = false)}
+        >Cancel</Button
+      >
+      <Button
+        disabled={pickerData === null}
+        onclick={() => chooseRepository(pickerData?.path ?? "")}
+      >
+        Use this folder
+      </Button>
+    </Dialog.Footer>
+  </Dialog.Content>
+</Dialog.Root>

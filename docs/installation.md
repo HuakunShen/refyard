@@ -96,9 +96,10 @@ URL never appears in the machine-readable output.
 ### Development launcher
 
 From a checkout, `pnpm dev` starts the Vite UI and an authenticated empty coordinator, then opens
-the repository launcher. Use **Open** to enter an absolute local repository path, **Recent** to
-reopen a repository explicitly opened in this browser, and **New Tab** to keep more than one
-approved repository in the same workbench. After a repository has been explicitly opened, the
+the repository launcher. Use **Open** to enter a local repository path or **Browse** to navigate
+directories through the coordinator; `~/Dev/kunkun` is expanded against the local user's home.
+**Recent** reopens a repository explicitly opened in this browser, and **New Tab** keeps more than
+one approved repository in the same workbench. After a repository has been explicitly opened, the
 **Clone / Create** forms use its approved workspace root and return to the active repository tab.
 
 The browser never scans the filesystem or sends Git arguments. Each repository is registered

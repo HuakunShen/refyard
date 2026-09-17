@@ -20,14 +20,16 @@
  *   and bounded diagnostics — never a fabricated empty list.
  */
 import { createHash } from "node:crypto";
-import { realpath } from "node:fs/promises";
-import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { lstat, readdir, realpath } from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 import {
   LIMITS,
   RUNTIME_LIMITS,
   capabilitiesResponseSchema,
   diffResponseSchema,
+  filesystemEntriesResponseSchema,
   historyPageSchema,
   validateHistoryQuery,
   OBJECT_ID_LENGTHS,
@@ -41,6 +43,7 @@ import {
   worktreesResponseSchema,
   type CapabilitiesResponse,
   type DiffResponse,
+  type FilesystemEntriesResponse,
   type FilePatch,
   type GitCapabilities,
   type HistoryPage,
@@ -94,6 +97,7 @@ import type { PreviewStore } from "../filesystem/preview.js";
 import type { SnapshotStore, SnapshotRecord } from "./snapshots.js";
 import type { NormalizedHistoryIntent } from "./snapshot-types.js";
 import { statusIndexKey } from "./preconditions.js";
+import { expandUserPath } from "../filesystem/user-path.js";
 import {
   createGitDirLookup,
   fileExistsIn,
@@ -177,6 +181,9 @@ export interface DiffQuery {
 
 export interface ReadService {
   capabilities(): CapabilitiesResponse;
+  filesystemEntries(query: {
+    readonly path?: string;
+  }): Promise<FilesystemEntriesResponse>;
   repositories(): Promise<RepositoriesResponse>;
   status(query: StatusQuery): Promise<StatusSnapshot>;
   history(query: HistoryQuery): Promise<HistoryPage>;
@@ -356,6 +363,94 @@ export function createReadService(options: ReadServiceOptions): ReadService {
           unavailable: [...options.unavailable],
         },
         "capabilities",
+      );
+    },
+
+    async filesystemEntries(query): Promise<FilesystemEntriesResponse> {
+      const requested = expandUserPath(query.path ?? homedir());
+      if (!isAbsolute(requested)) {
+        throw new ReadProblem({
+          code: "InvalidRequest",
+          message:
+            "the path selector requires an absolute path or ~/ shorthand",
+        });
+      }
+
+      let current: string;
+      try {
+        current = await realpath(requested);
+        const currentInfo = await lstat(current);
+        if (!currentInfo.isDirectory()) {
+          throw new ReadProblem({
+            code: "InvalidRequest",
+            message: `the path selector target is not a directory: ${requested}`,
+          });
+        }
+      } catch (error) {
+        if (error instanceof ReadProblem) {
+          throw error;
+        }
+        throw new ReadProblem({
+          code: "NotFound",
+          message: `the path selector directory does not exist: ${requested}`,
+        });
+      }
+
+      let children;
+      try {
+        children = await readdir(current, { withFileTypes: true });
+      } catch {
+        throw new ReadProblem({
+          code: "Forbidden",
+          message: `the path selector cannot read directory: ${current}`,
+        });
+      }
+
+      const entries: FilesystemEntriesResponse["entries"] = [];
+      const childrenToInspect = children.slice(0, 201);
+      for (const child of childrenToInspect) {
+        if (child.name === ".git") {
+          continue;
+        }
+        if (!child.isDirectory() && !child.isSymbolicLink()) {
+          continue;
+        }
+        const childPath = join(current, child.name);
+        let resolvedChild = childPath;
+        try {
+          resolvedChild = await realpath(childPath);
+          if (!(await lstat(resolvedChild)).isDirectory()) {
+            continue;
+          }
+        } catch {
+          continue;
+        }
+        let kind: "directory" | "repository" = "directory";
+        try {
+          await lstat(join(resolvedChild, ".git"));
+          kind = "repository";
+        } catch {
+          // A directory without a Git marker remains navigable.
+        }
+        entries.push({ name: child.name, path: resolvedChild, kind });
+      }
+      entries.sort((left, right) =>
+        `${left.kind === "repository" ? "0" : "1"}${left.name.toLocaleLowerCase()}`.localeCompare(
+          `${right.kind === "repository" ? "0" : "1"}${right.name.toLocaleLowerCase()}`,
+        ),
+      );
+      const truncated =
+        children.length > childrenToInspect.length || entries.length > 200;
+      const boundedEntries = entries.slice(0, 200);
+      return checked(
+        filesystemEntriesResponseSchema,
+        {
+          path: current,
+          parentPath: dirname(current) === current ? null : dirname(current),
+          entries: boundedEntries,
+          truncated,
+        },
+        "filesystem",
       );
     },
 

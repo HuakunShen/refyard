@@ -63,6 +63,7 @@ export {
   type ResolvedHandle,
 } from "./filesystem/handles.js";
 export { createTextCodec, encodeExecutionPath } from "./filesystem/codec.js";
+export { expandUserPath } from "./filesystem/user-path.js";
 export {
   createRecoveryStore,
   DEFAULT_RECOVERY_BUDGET,
