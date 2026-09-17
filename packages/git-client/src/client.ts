@@ -114,12 +114,24 @@ export interface GitClient {
     readonly sessionId: string;
   }>;
   health(): Promise<HealthResponse>;
-  capabilities(): Promise<CapabilitiesResponse>;
+  /**
+   * A target selector is optional and only meaningful against a host that has the
+   * execution-target extension: an older service rejects the unknown parameter, so
+   * the caller omits it there rather than sending it and hoping.
+   */
+  capabilities(query?: {
+    readonly targetId?: string;
+    readonly repositoryId?: string;
+  }): Promise<CapabilitiesResponse>;
   repositories(): Promise<RepositoriesResponse>;
   filesystemEntries(query?: {
     readonly path?: string;
+    readonly targetId?: string;
   }): Promise<FilesystemEntriesResponse>;
-  registerRepository(path: string): Promise<RepositoriesResponse>;
+  registerRepository(
+    path: string,
+    options?: { readonly targetId?: string },
+  ): Promise<RepositoriesResponse>;
   revokeRepository(repositoryId: string): Promise<RepositoriesResponse>;
   status(query: {
     readonly repositoryId: string;
@@ -260,8 +272,15 @@ export function createGitClient(options: GitClientOptions): GitClient {
      */
     health: () => send("GET", "/health", clientHealthResponseSchema),
 
-    capabilities: () =>
-      send("GET", "/api/v1/capabilities", clientCapabilitiesResponseSchema),
+    capabilities: (query) =>
+      send(
+        "GET",
+        `/api/v1/capabilities${toQueryString({
+          targetId: query?.targetId,
+          repositoryId: query?.repositoryId,
+        })}`,
+        clientCapabilitiesResponseSchema,
+      ),
     repositories: () =>
       send("GET", "/api/v1/repositories", clientRepositoriesResponseSchema),
 
@@ -270,16 +289,17 @@ export function createGitClient(options: GitClientOptions): GitClient {
         "GET",
         `/api/v1/filesystem/entries${toQueryString({
           path: query?.path,
+          targetId: query?.targetId,
         })}`,
         filesystemEntriesResponseSchema,
       ),
 
-    registerRepository: (path) =>
+    registerRepository: (path, options) =>
       send(
         "POST",
         "/api/v1/repositories/register",
         clientRepositoriesResponseSchema,
-        { path },
+        options?.targetId === undefined ? { path } : { path, targetId: options.targetId },
       ),
 
     revokeRepository: (repositoryId) =>

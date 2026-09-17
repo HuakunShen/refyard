@@ -12,11 +12,7 @@ import type { HostService } from "./host.js";
 import type { GitReadService, MutationService } from "./service.js";
 
 export type ConnectionPhase =
-  | "connecting"
-  | "ready"
-  | "reconnecting"
-  | "disconnected"
-  | "failed";
+  "connecting" | "ready" | "reconnecting" | "disconnected" | "failed";
 
 export interface ConnectionState {
   readonly phase: ConnectionPhase;
@@ -24,7 +20,13 @@ export interface ConnectionState {
 }
 
 export interface SessionMetadata {
-  readonly sessionId: string;
+  /**
+   * The service-issued session id when the transport has one and the adapter
+   * learned it. A bearer restored from storage identifies a session the client
+   * cannot name, so this is null there rather than an invented identifier; the
+   * native adapter always has a real one.
+   */
+  readonly sessionId: string | null;
   readonly serviceInstanceId: string;
   /**
    * Changes with the session and with the authorization round, so cached reads can

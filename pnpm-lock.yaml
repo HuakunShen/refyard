@@ -132,6 +132,9 @@ importers:
       '@playwright/test':
         specifier: 'catalog:'
         version: 1.63.0
+      '@refyard/backend-http':
+        specifier: workspace:*
+        version: link:packages/backend-http
       '@refyard/cli':
         specifier: workspace:*
         version: link:apps/cli
@@ -279,11 +282,29 @@ importers:
         specifier: 'catalog:'
         version: 4.132.0(@cloudflare/workers-types@5.20260915.1)(@types/node@26.5.1)
 
+  packages/backend-http:
+    dependencies:
+      '@refyard/git-client':
+        specifier: workspace:*
+        version: link:../git-client
+      '@refyard/git-contract':
+        specifier: workspace:*
+        version: link:../git-contract
+      '@refyard/git-service':
+        specifier: workspace:*
+        version: link:../git-service
+      zod:
+        specifier: 'catalog:'
+        version: 4.6.5
+
   packages/git-client:
     dependencies:
       '@refyard/git-contract':
         specifier: workspace:*
         version: link:../git-contract
+      '@refyard/git-service':
+        specifier: workspace:*
+        version: link:../git-service
 
   packages/git-contract:
     dependencies:

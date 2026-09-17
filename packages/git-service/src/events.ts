@@ -11,7 +11,10 @@ import type { EventEnvelope, Problem } from "@refyard/git-contract";
 export interface EventObserver {
   onEvent(event: EventEnvelope): void;
   /** Events `fromSequence…toSequence` were dropped; re-read rather than guess. */
-  onGap(gap: { readonly fromSequence: number; readonly toSequence: number }): void;
+  onGap(gap: {
+    readonly fromSequence: number;
+    readonly toSequence: number;
+  }): void;
   onState(state: "connecting" | "live" | "reconnecting" | "closed"): void;
   onError(problem: Problem): void;
 }

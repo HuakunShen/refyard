@@ -1,5 +1,5 @@
 {
-  "name": "@refyard/git-client",
+  "name": "@refyard/backend-http",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,7 +11,9 @@
     "check": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@refyard/git-client": "workspace:*",
     "@refyard/git-contract": "workspace:*",
-    "@refyard/git-service": "workspace:*"
+    "@refyard/git-service": "workspace:*",
+    "zod": "catalog:"
   }
 }

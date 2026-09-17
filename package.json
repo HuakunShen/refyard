@@ -29,6 +29,7 @@
   },
   "devDependencies": {
     "@playwright/test": "catalog:",
+    "@refyard/backend-http": "workspace:*",
     "@refyard/cli": "workspace:*",
     "@refyard/git-client": "workspace:*",
     "@refyard/git-contract": "workspace:*",

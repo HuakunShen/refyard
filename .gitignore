@@ -55,8 +55,13 @@ references
 .refyard-dev/
 
 # Generated publication staging (see scripts/build-release.ts). The manifest in
-# packages/npm-dist is source; everything it stages next to it is not.
+packages/npm-dist is source; everything it stages next to it is not.
 packages/npm-dist/bin/
 packages/npm-dist/dist/
 packages/npm-dist/web/
 packages/npm-dist/*.tgz
+
+# Rust build output. `Cargo.lock` is tracked on purpose: the native crates form a
+# workspace, and a released binary has to be reproducible from its lockfile.
+target/
+

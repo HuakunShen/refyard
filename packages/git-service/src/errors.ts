@@ -6,7 +6,11 @@
  * where the data came from. What crosses this boundary is the contract's `Problem`
  * code, its retryability, and its redacted details — nothing about the transport.
  */
-import { problemSchema, type Problem, type ProblemCode } from "@refyard/git-contract";
+import {
+  problemSchema,
+  type Problem,
+  type ProblemCode,
+} from "@refyard/git-contract";
 
 export interface BackendErrorOptions {
   /** Transport-level status, for diagnostics. Never the basis of a decision. */
@@ -53,7 +57,10 @@ export function isBackendError(value: unknown): value is BackendError {
  */
 export function normalizeProblem(
   input: unknown,
-  fallback: { readonly message: string; readonly correlationId?: string | null },
+  fallback: {
+    readonly message: string;
+    readonly correlationId?: string | null;
+  },
 ): Problem {
   const direct = problemSchema.safeParse(input);
   if (direct.success) return direct.data;
@@ -61,7 +68,9 @@ export function normalizeProblem(
   // A `{ problem: … }` envelope is what both the HTTP error body and the native
   // command rejection carry, so unwrapping is safe without asserting a type.
   const wrapped = problemSchema.safeParse(
-    typeof input === "object" && input !== null ? Reflect.get(input, "problem") : undefined,
+    typeof input === "object" && input !== null
+      ? Reflect.get(input, "problem")
+      : undefined,
   );
   if (wrapped.success) return wrapped.data;
 

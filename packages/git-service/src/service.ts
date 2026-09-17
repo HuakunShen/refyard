@@ -85,7 +85,9 @@ export interface GitReadService {
   health(): Promise<HealthResponse>;
   capabilities(query?: TargetSelector): Promise<CapabilitiesResponse>;
   repositories(): Promise<RepositoriesResponse>;
-  filesystemEntries(query?: FilesystemEntriesQuery): Promise<FilesystemEntriesResponse>;
+  filesystemEntries(
+    query?: FilesystemEntriesQuery,
+  ): Promise<FilesystemEntriesResponse>;
   /** Registers a path the user chose. `targetId` names where that path lives. */
   registerRepository(
     path: string,
@@ -114,6 +116,8 @@ export type SubmitResult =
 export interface MutationService {
   submit(request: ParsedMutationRequest): Promise<SubmitResult>;
   get(operationId: string): Promise<OperationRecord>;
-  list(limit?: number): Promise<{ readonly operations: readonly OperationRecord[] }>;
+  list(
+    limit?: number,
+  ): Promise<{ readonly operations: readonly OperationRecord[] }>;
   cancel(operationId: string): Promise<OperationRecord>;
 }

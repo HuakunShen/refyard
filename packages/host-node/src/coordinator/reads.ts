@@ -179,10 +179,30 @@ export interface DiffQuery {
   readonly maxBytes?: number | undefined;
 }
 
+/**
+ * This host has exactly one execution target: the machine it runs on.
+ *
+ * A request that names another one is refused rather than answered. Reporting this
+ * machine's capabilities — or this machine's filesystem — for a target the caller
+ * believes is remote would be a lie about where Git runs, and it is the one lie a
+ * user cannot detect from the UI.
+ */
+export function refuseForeignTarget(targetId: string | undefined): void {
+  if (targetId === undefined) return;
+  throw new ReadProblem({
+    code: "UnsupportedOperation",
+    message:
+      "this service has a single local execution target and cannot address a targetId",
+  });
+}
+
 export interface ReadService {
-  capabilities(): CapabilitiesResponse;
+  capabilities(query?: {
+    readonly targetId?: string | undefined;
+  }): CapabilitiesResponse;
   filesystemEntries(query: {
     readonly path?: string;
+    readonly targetId?: string | undefined;
   }): Promise<FilesystemEntriesResponse>;
   repositories(): Promise<RepositoriesResponse>;
   status(query: StatusQuery): Promise<StatusSnapshot>;
@@ -336,7 +356,8 @@ export function createReadService(options: ReadServiceOptions): ReadService {
   }
 
   return {
-    capabilities(): CapabilitiesResponse {
+    capabilities(query): CapabilitiesResponse {
+      refuseForeignTarget(query?.targetId);
       return checked(
         capabilitiesResponseSchema,
         {
@@ -367,6 +388,7 @@ export function createReadService(options: ReadServiceOptions): ReadService {
     },
 
     async filesystemEntries(query): Promise<FilesystemEntriesResponse> {
+      refuseForeignTarget(query.targetId);
       const requested = expandUserPath(query.path ?? homedir());
       if (!isAbsolute(requested)) {
         throw new ReadProblem({

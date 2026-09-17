@@ -39,7 +39,7 @@ import {
   type Problem,
 } from "@refyard/git-contract";
 import type { ReadService } from "../coordinator/reads.js";
-import { ReadProblem } from "../coordinator/reads.js";
+import { ReadProblem, refuseForeignTarget } from "../coordinator/reads.js";
 import type { AuthorizationScope, Session } from "./auth.js";
 import { scopeForMutationKind } from "./scope-policy.js";
 import type { MutationCoordinator } from "../coordinator/submit.js";
@@ -149,7 +149,7 @@ export function readRoutes(): readonly RouteDefinition[] {
     readRoute(
       "/api/v1/capabilities",
       capabilitiesQuerySchema,
-      async (_query, services) => services.read.capabilities(),
+      async (query, services) => services.read.capabilities(query),
     ),
     readRoute(
       "/api/v1/repositories",
@@ -379,6 +379,9 @@ export function mutationRoutes(): readonly RouteDefinition[] {
       registerRepositoryRequestSchema,
       "workspace:manage",
       async (body, services, session) => {
+        // Registering `path` against a target this host does not have would approve
+        // a directory here while the caller believes it approved one elsewhere.
+        refuseForeignTarget(body.targetId);
         const management = services.repositoryManagement;
         if (management === undefined) {
           throw new ReadProblem({

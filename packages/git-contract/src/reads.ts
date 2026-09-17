@@ -242,6 +242,11 @@ export const repositoriesResponseSchema = z
 export const filesystemEntriesQuerySchema = z
   .strictObject({
     path: z.string().max(4096).optional(),
+    /**
+     * Which execution target's filesystem to list. A host that has only its own
+     * refuses the request rather than listing the wrong machine's directories.
+     */
+    targetId: targetIdSchema.optional(),
   })
   .meta({
     id: "FilesystemEntriesQuery",
