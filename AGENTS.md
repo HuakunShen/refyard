@@ -16,6 +16,45 @@ Missing from the delivered package: `CONTRACT.md`, `ACCEPTANCE.md`, `HOST_PORTAB
 authored in this repository as the single source (`packages/git-contract`), never as a
 near-duplicate type in two places.
 
+## 0. Scope revision — 2026-09-18: native desktop and agentless SSH
+
+On 2026-09-18 the user directed this repository to ship a **native desktop app** in addition to
+the browser forms: Rust + Tauri 2, reusing the same Svelte components through a `BackendAdapter`,
+with Git run by the target machine's own `git` and SSH run by the host machine's own OpenSSH.
+The decision is closed — do not re-open the selection (no Wails/Go/Electron/Node-sidecar
+comparison). The governing documents are:
+
+- `docs/superpowers/specs/2026-09-18-native-desktop-ssh-design.md`
+- `docs/superpowers/specs/2026-09-18-backend-adapter-contract.md`
+- `docs/superpowers/plans/2026-09-18-native-desktop-ssh.md`
+- `docs/acceptance/2026-09-18-native-desktop-ssh.md`
+
+What this revision changes, exactly — and nothing more:
+
+- §1's "one runtime for V1: Node" stays true **for the shipped browser, localhost and hosted
+  forms**: the Node CLI, the loopback HTTP service, the Cloudflare static build and their tests
+  must not regress. The clauses forbidding a native host ("no Rust/Axum", "no
+  Electron/Tauri/Wails") are historical for those forms and no longer forbid the native desktop
+  form. Node remains the only engine _inside_ the Node service; Rust is not a second engine there.
+- The native **desktop product does not ship, carry, download, or require Node, Bun, Deno, or any
+  other JS runtime**, and does not route its own backend traffic through localhost HTTP. Tauri
+  commands/events carry UI↔host traffic; the Rust application service is a library with a native
+  CLI, not a sidecar. Build-time JS tooling (pnpm, Vite, Vitest, bun scripts, SvelteKit) stays
+  allowed — a build dependency is not a product runtime dependency.
+- SSH uses the **host machine's** OpenSSH against the user's own `ssh_config`; the remote machine
+  installs nothing, and no key bytes, passphrases, or raw argv cross the browser or plugin
+  boundary.
+- The plan's layout additions (`packages/git-service`, `packages/backend-http`,
+  `packages/backend-tauri`, `apps/desktop`, `crates/refyard-{contract,core,host,http,cli}`) are
+  the target layout for this workstream; §4 gains each path as it is created.
+
+Everything else in this file — §2 safety rules, the scope/authorization model, fixture
+isolation, capability honesty, the ban on fabricating evidence — is unchanged and still binding
+on native code. In particular: the native host is **not** exempt from "one writer per common Git
+directory", "unknown is a result", preview-fingerprint preconditions, or the rule that only
+trusted code turns intentions into argv. Where the Rust implementation lags the Node one,
+`capabilities` reports the gap; it never reports unimplemented work as supported.
+
 ## 1. Architecture — non-negotiable
 
 ```
@@ -34,14 +73,17 @@ system git CLI → the target machine's repo, credentials, hooks
   inside the Node host. **Never expose `runGit(args, cwd)`, raw argv, shell, `cwd`, or `env` over
   HTTP, SSE, or any browser bridge.** The browser sends Git _intentions_; only trusted core turns
   intentions into argv.
-- **One runtime for V1: Node.** Development and releases are pinned to 26.8.2; the _published_
+- **One runtime for the browser forms: Node** (§0 covers the 2026-09-18 native scope revision).
+  Development and releases are pinned to 26.8.2; the _published_
   `engines` range is `>=22 <27`, because the packaged CLI completes its real lifecycle on every
   line still supported (22, 24, 26 — measured on 22.11.0, 22.23.2, 24.10.0, 25.2.1, 26.8.2) and
-  on 20.19.0 too, which the range excludes only because Node 20 is past its end of life. No
-  Rust/Axum, no Bun backend, no QuickJS/JSC/WinUI, no second engine, no native npm platform
-  packages, no Electron/Tauri/Wails, no built-in terminal.
+  on 20.19.0 too, which the range excludes only because Node 20 is past its end of life. The Node
+  service takes no second engine alongside it: no Bun backend, no QuickJS/JSC/WinUI, no native npm
+  platform packages, no Electron/Tauri/Wails shell around the web UI, no built-in terminal.
   (The v2 design package says 24.x because that was the current major when it was written; on
-  2026-09-14 the user directed this repository to Node 26 — same principle, one pinned major.)
+  2026-09-14 the user directed this repository to Node 26 — same principle, one pinned major.
+  The native desktop app is a separate binary per §0 that never loads the Node service, so it is
+  not a second engine inside this one.)
 - **Git Core is host-free.** `packages/git-core` and `packages/git-graph` must not import
   `node:*`, `bun:*`, DOM types, or use `Buffer`, `process`, `fetch`, `URL`, `TextEncoder`/
   `TextDecoder`, `AbortController`, `setTimeout`/`setInterval`, `Intl`, or implicit console output.
@@ -131,6 +173,20 @@ docs/                      product/north-star.md, discussions/, plans/, goals/, 
 references/                the delivered v2 design package (read-only)
 ```
 
+Native workstream paths (§0) — added as they are created:
+
+```
+packages/git-service/      transport-neutral TS service interfaces + BackendSession/BackendAdapter
+packages/backend-http/     HTTP+SSE adapter over the existing git-client
+packages/backend-tauri/    the only package allowed to import @tauri-apps/api
+apps/desktop/              Tauri package; reuses apps/web's Svelte build, no forked pages
+crates/refyard-contract/   Rust DTO projection of the checked-in JSON Schema
+crates/refyard-core/       pure bytes/parsers/planners — no host APIs
+crates/refyard-host/       Local/SSH execution providers, registry, jobs, journal, GitService
+crates/refyard-http/       optional Axum adapter; never a dependency of the desktop crate
+crates/refyard-cli/        native `refyard-native` doctor/open/serve
+```
+
 ## 5. Toolchain
 
 - **Node 26.8.2** (`.nvmrc`) for development and CI; `engines: { node: ">=22 <27" }` in the published
@@ -148,6 +204,12 @@ references/                the delivered v2 design package (read-only)
 - **tsdown** (rolldown) for production bundles; a neutral IIFE build proves core portability.
   `esbuild` may be used where a plain neutral bundle is simpler.
 - **bun 1.4.0** runs TypeScript dev scripts (`bun scripts/check-boundaries.ts`), never the product.
+- **Rust 1.98.0** (edition 2021, `rust-version = "1.98"`) for the native workstream. One root Cargo
+  workspace with `resolver = "2"`; default members are the headless crates so a CLI build never
+  needs a WebView. Rust code follows the same discipline as the TypeScript: bytes in, bytes out,
+  no `serde_json::Value` shortcuts around domain types, `deny_unknown_fields` on request payloads,
+  and every response validated against the checked-in JSON Schema. The crate that a native host
+  links must not depend on the HTTP adapter.
 - **No raw JavaScript files.** Sources, scripts, and build configs are `.ts`/`.svelte`/`.json`/
   `.css`/`.md`. Generated build output is exempt; scripts are TypeScript run by bun or Node 24.
 - **Formatting**: prettier (root, single `pnpm format`). Import order: node builtins, external,
@@ -180,11 +242,17 @@ references/                the delivered v2 design package (read-only)
 
 ## 7. Current execution scope
 
-Round 1 (this session's goal, `docs/goals/`): **T01–T07 — the read-only M1 loop** with the journal
-and queue substrate verified but no mutation exposed to users. T08–T15 (writes, packaging, PWA,
-release gates) follow after the M1 report; T16–T18 (Xross, Kunkun, native-host review) are out of
-scope until the standalone V1 ships. `capabilities` must simply omit anything unimplemented —
-never report it as supported, never fake a `202`.
+The active workstream is the native desktop and agentless SSH plan
+(`docs/superpowers/plans/2026-09-18-native-desktop-ssh.md`), executed task by task — D00…D14 for
+the first four deliverables (local App, SSH reads, stage/unstage/commit, native CLI + acceptance),
+then P01…P05 for full parity. Its acceptance matrix is
+`docs/acceptance/2026-09-18-native-desktop-ssh.md`; every cell is reported as PASS, PARTIAL,
+BLOCKED, or NOT RUN, and BLOCKED is never written as PASS.
+
+The earlier T01–T15 rounds (`docs/goals/`) remain historical: T01–T07 shipped the read-only M1
+loop, and their behaviour is a regression target, not a scope limit. T16–T18 (Xross, Kunkun) stay
+out of scope except for the reserved interfaces the native plan names. `capabilities` must simply
+omit anything unimplemented — never report it as supported, never fake a `202`.
 
 Product shape lives in `docs/product/north-star.md`: four usage forms (local workbench, managed
 workspaces, opt-in hosted UI, embedded core) and the decisions that keep them compatible, plus the

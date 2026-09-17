@@ -20,10 +20,11 @@ what they are allowed to ask for**.
 | 1   | Local workbench (default)               | one machine | loopback HTTP, ticket → bearer | **Implemented and packaged** — same-origin UI + Git service, see §3 |
 | 2   | Managed workspaces (many repositories)  | one machine | same, plus a registration API  | **Implemented locally** — explicit register/revoke evidence in §4   |
 | 3   | Hosted UI against a local host (opt-in) | two origins | cross-origin HTTP + password   | **Implemented locally; live deployment unverified**                 |
-| 4   | Embedded core inside a native host      | no Node     | no HTTP at all                 | **Decision: stay on Node** — T18 evidence in §6                     |
+| 4   | Embedded core inside a native host      | no Node     | no HTTP at all                 | **Building it as a Rust + Tauri 2 host** — §6, revision 2026-09-18  |
 
-Forms 1 and 2 are implemented locally. Form 3 remains an opt-in product decision, and form 4 has
-an evidence-backed decision to stay on Node for V1; the rules below keep both doors honest later.
+Forms 1 and 2 are implemented locally. Form 3 remains an opt-in product decision. Form 4 was
+decided to stay on Node on 2026-09-16; the user reversed that on 2026-09-18 and chose Rust +
+Tauri 2 (§6 carries the revision, and the native plan is the authority for it).
 
 ## 2. The invariant spine (holds in every form)
 
@@ -144,6 +145,18 @@ This form is genuinely useful and genuinely dangerous, so the requirements are s
 
 ## 6. Form 4 — Embedded core in a native host
 
+> **Revision 2026-09-18 — the decision flipped.** Form 4 is being built now, and the user chose
+> **Rust + Tauri 2** rather than an embedded JS engine: the desktop app carries no Node/Bun/Deno
+> and does not route its own backend through localhost HTTP. The authority for that workstream is
+> `docs/superpowers/specs/2026-09-18-native-desktop-ssh-design.md` plus its adapter contract,
+> implementation plan, and acceptance document; where this section and that design disagree about
+> form 4, the design wins. The reasoning below is kept because it is what makes the Rust host
+> checkable rather than trusted: the portable core and its fixture corpus are the oracle, and no
+> port may be claimed correct without running both implementations over the same fixtures. One
+> rule is added for the port: the Rust core must not become a second home for Git semantics —
+> planners and parsers are ported module by module against those fixtures, and `capabilities`
+> reports only what is actually implemented.
+
 Goal: a native app (Xross, Kunkun, a future Swift/Rust shell) runs the _same_ command construction
 and parsing logic in a small embedded JS runtime (JavaScriptCore, QuickJS, or another small engine)
 without dragging Node or a framework in. Bundle size is the constraint that keeps this honest.
@@ -206,6 +219,7 @@ auth/origin/SSE/static boundaries remain covered.
 
 | Date       | Decision                                                                                                                                                                                                                                                                                                                                                     |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 2026-09-18 | Form 4 is a Rust + Tauri 2 native host (no JS runtime, no localhost HTTP bridge) that reuses the same Svelte UI through a BackendAdapter, reads local repos directly and reaches remote repos through the host machine's system OpenSSH; the Node service stays the runtime for forms 1–3.                                                                   |
 | 2026-09-14 | One runtime for V1: Node 26.x. No Rust/Bun/second engine in the shipped service.                                                                                                                                                                                                                                                                             |
 | 2026-09-14 | Public contract is Zod-first (`packages/git-contract`), exported as JSON Schema.                                                                                                                                                                                                                                                                             |
 | 2026-09-15 | Four usage forms are supported targets; form 1 is the default and form 2 grows access only by explicit approval.                                                                                                                                                                                                                                             |
@@ -226,6 +240,10 @@ auth/origin/SSE/static boundaries remain covered.
 - Moving Git logic into a Node-only module for convenience. If it cannot run in a neutral runtime,
   it belongs behind `GitHostPort`.
 - Turning a form into two implementations of the same thing. Form 4 uses the _same_ core; form 3
-  uses the _same_ API; form 2 uses the _same_ registries with a bigger scope list.
+  uses the _same_ API; form 2 uses the _same_ registries with a bigger scope list. The 2026-09-18
+  Rust host is a **port, not a fork**: it may not drift from the TypeScript core on DTOs, error
+  classification, or safety semantics. What keeps that honest is the differential oracle — the
+  same fixtures run through both implementations and compared — not a promise in a document.
 - Claiming a form works because the code exists. Each form needs its own evidence, and forms 3 and
-  4 carry platform claims that only a real browser or a real embedded engine can settle.
+  4 carry platform claims that only a real browser, a real native window, and a real SSH server can
+  settle.
