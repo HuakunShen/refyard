@@ -22,6 +22,8 @@ export interface GitCommandSpec {
   readonly argv: readonly string[];
   readonly cwdHandle: string;
   readonly stdin?: Uint8Array;
+  /** Closed read-only text-search policy; the host chooses an available Unicode locale. */
+  readonly textSearchLocale?: "unicode";
   /**
    * Which deadline the host should apply. Reads are seconds, network operations
    * minutes, and hook-running writes get their own class because a user's hook may

@@ -157,7 +157,8 @@ export function planRevList(
     "rev-list",
     "--topo-order",
     "--parents",
-    `--max-count=${options.maxCount}`,
+    // Git stores commit timestamps as unsigned seconds; a pre-epoch upper bound is empty.
+    `--max-count=${options.committedBeforeSeconds !== undefined && options.committedBeforeSeconds < 0 ? 0 : options.maxCount}`,
   ];
   if (options.pathText !== undefined) {
     argv.unshift("--literal-pathspecs");
@@ -177,11 +178,19 @@ export function planRevList(
   if (options.message !== undefined) argv.push(`--grep=${options.message}`);
   if (options.author !== undefined) argv.push(`--author=${options.author}`);
   // A timestamp cutoff that stops traversal loses newer ancestors of older children.
-  if (options.committedAfterSeconds !== undefined) {
-    argv.push(`--since-as-filter=@${options.committedAfterSeconds}`);
+  if (
+    options.committedAfterSeconds !== undefined &&
+    options.committedAfterSeconds >= 0
+  ) {
+    // Git recognizes the complete object-header date grammar exactly, including
+    // epoch/small/far-future seconds. Bare @seconds can instead be guessed.
+    argv.push(`--since-as-filter=@${options.committedAfterSeconds} +0000`);
   }
-  if (options.committedBeforeSeconds !== undefined) {
-    argv.push(`--until=@${options.committedBeforeSeconds}`);
+  if (
+    options.committedBeforeSeconds !== undefined &&
+    options.committedBeforeSeconds >= 0
+  ) {
+    argv.push(`--min-age=${options.committedBeforeSeconds}`);
   }
   argv.push("--stdin");
   if (options.pathText !== undefined) argv.push("--", options.pathText);
@@ -189,7 +198,10 @@ export function planRevList(
   const stdin = new Uint8Array(
     [...`${tips.join("\n")}\n`].map((character) => character.charCodeAt(0)),
   );
-  return spec(context, argv, "rev-list topology", "readonly", stdin);
+  const command = spec(context, argv, "rev-list topology", "readonly", stdin);
+  return options.message !== undefined || options.author !== undefined
+    ? { ...command, textSearchLocale: "unicode" }
+    : command;
 }
 
 /**

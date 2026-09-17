@@ -23,6 +23,9 @@ function engineFor(repo: GitFixtureRepo): GitEngine {
     async run(spec) {
       const result = await repo.gitResult(spec.argv, {
         ...(spec.stdin === undefined ? {} : { stdin: spec.stdin }),
+        ...(spec.textSearchLocale === "unicode"
+          ? { env: { LC_ALL: "C.UTF-8" } }
+          : {}),
       });
       return {
         termination: result.signal === null ? "exit" : "signal",
@@ -78,8 +81,8 @@ describe("literal history filters", () => {
       "--regexp-ignore-case",
       "--grep=fix [literal].*",
       "--author=Alice (Dev)",
-      "--since-as-filter=@1700000000",
-      "--until=@1700000002",
+      "--since-as-filter=@1700000000 +0000",
+      "--min-age=1700000002",
       "--stdin",
       "--",
       ":(glob)*.ts",
@@ -358,5 +361,220 @@ describe("strict bounded commit resolution", () => {
         descendantOid: "b".repeat(40),
       }),
     ).rejects.toMatchObject({ code: "GitTimedOut" });
+  });
+});
+
+describe("exact early dates and Unicode search", () => {
+  it("handles epoch and pre-epoch bounds while traversing an epoch child", async () => {
+    // Approximate Git dates parse @0/@-1 as unrelated instants, and small positives are affected too.
+    const repo = await createRepo();
+    try {
+      await repo.git(
+        ["commit", "--quiet", "--allow-empty", "-m", "one second"],
+        {
+          env: {
+            GIT_AUTHOR_DATE: "1970-01-01T00:00:01Z",
+            GIT_COMMITTER_DATE: "1970-01-01T00:00:01Z",
+          },
+        },
+      );
+      const first = await repo.headOid();
+      await repo.git(
+        ["commit", "--quiet", "--allow-empty", "-m", "epoch child"],
+        {
+          env: {
+            GIT_AUTHOR_DATE: "1970-01-01T00:00:00Z",
+            GIT_COMMITTER_DATE: "1970-01-01T00:00:00Z",
+          },
+        },
+      );
+      const epoch = await repo.headOid();
+      const modern = await commit(repo, "modern", 1700000000);
+      const engine = engineFor(repo);
+      const input = {
+        ...context,
+        tips: [modern],
+        maxCount: 10,
+        skip: 0,
+        decoration: new Map<string, readonly string[]>(),
+      };
+      for (const bound of [-1, 0]) {
+        expect(
+          (
+            await readHistoryPage(engine, {
+              ...input,
+              committedAfterSeconds: bound,
+            })
+          ).commits.map((c) => c.oid),
+        ).toEqual([modern, epoch, first]);
+      }
+      expect(
+        (
+          await readHistoryPage(engine, { ...input, committedAfterSeconds: 1 })
+        ).commits.map((c) => c.oid),
+      ).toEqual([modern, first]);
+      expect(
+        (
+          await readHistoryPage(engine, { ...input, committedBeforeSeconds: 0 })
+        ).commits.map((c) => c.oid),
+      ).toEqual([epoch]);
+      expect(
+        (
+          await readHistoryPage(engine, {
+            ...input,
+            committedBeforeSeconds: -1,
+          })
+        ).commits,
+      ).toEqual([]);
+      expect(
+        (
+          await readHistoryPage(engine, { ...input, committedBeforeSeconds: 1 })
+        ).commits.map((c) => c.oid),
+      ).toEqual([epoch, first]);
+      expect(
+        (
+          await readHistoryPage(engine, {
+            ...input,
+            committedAfterSeconds: 1,
+            committedBeforeSeconds: 1,
+          })
+        ).commits.map((c) => c.oid),
+      ).toEqual([first]);
+      expect(
+        (
+          await readHistoryPage(engine, {
+            ...input,
+            onlyOid: epoch,
+            committedAfterSeconds: 1,
+          })
+        ).commits,
+      ).toEqual([]);
+    } finally {
+      await repo.dispose();
+    }
+  });
+
+  it.each([
+    "1970-01-01T00:00:01Z",
+    "2000-02-29T23:59:59Z",
+    "2100-03-01T00:00:00Z",
+    "9999-12-31T23:59:59Z",
+  ])(
+    "represents %s as an exact raw UTC cutoff accepted by Git",
+    async (date) => {
+      // Leap-century and far-future mistakes silently change a user's committed-after instant.
+      const seconds = Date.parse(date) / 1000;
+      const plan = planRevList(context, {
+        tips: ["a".repeat(40)],
+        maxCount: 1,
+        skip: 0,
+        committedAfterSeconds: seconds,
+      });
+      expect(plan.argv).toContain(`--since-as-filter=@${seconds} +0000`);
+      const repo = await createRepo();
+      try {
+        const parsed = new TextDecoder()
+          .decode(await repo.git(["rev-parse", `--since=@${seconds} +0000`]))
+          .trim();
+        expect(parsed).toBe(`--max-age=${seconds}`);
+        const oid = await commit(repo, "calendar boundary", seconds);
+        const input = {
+          ...context,
+          tips: [oid],
+          maxCount: 10,
+          skip: 0,
+          decoration: new Map<string, readonly string[]>(),
+        };
+        const engine = engineFor(repo);
+        expect(
+          (
+            await readHistoryPage(engine, {
+              ...input,
+              committedAfterSeconds: seconds,
+              committedBeforeSeconds: seconds,
+            })
+          ).commits.map((c) => c.oid),
+        ).toEqual([oid]);
+        expect(
+          (
+            await readHistoryPage(engine, {
+              ...input,
+              committedAfterSeconds: seconds + 1,
+            })
+          ).commits,
+        ).toEqual([]);
+        expect(
+          (
+            await readHistoryPage(engine, {
+              ...input,
+              committedBeforeSeconds: seconds - 1,
+            })
+          ).commits,
+        ).toEqual([]);
+      } finally {
+        await repo.dispose();
+      }
+    },
+  );
+
+  it("keeps impossible negative upper bounds empty and negative lower bounds unbounded", () => {
+    // Git commit timestamps are unsigned; negative stored timestamps are unsupported Git objects.
+    const input = { tips: ["a".repeat(40)], maxCount: 10, skip: 0 };
+    const before = planRevList(context, {
+      ...input,
+      committedBeforeSeconds: -1,
+    });
+    expect(before.argv).toContain("--max-count=0");
+    expect(before.argv.some((arg) => arg.startsWith("--min-age="))).toBe(false);
+    const after = planRevList(context, { ...input, committedAfterSeconds: -1 });
+    expect(after.argv.some((arg) => arg.startsWith("--since-as-filter="))).toBe(
+      false,
+    );
+  });
+
+  it("requests the closed Unicode locale hint only for literal text filters", () => {
+    const input = { tips: ["a".repeat(40)], maxCount: 1, skip: 0 };
+    expect(
+      planRevList(context, { ...input, message: "éclair" }).textSearchLocale,
+    ).toBe("unicode");
+    expect(
+      planRevList(context, { ...input, author: "élodie" }).textSearchLocale,
+    ).toBe("unicode");
+    expect(planRevList(context, input).textSearchLocale).toBeUndefined();
+    expect(
+      planRevList(context, { ...input, committedBeforeSeconds: 1 })
+        .textSearchLocale,
+    ).toBeUndefined();
+  });
+
+  it("matches Unicode case pairs through the command locale hint", async () => {
+    // LC_ALL=C only folds ASCII; author and message search must also fold non-ASCII case pairs.
+    const repo = await createRepo();
+    try {
+      const oid = await commit(
+        repo,
+        "Éclair [literal].*",
+        1700000000,
+        "Élodie (Dev)",
+      );
+      const input = {
+        ...context,
+        tips: [oid],
+        maxCount: 10,
+        skip: 0,
+        decoration: new Map<string, readonly string[]>(),
+      };
+      expect(
+        (
+          await readHistoryPage(engineFor(repo), {
+            ...input,
+            message: "éclair [literal].*",
+            author: "élodie (dev)",
+          })
+        ).commits.map((c) => c.oid),
+      ).toEqual([oid]);
+    } finally {
+      await repo.dispose();
+    }
   });
 });
