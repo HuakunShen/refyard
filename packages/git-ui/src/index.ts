@@ -118,6 +118,11 @@ export { default as ConfirmDialog } from "./components/ConfirmDialog.svelte";
 export { default as BranchPanel } from "./components/BranchPanel.svelte";
 export { default as CommitDetailPanel } from "./components/CommitDetailPanel.svelte";
 export { default as CommitGraph } from "./components/CommitGraph.svelte";
+export { default as HistoryFilterBar } from "./components/HistoryFilterBar.svelte";
+export type {
+  HistoryFilterDraft,
+  KnownHistoryPath,
+} from "./lib/history-filters.js";
 export { default as CommitList } from "./components/CommitList.svelte";
 export { default as CommitPanel } from "./components/CommitPanel.svelte";
 export { default as ConfirmAction } from "./components/ConfirmAction.svelte";

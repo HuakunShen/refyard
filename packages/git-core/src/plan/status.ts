@@ -116,6 +116,15 @@ export function planHeadOid(context: PlanContext): GitCommandSpec {
   );
 }
 
+/** Host-normalized predicates; no Git pattern or option list is accepted. */
+export interface HistoryFilters {
+  readonly message?: string;
+  readonly author?: string;
+  readonly committedAfterSeconds?: number;
+  readonly committedBeforeSeconds?: number;
+  readonly pathText?: string;
+}
+
 /**
  * Topology-only history for one fixed set of tips.
  *
@@ -131,30 +140,68 @@ export function planRevList(
     readonly maxCount: number;
     readonly skip: number;
     readonly firstParentOnly?: boolean;
-  },
+    /** Evaluate one located commit with the same predicates, without walking parents. */
+    readonly onlyOid?: string;
+  } & HistoryFilters,
 ): GitCommandSpec {
-  if (options.tips.length === 0) {
+  if (
+    options.onlyOid !== undefined &&
+    !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(options.onlyOid)
+  ) {
+    throw new Error("onlyOid must be a full object ID");
+  }
+  if (options.tips.length === 0 && options.onlyOid === undefined) {
     throw new Error("planRevList requires at least one tip");
   }
   const argv = [
     "rev-list",
     "--topo-order",
     "--parents",
-    `--max-count=${options.maxCount}`,
+    // Git stores commit timestamps as unsigned seconds; a pre-epoch upper bound is empty.
+    `--max-count=${options.committedBeforeSeconds !== undefined && options.committedBeforeSeconds < 0 ? 0 : options.maxCount}`,
   ];
+  if (options.pathText !== undefined) {
+    argv.unshift("--literal-pathspecs");
+  }
+  if (options.onlyOid !== undefined) {
+    argv.push("--no-walk=unsorted");
+  }
   if (options.skip > 0) {
     argv.push(`--skip=${options.skip}`);
   }
   if (options.firstParentOnly === true) {
     argv.push("--first-parent");
   }
+  if (options.message !== undefined || options.author !== undefined) {
+    argv.push("--fixed-strings", "--regexp-ignore-case");
+  }
+  if (options.message !== undefined) argv.push(`--grep=${options.message}`);
+  if (options.author !== undefined) argv.push(`--author=${options.author}`);
+  // A timestamp cutoff that stops traversal loses newer ancestors of older children.
+  if (
+    options.committedAfterSeconds !== undefined &&
+    options.committedAfterSeconds >= 0
+  ) {
+    // Git recognizes the complete object-header date grammar exactly, including
+    // epoch/small/far-future seconds. Bare @seconds can instead be guessed.
+    argv.push(`--since-as-filter=@${options.committedAfterSeconds} +0000`);
+  }
+  if (
+    options.committedBeforeSeconds !== undefined &&
+    options.committedBeforeSeconds >= 0
+  ) {
+    argv.push(`--min-age=${options.committedBeforeSeconds}`);
+  }
   argv.push("--stdin");
+  if (options.pathText !== undefined) argv.push("--", options.pathText);
+  const tips = options.onlyOid === undefined ? options.tips : [options.onlyOid];
   const stdin = new Uint8Array(
-    [...`${options.tips.join("\n")}\n`].map((character) =>
-      character.charCodeAt(0),
-    ),
+    [...`${tips.join("\n")}\n`].map((character) => character.charCodeAt(0)),
   );
-  return spec(context, argv, "rev-list topology", "readonly", stdin);
+  const command = spec(context, argv, "rev-list topology", "readonly", stdin);
+  return options.message !== undefined || options.author !== undefined
+    ? { ...command, textSearchLocale: "unicode" }
+    : command;
 }
 
 /**

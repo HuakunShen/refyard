@@ -190,7 +190,7 @@
 </script>
 
 <aside
-  class="flex min-h-0 flex-col border-r border-border/80 bg-canvas/40"
+  class="flex h-[28rem] shrink-0 flex-col border-r border-border/80 bg-canvas/40 lg:h-auto lg:min-h-0"
   data-testid="repository-sidebar"
 >
   <div class="shrink-0 p-2.5 pb-2">

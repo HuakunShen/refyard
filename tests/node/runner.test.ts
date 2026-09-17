@@ -36,6 +36,37 @@ function options(overrides: Partial<RunGitOptions> = {}): RunGitOptions {
   };
 }
 
+describe("history search locale scope", () => {
+  it("overrides only the current search invocation without mutating inherited or later hook environments", async () => {
+    // Prevents locale-dependent search while preserving user hook and other Git command environments.
+    const inherited = { LC_ALL: "C", LANG: "C" };
+    const ambientLocale = process.env["LC_ALL"];
+    const script = nodeScriptSpec(
+      "process.stdout.write(process.env.LC_ALL + '|' + process.env.LANG)",
+    );
+    const filtered = await runGit(
+      { ...script, textSearchLocale: "unicode" },
+      { runId: "locale-search" },
+      options({ env: inherited }),
+    );
+    expect(new TextDecoder().decode(filtered.stdout)).toBe("C.UTF-8|C");
+    const ordinary = await runGit(
+      script,
+      { runId: "locale-ordinary" },
+      options({ env: inherited }),
+    );
+    expect(new TextDecoder().decode(ordinary.stdout)).toBe("C|C");
+    const hook = await runGit(
+      { ...script, deadlineClass: "hook" },
+      { runId: "locale-hook" },
+      options({ env: inherited }),
+    );
+    expect(new TextDecoder().decode(hook.stdout)).toBe("C|C");
+    expect(inherited).toEqual({ LC_ALL: "C", LANG: "C" });
+    expect(process.env["LC_ALL"]).toBe(ambientLocale);
+  });
+});
+
 describe("runGit termination", () => {
   it("reports a clean exit with the exact bytes the process wrote", async () => {
     const outcome = await runGit(

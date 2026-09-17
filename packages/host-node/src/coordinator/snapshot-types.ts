@@ -21,3 +21,18 @@ export interface CursorPayload {
   readonly repositoryId: string;
   readonly worktreeId: string | null;
 }
+
+/** Server-owned resolved history semantics; never exposed by a cursor. */
+export interface NormalizedHistoryIntent {
+  readonly firstParentOnly: boolean;
+  readonly message: string | null;
+  readonly author: string | null;
+  readonly resolvedRefOid: string | null;
+  readonly committedAfterSeconds: number | null;
+  readonly committedBeforeSeconds: number | null;
+  readonly resolvedPathText: string | null;
+  readonly oid: string | null;
+  /** Distinguishes an unmatched locator from an ordinary unrestricted walk. */
+  readonly oidLookup: boolean;
+  readonly topology: "continuous" | "sparse";
+}

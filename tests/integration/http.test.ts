@@ -135,7 +135,10 @@ describe("static assets", () => {
     const second = await mkdtemp(join(tmpdir(), "refyard-build-two-"));
     const linkParent = await mkdtemp(join(tmpdir(), "refyard-current-"));
     const link = join(linkParent, "web");
-    await writeFile(join(first, "200.html"), "<!doctype html><title>one</title>");
+    await writeFile(
+      join(first, "200.html"),
+      "<!doctype html><title>one</title>",
+    );
     await writeFile(
       join(second, "200.html"),
       "<!doctype html><title>two</title>",
@@ -376,6 +379,59 @@ describe("git client", () => {
     expect(second.commits.some((commit) => firstOids.has(commit.oid))).toBe(
       false,
     );
+  });
+
+  it("carries literal history filters through HTTP and continues the pinned query", async () => {
+    const expected: string[] = [];
+    for (let index = 0; index < 3; index += 1) {
+      await repo.write("known[1].txt", `${index}`);
+      await repo.git(["add", "known[1].txt"]);
+      await repo.git(["commit", "-m", `fix [auth].* + spaces ${index}`], {
+        env: {
+          GIT_AUTHOR_NAME: "Alice (Dev)",
+          GIT_COMMITTER_DATE: "2026-06-01T00:00:00Z",
+        },
+      });
+      expected.unshift(await repo.headOid());
+    }
+    await repo.write("known[1].txt", "dirty");
+    const { client } = await pairedClient();
+    const status = await client.status({ repositoryId: service.repositoryId });
+    const first = await client.history({
+      repositoryId: service.repositoryId,
+      limit: 1,
+      message: "fix [auth].* + spaces",
+      author: "Alice (Dev)",
+      refFullName: "refs/heads/main",
+      committedAfter: "2026-06-01T00:00:00Z",
+      committedBefore: "2026-06-01T00:00:00Z",
+      pathId: status.entries[0]?.pathId ?? "",
+    });
+    expect(first.commits.map((commit) => commit.oid)).toEqual(
+      expected.slice(0, 1),
+    );
+    expect(first.topology).toBe("sparse");
+    const second = await client.history({
+      repositoryId: service.repositoryId,
+      cursor: first.nextCursor ?? "",
+    });
+    expect(second.commits.map((commit) => commit.oid)).toEqual(
+      expected.slice(1, 2),
+    );
+    // Prevents a query string appended by a client from redefining its cursor.
+    await expect(
+      client.history({
+        repositoryId: service.repositoryId,
+        cursor: first.nextCursor ?? "",
+        message: "fix",
+      }),
+    ).rejects.toMatchObject({ code: "InvalidRequest", status: 400 });
+    await expect(
+      client.history({
+        repositoryId: service.repositoryId,
+        message: "fix\nbase",
+      }),
+    ).rejects.toMatchObject({ code: "InvalidRequest", status: 400 });
   });
 
   it("reads a diff for one path", async () => {

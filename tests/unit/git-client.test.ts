@@ -27,7 +27,10 @@ describe("GitService session exchange", () => {
       },
     });
 
-    await client.exchangeTicket("ticket-value-that-is-long-enough", "hosted-password");
+    await client.exchangeTicket(
+      "ticket-value-that-is-long-enough",
+      "hosted-password",
+    );
 
     expect(request?.body).toBe(
       JSON.stringify({
@@ -36,4 +39,93 @@ describe("GitService session exchange", () => {
       }),
     );
   });
+});
+
+describe("typed history query transport", () => {
+  it("encodes literal filters and sends cursor-only continuation", async () => {
+    const requests: URL[] = [];
+    const client = createGitClient({
+      baseUrl: "http://127.0.0.1:9595",
+      fetch: async (input) => {
+        requests.push(new URL(String(input)));
+        return new Response(
+          JSON.stringify({
+            snapshotId: "snap_test",
+            repositoryId: "repo_test",
+            readAt: "2026-09-17T00:00:00Z",
+            objectFormat: "sha1",
+            shallow: false,
+            commits: [],
+            nextCursor: null,
+            tipsMoved: false,
+            truncated: false,
+            detail: null,
+            topology: "sparse",
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      },
+    });
+    await client.history({
+      repositoryId: "repo_test",
+      message: "fix [auth].* + spaces",
+      author: "Alice (Dev)",
+      refFullName: "refs/heads/topic",
+      committedAfter: "2026-01-01T00:00:00Z",
+      committedBefore: "2026-02-01T00:00:00Z",
+      pathId: "path_known",
+    });
+    expect(requests[0]?.searchParams.get("message")).toBe(
+      "fix [auth].* + spaces",
+    );
+    expect(requests[0]?.searchParams.get("author")).toBe("Alice (Dev)");
+    expect(requests[0]?.searchParams.get("refFullName")).toBe(
+      "refs/heads/topic",
+    );
+    expect(requests[0]?.searchParams.get("committedAfter")).toBe(
+      "2026-01-01T00:00:00Z",
+    );
+    expect(requests[0]?.searchParams.get("committedBefore")).toBe(
+      "2026-02-01T00:00:00Z",
+    );
+    expect(requests[0]?.searchParams.get("pathId")).toBe("path_known");
+    await client.history({
+      repositoryId: "repo_test",
+      cursor: "cur_known",
+      detailOid: "a".repeat(40),
+    });
+    expect([...requests[1]!.searchParams.keys()]).toEqual([
+      "repositoryId",
+      "cursor",
+      "detailOid",
+    ]);
+    await client.history({ repositoryId: "repo_test", oidPrefix: "abcd" });
+    expect(requests[2]?.searchParams.get("oidPrefix")).toBe("abcd");
+  });
+});
+
+it("refuses an older history response without explicit topology", async () => {
+  // Prevents silently treating an unknown topology contract as a continuous graph.
+  const client = createGitClient({
+    baseUrl: "http://127.0.0.1:9595",
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          snapshotId: "snap_test",
+          repositoryId: "repo_test",
+          readAt: "2026-09-17T00:00:00Z",
+          objectFormat: "sha1",
+          shallow: false,
+          commits: [],
+          nextCursor: null,
+          tipsMoved: false,
+          truncated: false,
+          detail: null,
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+  });
+  await expect(
+    client.history({ repositoryId: "repo_test" }),
+  ).rejects.toMatchObject({ code: "InternalError" });
 });

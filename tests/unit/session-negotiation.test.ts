@@ -9,6 +9,7 @@
 import { describe, expect, it } from "vitest";
 import {
   UI_API_MAJOR,
+  UI_CONTRACT_VERSION,
   blocksWrites,
   negotiateSession,
 } from "../../apps/web/src/lib/session-negotiation.ts";
@@ -16,8 +17,22 @@ import {
 const service = {
   serviceInstanceId: "srvc_a",
   apiMajor: UI_API_MAJOR,
-  contractVersion: "1.0.0",
+  contractVersion: UI_CONTRACT_VERSION,
 };
+
+/** Keep this fixture strictly newer when the shipped contract version changes. */
+function newerContractVersion(): string {
+  const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(UI_CONTRACT_VERSION);
+  const major = match?.[1];
+  const minor = match?.[2];
+  const patch = match?.[3];
+  if (major === undefined || minor === undefined || patch === undefined) {
+    throw new Error(
+      "the current contract must use a three-part numeric version",
+    );
+  }
+  return `${major}.${minor}.${Number(patch) + 1}`;
+}
 
 describe("session negotiation", () => {
   it("accepts a session from the same instance", () => {
@@ -92,7 +107,7 @@ describe("session negotiation", () => {
       { instanceId: "srvc_a", hasToken: true },
       {
         ...service,
-        contractVersion: "1.1.0",
+        contractVersion: newerContractVersion(),
       },
     );
     expect(verdict.kind).toEqual("readOnlyCompatibility");

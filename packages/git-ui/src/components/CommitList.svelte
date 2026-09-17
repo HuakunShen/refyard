@@ -40,6 +40,8 @@
   interface Props {
     /** Graph rows, index-aligned with `commits`. */
     rows: readonly GraphRow[];
+    topology?: "continuous" | "sparse";
+    filtered?: boolean;
     commits: readonly CommitSummary[];
     selectedOid: string | null;
     /** Wall-clock milliseconds used for relative times, so rendering stays a pure function. */
@@ -66,6 +68,8 @@
 
   let {
     rows,
+    topology = "continuous",
+    filtered = false,
     commits,
     selectedOid,
     now,
@@ -120,7 +124,9 @@
 
   const items = $derived($virtualizer.getVirtualItems());
   const totalSize = $derived($virtualizer.getTotalSize());
-  const gutter = $derived(gutterWidth(laneCount, metrics));
+  const gutter = $derived(
+    topology === "sparse" ? 24 : gutterWidth(laneCount, metrics),
+  );
   const visibleRows = $derived(
     items
       .map((item) => rows[item.index])
@@ -185,7 +191,7 @@
     <StateBanner
       state="truncated"
       title="This page was truncated"
-      detail="The repository holds more commits than one page returns. Load more to continue from the previous page's lanes."
+      detail="More commits are available. Load more to continue this history."
     />
   {/if}
   {#if tipsMoved}
@@ -206,8 +212,10 @@
   {#if commits.length === 0}
     <StateBanner
       state="empty"
-      title="No commits yet"
-      detail="This repository has no history on these tips."
+      title={filtered ? "No matching commits" : "No commits yet"}
+      detail={filtered
+        ? "Try adjusting the filters or clear them to see all history."
+        : "This repository has no history on these tips."}
     />
   {:else}
     <div
@@ -215,20 +223,22 @@
       class="relative min-h-0 flex-1 overflow-auto rounded-md border border-border bg-panel"
     >
       <div class="relative" style="height: {totalSize}px">
-        <svg
-          class="pointer-events-none absolute top-0 left-0"
-          width={gutter}
-          height={totalSize}
-          aria-hidden="true"
-          data-slot="graph-gutter"
-        >
-          <CommitGraph
-            rows={visibleRows}
-            startIndex={firstVisible}
-            {metrics}
-            {selectedOid}
-          />
-        </svg>
+        {#if topology === "continuous"}
+          <svg
+            class="pointer-events-none absolute top-0 left-0"
+            width={gutter}
+            height={totalSize}
+            aria-hidden="true"
+            data-slot="graph-gutter"
+          >
+            <CommitGraph
+              rows={visibleRows}
+              startIndex={firstVisible}
+              {metrics}
+              {selectedOid}
+            />
+          </svg>
+        {/if}
 
         {#each items as item (item.key)}
           {@const commit = commits[item.index]}
@@ -238,6 +248,13 @@
               class="absolute top-0 right-0 left-0"
               style="height: {item.size}px; padding-left: {gutter}px; transform: translateY({item.start}px)"
             >
+              {#if topology === "sparse"}
+                <span
+                  aria-hidden="true"
+                  data-testid="sparse-commit-marker"
+                  class="pointer-events-none absolute left-2 top-1/2 size-2 -translate-y-1/2 rounded-full border border-muted-foreground/60 bg-panel"
+                ></span>
+              {/if}
               <ContextActionMenu
                 actions={contextActionsFor(commit)}
                 triggerClass="h-full w-full"

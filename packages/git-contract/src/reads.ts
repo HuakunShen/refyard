@@ -31,6 +31,7 @@ import {
 import { LIMITS, runtimeLimitsSchema } from "./limits.js";
 import {
   branchNameSchema,
+  fullRefNameSchema,
   remoteNameSchema,
   stashLocatorSchema,
   tagNameSchema,
@@ -403,6 +404,7 @@ export const historyPageSchema = z
     readAt: timestampSchema,
     objectFormat: objectFormatSchema,
     shallow: z.boolean(),
+    topology: z.enum(["continuous", "sparse"]),
     commits: z.array(commitSummarySchema),
     nextCursor: cursorSchema.nullable(),
     tipsMoved: z.boolean(),
@@ -893,6 +895,30 @@ export const historyQuerySchema = z
     limit: z.int().positive().max(LIMITS.historyMaxPageSize).optional(),
     detailOid: objectIdSchema.optional(),
     firstParentOnly: z.boolean().optional(),
+    message: z
+      .string()
+      .max(4096)
+      .optional()
+      .meta({
+        description:
+          "Trimmed single-line literal message search, 1–512 Unicode scalar values; semantic validation rejects NUL, CR/LF and unpaired surrogates.",
+      }),
+    author: z
+      .string()
+      .max(4096)
+      .optional()
+      .meta({
+        description:
+          "Trimmed single-line literal author search, 1–512 Unicode scalar values.",
+      }),
+    oidPrefix: z
+      .string()
+      .regex(/^[0-9a-f]{4,64}$/)
+      .optional(),
+    refFullName: fullRefNameSchema.optional(),
+    committedAfter: timestampSchema.optional(),
+    committedBefore: timestampSchema.optional(),
+    pathId: pathIdSchema.optional(),
   })
   .meta({
     id: "HistoryQuery",
@@ -1015,3 +1041,5 @@ export type PreviewsRequest = z.infer<typeof previewsRequestSchema>;
 export type PreviewsResponse = z.infer<typeof previewsResponseSchema>;
 export type EventPayload = z.infer<typeof eventPayloadSchema>;
 export type EventEnvelope = z.infer<typeof eventEnvelopeSchema>;
+
+export type HistoryQuery = z.infer<typeof historyQuerySchema>;

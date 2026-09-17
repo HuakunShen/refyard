@@ -23,9 +23,17 @@
  * them rather than resume a read against state nobody recorded.
  */
 import { randomBytes } from "node:crypto";
-import type { CursorPayload, SnapshotKind } from "./snapshot-types.js";
+import type {
+  CursorPayload,
+  SnapshotKind,
+  NormalizedHistoryIntent,
+} from "./snapshot-types.js";
 
-export type { CursorPayload, SnapshotKind } from "./snapshot-types.js";
+export type {
+  CursorPayload,
+  SnapshotKind,
+  NormalizedHistoryIntent,
+} from "./snapshot-types.js";
 
 export interface SnapshotRecord {
   readonly snapshotId: string;
@@ -36,6 +44,9 @@ export interface SnapshotRecord {
   /** Object names this read was taken from; history pages are served from these. */
   readonly tips: readonly string[];
   readonly headOid: string | null;
+  /** Fixed-size complete-ref/HEAD fingerprint, independent of bounded/scoped walk tips. */
+  readonly observedRefsFingerprint: string | null;
+  readonly historyIntent: NormalizedHistoryIntent | null;
   /**
    * Fingerprint of the index as this snapshot saw it, or null when the read did not
    * observe the index.
@@ -70,6 +81,8 @@ export interface SnapshotStore {
     readonly tips?: readonly string[];
     readonly headOid?: string | null;
     readonly indexKey?: string | null;
+    readonly observedRefsFingerprint?: string | null;
+    readonly historyIntent?: NormalizedHistoryIntent;
   }): SnapshotRecord;
   get(snapshotId: string): SnapshotRecord | null;
   /** Mint a cursor for a page; the id returned is the only thing the client sees. */
@@ -124,7 +137,12 @@ export function createSnapshotStore(
         repositoryId: input.repositoryId,
         worktreeId: input.worktreeId,
         createdAtMs: now(),
-        tips: input.tips ?? [],
+        tips: Object.freeze([...(input.tips ?? [])]),
+        observedRefsFingerprint: input.observedRefsFingerprint ?? null,
+        historyIntent:
+          input.historyIntent === undefined
+            ? null
+            : Object.freeze({ ...input.historyIntent }),
         headOid: input.headOid ?? null,
         indexKey: input.indexKey ?? null,
       };

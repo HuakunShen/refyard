@@ -1,6 +1,6 @@
 # History Search and Filters Design
 
-**Status:** Approved direction, ready for implementation planning
+**Status:** Implemented and locally verified on 2026-09-18; see [evidence](../../evidence/2026-09-18-history-search.md).
 
 **Date:** 2026-09-17
 
@@ -60,8 +60,8 @@ topology: "continuous" | "sparse";
 
 ### Field semantics
 
-- `message`: case-insensitive literal substring over commit messages. Length: 1–512 Unicode scalar values after trimming.
-- `author`: case-insensitive literal substring over Git author identity. Length: 1–512 after trimming.
+- `message`: case-insensitive literal substring over commit messages. Length: 1–512 Unicode scalar values after trimming; NUL, CR/LF and unpaired surrogates are rejected.
+- `author`: case-insensitive literal substring over Git author identity. Length: 1–512 Unicode scalar values after trimming, with the same single-line/control restrictions as message.
 - `oidPrefix`: lowercase hexadecimal, 4–64 characters. The host additionally validates the maximum against the repository object format.
 - `refFullName`: a fully qualified ref under `refs/`; it must also match a ref observed by the host for this repository.
 - `committedAfter` / `committedBefore`: UTC timestamps applied to committer time. If both exist, `committedAfter <= committedBefore` is required.
@@ -70,7 +70,7 @@ topology: "continuous" | "sparse";
 
 ### Cursor requests
 
-A request with `cursor` is a continuation request. It may include only `repositoryId`, optional `worktreeId`, `cursor`, and optional `detailOid`. It must not redefine `limit`, `firstParentOnly`, or any filter field. The host returns `InvalidRequest` if a continuation attempts to redefine walk semantics.
+A request with `cursor` is a continuation request. New clients include only `repositoryId`, optional `worktreeId`, `cursor`, and optional `detailOid`. It must not redefine any filter field. For existing v1 clients, redundant `limit` or `firstParentOnly` is accepted only when identical to the cursor/snapshot; conflicting values return `InvalidRequest`. New clients omit both fields. The cursor remains authoritative.
 
 `detailOid` remains orthogonal to the paged walk: callers may request one full commit body while continuing a history page.
 
@@ -86,13 +86,14 @@ interface NormalizedHistoryIntent {
   readonly resolvedRefOid: ObjectId | null;
   readonly committedAfterSeconds: number | null;
   readonly committedBeforeSeconds: number | null;
-  readonly resolvedPathBytes: Uint8Array | null;
+  readonly resolvedPathText: string | null;
   readonly oid: ObjectId | null;
+  readonly oidLookup: boolean; // distinguishes no match from an ordinary walk
   readonly topology: "continuous" | "sparse";
 }
 ```
 
-The snapshot stores this normalized intent together with the pinned tips. Cursor records continue that snapshot and offset; the client never receives or edits the normalized values.
+The snapshot stores this normalized intent together with the pinned walk tips and a fixed-size fingerprint of all observed refs and HEAD. The fingerprint is independent of the scoped/bounded walk tips, so movement outside the walk-tip limit is still detected without retaining thousands of ref strings per snapshot. Cursor records continue that snapshot and offset; the client never receives or edits the normalized values.
 
 This changes the current cursor rule from “continue this snapshot and offset” to “continue this exact snapshot, offset, page size, and normalized walk.” A ref moving, a path binding being evicted, or the browser changing its draft filters cannot alter later pages.
 
@@ -121,7 +122,7 @@ Resolution rules:
 
 `pathId` continues Refyard's existing path-authority model. The host resolves it through `PathRegistry.getForWorktree`, proves repository/worktree ownership, and requires an exact executable representation. An unrepresentable path fails with `UnsupportedPathEncoding` rather than being guessed from its display string.
 
-The resolved path bytes/text are copied into the normalized snapshot intent so later pages do not depend on the path registry entry still existing.
+The exact executable path text is copied into the normalized snapshot intent so later pages do not depend on the path registry entry still existing.
 
 This first release naturally supports history for files Refyard already knows, primarily changed files surfaced by status/diff. A future repository-tree read may mint path IDs for arbitrary tracked files without changing this history API.
 
@@ -131,7 +132,7 @@ Path filtering does not follow renames in this phase.
 
 The existing history workflow remains based on `rev-list` for topology and batched `cat-file` for commit bodies. `planRevList` is extended with typed optional filters; it remains the only place that constructs the history argv.
 
-For message/author search it uses fixed-string, case-insensitive Git limiting options. Date limits are passed as normalized numeric timestamps rather than locale-dependent free-form dates. Path input is supplied after `--` from the host-resolved binding. Tips remain OIDs sent through stdin, never browser-provided ref expressions.
+For message/author search it uses fixed-string, case-insensitive Git limiting options. A closed private command hint requests Unicode text matching; the Node adapter selects `C.UTF-8` for that read invocation only. No raw environment field enters the public contract, and other commands retain the host environment. Date limits are passed as normalized numeric timestamps rather than locale-dependent free-form dates. Path input is supplied after `--` from the host-resolved binding with literal pathspec handling. Date filtering traverses intervening older commits so clock skew cannot hide a matching ancestor. Tips remain OIDs sent through stdin, never browser-provided ref expressions.
 
 Representative semantics:
 
@@ -139,7 +140,7 @@ Representative semantics:
 git rev-list --topo-order --parents --max-count=N \
   --fixed-strings --regexp-ignore-case \
   --grep=<message> --author=<author> \
-  --max-age=<after-seconds> --min-age=<before-seconds> \
+  --since-as-filter="@<after-seconds> +0000" --min-age=<before-seconds> \
   --stdin -- <resolved-path>
 ```
 
@@ -207,7 +208,7 @@ History filter state lives in a focused pure model module, separate from TanStac
 The history infinite-query key includes the normalized applied filter:
 
 ```ts
-["history", baseUrl, token, repositoryId, appliedHistoryFilter]
+["history", baseUrl, token, repositoryId, appliedHistoryFilter];
 ```
 
 Every applied-filter change therefore owns a new page chain and cannot reuse an old cursor. `queries.svelte.ts` passes the typed fields only on page one; continuation requests send the cursor and repository/worktree identity.
@@ -240,7 +241,7 @@ The UI keeps the previous successful result visible while a new applied query is
 
 ## Compatibility
 
-The new query fields and `topology` response field are additive within the current API major. Existing clients that do not send filters receive the same continuous history behavior. Refyard's own client and web UI are updated in lockstep with the generated schema artifact.
+The new query fields and required `topology` response field use contract revision 1.1.0 within API major 1. Refyard's own client, service and web UI are updated in lockstep with the generated schema artifact. Older strict history clients may reject the additional response field, and newer clients reject old responses that lack topology. A mixed-version History response fails explicitly rather than silently assuming continuous ancestry; full old/new History interoperability is not claimed. Existing v1 callers that repeat a matching cursor page size/first-parent value are accepted without changing cursor authority.
 
 The MCP `get_commit` tool continues to request one full commit by OID and does not need search filters. A future MCP history-search tool can reuse the typed history query but is outside this phase.
 

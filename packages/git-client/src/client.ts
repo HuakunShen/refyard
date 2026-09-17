@@ -33,6 +33,7 @@ import {
   type CapabilitiesResponse,
   type DiffResponse,
   type HistoryPage,
+  type HistoryQuery,
   type PreviewsResponse,
   type Problem,
   type ProblemCode,
@@ -120,14 +121,7 @@ export interface GitClient {
     readonly worktreeId?: string;
     readonly includeIgnored?: boolean;
   }): Promise<StatusSnapshot>;
-  history(query: {
-    readonly repositoryId: string;
-    readonly worktreeId?: string;
-    readonly cursor?: string;
-    readonly limit?: number;
-    readonly detailOid?: string;
-    readonly firstParentOnly?: boolean;
-  }): Promise<HistoryPage>;
+  history(query: HistoryQuery): Promise<HistoryPage>;
   refs(query: { readonly repositoryId: string }): Promise<RefsSnapshot>;
   diff(query: {
     readonly repositoryId: string;
@@ -305,6 +299,13 @@ export function createGitClient(options: GitClientOptions): GitClient {
           limit: query.limit,
           detailOid: query.detailOid,
           firstParentOnly: query.firstParentOnly,
+          message: query.message,
+          author: query.author,
+          oidPrefix: query.oidPrefix,
+          refFullName: query.refFullName,
+          committedAfter: query.committedAfter,
+          committedBefore: query.committedBefore,
+          pathId: query.pathId,
         })}`,
         historyPageSchema,
       ),
