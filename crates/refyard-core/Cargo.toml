@@ -1,0 +1,11 @@
+[package]
+name = "refyard-core"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Pure Git bytes, parsers and planners. No host APIs, no async runtime."
+
+[dependencies]
+refyard-contract = { path = "../refyard-contract" }
+thiserror.workspace = true

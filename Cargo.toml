@@ -1,0 +1,44 @@
+# Refyard native workspace.
+#
+# The headless crates are the default members: `cargo build` must never require a
+# WebView, and the desktop crate (added with the Tauri host) is built separately.
+# Nothing here links a JavaScript engine or an HTTP server into the core.
+[workspace]
+resolver = "2"
+members = [
+  "crates/refyard-contract",
+  "crates/refyard-core",
+  "crates/refyard-host",
+]
+default-members = [
+  "crates/refyard-contract",
+  "crates/refyard-core",
+  "crates/refyard-host",
+]
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-only"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = [
+  "rt-multi-thread",
+  "macros",
+  "process",
+  "io-util",
+  "time",
+  "sync",
+  "fs",
+] }
+sha2 = "0.10"
+tempfile = "3"
+
+[profile.release]
+opt-level = "s"
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"

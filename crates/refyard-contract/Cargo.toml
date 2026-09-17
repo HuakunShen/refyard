@@ -1,0 +1,12 @@
+[package]
+name = "refyard-contract"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Serde projection of the checked-in Refyard JSON Schema contract."
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
