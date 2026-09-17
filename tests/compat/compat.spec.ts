@@ -65,6 +65,7 @@ test.describe("page and service compatibility", () => {
     await expect(page.getByTestId("connection-state")).toContainText(
       "contract update available",
     );
+    await page.getByTestId("workbench-nav-branches").click();
     await expect(page.getByTestId("branch-panel")).toBeVisible();
     await page.getByLabel("new branch name").fill("must-not-be-created");
     await page.getByTestId("create-branch").click();
