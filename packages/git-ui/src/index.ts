@@ -53,6 +53,14 @@ export {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "./components/ui/dropdown-menu/index.js";
+export {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuPortal,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "./components/ui/context-menu/index.js";
 export { Input } from "./components/ui/input/index.js";
 export {
   ScrollArea,
@@ -104,6 +112,8 @@ export { default as ModeToggle } from "./components/ModeToggle.svelte";
 export { default as RefyardLogo } from "./components/RefyardLogo.svelte";
 export { default as SectionCard } from "./components/SectionCard.svelte";
 export { default as AppearanceSettings } from "./components/AppearanceSettings.svelte";
+export { default as ContextActionMenu } from "./components/ContextActionMenu.svelte";
+export { default as ConfirmDialog } from "./components/ConfirmDialog.svelte";
 
 export { default as BranchPanel } from "./components/BranchPanel.svelte";
 export { default as CommitDetailPanel } from "./components/CommitDetailPanel.svelte";
@@ -137,7 +147,11 @@ export { default as StatusList } from "./components/StatusList.svelte";
 export { default as SubmodulePanel } from "./components/SubmodulePanel.svelte";
 export { default as TagPanel } from "./components/TagPanel.svelte";
 export { default as WorktreePanel } from "./components/WorktreePanel.svelte";
+export { default as WorkbenchNav } from "./components/WorkbenchNav.svelte";
+export type { WorkbenchNavItem } from "./components/WorkbenchNav.svelte";
 
 export * from "./lib/format.js";
 export * from "./lib/geometry.js";
 export { cn } from "./lib/utils.js";
+
+export * from "./lib/context-actions.js";

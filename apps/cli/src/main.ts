@@ -16,6 +16,7 @@ import { parseArgs, helpText, type CliCommand } from "./args.js";
 import { runDoctorCommand } from "./doctor.js";
 import { runService, type RunningService } from "./serve.js";
 import { CLI_VERSION, reportedVersion } from "./version.js";
+import { localWebRoot } from "./web-root.js";
 
 export interface MainIO {
   readonly write: (line: string) => void;
@@ -80,6 +81,13 @@ async function runServeCommand(
 ): Promise<MainResult> {
   let running: RunningService;
   try {
+    const webRoot =
+      command.kind === "open" ? await localWebRoot(io.cliDirectory) : null;
+    if (command.kind === "open" && webRoot === null) {
+      throw new Error(
+        "the local workbench assets are missing beside this CLI; reinstall refyard, or use `refyard serve` for API-only mode",
+      );
+    }
     running = await runService({
       repositoryPaths: command.paths,
       gitPath: io.gitPath,
@@ -87,6 +95,7 @@ async function runServeCommand(
       portExplicit: command.portExplicit,
       openBrowser: command.openBrowser,
       ticketTtlSeconds: command.ticketTtlSeconds,
+      webRoot,
       allowedOrigins: command.allowedOrigins,
       ...(command.uiOrigin === null ? {} : { uiOrigin: command.uiOrigin }),
       ...(io.hostedPassword === undefined

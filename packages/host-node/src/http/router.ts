@@ -39,7 +39,8 @@ import {
 } from "@refyard/git-contract";
 import type { ReadService } from "../coordinator/reads.js";
 import { ReadProblem } from "../coordinator/reads.js";
-import type { Session } from "./auth.js";
+import type { AuthorizationScope, Session } from "./auth.js";
+import { scopeForMutationKind } from "./scope-policy.js";
 import type { MutationCoordinator } from "../coordinator/submit.js";
 import type {
   RepositoryApproval,
@@ -62,6 +63,16 @@ export interface RouteServices {
   }) => void;
 }
 
+export interface RouteScopeInput {
+  readonly query: unknown;
+  readonly body: unknown;
+  readonly services: RouteServices;
+}
+
+export type RouteScopeResolver = (
+  input: RouteScopeInput,
+) => AuthorizationScope | null;
+
 export interface RouteDefinition {
   readonly method: "GET" | "POST";
   /** Exact path, no parameters: every input travels in the query or the body. */
@@ -75,6 +86,8 @@ export interface RouteDefinition {
    * Absent on action routes, whose input is a validated JSON body.
    */
   readonly schema?: z.ZodObject<z.ZodRawShape>;
+  /** Operation authority required after parsing but before resource-grant checks. */
+  readonly requiredScope: RouteScopeResolver;
   /**
    * The HTTP status a successful response carries, from the response body.
    *
@@ -109,6 +122,7 @@ function readRoute<Schema extends z.ZodObject<z.ZodRawShape>>(
     method: "GET",
     path,
     schema,
+    requiredScope: () => "repository:read",
     async handle({ query, services }) {
       const parsed = schema.safeParse(query);
       if (!parsed.success) {
@@ -170,6 +184,7 @@ export function readRoutes(): readonly RouteDefinition[] {
     actionRoute(
       "/api/v1/previews",
       previewsRequestSchema,
+      "repository:read",
       async (body, services) => services.read.previews(body),
     ),
     readRoute(
@@ -300,6 +315,7 @@ function isZodIssue(value: unknown): value is z.core.$ZodIssue {
 function actionRoute<Schema extends z.ZodType<unknown>>(
   path: string,
   schema: Schema,
+  requiredScope: AuthorizationScope | RouteScopeResolver,
   run: (
     body: z.infer<Schema>,
     services: RouteServices,
@@ -309,6 +325,8 @@ function actionRoute<Schema extends z.ZodType<unknown>>(
   return {
     method: "POST",
     path,
+    requiredScope:
+      typeof requiredScope === "function" ? requiredScope : () => requiredScope,
     async handle({ body, services, session }) {
       const parsed = schema.safeParse(body);
       if (!parsed.success) {
@@ -323,11 +341,35 @@ function actionRoute<Schema extends z.ZodType<unknown>>(
   };
 }
 
+function mutationRequestScope(
+  input: RouteScopeInput,
+): AuthorizationScope | null {
+  const parsed = MutationRequestSchema.safeParse(input.body);
+  return parsed.success
+    ? scopeForMutationKind(parsed.data.operation.kind)
+    : null;
+}
+
+function cancellationScope(input: RouteScopeInput): AuthorizationScope | null {
+  const parsed = cancelOperationRequestSchema.safeParse(input.body);
+  if (!parsed.success) {
+    return null;
+  }
+  const record = input.services.mutations?.jobs.get(
+    parsed.data.operationId,
+    SERVICES_ACTOR,
+  );
+  return record === undefined || record === null
+    ? null
+    : scopeForMutationKind(record.kind);
+}
+
 export function mutationRoutes(): readonly RouteDefinition[] {
   return [
     actionRoute(
       "/api/v1/repositories/register",
       registerRepositoryRequestSchema,
+      "workspace:manage",
       async (body, services, session) => {
         const management = services.repositoryManagement;
         if (management === undefined) {
@@ -356,6 +398,7 @@ export function mutationRoutes(): readonly RouteDefinition[] {
     actionRoute(
       "/api/v1/repositories/revoke",
       revokeRepositoryRequestSchema,
+      "workspace:manage",
       async (body, services, session) => {
         const management = services.repositoryManagement;
         if (management === undefined) {
@@ -385,6 +428,7 @@ export function mutationRoutes(): readonly RouteDefinition[] {
       ...actionRoute(
         "/api/v1/operations",
         MutationRequestSchema,
+        mutationRequestScope,
         async (body, services) => {
           const mutations = services.mutations;
           if (mutations === undefined) {
@@ -455,6 +499,7 @@ export function mutationRoutes(): readonly RouteDefinition[] {
     actionRoute(
       "/api/v1/operations/cancel",
       cancelOperationRequestSchema,
+      cancellationScope,
       async (body, services) => {
         const mutations = services.mutations;
         if (mutations === undefined) {

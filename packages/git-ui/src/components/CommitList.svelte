@@ -25,6 +25,8 @@
   import { Badge } from "./ui/badge/index.js";
   import { Button } from "./ui/button/index.js";
   import CommitGraph from "./CommitGraph.svelte";
+  import CommitRefDialog from "./CommitRefDialog.svelte";
+  import ContextActionMenu from "./ContextActionMenu.svelte";
   import StateBanner from "./StateBanner.svelte";
   import {
     DEFAULT_METRICS,
@@ -33,6 +35,7 @@
   } from "../lib/geometry.js";
   import { absoluteTime, relativeTime, shortOid } from "../lib/format.js";
   import { cn } from "../lib/utils.js";
+  import type { ContextAction } from "../lib/context-actions.js";
 
   interface Props {
     /** Graph rows, index-aligned with `commits`. */
@@ -50,6 +53,14 @@
     metrics?: GraphMetrics;
     onSelect: (commit: CommitSummary) => void;
     onLoadMore: () => void;
+    contextDisabled?: boolean;
+    onCreateBranchAt?: (commit: CommitSummary, branchName: string) => void;
+    onCreateTagAt?: (
+      commit: CommitSummary,
+      tagName: string,
+      annotation: string | null,
+    ) => void;
+    onCopyOid?: (commit: CommitSummary) => void;
     class?: string;
   }
 
@@ -67,6 +78,10 @@
     metrics = DEFAULT_METRICS,
     onSelect,
     onLoadMore,
+    contextDisabled = false,
+    onCreateBranchAt = undefined,
+    onCreateTagAt = undefined,
+    onCopyOid = undefined,
     class: className = "",
   }: Props = $props();
 
@@ -114,6 +129,54 @@
   const firstVisible = $derived(items[0]?.index ?? 0);
   function formatRefName(ref: string): string {
     return ref.replace(/^refs\/(heads|remotes|tags)\//, "");
+  }
+
+  let refDialogOpen = $state(false);
+  let refDialogKind = $state<"branch" | "tag">("branch");
+  let refDialogCommit = $state<CommitSummary | null>(null);
+
+  function openRefDialog(kind: "branch" | "tag", commit: CommitSummary): void {
+    refDialogKind = kind;
+    refDialogCommit = commit;
+    refDialogOpen = true;
+  }
+
+  function contextActionsFor(commit: CommitSummary): readonly ContextAction[] {
+    return [
+      ...(onCreateBranchAt === undefined
+        ? []
+        : [
+            {
+              kind: "action" as const,
+              id: "create-branch",
+              label: "Create Branch Here…",
+              disabled: contextDisabled,
+              onSelect: () => openRefDialog("branch", commit),
+            },
+          ]),
+      ...(onCreateTagAt === undefined
+        ? []
+        : [
+            {
+              kind: "action" as const,
+              id: "create-tag",
+              label: "Create Tag Here…",
+              disabled: contextDisabled,
+              onSelect: () => openRefDialog("tag", commit),
+            },
+          ]),
+      { kind: "separator" as const, id: "copy-separator" },
+      ...(onCopyOid === undefined
+        ? []
+        : [
+            {
+              kind: "action" as const,
+              id: "copy-sha",
+              label: "Copy SHA",
+              onSelect: () => onCopyOid(commit),
+            },
+          ]),
+    ];
   }
 </script>
 
@@ -175,69 +238,79 @@
               class="absolute top-0 right-0 left-0"
               style="height: {item.size}px; padding-left: {gutter}px; transform: translateY({item.start}px)"
             >
-              <button
-                type="button"
-                onclick={() => onSelect(commit)}
-                aria-current={selected ? "true" : undefined}
-                class={cn(
-                  "relative flex h-full w-full items-center gap-2 px-2.5 text-left transition-colors",
-                  selected
-                    ? "bg-primary/10 font-medium text-foreground before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-1 before:rounded-r before:bg-primary"
-                    : "hover:bg-muted/50 text-foreground/90",
-                )}
+              <ContextActionMenu
+                actions={contextActionsFor(commit)}
+                triggerClass="h-full w-full"
+                data-testid={`commit-context-${commit.oid}`}
               >
-                <span
-                  class="min-w-0 flex-1 truncate text-sm text-foreground"
-                  title={commit.subject}
-                >
-                  {commit.subject.length === 0
-                    ? "(no subject)"
-                    : commit.subject}
-                </span>
-
-                {#each commit.refNames.slice(0, 3) as refName (refName)}
-                  <Badge
-                    tone={refName.includes("/") ? "branch" : "muted"}
-                    title={refName}>{formatRefName(refName)}</Badge
+                {#snippet children()}
+                  <button
+                    type="button"
+                    onclick={() => onSelect(commit)}
+                    aria-current={selected ? "true" : undefined}
+                    data-testid={`commit-row-${commit.oid}`}
+                    class={cn(
+                      "relative flex h-full w-full items-center gap-2 px-2.5 text-left transition-colors",
+                      selected
+                        ? "bg-primary/10 font-medium text-foreground before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-1 before:rounded-r before:bg-primary"
+                        : "hover:bg-muted/50 text-foreground/90",
+                    )}
                   >
-                {/each}
-                {#if commit.refNames.length > 3}
-                  <Badge tone="muted" title={commit.refNames.join(", ")}>
-                    +{commit.refNames.length - 3}
-                  </Badge>
-                {/if}
+                    <span
+                      class="min-w-0 flex-1 truncate text-sm text-foreground"
+                      title={commit.subject}
+                    >
+                      {commit.subject.length === 0
+                        ? "(no subject)"
+                        : commit.subject}
+                    </span>
 
-                {#if commit.missingParents.length > 0}
-                  <Badge
-                    tone="warn"
-                    title="A parent object is not present locally, so this line continues to a commit that was not loaded."
-                  >
-                    boundary
-                  </Badge>
-                {/if}
-                {#if commit.signed}
-                  <Badge tone="muted" title="Commit carries a signature."
-                    >signed</Badge
-                  >
-                {/if}
+                    {#each commit.refNames.slice(0, 3) as refName (refName)}
+                      <Badge
+                        tone={refName.includes("/") ? "branch" : "muted"}
+                        title={refName}>{formatRefName(refName)}</Badge
+                      >
+                    {/each}
+                    {#if commit.refNames.length > 3}
+                      <Badge tone="muted" title={commit.refNames.join(", ")}>
+                        +{commit.refNames.length - 3}
+                      </Badge>
+                    {/if}
 
-                <span class="hidden shrink-0 text-xs text-muted-foreground xl:inline"
-                  >{commit.authorName}</span
-                >
-                <time
-                  class="shrink-0 text-xs text-muted-foreground/75"
-                  datetime={commit.authoredAt}
-                  title={absoluteTime(commit.authoredAt)}
-                >
-                  {relativeTime(commit.authoredAt, now)}
-                </time>
-                <span
-                  class="shrink-0 font-mono text-xs text-muted-foreground/60"
-                  title={commit.oid}
-                >
-                  {shortOid(commit.oid)}
-                </span>
-              </button>
+                    {#if commit.missingParents.length > 0}
+                      <Badge
+                        tone="warn"
+                        title="A parent object is not present locally, so this line continues to a commit that was not loaded."
+                      >
+                        boundary
+                      </Badge>
+                    {/if}
+                    {#if commit.signed}
+                      <Badge tone="muted" title="Commit carries a signature."
+                        >signed</Badge
+                      >
+                    {/if}
+
+                    <span
+                      class="hidden shrink-0 text-xs text-muted-foreground xl:inline"
+                      >{commit.authorName}</span
+                    >
+                    <time
+                      class="shrink-0 text-xs text-muted-foreground/75"
+                      datetime={commit.authoredAt}
+                      title={absoluteTime(commit.authoredAt)}
+                    >
+                      {relativeTime(commit.authoredAt, now)}
+                    </time>
+                    <span
+                      class="shrink-0 font-mono text-xs text-muted-foreground/60"
+                      title={commit.oid}
+                    >
+                      {shortOid(commit.oid)}
+                    </span>
+                  </button>
+                {/snippet}
+              </ContextActionMenu>
             </div>
           {/if}
         {/each}
@@ -260,3 +333,17 @@
     </div>
   {/if}
 </div>
+
+<CommitRefDialog
+  bind:open={refDialogOpen}
+  kind={refDialogKind}
+  commit={refDialogCommit}
+  disabled={contextDisabled}
+  onSubmit={(commit, name, annotation) => {
+    if (refDialogKind === "branch") {
+      onCreateBranchAt?.(commit, name);
+    } else {
+      onCreateTagAt?.(commit, name, annotation);
+    }
+  }}
+/>

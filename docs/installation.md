@@ -1,9 +1,9 @@
 # Installing refyard
 
-`refyard` runs on the machine that holds the repository and exposes an authenticated backend API
-for **that machine's own `git`**. The browser UI is a separately deployed static PWA (Cloudflare
-Workers Static Assets in the supported deployment shape); the CLI package never hosts it. The
-published API package and the separately deployed UI are released independently.
+`refyard` runs on the machine that holds the repository and drives **that machine's own `git`**.
+The default `open` command serves the bundled static Svelte workbench from the same loopback
+origin as the authenticated API. The same PWA can also be deployed separately to Cloudflare for
+explicit remote/hosted use; that deployment remains only a client of the Git service.
 
 ## Requirements
 
@@ -11,7 +11,7 @@ published API package and the separately deployed UI are released independently.
 | ----------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Node        | >=22 <27          | The published `engines` range. The packaged CLI serves, pairs, reads, previews and stages under 22.11.0, 22.23.2, 24.10.0, 25.2.1 and 26.8.2 — and under 20.19.0, which the range leaves out because Node 20 is past end of life. Development and releases run 26.8.2 (`.nvmrc`). The product imports only long-stable builtins (`node:path`, `node:fs`, `node:http`, `node:crypto`, `node:net`, `node:os`, `node:url`, `node:readline`, `node:stream/promises`). |
 | Git         | 2.43.0 or newer   | That is the functional baseline `refyard doctor` reports against. Below it, doctor still probes the features refyard uses (`status --porcelain=v2`, `worktree list -z`, `cat-file --batch`, `push --porcelain`) and names any that are missing instead of failing later.                                                                                                                                                                                          |
-| A browser   | any current build | Needed only when using the separately deployed PWA; the CLI itself is API-only.                                                                                                                                                                                                                                                                                                                                                                                   |
+| A browser   | any current build | The default local workbench opens here; the same UI can also be hosted separately.                                                                                                                                                                                                                                                                                                                                                                                |
 
 Nothing installs a system service, touches your global Git configuration, or adds a
 `postinstall` script. The tarball has no dependencies at all: the CLI bundle contains
@@ -22,13 +22,14 @@ the workspace packages it needs.
 ```sh
 pnpm install
 pnpm build            # builds the static UI (apps/web/build)
-pnpm build:release    # bundles the API-only CLI and stages packages/npm-dist
+pnpm build:release    # bundles the CLI plus local SPA and stages packages/npm-dist
 pnpm pack:smoke       # packs it, installs it into a temporary HOME, and uses it
 ```
 
 `pnpm build:release` refuses to ship a manifest that declares dependencies or install scripts. The
 staging directory keeps only `package.json` as source; `bin/` and `dist/` are generated and ignored
-by Git. The UI is not copied into the npm artifact.
+by Git. `dist/web/` is copied from the already-built `apps/web/build`, so local and hosted forms use
+the same frontend artifact.
 
 To produce the tarball yourself without the smoke test:
 
@@ -56,9 +57,9 @@ npx refyard doctor
 ### Commands
 
 ```sh
-refyard [path]                              # start the API for a repository
+refyard [path]                              # open the local workbench for a repository
 refyard open [path] [options]               # the same, spelled out
-refyard serve --repo <path>... [options]     # serve one or more approved repositories
+refyard serve --repo <path>... [options]     # API-only service for integrations/hosted UI
 refyard doctor [--json]                     # report what this machine can do
 ```
 
@@ -78,7 +79,9 @@ refyard doctor [--json]                     # report what this machine can do
 ### Pairing
 
 The default service binds to `127.0.0.1` only and every HTTP call is authenticated, reads included.
-The first browser is paired by the URL printed at startup when a UI origin is configured:
+`refyard open` serves the bundled UI from that same origin, prints a single-use pairing URL and
+opens it unless `--no-open` is present. A separately hosted UI uses the same exchange with an
+explicit UI/API origin pair, for example:
 
 ```
   open this URL in your browser to pair this session:
@@ -96,12 +99,15 @@ single ticket exchange; the service stores only a memory-only scrypt hash, rate-
 and returns the normal in-memory bearer for later requests. The password is not put in argv, the
 pairing URL, logs, `localStorage`, or a Cloudflare Worker binding.
 
-`--json` keeps stdout parseable and ticket-free. Readiness identifies the process as API-only:
+`--json` keeps stdout parseable and ticket-free. Local `open` identifies its same-origin UI, while
+`serve` remains explicitly API-only:
 
 ```sh
-refyard serve --repo /path/to/repo --no-open --json
-# stdout: {"serviceInstanceId":"srvc_…","port":9595,"url":"http://127.0.0.1:9595",…,"apiOnly":true}
-# stderr: pairing URL (single use): http://127.0.0.1:9595/?pair=…
+refyard open /path/to/repo --no-open --port 0 --json
+# stdout: {…,"url":"http://127.0.0.1:…","ui":"http://127.0.0.1:…","apiOnly":false}
+
+refyard serve --repo /path/to/repo --no-open --port 0 --json
+# stdout: {…,"ui":null,"apiOnly":true}
 ```
 
 ### Cloudflare Worker deployment

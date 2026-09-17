@@ -64,6 +64,8 @@ test.describe("read-only workbench", () => {
   test("pairs by opening the printed URL and reads the repository", async ({
     page,
   }) => {
+    const pairing = new URL(service.pairingUrl);
+    expect(pairing.searchParams.get("api")).toBeNull();
     await page.goto(service.pairingUrl);
 
     // Pairing happens on load; the header only renders once a session exists.
@@ -87,12 +89,28 @@ test.describe("read-only workbench", () => {
     await expect(page.getByText("metadata only")).toHaveCount(0);
   });
 
+  test("pairs from a separately hosted UI", async ({ page }) => {
+    // Prevents: local-mode coverage hiding a regression in the optional split-origin client.
+    const hosted = await startE2eService({ repo, mode: "hosted" });
+    try {
+      expect(new URL(hosted.pairingUrl).searchParams.get("api")).not.toBeNull();
+      await page.goto(hosted.pairingUrl);
+      await expect(page.getByTestId("build-badge")).toBeVisible();
+      await expect(
+        page.getByRole("heading", { name: "History" }),
+      ).toBeVisible();
+    } finally {
+      await hosted.stop();
+    }
+  });
+
   test("shows the hosted password field without persisting the secret", async ({
     page,
   }) => {
     // Prevents: a separately hosted Worker page collecting a password in a field
     // that is either hidden from the user or silently copied into durable storage.
-    const pairing = new URL(service.pairingUrl);
+    const hosted = await startE2eService({ repo, mode: "hosted" });
+    const pairing = new URL(hosted.pairingUrl);
     const api = pairing.searchParams.get("api");
     if (api === null) {
       throw new Error(
@@ -106,6 +124,7 @@ test.describe("read-only workbench", () => {
     await password.fill("correct-hosted-password-2026");
     const stored = await page.evaluate(() => JSON.stringify(localStorage));
     expect(stored).not.toContain("correct-hosted-password-2026");
+    await hosted.stop();
   });
 
   test("survives a reload without leaving the token in localStorage", async ({
@@ -227,15 +246,17 @@ test.describe("read-only workbench", () => {
     // `tests/integration/cli.test.ts` checks the opposite end — the built CLI advertises
     // all of them and names none as missing.
     await expect(page.getByText(/write operations/)).toBeVisible();
-    for (const panel of [
-      "staging-panel",
-      "stash-panel",
-      "tag-panel",
-      "worktree-panel",
-      "submodule-panel",
-      "branch-panel",
-      "repository-panel",
-    ]) {
+    for (const [view, panel] of [
+      ["working-copy", "staging-panel"],
+      ["branches", "branch-panel"],
+      ["remotes", "remote-panel"],
+      ["stashes", "stash-panel"],
+      ["tags", "tag-panel"],
+      ["worktrees", "worktree-panel"],
+      ["submodules", "submodule-panel"],
+      ["repositories", "repository-panel"],
+    ] as const) {
+      await page.getByTestId(`workbench-nav-${view}`).click();
       await expect(page.getByTestId(panel)).toBeVisible();
     }
   });
@@ -252,12 +273,12 @@ test.describe("read-only workbench", () => {
 /** Start the CLI bundle against one repository and wait for the pairing URL it prints. */
 /** The service for this spec's fixture, on the fixture's own environment. */
 async function startService(fixture: GitFixtureRepo): Promise<RunningService> {
-  return startE2eService({ repo: fixture });
+  return startE2eService({ repo: fixture, mode: "local" });
 }
 
 /**
- * The e2e run needs the API-only CLI bundle and the separately built static web assets,
- * both produced by the commands the plan lists before `pnpm test:e2e`. This only reports
+ * The e2e run needs the CLI bundle with its copied local workbench and the source web build
+ * used by explicit hosted-mode cases. Both are produced before `pnpm test:e2e`; this only reports
  * clearly when one is missing, so a failure is never an unexplained browser error.
  */
 async function ensureBuilt(): Promise<void> {

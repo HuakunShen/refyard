@@ -54,7 +54,7 @@ import {
   type RouteDefinition,
   type RouteServices,
 } from "./router.js";
-import type { AuthStore, Session } from "./auth.js";
+import type { AuthStore, AuthorizationScope, Session } from "./auth.js";
 import {
   DEFAULT_HTTP_LIMITS,
   convertQuery,
@@ -384,6 +384,16 @@ export function createHonoHttpApp(options: HonoHttpAppOptions): HonoHttpApp {
         logRequestProblem(context, now, log, authorized.problem);
         return problemResponse(context, authorized.problem, options);
       }
+      const authority = authorizationScopeProblem(
+        authorized.session,
+        "repository:read",
+        options,
+      );
+      if (authority !== null) {
+        logRequestProblem(context, now, log, authority, authorized.session);
+        return problemResponse(context, authority, options);
+      }
+
       const target = requestTarget(context.req.raw);
       const query = parseQuery(target.rawQuery, limits);
       if (!query.ok) {
@@ -412,6 +422,16 @@ export function createHonoHttpApp(options: HonoHttpAppOptions): HonoHttpApp {
       return problemResponse(context, authorized.problem, options, undefined, {
         "www-authenticate": "Bearer",
       });
+    }
+
+    const authority = authorizationScopeProblem(
+      authorized.session,
+      "repository:read",
+      options,
+    );
+    if (authority !== null) {
+      logRequestProblem(context, now, log, authority, authorized.session);
+      return problemResponse(context, authority, options);
     }
 
     const sessionId = context.req.header("mcp-session-id");
@@ -585,6 +605,20 @@ async function handleRoute(
     bodyValue = body.value;
   }
 
+  const requiredScope = route.requiredScope({
+    query: queryValue,
+    body: bodyValue,
+    services: options.services,
+  });
+  const authority =
+    requiredScope === null
+      ? null
+      : authorizationScopeProblem(authorized.session, requiredScope, options);
+  if (authority !== null) {
+    logRequestProblem(context, now, log, authority, authorized.session);
+    return problemResponse(context, authority, options);
+  }
+
   const scoped = scopeProblem(
     authorized.session,
     route.method === "GET" ? queryValue : bodyValue,
@@ -642,6 +676,21 @@ function authorize(context: Context, options: HonoHttpAppOptions) {
     authorization: context.req.header("authorization"),
     serviceInstanceId: options.serviceInstanceId,
   });
+}
+
+function authorizationScopeProblem(
+  session: Session,
+  requiredScope: AuthorizationScope,
+  options: HonoHttpAppOptions,
+): Problem | null {
+  if (options.auth.allowsScope(session, requiredScope)) {
+    return null;
+  }
+  return problemFor(
+    "Forbidden",
+    `this session was not granted the ${requiredScope} scope`,
+    { requiredScope },
+  );
 }
 
 function scopeProblem(

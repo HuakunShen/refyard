@@ -15,12 +15,12 @@ UI is a static Svelte app, and a small Node service is the only thing that talks
 sentence stays true in all four forms; what changes is **who reaches the service, from where, and
 what they are allowed to ask for**.
 
-| #   | Form                                    | Who runs    | Transport to the host          | Status                                                                   |
-| --- | --------------------------------------- | ----------- | ------------------------------ | ------------------------------------------------------------------------ |
-| 1   | Local workbench (default)               | one machine | loopback HTTP, ticket → bearer | **Implemented for reads** — `pnpm test:integration`, see §3                              |
-| 2   | Managed workspaces (many repositories)  | one machine | same, plus a registration API  | **Implemented locally** — explicit register/revoke evidence in §4                         |
-| 3   | Hosted UI against a local host (opt-in) | two origins | cross-origin HTTP + password   | **Not shipped** — exact-origin bearer infrastructure exists; password mode needs approval |
-| 4   | Embedded core inside a native host      | no Node     | no HTTP at all                 | **Decision: stay on Node** — T18 evidence in §6                                           |
+| #   | Form                                    | Who runs    | Transport to the host          | Status                                                              |
+| --- | --------------------------------------- | ----------- | ------------------------------ | ------------------------------------------------------------------- |
+| 1   | Local workbench (default)               | one machine | loopback HTTP, ticket → bearer | **Implemented and packaged** — same-origin UI + Git service, see §3 |
+| 2   | Managed workspaces (many repositories)  | one machine | same, plus a registration API  | **Implemented locally** — explicit register/revoke evidence in §4   |
+| 3   | Hosted UI against a local host (opt-in) | two origins | cross-origin HTTP + password   | **Implemented locally; live deployment unverified**                 |
+| 4   | Embedded core inside a native host      | no Node     | no HTTP at all                 | **Decision: stay on Node** — T18 evidence in §6                     |
 
 Forms 1 and 2 are implemented locally. Form 3 remains an opt-in product decision, and form 4 has
 an evidence-backed decision to stay on Node for V1; the rules below keep both doors honest later.
@@ -48,20 +48,20 @@ ship a feature is the failure mode this file exists to prevent.
    HTTP + SSE on loopback, later it may be a Kunkun plugin call or an in-process object. A feature
    that only makes sense over HTTP is a warning sign.
 
-## 3. Form 1 — Local workbench (default, implemented for reads)
+## 3. Form 1 — Local workbench (default, implemented and packaged)
 
 ```
 refyard open ~/code/xross
    │ approves exactly that repository directory
    ├─ Node service on 127.0.0.1:9595 (loopback only, exact Host/Origin checks)
-   ├─ single-use bootstrap ticket (60 s) in the URL fragment → bearer token
+   ├─ single-use bootstrap ticket (60 s) in `?pair=`; legacy fragment accepted → bearer token
    ├─ static SvelteKit app served by the same service (one origin, so no CORS)
-   └─ reads only: capabilities, repositories, status, history, refs, diff, worktrees,
-      submodules, stashes (+ operation list read, SSE hints)
+   └─ reads plus capability-gated Git mutations through the same closed intention contract
 ```
 
-The 35 mutations are modelled in the journal, queue and contract but exposed nowhere: no
-capability, no route, no button. `refyard serve --port 0` is the test path.
+The packaged local form ships the static SPA beside the CLI. `refyard open` serves it from the
+same loopback origin; `refyard serve` deliberately omits it and remains the API-only integration
+form. The hosted PWA uses the same frontend source and GitService contract.
 
 Evidence: `pnpm test:integration` (host, auth, reads), `pnpm test:portable`, and a curl smoke
 against a Node-26-hosted service recorded in `docs/evidence/`.
@@ -208,12 +208,13 @@ auth/origin/SSE/static boundaries remain covered.
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 2026-09-14 | One runtime for V1: Node 26.x. No Rust/Bun/second engine in the shipped service.                                                                                                                                                                                                                                                                             |
 | 2026-09-14 | Public contract is Zod-first (`packages/git-contract`), exported as JSON Schema.                                                                                                                                                                                                                                                                             |
-| 2026-09-15 | Four usage forms are supported targets; form 1 is the default and form 2 grows access only by explicit approval.                                                                                                                                                                                                                                               |
+| 2026-09-15 | Four usage forms are supported targets; form 1 is the default and form 2 grows access only by explicit approval.                                                                                                                                                                                                                                             |
 | 2026-09-15 | Multi-repository management (form 2) is a first-class goal, by explicit approval — never scanning.                                                                                                                                                                                                                                                           |
 | 2026-09-15 | Hosted UI (form 3) is opt-in, password-gated, origin-allowlisted, and never the first place a mutation appears.                                                                                                                                                                                                                                              |
 | 2026-09-15 | Core stays dependency-free so a native host can embed it (form 4); bundle growth is a decision.                                                                                                                                                                                                                                                              |
 | 2026-09-15 | HTTP layer moves to Hono with `hono-openapi` + Scalar; MCP via `@hono/mcp` (read tools first).                                                                                                                                                                                                                                                               |
-| 2026-09-16 | Form 2 and the password-gated form 3 path are implemented locally; form 4's measured decision is to stay on Node, and live hosted deployment remains unverified.                                                                                                                                                                                            |
+| 2026-09-16 | Form 2 and the password-gated form 3 path are implemented locally; form 4's measured decision is to stay on Node, and live hosted deployment remains unverified.                                                                                                                                                                                             |
+| 2026-09-16 | Restore the bundled same-origin local workbench as the default `open` product form; keep `serve` API-only and the Cloudflare PWA as an optional hosted client.                                                                                                                                                                                               |
 | 2026-09-15 | Parsing placement: argv, state truth and write permission stay in core; display parsing stays server-side **because it is bounded**, with typed degradation; no browser parsing Worker until the UI parses something heavy. Reopening needs measurements naming a shape the bound cannot serve (`docs/discussions/2026-09-15-frontend-parsing-boundary.md`). |
 
 ## 9. What this file forbids

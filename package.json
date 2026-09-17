@@ -8,7 +8,7 @@
     "build:release": "turbo run build && bun scripts/build-release.ts",
     "dev": "turbo run dev",
     "check": "turbo run check && tsc --noEmit -p tsconfig.json",
-    "cli": "bun scripts/bundle-cli.ts && node .refyard-dev/cli.mjs",
+    "cli": "pnpm build:web && bun scripts/bundle-cli.ts && node .refyard-dev/cli.mjs",
     "check:boundaries": "bun scripts/check-boundaries.ts",
     "check:contract": "bun scripts/check-contract.ts",
     "pack:smoke": "bun scripts/pack-smoke.ts",

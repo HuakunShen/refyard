@@ -7,7 +7,14 @@
  * flag, a port that is not a number, `serve` without a repository, and a port that
  * is already taken.
  */
-import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -916,6 +923,101 @@ describe("serving a repository", () => {
       ).rejects.toThrow();
     } finally {
       await rm(plain, { recursive: true, force: true });
+    }
+  });
+
+  it("open serves the packaged local workbench from the CLI directory", async () => {
+    // Prevents: `refyard open .` becoming an API-only process that requires a separately
+    // deployed UI even though the installed package contains the local workbench assets.
+    const packageRoot = await mkdtemp(join(tmpdir(), "refyard-cli-package-"));
+    const webRoot = join(packageRoot, "web");
+    await mkdir(webRoot, { recursive: true });
+    await writeFile(
+      join(webRoot, "200.html"),
+      "<!doctype html><title>Refyard local workbench</title>",
+      "utf8",
+    );
+    const installedInts = new Set(process.listeners("SIGINT"));
+    const installedTerms = new Set(process.listeners("SIGTERM"));
+    const io = collect();
+    try {
+      const result = await main(
+        ["open", repo.root, "--no-open", "--port", "0", "--json"],
+        {
+          ...io,
+          cliDirectory: packageRoot,
+          gitPath: fixtureGitPath(),
+          cwd: repo.root,
+        },
+      );
+      expect(result.exitCode).toBe(EXIT_OK);
+      expect(result.running).toBeDefined();
+      const response = await fetch(`${result.running?.url}/`);
+      expect(response.status).toBe(200);
+      expect(await response.text()).toContain("Refyard local workbench");
+      expect(io.errors.join("\n")).not.toContain("API-only");
+      await result.running?.close();
+    } finally {
+      for (const listener of process.listeners("SIGINT")) {
+        if (!installedInts.has(listener))
+          process.removeListener("SIGINT", listener);
+      }
+      for (const listener of process.listeners("SIGTERM")) {
+        if (!installedTerms.has(listener))
+          process.removeListener("SIGTERM", listener);
+      }
+      await rm(packageRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("serve stays API-only even when the CLI package contains a web build", async () => {
+    // Prevents: the headless/supervisor command inheriting the local GUI merely because
+    // the npm package ships assets for `open`.
+    const packageRoot = await mkdtemp(join(tmpdir(), "refyard-cli-package-"));
+    const webRoot = join(packageRoot, "web");
+    await mkdir(webRoot, { recursive: true });
+    await writeFile(
+      join(webRoot, "200.html"),
+      "<!doctype html><title>UI</title>",
+      "utf8",
+    );
+    const installedInts = new Set(process.listeners("SIGINT"));
+    const installedTerms = new Set(process.listeners("SIGTERM"));
+    const io = collect();
+    try {
+      const result = await main(
+        ["serve", "--repo", repo.root, "--no-open", "--port", "0", "--json"],
+        {
+          ...io,
+          cliDirectory: packageRoot,
+          gitPath: fixtureGitPath(),
+          cwd: repo.root,
+        },
+      );
+      expect(result.exitCode).toBe(EXIT_OK);
+      expect(result.running).toBeDefined();
+      const response = await fetch(`${result.running?.url}/`);
+      expect(response.status).toBe(404);
+      expect(response.headers.get("content-type")).toContain(
+        "application/json",
+      );
+      const ready = JSON.parse(
+        io.lines.find((line) => line.startsWith("{")) ?? "{}",
+      ) as {
+        apiOnly?: boolean;
+      };
+      expect(ready.apiOnly).toBe(true);
+      await result.running?.close();
+    } finally {
+      for (const listener of process.listeners("SIGINT")) {
+        if (!installedInts.has(listener))
+          process.removeListener("SIGINT", listener);
+      }
+      for (const listener of process.listeners("SIGTERM")) {
+        if (!installedTerms.has(listener))
+          process.removeListener("SIGTERM", listener);
+      }
+      await rm(packageRoot, { recursive: true, force: true });
     }
   });
 

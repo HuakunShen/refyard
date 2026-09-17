@@ -383,10 +383,9 @@ function baseTypeOf(field: unknown): string | null {
 /**
  * One line of request logging, with nothing sensitive in it.
  *
- * The URL is logged as its path only. A pairing ticket travels in a fragment (which
- * a browser never sends), and a credential could still appear in a query string if
- * a caller put one there — so query strings are not logged at all, and neither is
- * any header.
+ * The URL is logged as its path only. Pairing tickets currently travel in `?pair=`,
+ * and callers may put other credentials in a query string, so query strings are not
+ * logged at all. Headers are omitted for the same reason.
  */
 export function logLine(input: {
   readonly method: string;

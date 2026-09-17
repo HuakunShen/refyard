@@ -1,24 +1,14 @@
 /**
- * The HTTP host.
+ * The Node HTTP host.
  *
- * One loopback listener, one authenticated API, one static bundle. The order of
- * checks in `handle` is the security model, so it is worth stating plainly:
+ * This module owns the socket and the non-API static boundary. Hono owns the GitService
+ * application: health, pairing, authenticated reads and writes, SSE, OpenAPI, Scalar and MCP.
+ * Keeping that split explicit prevents a second auth/scope/router implementation from drifting
+ * behind the one requests actually use.
  *
- * 1. **Host and Origin** are validated before anything else — a request from a page
- *    this service was not started for is refused even if it somehow holds a token.
- * 2. **The pairing exchange** is the only unauthenticated route, and it consumes
- *    its ticket whether it succeeds or not.
- * 3. **Every other route requires a bearer**, including `/api/v1/capabilities`.
- *    There is no read that is "safe enough" to leave open: a repository listing
- *    says what is on this machine.
- * 4. **The session's grant is checked against the repository** the request names,
- *    before the read touches Git.
- * 5. **The query is validated by the contract schema**, so a typo is a 400 rather
- *    than a silently ignored filter.
- *
- * A collision on a fixed port is a refusal, never a silent move to another port: a
- * bookmark, a PWA manifest and a pairing URL all name a port, and answering on a
- * different one would break them without saying so.
+ * For non-Hono paths this listener still enforces the request-size and exact Host/Origin policy
+ * before serving the packaged SPA. Listener binding, busy-port reporting and graceful shutdown
+ * also stay here because they are Node process concerns rather than GitService semantics.
  */
 import {
   createServer,
@@ -29,41 +19,14 @@ import {
 import type { AddressInfo } from "node:net";
 import { randomBytes } from "node:crypto";
 import { getRequestListener } from "@hono/node-server";
-import {
-  eventsQuerySchema,
-  healthResponseSchema,
-  sessionExchangeRequestSchema,
-  sessionExchangeResponseSchema,
-  type Problem,
-} from "@refyard/git-contract";
+import type { Problem } from "@refyard/git-contract";
 import type { ReadService } from "../coordinator/reads.js";
-import { ReadProblem } from "../coordinator/reads.js";
 import type { MutationCoordinator } from "../coordinator/submit.js";
-import { createEventRing, createSseSession, type EventRing } from "./events.js";
-import {
-  UNIMPLEMENTED_PATHS,
-  mutationRoutes,
-  readRoutes,
-  unsupportedProblem,
-} from "./router.js";
+import { createEventRing, type EventRing } from "./events.js";
 import type { RepositoryApprovalManager } from "../registry/managed.js";
-import {
-  createAuthStore,
-  type AuthStore,
-  type SessionGrants,
-  type Session,
-} from "./auth.js";
+import { createAuthStore, type AuthStore, type SessionGrants } from "./auth.js";
 import { createAssetServer, type AssetServer } from "./assets.js";
-import {
-  DEFAULT_HTTP_LIMITS,
-  convertQuery,
-  logLine,
-  parseQuery,
-  readJsonBody,
-  validate,
-  type ConvertedQuery,
-  type HttpLimits,
-} from "./json.js";
+import { DEFAULT_HTTP_LIMITS, logLine, type HttpLimits } from "./json.js";
 import {
   JSON_HEADERS,
   problemBody,
@@ -78,6 +41,7 @@ import {
   type OriginPolicy,
 } from "./origins.js";
 import { createHonoHttpApp } from "./hono-app.js";
+
 /**
  * The port a taken listener holds, as its own error type.
  *
@@ -164,7 +128,7 @@ export interface HttpHost {
   readonly auth: AuthStore;
   readonly assets: AssetServer;
   readonly events: EventRing;
-  /** A pairing URL for a browser: origin plus the ticket in the fragment. */
+  /** A browser pairing URL carrying one short-lived ticket. */
   pairingUrl(origin: string): string;
   close(): Promise<void>;
 }
@@ -202,7 +166,6 @@ export async function startHttpHost(
   });
   const log = options.log ?? ((): void => {});
   const now = options.now ?? Date.now;
-  const routes = [...readRoutes(), ...mutationRoutes()];
   const events = options.events ?? createEventRing();
   let currentGrants = copyGrants(options.grants);
   const services = {
@@ -299,7 +262,7 @@ export async function startHttpHost(
       });
       return;
     }
-    void handle(request, response).catch((error: unknown) => {
+    void handleStaticRequest(request, response).catch((error: unknown) => {
       const correlationId = newCorrelationId();
       log(
         `internal failure ${correlationId}: ${error instanceof Error ? error.message : "unknown"}`,
@@ -319,18 +282,6 @@ export async function startHttpHost(
     });
   });
 
-  function sendJson(
-    response: ServerResponse,
-    status: number,
-    body: unknown,
-  ): void {
-    for (const [name, value] of Object.entries(JSON_HEADERS)) {
-      response.setHeader(name, value);
-    }
-    response.writeHead(status);
-    response.end(JSON.stringify(body));
-  }
-
   function sendProblem(
     response: ServerResponse,
     problem: Problem,
@@ -346,7 +297,8 @@ export async function startHttpHost(
     response.end(problemBody(problem));
   }
 
-  async function handle(
+  /** Serve only paths that are not owned by the Hono application. */
+  async function handleStaticRequest(
     request: IncomingMessage,
     response: ServerResponse,
   ): Promise<void> {
@@ -363,11 +315,9 @@ export async function startHttpHost(
       );
       return;
     }
+
     const questionMark = rawUrl.indexOf("?");
     const path = questionMark === -1 ? rawUrl : rawUrl.slice(0, questionMark);
-    const rawQuery = questionMark === -1 ? "" : rawUrl.slice(questionMark + 1);
-    // A fragment is never sent by a browser; if one arrives it was hand-written, and
-    // `parseQuery` would otherwise treat it as part of the last value.
     const hash = path.indexOf("#");
     const cleanPath = hash === -1 ? path : path.slice(0, hash);
 
@@ -408,10 +358,7 @@ export async function startHttpHost(
         "access-control-allow-headers",
         "Authorization, Content-Type, Accept",
       );
-      response.setHeader(
-        "access-control-allow-methods",
-        "GET, POST, OPTIONS",
-      );
+      response.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
       response.setHeader(
         "access-control-expose-headers",
         "x-refyard-correlation",
@@ -453,9 +400,7 @@ export async function startHttpHost(
           const invalid = requestedHeaders
             .split(",")
             .map((header) => header.trim().toLowerCase())
-            .find(
-              (header) => header.length > 0 && !allowedHeaders.has(header),
-            );
+            .find((header) => header.length > 0 && !allowedHeaders.has(header));
           if (invalid !== undefined) {
             sendProblem(
               response,
@@ -471,310 +416,12 @@ export async function startHttpHost(
         response.end();
         return;
       }
-      // Same-origin requests do not need CORS preflight. Keep the old refusal so an
-      // accidental OPTIONS call never advertises a broader API than this host has.
       response.setHeader("allow", "GET, POST");
       response.writeHead(405);
       response.end();
       return;
     }
 
-    if (cleanPath === "/health") {
-      const body = healthResponseSchema.parse({
-        alive: true,
-        apiMajor: 1,
-        serviceInstanceId,
-      });
-      log(
-        logLine({
-          method,
-          path: cleanPath,
-          status: 200,
-          durationMs: now() - startedAt,
-        }),
-      );
-      sendJson(response, 200, body);
-      return;
-    }
-
-    if (cleanPath === "/api/v1/events") {
-      // Streaming route: authenticated like every other read, then the connection
-      // belongs to the ring until the client goes away.
-      const authorized = auth.authorize({
-        authorization: headerValue(request, "authorization"),
-        serviceInstanceId,
-      });
-      if (!authorized.ok) {
-        log(
-          logLine({
-            method,
-            path: cleanPath,
-            status: 401,
-            durationMs: now() - startedAt,
-            problemCode: authorized.problem.code,
-            problemMessage: authorized.problem.message,
-          }),
-        );
-        sendProblem(response, authorized.problem);
-        return;
-      }
-      const query = parseQuery(rawQuery, limits);
-      if (!query.ok) {
-        sendProblem(response, query.problem);
-        return;
-      }
-      const converted = convertQuery(eventsQuerySchema, query.value);
-      if (!converted.ok) {
-        sendProblem(response, converted.problem);
-        return;
-      }
-      const since = converted.value["since"];
-      log(
-        logLine({
-          method,
-          path: cleanPath,
-          status: 200,
-          durationMs: now() - startedAt,
-          sessionId: authorized.session.sessionId,
-        }),
-      );
-      const session = createSseSession(events);
-      await session.start({
-        response,
-        since: typeof since === "number" ? since : undefined,
-      });
-      return;
-    }
-
-    if (cleanPath === "/api/v1/session/exchange") {
-      if (method !== "POST") {
-        sendProblem(
-          response,
-          problemFor("InvalidRequest", "the session exchange is a POST"),
-        );
-        return;
-      }
-      const body = await readJsonBody(request, limits);
-      if (!body.ok) {
-        sendProblem(response, body.problem);
-        return;
-      }
-      const parsed = validate(
-        sessionExchangeRequestSchema,
-        body.value,
-        "the exchange body",
-      );
-      if (!parsed.ok) {
-        sendProblem(response, parsed.problem);
-        return;
-      }
-      const origin = headerValue(request, "origin") ?? "";
-      const exchanged = auth.exchange({
-        ticket: parsed.value.ticket,
-        origin,
-        serviceInstanceId,
-      });
-      if (!exchanged.ok) {
-        log(
-          logLine({
-            method,
-            path: cleanPath,
-            status: statusForProblem(exchanged.problem),
-            durationMs: now() - startedAt,
-            problemCode: exchanged.problem.code,
-            problemMessage: exchanged.problem.message,
-          }),
-        );
-        sendProblem(response, exchanged.problem);
-        return;
-      }
-      const session = exchanged.session;
-      const responseBody = sessionExchangeResponseSchema.parse({
-        token: session.token,
-        tokenType: "Bearer",
-        expiresAt: new Date(session.expiresAtMs).toISOString(),
-        serviceInstanceId,
-        apiMajor: 1,
-        sessionId: session.sessionId,
-        grants: {
-          allowedRootIds: [...session.grants.allowedRootIds],
-          repositoryIds: [...session.grants.repositoryIds],
-          scopes: [...session.grants.scopes],
-        },
-      });
-      log(
-        logLine({
-          method,
-          path: cleanPath,
-          status: 200,
-          durationMs: now() - startedAt,
-          sessionId: session.sessionId,
-        }),
-      );
-      sendJson(response, 200, responseBody);
-      return;
-    }
-
-    if (cleanPath.startsWith("/api/")) {
-      const authorized = auth.authorize({
-        authorization: headerValue(request, "authorization"),
-        serviceInstanceId,
-      });
-      const route = routes.find(
-        (candidate) =>
-          candidate.path === cleanPath && candidate.method === method,
-      );
-      if (route === undefined) {
-        // An unimplemented path is 501 for a known name and 404 otherwise, and never
-        // falls through to the SPA: a client must be able to tell an API answer from
-        // an HTML shell. Either way the session is authenticated first, so an
-        // anonymous caller learns nothing about which paths exist.
-        if (!authorized.ok) {
-          log(
-            logLine({
-              method,
-              path: cleanPath,
-              status: 401,
-              durationMs: now() - startedAt,
-              problemCode: authorized.problem.code,
-              problemMessage: authorized.problem.message,
-            }),
-          );
-          sendProblem(response, authorized.problem);
-          return;
-        }
-        const problem = UNIMPLEMENTED_PATHS.includes(cleanPath)
-          ? unsupportedProblem(cleanPath)
-          : problemFor("NotFound", `no API route ${cleanPath}`);
-        log(
-          logLine({
-            method,
-            path: cleanPath,
-            status: statusForProblem(problem),
-            durationMs: now() - startedAt,
-            sessionId: authorized.session.sessionId,
-            problemCode: problem.code,
-            problemMessage: problem.message,
-          }),
-        );
-        sendProblem(response, problem);
-        return;
-      }
-      if (!authorized.ok) {
-        log(
-          logLine({
-            method,
-            path: cleanPath,
-            status: 401,
-            durationMs: now() - startedAt,
-            problemCode: authorized.problem.code,
-            problemMessage: authorized.problem.message,
-          }),
-        );
-        sendProblem(response, authorized.problem);
-        return;
-      }
-      const session = authorized.session;
-
-      const query = parseQuery(rawQuery, limits);
-      if (!query.ok) {
-        sendProblem(response, query.problem);
-        return;
-      }
-      // A GET route's query is converted with its contract schema; a POST route's
-      // input is its JSON body, read with a byte limit.
-      let queryValue: ConvertedQuery = {};
-      let actionBody: unknown = undefined;
-      if (route.method === "GET") {
-        const schema = route.schema;
-        if (schema === undefined) {
-          sendProblem(
-            response,
-            problemFor("InternalError", `${cleanPath} has no query schema`),
-          );
-          return;
-        }
-        const converted = convertQuery(schema, query.value);
-        if (!converted.ok) {
-          sendProblem(response, converted.problem);
-          return;
-        }
-        queryValue = converted.value;
-      } else {
-        const readBody = await readJsonBody(request, limits);
-        if (!readBody.ok) {
-          sendProblem(response, readBody.problem);
-          return;
-        }
-        actionBody = readBody.value;
-      }
-      // The grant is checked before the handler validates: a request naming a
-      // repository this session does not cover is refused before anything reads Git,
-      // and this check can only deny, never widen.
-      const scoped = checkScope(
-        session,
-        route.method === "GET" ? queryValue : actionBody,
-      );
-      if (scoped !== null) {
-        log(
-          logLine({
-            method,
-            path: cleanPath,
-            status: 403,
-            durationMs: now() - startedAt,
-            sessionId: session.sessionId,
-            problemCode: scoped.code,
-          }),
-        );
-        sendProblem(response, scoped);
-        return;
-      }
-
-      try {
-        const body = await route.handle({
-          session,
-          query: queryValue,
-          body: actionBody,
-          services,
-        });
-        // The route declares its success status; 200 is the default. A 202 here means
-        // "accepted for execution", never "done".
-        const successStatus = route.successStatus?.(body) ?? 200;
-        log(
-          logLine({
-            method,
-            path: cleanPath,
-            status: successStatus,
-            durationMs: now() - startedAt,
-            sessionId: session.sessionId,
-          }),
-        );
-        sendJson(response, successStatus, body);
-      } catch (error) {
-        const problem =
-          error instanceof ReadProblem
-            ? error.toProblem()
-            : problemFor(
-                "InternalError",
-                `the read failed: ${error instanceof Error ? error.message : "unknown error"}`,
-              );
-        log(
-          logLine({
-            method,
-            path: cleanPath,
-            status: statusForProblem(problem),
-            durationMs: now() - startedAt,
-            sessionId: session.sessionId,
-            problemCode: problem.code,
-            problemMessage: problem.message,
-          }),
-        );
-        sendProblem(response, problem);
-      }
-      return;
-    }
-
-    // Everything else is a static asset or a client-side route.
     const served = await assets.serve({
       path: cleanPath,
       response,
@@ -800,49 +447,6 @@ export async function startHttpHost(
         durationMs: now() - startedAt,
       }),
     );
-  }
-
-  /**
-   * Refuse a request that names a repository, or an approved root, the session does
-   * not cover.
-   *
-   * A workspace target (init, clone) names a root and a destination instead of a
-   * repository — there is no repository yet, which is the point of the operation — so
-   * the grant checked for it is the root's. Skipping that check would let any paired
-   * session create a repository anywhere in the service's approved roots, which is
-   * exactly the reach a session's grants exist to bound.
-   */
-  function checkScope(session: Session, input: unknown): Problem | null {
-    const repositoryId = repositoryIdForScope(input);
-    if (repositoryId !== null) {
-      if (auth.allowsRepository(session, repositoryId)) {
-        return null;
-      }
-      // Not granted by id — but a root grant covers what lives in that root, which is
-      // how a repository this session just created stays reachable.
-      const root = options.repositoryRootOf?.(repositoryId) ?? null;
-      if (root !== null && auth.allowsRoot(session, root)) {
-        return null;
-      }
-      return problemFor(
-        "Forbidden",
-        "this session was not granted that repository",
-        {
-          repositoryId,
-        },
-      );
-    }
-    const allowedRootId = allowedRootIdForScope(input);
-    if (allowedRootId !== null && !auth.allowsRoot(session, allowedRootId)) {
-      return problemFor(
-        "Forbidden",
-        "this session was not granted that approved root",
-        { allowedRootId },
-      );
-    }
-    // Neither named (or not a single string): the route's own schema decides whether
-    // that is acceptable, and it cannot grant anything the session lacks.
-    return null;
   }
 
   const bound = await new Promise<
@@ -1001,56 +605,6 @@ function isHonoPath(rawUrl: string | undefined): boolean {
     rawPath === "/api" ||
     rawPath.startsWith("/api/")
   );
-}
-
-/**
- * The repository a request names, wherever it names it.
- *
- * A read carries `repositoryId` as a query parameter; a mutation carries it inside
- * its target. Both are checked against the session's grant before anything runs, and
- * this answers null for anything else — which can only mean "no grant check applies
- * here", never "allowed".
- */
-function repositoryIdForScope(input: unknown): string | null {
-  if (typeof input !== "object" || input === null) {
-    return null;
-  }
-  if ("repositoryId" in input && typeof input.repositoryId === "string") {
-    return input.repositoryId;
-  }
-  if (
-    "target" in input &&
-    typeof input.target === "object" &&
-    input.target !== null
-  ) {
-    const target = input.target;
-    if ("repositoryId" in target && typeof target.repositoryId === "string") {
-      return target.repositoryId;
-    }
-  }
-  return null;
-}
-
-function allowedRootIdForScope(input: unknown): string | null {
-  if (typeof input !== "object" || input === null) {
-    return null;
-  }
-  if (
-    "target" in input &&
-    typeof input.target === "object" &&
-    input.target !== null
-  ) {
-    const target = input.target;
-    if (
-      "kind" in target &&
-      target.kind === "workspace" &&
-      "allowedRootId" in target &&
-      typeof target.allowedRootId === "string"
-    ) {
-      return target.allowedRootId;
-    }
-  }
-  return null;
 }
 
 function headerValue(
