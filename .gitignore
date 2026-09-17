@@ -65,3 +65,7 @@ packages/npm-dist/*.tgz
 # workspace, and a released binary has to be reproducible from its lockfile.
 target/
 
+# Tauri's generated capability schemas: written by tauri-build from
+# capabilities/*.json on every build, so they are output rather than source.
+apps/desktop/src-tauri/gen/
+

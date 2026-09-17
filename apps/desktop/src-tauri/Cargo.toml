@@ -1,0 +1,48 @@
+# The desktop shell is its own workspace, and that is the point of this file.
+#
+# `cargo build` at the repository root must never need a WebView: the headless crates are
+# what the CLI and the HTTP host are built from, and none of them may depend on `wry`,
+# WebKit, AppKit or a windowing system. Keeping the desktop crate in a separate workspace
+# makes that structural — the root workspace cannot see these dependencies, so nothing in
+# `crates/` can reach them by accident.
+#
+# Nothing here links a JavaScript engine: the frontend is compiled into the binary as
+# static assets, and every call from the WebView arrives over Tauri's own IPC.
+[workspace]
+
+[package]
+name = "refyard-desktop"
+version = "0.1.0"
+description = "Refyard desktop shell: the native workbench host the WebView talks to."
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-only"
+publish = false
+
+[lib]
+name = "refyard_desktop"
+path = "src/lib.rs"
+
+[[bin]]
+name = "refyard-desktop"
+path = "src/main.rs"
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+refyard-contract = { path = "../../../crates/refyard-contract" }
+refyard-host = { path = "../../../crates/refyard-host" }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+
+[profile.release]
+opt-level = "s"
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"

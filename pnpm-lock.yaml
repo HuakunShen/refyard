@@ -212,6 +212,8 @@ importers:
         specifier: 'catalog:'
         version: 0.2.2
 
+  apps/desktop: {}
+
   apps/web:
     dependencies:
       '@refyard/git-client':
