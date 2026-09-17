@@ -32,33 +32,31 @@ test.describe("live updates without events", () => {
     page,
   }) => {
     await page.goto(service.pairingUrl);
-    await expect(page.getByTestId("staging-panel")).toBeVisible();
+    await expect(page.getByTestId("working-copy-panel")).toBeVisible();
     // The repository is clean, and the panel says so in the empty state rather than
     // rendering a list of nothing.
-    await expect(
-      page.getByText("Working tree and index match the last commit."),
-    ).toBeVisible();
+    await expect(page.getByText("Working tree is clean")).toBeVisible();
 
     // Something else on this machine changes the repository. The service is not told —
     // there is no watcher, and the SSE stream only reports writes it performed itself.
     await repo.write("outside.txt", "written by another program\n");
 
     // The workbench notices on its own, within a few polls of the visible cadence.
-    await expect(page.getByTestId("staging-list")).toContainText(
+    await expect(page.getByTestId("unstaged-files")).toContainText(
       "outside.txt",
       {
         timeout: 15_000,
       },
     );
-    await expect(page.getByTestId("staging-list")).toContainText("untracked");
+    await expect(page.getByTestId("unstaged-files")).toContainText("untracked");
 
     // And the content is real, not a row rendered from a stale list: the path was staged
     // by *this* service afterwards and Git agrees it is the same file.
-    await page.getByLabel("select outside.txt").check();
-    await page.getByTestId("stage-selected").click();
-    await expect(page.getByTestId("staging-message")).toContainText(
-      /staged 1 path/,
-      { timeout: 15_000 },
-    );
+    await page
+      .getByRole("button", { name: "Stage outside.txt", exact: true })
+      .click();
+    await expect(
+      page.getByTestId("working-copy-staging-message"),
+    ).toContainText(/staged 1 path/, { timeout: 15_000 });
   });
 });

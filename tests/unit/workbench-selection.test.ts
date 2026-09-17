@@ -10,6 +10,7 @@ import {
   selectDiffPath,
   selectRepository,
   selectStatusPath,
+  selectWorktree,
 } from "../../apps/web/src/lib/workbench/selection.js";
 
 function statusEntry(pathId = "path_1"): StatusEntry {
@@ -40,10 +41,11 @@ describe("workbench selection", () => {
     selectRepository(state, "repo_2");
 
     expect(state.repositoryId).toBe("repo_2");
+    expect(state.worktreeId).toBeNull();
     expect(state.commitOid).toBeNull();
     expect(state.statusPath).toBeNull();
-    // Repository switching historically did not touch this second-step diff selection.
-    expect(state.diffPathId).toBe("path_2");
+    expect(state.statusSide).toBeNull();
+    expect(state.diffPathId).toBeNull();
   });
 
   it("commit and status selections are mutually exclusive and clear diff-file selection", () => {
@@ -59,7 +61,59 @@ describe("workbench selection", () => {
     selectStatusPath(state, entry);
     expect(state.commitOid).toBeNull();
     expect(state.statusPath).toBe(entry);
+    expect(state.statusSide).toBe("unstaged");
     expect(state.diffPathId).toBeNull();
+  });
+
+  it("selecting a worktree clears every inspectable selection", () => {
+    const state = createWorkbenchSelectionState();
+    state.repositoryId = "repo_1";
+    state.commitOid = "c".repeat(40);
+    state.statusPath = statusEntry();
+    state.statusSide = "staged";
+    state.diffPathId = "path_old";
+
+    selectWorktree(state, "wt_linked");
+
+    expect(state.worktreeId).toBe("wt_linked");
+    expect(state.commitOid).toBeNull();
+    expect(state.statusPath).toBeNull();
+    expect(state.statusSide).toBeNull();
+    expect(state.diffPathId).toBeNull();
+  });
+
+  it("keeps staged and unstaged sides distinct for an MM path", () => {
+    const state = createWorkbenchSelectionState();
+    const entry = statusEntry("path_mm");
+    entry.indexStatus = "M";
+    entry.worktreeStatus = "M";
+
+    selectStatusPath(state, entry, "unstaged");
+    expect(state.statusSide).toBe("unstaged");
+
+    selectStatusPath(state, entry, "staged");
+    expect(state.statusSide).toBe("staged");
+  });
+
+  it("normalizes an unavailable requested side to the side that has changes", () => {
+    const state = createWorkbenchSelectionState();
+    const unstagedOnly = statusEntry("path_unstaged");
+    selectStatusPath(state, unstagedOnly, "staged");
+    expect(state.statusSide).toBe("unstaged");
+
+    const stagedOnly = statusEntry("path_staged");
+    stagedOnly.indexStatus = "M";
+    stagedOnly.worktreeStatus = ".";
+    selectStatusPath(state, stagedOnly, "unstaged");
+    expect(state.statusSide).toBe("staged");
+  });
+
+  it("always treats an untracked path as an unstaged selection", () => {
+    const state = createWorkbenchSelectionState();
+    const entry = statusEntry("path_untracked");
+    entry.kind = "untracked";
+    selectStatusPath(state, entry, "staged");
+    expect(state.statusSide).toBe("unstaged");
   });
 
   it("selecting a diff file changes only the second-step diff selection", () => {
@@ -86,8 +140,7 @@ describe("workbench selection", () => {
     expect(state.repositoryId).toBe("repo_1");
     expect(state.commitOid).toBeNull();
     expect(state.statusPath).toBeNull();
-    // Preserve the current page behavior: this id is inert without a diff request.
-    expect(state.diffPathId).toBe("path_4");
+    expect(state.diffPathId).toBeNull();
   });
 
   it("reconciles to the first visible repository only when the current one vanished", () => {

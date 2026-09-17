@@ -176,15 +176,20 @@ test.describe("read-only workbench", () => {
 
     // ... its change set is listed without patches (the host bounds that on purpose) ...
     await expect(
-      page.getByText("Patches are read one path at a time"),
+      page
+        .getByTestId("working-copy-sidebar")
+        .getByRole("button", { name: /b\.txt/ }),
     ).toBeVisible();
+    await expect(page.getByTestId("main-diff-panel")).toHaveCount(0);
 
     // ... and selecting the file reads its patch: the commit added b.txt with one line.
     await page
       .getByRole("button", { name: /b\.txt/ })
       .first()
       .click();
-    await expect(page.getByText("+second").first()).toBeVisible();
+    await expect(
+      page.getByTestId("main-diff-panel").locator('[data-kind="add"]'),
+    ).toContainText("second");
   });
 
   test("reads a changed path's diff when the path is selected", async ({
@@ -200,7 +205,9 @@ test.describe("read-only workbench", () => {
     // The pane names which side of the change is being read...
     await expect(page.getByText("unstaged", { exact: true })).toBeVisible();
     // ... and the working-tree change against the index is a real hunk.
-    await expect(page.getByText("+changed").first()).toBeVisible();
+    await expect(
+      page.getByTestId("main-diff-panel").locator('[data-kind="add"]'),
+    ).toContainText("changed");
   });
 
   test("keeps the graph aligned with the row it belongs to", async ({
@@ -247,7 +254,7 @@ test.describe("read-only workbench", () => {
     // all of them and names none as missing.
     await expect(page.getByText(/write operations/)).toBeVisible();
     for (const [view, panel] of [
-      ["working-copy", "staging-panel"],
+      ["working-copy", "working-copy-panel"],
       ["branches", "branch-panel"],
       ["remotes", "remote-panel"],
       ["stashes", "stash-panel"],

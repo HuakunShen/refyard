@@ -62,7 +62,8 @@
 <button
   type="button"
   class={cn(
-    "group absolute top-0 bottom-0 z-20 hidden w-3 -translate-x-1/2 cursor-col-resize items-center justify-center border-0 bg-transparent p-0 lg:flex",
+    "group absolute top-0 bottom-0 z-20 hidden w-3 cursor-col-resize items-center justify-center border-0 bg-transparent p-0 lg:flex",
+    side === "left" ? "-translate-x-1/2" : "translate-x-1/2",
     dragging && "bg-primary/10",
   )}
   {style}

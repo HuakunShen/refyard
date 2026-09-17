@@ -21,6 +21,8 @@
     Button,
     CommitDetailPanel,
     CommitList,
+    WorkingCopyPanel,
+    WorktreeWipList,
     HistoryFilterBar,
     ConnectionPanel,
     DiffPanel,
@@ -54,6 +56,8 @@
     selectCommit,
     selectDiffPath,
     selectRepository,
+    selectWorktree,
+    selectStatusPath,
   } from "$lib/workbench/selection.js";
   import {
     createWorkbenchQueries,
@@ -64,6 +68,8 @@
     closeRepositoryTab,
     createRepositoryTabs,
     selectRepositoryTab,
+    openRepositoryTab,
+    repositoryTabKey,
   } from "$lib/workbench/repository-tabs.js";
   import type { RecentRepository } from "$lib/workbench/repository-launcher.js";
   import {
@@ -191,6 +197,10 @@
   let recentRepositories = $state<RecentRepository[]>([]);
   let recentLoaded = $state(false);
   let launcherRequested = $state(false);
+  let knownRepositoryIds = $state<string[]>([]);
+  let tabWorktrees = $state<
+    Record<string, { id: string; label: string; path: string }>
+  >({});
   let leftSidebarWidth = $state(
     browser
       ? storedSidebarWidth(
@@ -264,7 +274,85 @@
   const detail = $derived(queries.detail);
   const diffRequest = $derived(queries.diffRequest);
   const sessionExpired = $derived(queries.sessionExpired);
-  const primaryWorktreeId = $derived(queries.primaryWorktreeId);
+  const activeWorktreeId = $derived(queries.activeWorktreeId);
+  const mainDiffOpen = $derived(
+    selectedPath !== null || selectedDiffPathId !== null,
+  );
+  const worktreeLabel = $derived(
+    queries.activeWorktree?.head.branchName ??
+      status.data?.head.branchName ??
+      "Working copy",
+  );
+  const worktreePath = $derived(
+    queries.activeWorktree?.displayPath ?? repository?.displayPath ?? "",
+  );
+  const draftKey = $derived(`${selectedRepositoryId}:${activeWorktreeId}`);
+  let commitDrafts = $state<Record<string, string>>({});
+
+  function openWorktree(worktreeId: string, inNewTab = false): void {
+    if (writeController.busy || repository === null) return;
+    const worktree = queries.worktrees.data?.worktrees.find(
+      (entry) => entry.worktreeId === worktreeId,
+    );
+    if (worktree === undefined || worktree.isBare || worktree.isPrunable)
+      return;
+    if (inNewTab) {
+      openRepositoryTab(repositoryTabs, {
+        repositoryId: repository.repositoryId,
+        worktreeId,
+        displayName: `${repository.displayName} · ${worktree.head.branchName ?? "detached"}`,
+        displayPath: worktree.displayPath,
+      });
+    }
+    if (repositoryTabs.activeRepositoryId !== null) {
+      tabWorktrees[repositoryTabs.activeRepositoryId] = {
+        id: worktreeId,
+        label: worktree.head.branchName ?? "detached",
+        path: worktree.displayPath,
+      };
+    }
+    selectWorktree(selection, worktreeId);
+    clearHistoryFilters(historyFilterState, selectedRepositoryId);
+    launcherRequested = false;
+    launcherOpen = false;
+  }
+
+  let reconciledPathSnapshot = "";
+  $effect(() => {
+    const snapshot = status.data;
+    const path = selection.statusPath;
+    if (
+      snapshot === undefined ||
+      snapshot.worktreeId !== activeWorktreeId ||
+      path === null ||
+      writeController.busy
+    )
+      return;
+    const revision = `${snapshot.snapshotId}:${path.pathId}`;
+    if (revision === reconciledPathSnapshot) return;
+    reconciledPathSnapshot = revision;
+    const current = snapshot.entries.find(
+      (entry) => entry.pathId === path.pathId,
+    );
+    if (current === undefined) {
+      backToHistory();
+    } else {
+      selection.statusPath = current;
+      if (
+        selection.statusSide === "unstaged" &&
+        current.kind !== "untracked" &&
+        current.worktreeStatus === "."
+      )
+        selection.statusSide = "staged";
+      if (selection.statusSide === "staged" && current.indexStatus === ".")
+        selection.statusSide = "unstaged";
+    }
+  });
+
+  function backToHistory(): void {
+    clearInspectableSelection(selection);
+    selection.diffPathId = null;
+  }
 
   $effect(() => {
     if (browser && !recentLoaded) {
@@ -288,18 +376,17 @@
       }
     }
     const unseen = repositoryList
-      .filter(
-        (entry) =>
-          !repositoryTabs.tabs.some(
-            (tab) => tab.repositoryId === entry.repositoryId,
-          ),
-      )
+      .filter((entry) => !knownRepositoryIds.includes(entry.repositoryId))
       .map((entry) => ({
         repositoryId: entry.repositoryId,
         displayName: entry.displayName,
         displayPath: entry.displayPath,
       }));
     if (unseen.length > 0) {
+      knownRepositoryIds = [
+        ...knownRepositoryIds,
+        ...unseen.map((entry) => entry.repositoryId),
+      ];
       repositoryTabs.tabs = [...repositoryTabs.tabs, ...unseen];
       repositoryTabs.activeRepositoryId ??= unseen[0]?.repositoryId ?? null;
       repositoryTabs.revision += 1;
@@ -318,6 +405,37 @@
       }
     }
   });
+
+  // Repo creation and managed approvals can select a repository outside the tab bar.
+  $effect(() => {
+    if (launcherRequested) return;
+    const entry = repositoryList.find(
+      (item) => item.repositoryId === selectedRepositoryId,
+    );
+    const active = repositoryTabs.tabs.find(
+      (tab) => repositoryTabKey(tab) === repositoryTabs.activeRepositoryId,
+    );
+    if (entry !== undefined && active?.repositoryId !== entry.repositoryId) {
+      openRepositoryTab(repositoryTabs, {
+        repositoryId: entry.repositoryId,
+        displayName: entry.displayName,
+        displayPath: entry.displayPath,
+      });
+    }
+  });
+
+  function selectRegisteredRepository(repositoryId: string): void {
+    const entry = repositoryList.find(
+      (item) => item.repositoryId === repositoryId,
+    );
+    if (entry === undefined || writeController.busy) return;
+    openRepositoryTab(repositoryTabs, {
+      repositoryId,
+      displayName: entry.displayName,
+      displayPath: entry.displayPath,
+    });
+    handleRepositoryTab(repositoryId);
+  }
 
   function rememberRecent(entry: RecentRepository): void {
     const next = [
@@ -358,8 +476,17 @@
   function handleOpenRepository(path: string): void {
     void writeController.registerRepository(path).then((opened) => {
       if (opened) {
-        launcherRequested = false;
-        launcherOpen = false;
+        const entry = repositoryList.find(
+          (item) => item.repositoryId === selection.repositoryId,
+        );
+        if (entry !== undefined) {
+          openRepositoryTab(repositoryTabs, {
+            repositoryId: entry.repositoryId,
+            displayName: entry.displayName,
+            displayPath: entry.displayPath,
+          });
+          handleRepositoryTab(entry.repositoryId);
+        }
       }
     });
   }
@@ -374,34 +501,58 @@
     );
     if (existing !== undefined) {
       launcherRequested = false;
-      selectRepositoryTab(repositoryTabs, existing.repositoryId);
-      selectRepository(selection, existing.repositoryId);
-      selection.diffPathId = null;
-      launcherOpen = false;
+      openRepositoryTab(repositoryTabs, {
+        repositoryId: existing.repositoryId,
+        displayName: existing.displayName,
+        displayPath: existing.displayPath,
+      });
+      handleRepositoryTab(existing.repositoryId);
       return;
     }
     handleOpenRepository(entry.displayPath);
   }
 
   function handleNewRepositoryTab(): void {
+    if (writeController.busy) return;
     launcherRequested = true;
     launcherOpen = true;
     selectRepository(selection, null);
   }
 
   function handleRepositoryTab(repositoryId: string): void {
+    if (writeController.busy) return;
     launcherRequested = false;
     selectRepositoryTab(repositoryTabs, repositoryId);
-    selectRepository(selection, repositoryId);
+    const tab = repositoryTabs.tabs.find(
+      (entry) => repositoryTabKey(entry) === repositoryId,
+    );
+    if (tab === undefined) return;
+    selectRepository(selection, tab.repositoryId);
+    const worktreeId = tabWorktrees[repositoryId]?.id ?? tab.worktreeId;
+    if (worktreeId !== undefined) selectWorktree(selection, worktreeId);
     selection.diffPathId = null;
     launcherOpen = false;
   }
 
   function closeRepository(repositoryId: string): void {
-    const wasActive = selection.repositoryId === repositoryId;
+    if (writeController.busy) return;
+    const wasActive = repositoryTabs.activeRepositoryId === repositoryId;
     closeRepositoryTab(repositoryTabs, repositoryId);
+    delete tabWorktrees[repositoryId];
     if (wasActive) {
-      selectRepository(selection, repositoryTabs.activeRepositoryId);
+      const nextTab = repositoryTabs.tabs.find(
+        (entry) =>
+          repositoryTabKey(entry) === repositoryTabs.activeRepositoryId,
+      );
+      selectRepository(selection, nextTab?.repositoryId ?? null);
+      if (nextTab !== undefined) {
+        selectWorktree(
+          selection,
+          tabWorktrees[repositoryTabKey(nextTab)]?.id ??
+            nextTab.worktreeId ??
+            null,
+        );
+      }
       selection.diffPathId = null;
       launcherRequested = repositoryTabs.activeRepositoryId === null;
       launcherOpen = repositoryTabs.activeRepositoryId === null;
@@ -497,6 +648,9 @@
     queries,
     queryClient,
     fetch: (input, init) => fetch(input, init),
+    onCommitSucceeded: (repositoryId, worktreeId) => {
+      commitDrafts[`${repositoryId}:${worktreeId}`] = "";
+    },
   });
 
   const mutationBusy = $derived(writeController.busy);
@@ -580,6 +734,18 @@
   const baseUrlIsDefault = $derived(isDefaultSessionBaseUrl(session));
 </script>
 
+<svelte:window
+  onkeydown={(event) => {
+    if (
+      event.key === "Escape" &&
+      mainDiffOpen &&
+      event.target instanceof HTMLElement &&
+      !event.target.closest("input, textarea, [role=dialog]")
+    )
+      backToHistory();
+  }}
+/>
+
 <div class="relative flex h-dvh min-h-0 flex-col bg-canvas text-ink">
   {#if background !== "none"}
     <div
@@ -619,8 +785,20 @@
     {#if token !== null}
       <div class="order-last basis-full min-w-0 border-t border-border/60 pt-1">
         <RepositoryTabs
-          tabs={repositoryTabs.tabs}
+          tabs={repositoryTabs.tabs.map((tab) => {
+            const selected = tabWorktrees[repositoryTabKey(tab)];
+            return {
+              ...tab,
+              repositoryId: repositoryTabKey(tab),
+              displayName:
+                selected === undefined || tab.worktreeId !== undefined
+                  ? tab.displayName
+                  : `${tab.displayName} · ${selected.label}`,
+              displayPath: selected?.path ?? tab.displayPath,
+            };
+          })}
           activeRepositoryId={repositoryTabs.activeRepositoryId}
+          disabled={writeController.busy}
           onSelect={handleRepositoryTab}
           onClose={closeRepository}
           onNew={handleNewRepositoryTab}
@@ -635,7 +813,7 @@
         <FolderGit2 class="size-3.5 text-primary" />
         <span
           class="max-w-44 truncate font-semibold tracking-tight text-ink lg:max-w-64"
-          title={repository.displayPath}
+          title={worktreePath}
         >
           {repository.displayName}
         </span>
@@ -775,7 +953,7 @@
   {:else}
     <main
       class="relative z-1 flex min-h-0 flex-1 flex-col overflow-y-auto lg:grid lg:overflow-visible lg:grid-cols-[var(--left-sidebar-width)_minmax(0,1fr)_var(--right-sidebar-width)]"
-      style={`--left-sidebar-width: ${leftSidebarWidth}px; --right-sidebar-width: ${rightSidebarWidth}px;`}
+      style={`--left-sidebar-width: ${mainDiffOpen ? 0 : leftSidebarWidth}px; --right-sidebar-width: ${rightSidebarWidth}px;`}
       data-launcher-open={launcherOpen}
       data-selected-repository={selectedRepositoryId ?? ""}
       data-repository-count={repositoryList.length}
@@ -783,9 +961,27 @@
     >
       {#if launcherOpen || selectedRepositoryId === null}
         <section
-          class="min-w-0 flex-1 overflow-y-auto lg:col-span-2"
+          class="min-w-0 flex-1 overflow-y-auto lg:col-span-3"
           data-testid="repository-launcher-panel"
         >
+          {#if queries.repositories.isError}
+            <div class="p-3" data-testid="repository-list-error">
+              <StateBanner
+                state="error"
+                title="Could not list repositories"
+                detail={describeClientProblem(queries.repositories.error)}
+              />
+            </div>
+          {/if}
+          {#if queries.capabilities.isError}
+            <div class="p-3" data-testid="capabilities-error">
+              <StateBanner
+                state="error"
+                title="Write capabilities unavailable"
+                detail="the service has not reported its operations"
+              />
+            </div>
+          {/if}
           <RepositoryLauncher
             recent={recentRepositories}
             roots={queries.workspaceRoots}
@@ -803,15 +999,29 @@
           />
         </section>
       {:else}
-        <RepositorySidebar
-          {queries}
-          mutations={writeController}
-          {selection}
-          {token}
-          describeProblem={describeClientProblem}
-        />
+        <div
+          class={mainDiffOpen
+            ? "hidden min-h-0 min-w-0 overflow-hidden lg:block"
+            : "flex min-h-0 min-w-0 flex-col overflow-hidden"}
+        >
+          <div class={mainDiffOpen ? "hidden" : "flex min-h-0 flex-1 flex-col"}>
+            <RepositorySidebar
+              {queries}
+              mutations={writeController}
+              {selection}
+              {token}
+              describeProblem={describeClientProblem}
+              onRepositorySelect={selectRegisteredRepository}
+              onOpenWorktree={(id) => openWorktree(id)}
+              onOpenWorktreeInTab={(id) => openWorktree(id, true)}
+              onWorkingCopy={backToHistory}
+            />
+          </div>
+        </div>
         <section
-          class="flex h-[44rem] min-h-[32rem] shrink-0 flex-col gap-2 p-3 lg:h-auto lg:min-h-0"
+          class={mainDiffOpen
+            ? "hidden"
+            : "flex h-[44rem] min-h-[32rem] min-w-0 shrink-0 flex-col gap-2 p-3 lg:h-auto lg:min-h-0"}
           data-testid="history-panel"
         >
           <div class="shrink-0 flex items-center gap-2">
@@ -839,6 +1049,13 @@
             </Button>
           </div>
 
+          <WorktreeWipList
+            worktrees={queries.worktrees.data?.worktrees ?? []}
+            {activeWorktreeId}
+            statuses={queries.worktreeStatuses}
+            disabled={writeController.busy}
+            onSelect={(id) => openWorktree(id)}
+          />
           <HistoryFilterBar
             draft={historyFilterState.draft}
             appliedLabels={historyFilterLabels(historyFilterState)}
@@ -909,109 +1126,147 @@
           {/if}
         </section>
 
-        <section
-          class="flex min-h-56 shrink-0 flex-col border-l border-border bg-canvas/30 lg:min-h-0"
-        >
-          {#if selectedPath !== null && selectedPath.kind === "ignored"}
-            <div class="p-3">
-              <StateBanner
-                state="info"
-                title="Ignored path"
-                detail="Git does not report content for an ignored path, so there is no diff to read."
-              />
-            </div>
-          {:else if diffRequest === null}
-            <div
-              class="flex flex-1 flex-col items-center justify-center p-6 text-center"
+        {#if mainDiffOpen}
+          <section
+            class="flex h-[44rem] min-h-0 min-w-0 flex-col lg:h-auto"
+            data-testid="main-diff-panel"
+          >
+            <header
+              class="flex flex-wrap items-center gap-2 border-b border-border bg-panel px-3 py-2"
             >
-              <div
-                class="mb-3 flex size-12 items-center justify-center rounded-2xl bg-muted/60 text-muted-foreground shadow-2xs border border-border/50"
+              <Button variant="ghost" size="sm" onclick={backToHistory}
+                >Back to history</Button
               >
-                <FileDiff class="size-6 text-primary/70" />
+              <span
+                class="min-w-0 flex-1 truncate font-mono text-xs"
+                title={selectedPath?.displayPath ?? ""}
+                >{selectedPath?.displayPath ?? "Commit diff"}</span
+              >
+              {#if selectedPath !== null && selectedPath.kind !== "ignored" && writeController.availability.staging}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={writeController.busy ||
+                    !writeController.writesAllowed ||
+                    status.isError ||
+                    status.data === undefined}
+                  onclick={() => {
+                    if (selectedPath !== null) {
+                      if (selection.statusSide === "staged")
+                        writeController.onUnstage([selectedPath.pathId]);
+                      else writeController.onStage([selectedPath.pathId]);
+                    }
+                  }}
+                >
+                  {selection.statusSide === "staged"
+                    ? "Unstage file"
+                    : "Stage file"}
+                </Button>
+              {/if}
+            </header>
+            {#if diff.isPending}
+              <div class="p-3">
+                <StateBanner state="loading" title="Reading diff…" />
               </div>
-              <h3 class="text-sm font-medium text-foreground">
-                No diff selected
-              </h3>
-              <p class="mt-1 max-w-xs text-xs text-muted-foreground">
-                Select a commit in History or a modified file in Changes to
-                inspect the diff.
-              </p>
-              <div class="mt-4 w-full max-w-xs">
+            {:else if diff.isError || diffPatch.isError}
+              <div class="p-3">
                 <StateBanner
-                  state="empty"
-                  title="Nothing selected"
-                  detail="Choose a commit or a changed path to read its diff."
+                  state="error"
+                  title="Could not read diff"
+                  detail={describeClientProblem(diff.error ?? diffPatch.error)}
                 />
               </div>
-            </div>
-          {:else}
-            {#if selectedOid !== null}
-              <CommitDetailPanel
-                commit={selectedCommit}
-                {detail}
-                class="max-h-72 shrink-0 border-b border-border"
+            {:else}
+              <DiffPanel
+                diff={diff.data ?? null}
+                patch={diffPatch.data ?? null}
+                selectedPathId={selectedDiffPathId ??
+                  selectedPath?.pathId ??
+                  null}
+                onlySelected={true}
+                onSelectPath={(file) => selectDiffPath(selection, file.pathId)}
+                class="p-3"
               />
             {/if}
-            <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-              {#if diff.isPending}
-                <div class="p-3">
-                  <StateBanner state="loading" title="Reading diff…" />
-                </div>
-              {:else if diff.isError}
-                <div class="p-3">
-                  <StateBanner
-                    state="error"
-                    title="Could not read the diff"
-                    detail={describeClientProblem(diff.error)}
-                  >
-                    {#snippet action()}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onclick={() => void diff.refetch()}
-                      >
-                        Retry
-                      </Button>
-                    {/snippet}
-                  </StateBanner>
-                </div>
-              {:else}
-                <DiffPanel
-                  diff={diff.data ?? null}
-                  patch={diffPatch.data ?? null}
-                  selectedPathId={selectedDiffPathId}
-                  onSelectPath={(file) => {
-                    selectDiffPath(selection, file.pathId);
-                  }}
-                  class="p-3"
-                />
-              {/if}
-            </div>
-          {/if}
-
-          {#if primaryWorktreeId !== null}
-            <footer
-              class="shrink-0 border-t border-border px-3 py-2 text-xs text-ink-faint"
+          </section>
+        {/if}
+        <section
+          class="flex min-h-80 min-w-0 flex-col overflow-hidden border-l border-border bg-panel p-3 lg:min-h-0"
+          data-testid="working-copy-sidebar"
+        >
+          {#if selectedOid !== null}
+            <div
+              class="flex items-center justify-between border-b border-border px-3 py-2"
             >
-              worktree <span class="font-mono"
-                >{shortOid(primaryWorktreeId)}</span
+              <span class="text-sm font-medium">Commit details</span>
+              <Button size="sm" variant="ghost" onclick={backToHistory}
+                >Working copy</Button
               >
-              {#if repository !== null}· {repository.objectFormat}{/if}
-              {#if status.data !== undefined && status.data.truncated}
-                · status truncated
-              {/if}
-              {#if refs.data !== undefined && refs.data.truncated}
-                · refs truncated
-              {/if}
-            </footer>
+            </div>
+            <CommitDetailPanel
+              commit={selectedCommit}
+              {detail}
+              class="max-h-72 shrink-0 overflow-auto border-b border-border"
+            />
+            <DiffPanel
+              diff={diff.data ?? null}
+              selectedPathId={selectedDiffPathId}
+              listingOnly={true}
+              onSelectPath={(file) => selectDiffPath(selection, file.pathId)}
+              class="p-3"
+            />
           {/if}
+          <div
+            class={selectedOid === null
+              ? "flex min-h-0 flex-1 flex-col"
+              : "hidden"}
+          >
+            {#if status.isError}
+              <div class="p-3">
+                <StateBanner
+                  state="error"
+                  title="Could not read working copy"
+                  detail={describeClientProblem(status.error)}
+                />
+              </div>
+            {/if}
+            <WorkingCopyPanel
+              status={status.data?.worktreeId === activeWorktreeId
+                ? status.data
+                : null}
+              {worktreeLabel}
+              {worktreePath}
+              selectedPathId={selectedPath?.pathId ?? null}
+              selectedSide={selection.statusSide}
+              disabled={!writeController.writesAllowed ||
+                status.isError ||
+                status.data === undefined ||
+                status.data.worktreeId !== activeWorktreeId}
+              busy={writeController.busy}
+              stagingAvailable={writeController.availability.staging}
+              commitAvailable={writeController.availability.commit}
+              stagingMessage={writeController.stagingMessage}
+              commitMessage={writeController.commitResult}
+              draft={commitDrafts[draftKey] ?? ""}
+              onDraftChange={(text) => (commitDrafts[draftKey] = text)}
+              onSelect={(entry, side) =>
+                selectStatusPath(selection, entry, side)}
+              onStage={writeController.onStage}
+              onUnstage={writeController.onUnstage}
+              onDiscard={writeController.onDiscard}
+              onCommit={writeController.onCommit}
+              onAmend={writeController.onAmend}
+            />
+          </div>
         </section>
-        <ResizeHandle
-          side="left"
-          onResize={resizeLeftSidebar}
-          onResizeEnd={persistSidebarWidths}
-          style={`left: ${leftSidebarWidth}px`}
-        />
+        {#if !mainDiffOpen}
+          <ResizeHandle
+            side="left"
+            onResize={resizeLeftSidebar}
+            onResizeEnd={persistSidebarWidths}
+            style={`left: ${leftSidebarWidth}px`}
+          />
+        {/if}
         <ResizeHandle
           side="right"
           onResize={resizeRightSidebar}

@@ -2,6 +2,7 @@
 
 export interface RepositoryTab {
   readonly repositoryId: string;
+  readonly worktreeId?: string;
   readonly displayName: string;
   readonly displayPath: string;
 }
@@ -18,7 +19,8 @@ export function createRepositoryTabs(
   const tabs = uniqueTabs(initial);
   return {
     tabs,
-    activeRepositoryId: tabs[0]?.repositoryId ?? null,
+    activeRepositoryId:
+      tabs[0] === undefined ? null : repositoryTabKey(tabs[0]),
     revision: 0,
   };
 }
@@ -28,12 +30,12 @@ export function openRepositoryTab(
   tab: RepositoryTab,
 ): void {
   const existing = state.tabs.some(
-    (candidate) => candidate.repositoryId === tab.repositoryId,
+    (candidate) => repositoryTabKey(candidate) === repositoryTabKey(tab),
   );
   if (!existing) {
     state.tabs = [...state.tabs, tab];
   }
-  state.activeRepositoryId = tab.repositoryId;
+  state.activeRepositoryId = repositoryTabKey(tab);
   state.revision += 1;
 }
 
@@ -41,7 +43,7 @@ export function selectRepositoryTab(
   state: RepositoryTabsState,
   repositoryId: string,
 ): void {
-  if (!state.tabs.some((tab) => tab.repositoryId === repositoryId)) {
+  if (!state.tabs.some((tab) => repositoryTabKey(tab) === repositoryId)) {
     return;
   }
   if (state.activeRepositoryId === repositoryId) {
@@ -56,20 +58,19 @@ export function closeRepositoryTab(
   repositoryId: string,
 ): void {
   const index = state.tabs.findIndex(
-    (tab) => tab.repositoryId === repositoryId,
+    (tab) => repositoryTabKey(tab) === repositoryId,
   );
   if (index < 0) {
     return;
   }
   const nextTabs = state.tabs.filter(
-    (tab) => tab.repositoryId !== repositoryId,
+    (tab) => repositoryTabKey(tab) !== repositoryId,
   );
   state.tabs = nextTabs;
   if (state.activeRepositoryId === repositoryId) {
+    const neighbor = nextTabs[index] ?? nextTabs[index - 1];
     state.activeRepositoryId =
-      nextTabs[index]?.repositoryId ??
-      nextTabs[index - 1]?.repositoryId ??
-      null;
+      neighbor === undefined ? null : repositoryTabKey(neighbor);
   }
   state.revision += 1;
 }
@@ -77,10 +78,17 @@ export function closeRepositoryTab(
 function uniqueTabs(tabs: readonly RepositoryTab[]): RepositoryTab[] {
   const seen = new Set<string>();
   return tabs.filter((tab) => {
-    if (seen.has(tab.repositoryId)) {
+    if (seen.has(repositoryTabKey(tab))) {
       return false;
     }
-    seen.add(tab.repositoryId);
+    seen.add(repositoryTabKey(tab));
     return true;
   });
+}
+
+/** Default repository tabs and linked worktree tabs have distinct session identities. */
+export function repositoryTabKey(tab: RepositoryTab): string {
+  return tab.worktreeId === undefined
+    ? tab.repositoryId
+    : `${tab.repositoryId}:${tab.worktreeId}`;
 }

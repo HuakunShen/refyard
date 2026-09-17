@@ -24,6 +24,16 @@ const repoB: RepositoryTab = {
 };
 
 describe("repository tabs", () => {
+  it("keeps two worktrees of the same repository in distinct tabs", () => {
+    // Prevents opening a linked checkout from silently reusing the primary tab.
+    const state = createRepositoryTabs([repoA]);
+    openRepositoryTab(state, { ...repoA, worktreeId: "wt_feature" });
+    expect(state.tabs).toHaveLength(2);
+    expect(state.activeRepositoryId).toBe("repo_a:wt_feature");
+    closeRepositoryTab(state, "repo_a:wt_feature");
+    expect(state.tabs).toEqual([repoA]);
+    expect(state.activeRepositoryId).toBe("repo_a");
+  });
   it("opens and activates repositories without duplicating a tab", () => {
     const state = createRepositoryTabs();
 

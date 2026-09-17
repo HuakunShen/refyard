@@ -41,7 +41,7 @@ test.describe("a service that is not the one we paired with", () => {
     page,
   }) => {
     await page.goto(first.pairingUrl);
-    await expect(page.getByTestId("staging-panel")).toBeVisible();
+    await expect(page.getByTestId("working-copy-panel")).toBeVisible();
 
     const paired = await page.evaluate(
       "sessionStorage.getItem('refyard.session.instance')",
@@ -63,13 +63,13 @@ test.describe("a service that is not the one we paired with", () => {
         .toBeNull();
       await expect(page.getByLabel("Pairing ticket")).toBeVisible();
       // And nothing is offered to write with.
-      await expect(page.getByTestId("staging-panel")).toHaveCount(0);
+      await expect(page.getByTestId("working-copy-panel")).toHaveCount(0);
 
       // Pairing with the new service works, which is what makes the refusal recoverable
       // rather than a dead end.
       await page.getByLabel("Pairing ticket").fill(second.pairingUrl);
       await page.getByRole("button", { name: "Pair" }).click();
-      await expect(page.getByTestId("staging-panel")).toBeVisible();
+      await expect(page.getByTestId("working-copy-panel")).toBeVisible();
       const nowPaired = await page.evaluate(
         "sessionStorage.getItem('refyard.session.instance')",
       );

@@ -6,7 +6,12 @@
  * composition root and supplies reactive getters plus the shared selection state.
  */
 import { GitClientError, type GitClient } from "@refyard/git-client";
-import type { DiffResponse, StashesResponse } from "@refyard/git-contract";
+import type {
+  DiffResponse,
+  StatusSnapshot,
+  StashesResponse,
+  WorktreeSummary,
+} from "@refyard/git-contract";
 import { layoutPages } from "@refyard/git-graph";
 import {
   createInfiniteQuery,
@@ -36,12 +41,14 @@ import {
 } from "./history-filters.js";
 
 const HISTORY_PAGE_SIZE = 100;
+const WORKTREE_STATUS_CONCURRENCY = 3;
 const BACKGROUND_PREFIXES = [
   "repositories",
   "status",
   "refs",
   "stashes",
   "worktrees",
+  "worktree-statuses",
   "submodules",
   "history",
 ] as const;
@@ -54,6 +61,42 @@ export interface WorkbenchQueryInputs {
   readonly visible: () => boolean;
   readonly historyFilters: () => AppliedHistoryFilters;
   readonly historyRevision: () => number;
+}
+
+export interface WorktreeStatusSummary {
+  readonly worktreeId: string;
+  readonly status: StatusSnapshot | null;
+  readonly error: string | null;
+}
+
+async function mapBounded<T, R>(
+  values: readonly T[],
+  concurrency: number,
+  run: (value: T) => Promise<R>,
+): Promise<R[]> {
+  const results: (R | undefined)[] = new Array(values.length);
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIndex < values.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      const value = values[index];
+      if (value === undefined) {
+        throw new Error("bounded worktree read lost its input");
+      }
+      results[index] = await run(value);
+    }
+  }
+
+  const workerCount = Math.min(Math.max(concurrency, 1), values.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results.map((result) => {
+    if (result === undefined) {
+      throw new Error("bounded worktree read did not produce a result");
+    }
+    return result;
+  });
 }
 
 export function invalidateWorkbenchBackgroundQueries(
@@ -91,8 +134,10 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
   });
 
   const selectedRepositoryId = $derived(input.selection.repositoryId);
+  const selectedWorktreeId = $derived(input.selection.worktreeId);
   const selectedOid = $derived(input.selection.commitOid);
   const selectedPath = $derived(input.selection.statusPath);
+  const selectedStatusSide = $derived(input.selection.statusSide);
   const selectedDiffPathId = $derived(input.selection.diffPathId);
 
   const repositoryList = $derived(repositories.data?.repositories ?? []);
@@ -102,6 +147,10 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
       (entry) => entry.repositoryId === selectedRepositoryId,
     ) ?? null,
   );
+
+  /** The explicit selection wins; null means the repository's actual primary worktree. */
+  const primaryWorktreeId = $derived(repository?.primaryWorktreeId ?? null);
+  const activeWorktreeId = $derived(selectedWorktreeId ?? primaryWorktreeId);
 
   $effect(() => {
     reconcileRepositorySelection(
@@ -116,6 +165,7 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
       input.baseUrl(),
       input.token(),
       selectedRepositoryId,
+      activeWorktreeId,
     ];
     return {
       queryKey: key,
@@ -125,10 +175,11 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
         run: () =>
           input.client().status({
             repositoryId: selectedRepositoryId ?? "",
-            worktreeId: repository?.primaryWorktreeId,
+            worktreeId: activeWorktreeId ?? "",
           }),
       }),
-      enabled: enabled && selectedRepositoryId !== null,
+      enabled:
+        enabled && selectedRepositoryId !== null && activeWorktreeId !== null,
       ...polled(key),
     };
   });
@@ -211,8 +262,128 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
     };
   });
 
+  const worktreeList = $derived(worktrees.data?.worktrees ?? []);
+  const activeWorktree = $derived(
+    worktreeList.find((entry) => entry.worktreeId === activeWorktreeId) ?? null,
+  );
+
+  /**
+   * Keep an explicit worktree selection valid after a remove/refresh. The null override always
+   * remains valid because it resolves to the repository's primary worktree.
+   */
+  $effect(() => {
+    if (
+      selectedWorktreeId !== null &&
+      worktrees.data !== undefined &&
+      !worktreeList.some((entry) => entry.worktreeId === selectedWorktreeId)
+    ) {
+      input.selection.worktreeId = null;
+      input.selection.commitOid = null;
+      input.selection.statusPath = null;
+      input.selection.statusSide = null;
+      input.selection.diffPathId = null;
+    }
+  });
+
+  const worktreeStatusesQuery = createQuery(() => {
+    const worktreeIds = worktreeList.map((entry) => entry.worktreeId);
+    const key = [
+      "worktree-statuses",
+      input.baseUrl(),
+      input.token(),
+      selectedRepositoryId,
+      worktreeIds,
+    ];
+    return {
+      queryKey: key,
+      queryFn: async (): Promise<WorktreeStatusSummary[]> => {
+        const repositoryId = selectedRepositoryId;
+        if (repositoryId === null) {
+          return [];
+        }
+        const results = await mapBounded(
+          worktreeIds,
+          WORKTREE_STATUS_CONCURRENCY,
+          async (worktreeId): Promise<WorktreeStatusSummary> => {
+            if (
+              worktreeId === activeWorktreeId &&
+              (status.error === null || status.error === undefined) &&
+              status.data?.worktreeId === worktreeId
+            ) {
+              return { worktreeId, status: status.data, error: null };
+            }
+            try {
+              const worktreeKey = [...key, worktreeId];
+              return {
+                worktreeId,
+                status: await timedRead({
+                  key: worktreeKey,
+                  timer: readTimer,
+                  run: () =>
+                    input.client().status({
+                      repositoryId,
+                      worktreeId,
+                    }),
+                })(),
+                error: null,
+              };
+            } catch (error) {
+              return {
+                worktreeId,
+                status: null,
+                error: error instanceof Error ? error.message : String(error),
+              };
+            }
+          },
+        );
+        return results;
+      },
+      enabled:
+        enabled && selectedRepositoryId !== null && worktreeIds.length > 0,
+      ...polled(key),
+    };
+  });
+
+  const worktreeStatuses = $derived(
+    worktreeList.map((entry: WorktreeSummary): WorktreeStatusSummary => {
+      if (entry.worktreeId === activeWorktreeId) {
+        if (status.error !== null && status.error !== undefined) {
+          return {
+            worktreeId: entry.worktreeId,
+            status: null,
+            error:
+              status.error instanceof Error
+                ? status.error.message
+                : String(status.error),
+          };
+        }
+        if (status.data?.worktreeId === entry.worktreeId) {
+          return {
+            worktreeId: entry.worktreeId,
+            status: status.data,
+            error: null,
+          };
+        }
+        return {
+          worktreeId: entry.worktreeId,
+          status: null,
+          error: null,
+        };
+      }
+      return (
+        worktreeStatusesQuery.data?.find(
+          (candidate) => candidate.worktreeId === entry.worktreeId,
+        ) ?? {
+          worktreeId: entry.worktreeId,
+          status: null,
+          error: null,
+        }
+      );
+    }),
+  );
+
   const submodules = createQuery(() => {
-    const worktreeId = repository?.primaryWorktreeId;
+    const worktreeId = activeWorktreeId;
     const key = [
       "submodules",
       input.baseUrl(),
@@ -231,8 +402,7 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
             worktreeId: worktreeId ?? "",
           }),
       }),
-      enabled:
-        enabled && selectedRepositoryId !== null && worktreeId !== undefined,
+      enabled: enabled && selectedRepositoryId !== null && worktreeId !== null,
       ...polled(key),
     };
   });
@@ -244,6 +414,7 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
       input.baseUrl(),
       input.token(),
       selectedRepositoryId,
+      activeWorktreeId,
       filters,
       input.historyRevision(),
     ];
@@ -259,7 +430,7 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
               .history(
                 historyPageQuery(
                   selectedRepositoryId ?? "",
-                  repository?.primaryWorktreeId ?? null,
+                  activeWorktreeId,
                   filters,
                   pageParam,
                   HISTORY_PAGE_SIZE,
@@ -268,7 +439,8 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
         })(),
       initialPageParam: null as string | null,
       getNextPageParam: (lastPage) => lastPage.nextCursor,
-      enabled: enabled && selectedRepositoryId !== null,
+      enabled:
+        enabled && selectedRepositoryId !== null && activeWorktreeId !== null,
       ...polled(key),
     };
   });
@@ -294,20 +466,26 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
       input.baseUrl(),
       input.token(),
       selectedRepositoryId,
+      activeWorktreeId,
       selectedOid,
     ],
     queryFn: () =>
       input.client().history({
         repositoryId: selectedRepositoryId ?? "",
+        worktreeId: activeWorktreeId ?? "",
         detailOid: selectedOid ?? "",
         limit: 1,
       }),
-    enabled: enabled && selectedRepositoryId !== null && selectedOid !== null,
+    enabled:
+      enabled &&
+      selectedRepositoryId !== null &&
+      activeWorktreeId !== null &&
+      selectedOid !== null,
   }));
   const detail = $derived(commitDetail.data?.detail ?? null);
 
   const diffRequest = $derived(
-    diffRequestForSelection(selectedPath, selectedOid),
+    diffRequestForSelection(selectedPath, selectedOid, selectedStatusSide),
   );
 
   const diff = createQuery(() => {
@@ -318,6 +496,7 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
         input.baseUrl(),
         input.token(),
         selectedRepositoryId,
+        activeWorktreeId,
         request,
       ],
       queryFn: async (): Promise<DiffResponse> => {
@@ -326,10 +505,15 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
         }
         return input.client().diff({
           repositoryId: selectedRepositoryId ?? "",
+          worktreeId: activeWorktreeId ?? "",
           ...request,
         });
       },
-      enabled: enabled && selectedRepositoryId !== null && request !== null,
+      enabled:
+        enabled &&
+        selectedRepositoryId !== null &&
+        activeWorktreeId !== null &&
+        request !== null,
     };
   });
 
@@ -342,6 +526,7 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
         input.baseUrl(),
         input.token(),
         selectedRepositoryId,
+        activeWorktreeId,
         request,
         pathId,
       ],
@@ -351,6 +536,7 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
         }
         return input.client().diff({
           repositoryId: selectedRepositoryId ?? "",
+          worktreeId: activeWorktreeId ?? "",
           ...request,
           pathId,
         });
@@ -358,10 +544,31 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
       enabled:
         enabled &&
         selectedRepositoryId !== null &&
+        activeWorktreeId !== null &&
         request !== null &&
         pathId !== null &&
         request.kind !== "untracked",
     };
+  });
+
+  let lastDiffStatusSnapshotId = $state<string | null>(null);
+  $effect(() => {
+    const snapshotId = status.data?.snapshotId ?? null;
+    const request = diffRequest;
+    if (snapshotId === null) {
+      return;
+    }
+    const changed =
+      lastDiffStatusSnapshotId !== null &&
+      lastDiffStatusSnapshotId !== snapshotId;
+    lastDiffStatusSnapshotId = snapshotId;
+    if (!changed || request === null || request.kind === "commit") {
+      return;
+    }
+    void diff.refetch();
+    if (selectedDiffPathId !== null) {
+      void diffPatch.refetch();
+    }
   });
 
   const identity = createQuery(() => ({
@@ -382,8 +589,6 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
         error instanceof GitClientError && error.code === "Unauthenticated",
     ),
   );
-  const primaryWorktreeId = $derived(repository?.primaryWorktreeId ?? null);
-
   return {
     capabilities,
     repositories,
@@ -391,6 +596,7 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
     refs,
     stashes,
     worktrees,
+    worktreeStatusesQuery,
     submodules,
     history,
     commitDetail,
@@ -441,6 +647,15 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
     },
     get primaryWorktreeId() {
       return primaryWorktreeId;
+    },
+    get activeWorktreeId() {
+      return activeWorktreeId;
+    },
+    get activeWorktree() {
+      return activeWorktree;
+    },
+    get worktreeStatuses() {
+      return worktreeStatuses;
     },
   };
 }

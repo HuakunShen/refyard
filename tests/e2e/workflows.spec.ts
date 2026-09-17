@@ -50,10 +50,9 @@ test.describe("merge workbench", () => {
 
     await page.getByTestId(`merge-${other}`).click();
     // A stopped merge pulls the sidebar back to Working Copy, where conflict + staging live.
-    await expect(page.getByTestId("workbench-nav-working-copy")).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
+    await expect(
+      page.getByTestId("workbench-nav-working-copy"),
+    ).toHaveAttribute("aria-current", "page");
     // The panel names the conflict and the path, and the merge stays in progress.
     await expect(page.getByTestId("conflict-panel")).toBeVisible();
     await expect(page.getByTestId("conflicted-paths")).toContainText("a.txt");
@@ -61,8 +60,9 @@ test.describe("merge workbench", () => {
 
     // Resolution happens outside the workbench — that is the flow the panel states.
     await repo.write("a.txt", "resolved\n");
-    await page.getByTestId("select-all").click();
-    await page.getByTestId("stage-selected").click();
+    await page
+      .getByRole("button", { name: "Stage a.txt", exact: true })
+      .click();
     // Once nothing is conflicted, the continue button is available.
     await expect(page.getByTestId("conflicted-paths")).toHaveCount(0);
     await page.getByTestId("continue-merge").click();
@@ -90,10 +90,9 @@ test.describe("merge workbench", () => {
     await page.getByTestId("workbench-nav-branches").click();
 
     await page.getByTestId(`merge-${other}`).click();
-    await expect(page.getByTestId("workbench-nav-working-copy")).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
+    await expect(
+      page.getByTestId("workbench-nav-working-copy"),
+    ).toHaveAttribute("aria-current", "page");
     await expect(page.getByTestId("conflict-panel")).toBeVisible();
 
     // Aborting is two steps: the first one arms, and the merge is still in progress

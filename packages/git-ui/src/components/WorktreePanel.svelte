@@ -13,6 +13,8 @@
   import { Badge } from "./ui/badge/index.js";
   import { Button } from "./ui/button/index.js";
   import ConfirmAction from "./ConfirmAction.svelte";
+  import ContextActionMenu from "./ContextActionMenu.svelte";
+  import type { ContextAction } from "../lib/context-actions.js";
   import { cn } from "../lib/utils.js";
 
   interface WorktreeEntry {
@@ -44,6 +46,9 @@
     onRemove: (worktreeId: string) => void;
     onLock: (worktreeId: string, reason: string | null) => void;
     onUnlock: (worktreeId: string) => void;
+    activeWorktreeId?: string | null;
+    onOpenWorktree?: (worktreeId: string) => void;
+    onOpenWorktreeInTab?: (worktreeId: string) => void;
     class?: string;
   }
 
@@ -57,6 +62,9 @@
     onRemove,
     onLock,
     onUnlock,
+    activeWorktreeId = null,
+    onOpenWorktree = undefined,
+    onOpenWorktreeInTab = undefined,
     class: className = "",
   }: Props = $props();
 
@@ -100,6 +108,36 @@
       }
     }
     relativeDestination = "";
+  }
+
+  function worktreeContextActions(
+    worktree: WorktreeEntry,
+  ): readonly ContextAction[] {
+    const actionDisabled = disabled || busy;
+    return [
+      ...(onOpenWorktree === undefined
+        ? []
+        : [
+            {
+              kind: "action" as const,
+              id: "open",
+              label: "Open this worktree",
+              disabled: actionDisabled,
+              onSelect: () => onOpenWorktree(worktree.worktreeId),
+            },
+          ]),
+      ...(onOpenWorktreeInTab === undefined
+        ? []
+        : [
+            {
+              kind: "action" as const,
+              id: "open-new-tab",
+              label: "Open worktree in new tab",
+              disabled: actionDisabled,
+              onSelect: () => onOpenWorktreeInTab(worktree.worktreeId),
+            },
+          ]),
+    ];
   }
 </script>
 
@@ -197,87 +235,122 @@
       data-testid="worktree-list"
     >
       {#each worktrees as worktree (worktree.worktreeId)}
+        {@const selected = worktree.worktreeId === activeWorktreeId}
+        {@const openable = onOpenWorktree !== undefined}
         <li
-          class="flex flex-col gap-1.5 rounded-lg border border-border/50 bg-card/60 p-2 hover:border-border hover:bg-accent/30 transition-all"
+          class={cn(
+            "flex flex-col gap-1.5 rounded-lg border p-2 transition-all",
+            selected
+              ? "border-primary/50 bg-primary/10 shadow-2xs"
+              : "border-border/50 bg-card/60 hover:border-border hover:bg-accent/30",
+          )}
         >
-          <div class="flex items-center gap-2 min-w-0">
-            <Badge
-              tone={worktree.isMain ? "muted" : "branch"}
-              class="shrink-0 text-[10px] h-4.5 px-1.5 font-mono"
-            >
-              {worktree.isMain ? "primary" : "linked"}
-            </Badge>
-            {#if worktree.isLocked}
-              <Badge
-                tone="muted"
-                class="shrink-0 text-[10px] h-4.5 px-1.5 flex items-center gap-1"
-              >
-                <Lock class="size-2.5" />
-                locked
-              </Badge>
-            {/if}
-            <span
-              class="min-w-0 flex-1 truncate font-mono text-xs font-medium text-foreground"
-              title={worktree.displayPath}
-            >
-              {worktree.displayPath}
-            </span>
-            <span class="font-mono text-xs text-ink-muted shrink-0">
-              {worktree.head.branchName ?? shortOid(worktree.head.oid)}
-            </span>
-          </div>
-
-          {#if worktree.isLocked && worktree.lockReason !== null}
-            <div class="text-[11px] text-ink-faint italic px-0.5">
-              Reason: {worktree.lockReason}
-            </div>
-          {/if}
-
-          <div
-            class="flex items-center gap-1.5 pt-0.5 border-t border-border/20"
+          <ContextActionMenu
+            actions={worktreeContextActions(worktree)}
+            triggerClass="block w-full"
+            triggerTestId={`worktree-row-${worktree.worktreeId}`}
+            data-testid={`worktree-context-${worktree.worktreeId}`}
           >
-            {#if worktree.isLocked}
-              <Button
-                size="sm"
-                variant="outline"
-                class="h-6 text-xs px-2 shadow-none"
-                disabled={disabled || busy}
-                onclick={() => onUnlock(worktree.worktreeId)}
-                data-testid={`unlock-worktree-${worktree.worktreeId}`}
+            {#snippet children()}
+              <button
+                type="button"
+                class={cn(
+                  "flex w-full items-center gap-2 min-w-0 rounded-md text-left",
+                  "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                )}
+                disabled={!openable || disabled}
+                aria-current={selected ? "true" : undefined}
+                aria-label={openable
+                  ? `Open worktree ${worktree.head.branchName ?? shortOid(worktree.head.oid)}`
+                  : undefined}
+                title={worktree.displayPath}
+                onclick={() => onOpenWorktree?.(worktree.worktreeId)}
               >
-                Unlock
-              </Button>
-            {:else}
-              <Button
-                size="sm"
-                variant="outline"
-                class="h-6 text-xs px-2 shadow-none"
-                disabled={disabled || busy}
-                onclick={() =>
-                  onLock(
-                    worktree.worktreeId,
-                    lockReason.trim().length === 0 ? null : lockReason.trim(),
-                  )}
-                data-testid={`lock-worktree-${worktree.worktreeId}`}
-              >
-                Lock
-              </Button>
-            {/if}
+                <Badge
+                  tone={worktree.isMain ? "muted" : "branch"}
+                  class="shrink-0 text-[10px] h-4.5 px-1.5 font-mono"
+                >
+                  {worktree.isMain ? "primary" : "linked"}
+                </Badge>
+                {#if worktree.isLocked}
+                  <Badge
+                    tone="muted"
+                    class="shrink-0 text-[10px] h-4.5 px-1.5 flex items-center gap-1"
+                  >
+                    <Lock class="size-2.5" />
+                    locked
+                  </Badge>
+                {/if}
+                <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span
+                    class="truncate font-mono text-xs font-medium text-foreground"
+                  >
+                    {worktree.head.branchName ?? shortOid(worktree.head.oid)}
+                  </span>
+                  <span
+                    class="truncate font-mono text-[10px] text-ink-faint"
+                    title={worktree.displayPath}
+                  >
+                    {worktree.displayPath}
+                  </span>
+                </span>
+              </button>
 
-            {#if !worktree.isMain}
-              <span class="ml-auto">
-                <ConfirmAction
-                  label="Remove"
-                  confirmLabel={`Remove ${worktree.displayPath}`}
-                  description="Refused when the checkout has changes."
-                  disabled={disabled || busy}
-                  {busy}
-                  onConfirm={() => onRemove(worktree.worktreeId)}
-                  data-testid={`remove-worktree-${worktree.worktreeId}`}
-                />
-              </span>
-            {/if}
-          </div>
+              {#if worktree.isLocked && worktree.lockReason !== null}
+                <div class="text-[11px] text-ink-faint italic px-0.5">
+                  Reason: {worktree.lockReason}
+                </div>
+              {/if}
+
+              <div
+                class="flex items-center gap-1.5 pt-0.5 border-t border-border/20"
+              >
+                {#if worktree.isLocked}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    class="h-6 text-xs px-2 shadow-none"
+                    disabled={disabled || busy}
+                    onclick={() => onUnlock(worktree.worktreeId)}
+                    data-testid={`unlock-worktree-${worktree.worktreeId}`}
+                  >
+                    Unlock
+                  </Button>
+                {:else}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    class="h-6 text-xs px-2 shadow-none"
+                    disabled={disabled || busy}
+                    onclick={() =>
+                      onLock(
+                        worktree.worktreeId,
+                        lockReason.trim().length === 0
+                          ? null
+                          : lockReason.trim(),
+                      )}
+                    data-testid={`lock-worktree-${worktree.worktreeId}`}
+                  >
+                    Lock
+                  </Button>
+                {/if}
+
+                {#if !worktree.isMain}
+                  <span class="ml-auto">
+                    <ConfirmAction
+                      label="Remove"
+                      confirmLabel={`Remove ${worktree.displayPath}`}
+                      description="Refused when the checkout has changes."
+                      disabled={disabled || busy}
+                      {busy}
+                      onConfirm={() => onRemove(worktree.worktreeId)}
+                      data-testid={`remove-worktree-${worktree.worktreeId}`}
+                    />
+                  </span>
+                {/if}
+              </div>
+            {/snippet}
+          </ContextActionMenu>
         </li>
       {/each}
     </ul>

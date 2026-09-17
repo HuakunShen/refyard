@@ -15,9 +15,17 @@
     onSelect: (repositoryId: string) => void;
     onClose: (repositoryId: string) => void;
     onNew: () => void;
+    disabled?: boolean;
   }
 
-  let { tabs, activeRepositoryId, onSelect, onClose, onNew }: Props = $props();
+  let {
+    tabs,
+    activeRepositoryId,
+    onSelect,
+    onClose,
+    onNew,
+    disabled = false,
+  }: Props = $props();
 </script>
 
 <div
@@ -36,6 +44,7 @@
     >
       <button
         type="button"
+        {disabled}
         class="min-w-0 flex-1 truncate text-left font-medium"
         title={tab.displayPath}
         aria-current={tab.repositoryId === activeRepositoryId
@@ -47,6 +56,7 @@
       </button>
       <button
         type="button"
+        {disabled}
         class="rounded p-0.5 text-muted-foreground opacity-70 hover:bg-background hover:text-foreground group-hover:opacity-100"
         aria-label={`Close ${tab.displayName}`}
         onclick={() => onClose(tab.repositoryId)}
@@ -58,6 +68,7 @@
   <button
     type="button"
     class="flex shrink-0 items-center gap-1 rounded-md border border-dashed border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+    {disabled}
     aria-label="New repository tab"
     data-testid="new-repository-tab"
     onclick={onNew}

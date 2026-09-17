@@ -75,6 +75,18 @@ describe("workbench query model", () => {
       kind: "staged",
       pathId: "path_1",
     });
+    expect(
+      diffRequestForSelection(status("ordinary", "M"), null, "unstaged"),
+    ).toEqual({
+      kind: "unstaged",
+      pathId: "path_1",
+    });
+    expect(
+      diffRequestForSelection(status("ordinary", "M"), null, "staged"),
+    ).toEqual({
+      kind: "staged",
+      pathId: "path_1",
+    });
     expect(diffRequestForSelection(status("ignored"), "a".repeat(40))).toEqual({
       kind: "commit",
       oid: "a".repeat(40),

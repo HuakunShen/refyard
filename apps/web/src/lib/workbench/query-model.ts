@@ -24,6 +24,24 @@ export interface HistoryNotices {
   readonly shallow: boolean;
 }
 
+function diffSideForSelection(
+  selectedPath: StatusEntry,
+  selectedSide: "staged" | "unstaged" | null,
+): "staged" | "unstaged" {
+  if (selectedPath.kind === "untracked") {
+    return "unstaged";
+  }
+  const hasStaged = selectedPath.indexStatus !== ".";
+  const hasUnstaged = selectedPath.worktreeStatus !== ".";
+  if (selectedSide === "staged") {
+    return hasStaged || !hasUnstaged ? "staged" : "unstaged";
+  }
+  if (selectedSide === "unstaged") {
+    return hasUnstaged || !hasStaged ? "unstaged" : "staged";
+  }
+  return hasStaged ? "staged" : "unstaged";
+}
+
 /** Preserve the existing Map semantics: duplicate root ids keep their last repository path. */
 export function workspaceRootsFor(
   repositories: readonly RepositorySummary[],
@@ -44,14 +62,16 @@ export function workspaceRootsFor(
 export function diffRequestForSelection(
   selectedPath: StatusEntry | null,
   selectedOid: string | null,
+  selectedSide: "staged" | "unstaged" | null = null,
 ): WorkbenchDiffRequest | null {
   if (selectedPath !== null && selectedPath.kind !== "ignored") {
     if (selectedPath.kind === "untracked") {
       return { kind: "untracked", pathId: selectedPath.pathId };
     }
-    return selectedPath.indexStatus === "."
-      ? { kind: "unstaged", pathId: selectedPath.pathId }
-      : { kind: "staged", pathId: selectedPath.pathId };
+    return {
+      kind: diffSideForSelection(selectedPath, selectedSide),
+      pathId: selectedPath.pathId,
+    };
   }
   if (selectedOid !== null) {
     return { kind: "commit", oid: selectedOid };

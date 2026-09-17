@@ -35,6 +35,11 @@ export interface WorkbenchMutationInputs {
   readonly queries: ReturnType<typeof createWorkbenchQueries>;
   readonly queryClient: QueryClient;
   readonly fetch: typeof fetch;
+  /** Called only after a commit/amend operation is confirmed terminal-successful. */
+  readonly onCommitSucceeded?: (
+    repositoryId: string,
+    worktreeId: string,
+  ) => void;
 }
 
 export interface RepositoryInitInput {
@@ -56,6 +61,32 @@ export interface WorktreeReferenceInput {
   readonly oid?: string;
 }
 
+interface MutationContext {
+  readonly repositoryId: string;
+  readonly worktreeId: string;
+}
+
+interface ScopedMessage {
+  readonly context: MutationContext;
+  readonly message: string;
+}
+
+type MutationReport = (
+  message: string | null,
+  context: MutationContext | null,
+) => void;
+
+function sameMutationContext(
+  left: MutationContext,
+  right: MutationContext | null,
+): boolean {
+  return (
+    right !== null &&
+    left.repositoryId === right.repositoryId &&
+    left.worktreeId === right.worktreeId
+  );
+}
+
 export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
   const mutationClient = $derived(
     createMutationClient({
@@ -68,8 +99,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
   let busy = $state(false);
   let repositoryMessage = $state<string | null>(null);
   let repositoryAccessMessage = $state<string | null>(null);
-  let stagingMessage = $state<string | null>(null);
-  let commitResult = $state<string | null>(null);
+  let stagingMessage = $state<ScopedMessage | null>(null);
+  let commitResult = $state<ScopedMessage | null>(null);
   let branchMessage = $state<string | null>(null);
   let remoteMessage = $state<string | null>(null);
   let worktreeMessage = $state<string | null>(null);
@@ -101,6 +132,17 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     (input.queries.refs.data?.branches ?? []).map((branch) => branch.name),
   );
 
+  function visibleMessage(message: ScopedMessage | null): string | null {
+    const repositoryId = input.selection.repositoryId;
+    const worktreeId = input.queries.activeWorktreeId;
+    if (repositoryId === null || worktreeId === null || message === null) {
+      return null;
+    }
+    return sameMutationContext(message.context, { repositoryId, worktreeId })
+      ? message.message
+      : null;
+  }
+
   async function invalidateRepositoryReads(
     repositoryId: string,
   ): Promise<void> {
@@ -110,7 +152,10 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
       "stashes",
       "history",
       "worktrees",
+      "worktree-statuses",
       "submodules",
+      "diff",
+      "diff-patch",
     ] as const) {
       await input.queryClient.invalidateQueries({
         queryKey: [prefix, input.baseUrl(), input.token(), repositoryId],
@@ -121,17 +166,40 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
   async function performWrite(
     label: string,
     buildOperation: (context: {
+      readonly repositoryId: string;
       readonly worktreeId: string;
     }) =>
       | ParsedMutationRequest["operation"]
       | Promise<ParsedMutationRequest["operation"]>,
-    report: (message: string | null) => void = (message) => {
-      stagingMessage = message;
+    report: MutationReport = (message, context) => {
+      stagingMessage =
+        message === null || context === null ? null : { context, message };
     },
     targetKind: "worktree" | "repository" = "worktree",
+    onSucceeded?: (context: MutationContext) => void,
   ): Promise<void> {
     busy = true;
-    report(null);
+    const repositoryId = input.selection.repositoryId;
+    const worktreeId = input.queries.activeWorktreeId;
+    const context =
+      repositoryId === null || worktreeId === null
+        ? null
+        : { repositoryId, worktreeId };
+    const reportForContext = (message: string | null): void => {
+      if (context === null) {
+        report(message, null);
+        return;
+      }
+      const current: MutationContext | null =
+        input.selection.repositoryId === context.repositoryId &&
+        input.queries.activeWorktreeId === context.worktreeId
+          ? context
+          : null;
+      if (current !== null && sameMutationContext(context, current)) {
+        report(message, current);
+      }
+    };
+    reportForContext(null);
     try {
       const refusal = writeRefusalMessage({
         browserOnline: input.browserOnline(),
@@ -142,18 +210,19 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
       if (refusal !== null) {
         throw new Error(refusal);
       }
-      const repositoryId = input.selection.repositoryId;
-      const worktreeId = input.queries.primaryWorktreeId;
-      if (repositoryId === null || worktreeId === null) {
+      // Capture the target before any preview/status await. A user can switch worktrees while a
+      // request is in flight; the operation must finish against the target the user confirmed.
+      const targetContext = context;
+      if (targetContext === null) {
         throw new Error("no repository selected");
       }
-      const operation = await buildOperation({ worktreeId });
+      const operation = await buildOperation(targetContext);
       const target =
         targetKind === "worktree"
           ? await (async () => {
               const snapshot = await input.client().status({
-                repositoryId,
-                worktreeId,
+                repositoryId: targetContext.repositoryId,
+                worktreeId: targetContext.worktreeId,
               });
               return {
                 kind: "worktree" as const,
@@ -163,7 +232,9 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
               };
             })()
           : await (async () => {
-              const snapshot = await input.client().refs({ repositoryId });
+              const snapshot = await input.client().refs({
+                repositoryId: targetContext.repositoryId,
+              });
               return {
                 kind: "repository" as const,
                 repositoryId: snapshot.repositoryId,
@@ -175,15 +246,17 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
         target,
         operation,
       });
-      report(
-        await followOperation(
-          mutationClient,
-          operationIdFromSubmission(submitted),
-        ),
-      );
-      await invalidateRepositoryReads(repositoryId);
+      const operationId = operationIdFromSubmission(submitted);
+      reportForContext(await followOperation(mutationClient, operationId));
+      if (onSucceeded !== undefined) {
+        const finalRecord = await mutationClient.get(operationId);
+        if (finalRecord.status === "succeeded") {
+          onSucceeded(targetContext);
+        }
+      }
+      await invalidateRepositoryReads(targetContext.repositoryId);
     } catch (error) {
-      report(describeClientProblem(error));
+      reportForContext(describeClientProblem(error));
     } finally {
       busy = false;
     }
@@ -269,11 +342,21 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
       if (refusal !== null) {
         throw new Error(refusal);
       }
-      const result = await input.client().registerRepository(path);
+      // Resolve home shorthand and symlinks using the host, which owns filesystem paths.
+      const directory = await input.client().filesystemEntries({ path });
+      const current = await input.queries.repositories.refetch();
+      const existing = current.data?.repositories.find(
+        (entry) => entry.displayPath === directory.path,
+      );
+      if (existing !== undefined) {
+        selectRepository(input.selection, existing.repositoryId);
+        return true;
+      }
+      const result = await input.client().registerRepository(directory.path);
       repositoryAccessMessage = `approved ${path}`;
       await input.queries.repositories.refetch();
       const added = result.repositories.find(
-        (entry) => entry.displayPath === path,
+        (entry) => entry.displayPath === directory.path,
       );
       if (added !== undefined) {
         selectRepository(input.selection, added.repositoryId);
@@ -312,11 +395,12 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
   }
 
   async function previewTokensFor(
+    repositoryId: string,
     worktreeId: string,
     pathIds: readonly string[],
   ): Promise<readonly string[]> {
     const previews = await input.client().previews({
-      repositoryId: input.selection.repositoryId ?? "",
+      repositoryId,
       worktreeId,
       pathIds: [...pathIds],
     });
@@ -333,11 +417,15 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
   }
 
   function onStage(pathIds: readonly string[]): void {
-    void performWrite("stage", async ({ worktreeId }) => ({
-      kind: "stagePaths",
-      pathIds: [...pathIds],
-      previewTokens: [...(await previewTokensFor(worktreeId, pathIds))],
-    }));
+    void performWrite("stage", async ({ repositoryId, worktreeId }) => {
+      return {
+        kind: "stagePaths" as const,
+        pathIds: [...pathIds],
+        previewTokens: [
+          ...(await previewTokensFor(repositoryId, worktreeId, pathIds)),
+        ],
+      };
+    });
   }
 
   function onUnstage(pathIds: readonly string[]): void {
@@ -348,21 +436,31 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
   }
 
   function onDiscard(pathIds: readonly string[]): void {
-    void performWrite("discard", async ({ worktreeId }) => ({
-      kind: "discardTrackedPaths",
-      pathIds: [...pathIds],
-      previewTokens: [...(await previewTokensFor(worktreeId, pathIds))],
-      confirmed: true,
-    }));
+    void performWrite("discard", async ({ repositoryId, worktreeId }) => {
+      return {
+        kind: "discardTrackedPaths" as const,
+        pathIds: [...pathIds],
+        previewTokens: [
+          ...(await previewTokensFor(repositoryId, worktreeId, pathIds)),
+        ],
+        confirmed: true,
+      };
+    });
   }
 
   function onCommit(message: string): void {
     void performWrite(
       "commit",
       () => ({ kind: "commit", message }),
-      (result) => {
-        commitResult = result;
+      (result, context) => {
+        commitResult =
+          result === null || context === null
+            ? null
+            : { context, message: result };
       },
+      "worktree",
+      ({ repositoryId, worktreeId }) =>
+        input.onCommitSucceeded?.(repositoryId, worktreeId),
     );
   }
 
@@ -370,9 +468,15 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     void performWrite(
       "amend",
       () => ({ kind: "amendCommit", message, confirmed: true }),
-      (result) => {
-        commitResult = result;
+      (result, context) => {
+        commitResult =
+          result === null || context === null
+            ? null
+            : { context, message: result };
       },
+      "worktree",
+      ({ repositoryId, worktreeId }) =>
+        input.onCommitSucceeded?.(repositoryId, worktreeId),
     );
   }
 
@@ -671,7 +775,11 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     );
   }
 
-  async function worktreeReference(reference: WorktreeReferenceInput): Promise<
+  async function worktreeReference(
+    reference: WorktreeReferenceInput,
+    repositoryId: string,
+    worktreeId: string,
+  ): Promise<
     | {
         readonly kind: "newBranch";
         readonly branchName: string;
@@ -685,11 +793,6 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     }
     if (reference.kind === "existingBranch") {
       return { kind: "existingBranch", branchName: reference.branchName ?? "" };
-    }
-    const repositoryId = input.selection.repositoryId;
-    const worktreeId = input.queries.primaryWorktreeId;
-    if (repositoryId === null || worktreeId === null) {
-      throw new Error("no worktree selected");
     }
     const snapshot = await input.client().status({
       repositoryId,
@@ -714,10 +817,10 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
   ): void {
     void performWrite(
       "create-worktree",
-      async () => ({
+      async ({ repositoryId, worktreeId }) => ({
         kind: "createWorktree",
         relativeDestination,
-        reference: await worktreeReference(reference),
+        reference: await worktreeReference(reference, repositoryId, worktreeId),
       }),
       (result) => {
         worktreeMessage = result;
@@ -843,10 +946,10 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
       return repositoryAccessMessage;
     },
     get stagingMessage() {
-      return stagingMessage;
+      return visibleMessage(stagingMessage);
     },
     get commitResult() {
-      return commitResult;
+      return visibleMessage(commitResult);
     },
     get branchMessage() {
       return branchMessage;

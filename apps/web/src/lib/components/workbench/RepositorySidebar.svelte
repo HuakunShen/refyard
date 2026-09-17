@@ -1,4 +1,5 @@
 <script lang="ts">
+  /** Repository navigation and worktree selection beside the main workbench. */
   import {
     Archive,
     Boxes,
@@ -13,7 +14,6 @@
   import {
     BranchPanel,
     Button,
-    CommitPanel,
     ConflictPanel,
     RefsPanel,
     RemotePanel,
@@ -22,10 +22,8 @@
     RepositoryPanel,
     SectionCard,
     Separator,
-    StagingPanel,
     StashPanel,
     StateBanner,
-    StatusList,
     SubmodulePanel,
     TagPanel,
     WorkbenchNav,
@@ -34,11 +32,7 @@
   } from "@refyard/git-ui";
   import type { WorkbenchQueries } from "$lib/workbench/queries.svelte.js";
   import type { WorkbenchMutations } from "$lib/workbench/mutations.svelte.js";
-  import {
-    selectRepository,
-    selectStatusPath,
-    type WorkbenchSelectionState,
-  } from "$lib/workbench/selection.js";
+  import { type WorkbenchSelectionState } from "$lib/workbench/selection.js";
   import {
     availableSidebarViews,
     createSidebarNavigationState,
@@ -53,10 +47,23 @@
     selection: WorkbenchSelectionState;
     token: string | null;
     describeProblem: (error: unknown) => string;
+    onRepositorySelect: (id: string) => void;
+    onOpenWorktree: (id: string) => void;
+    onOpenWorktreeInTab: (id: string) => void;
+    onWorkingCopy: () => void;
   }
 
-  let { queries, mutations, selection, token, describeProblem }: Props =
-    $props();
+  let {
+    queries,
+    mutations,
+    selection,
+    token,
+    describeProblem,
+    onRepositorySelect,
+    onOpenWorktree,
+    onOpenWorktreeInTab,
+    onWorkingCopy,
+  }: Props = $props();
 
   const repositories = $derived(queries.repositories);
   const status = $derived(queries.status);
@@ -70,12 +77,9 @@
   const displayedStashes = $derived(queries.displayedStashes);
   const stashPanelAvailable = $derived(queries.stashPanelAvailable);
   const selectedRepositoryId = $derived(selection.repositoryId);
-  const selectedPath = $derived(selection.statusPath);
 
   const mutationBusy = $derived(mutations.busy);
   const writesAllowed = $derived(mutations.writesAllowed);
-  const stagingAvailable = $derived(mutations.availability.staging);
-  const commitAvailable = $derived(mutations.availability.commit);
   const branchAvailable = $derived(mutations.availability.branch);
   const networkAvailable = $derived(mutations.availability.network);
   const stashAvailable = $derived(mutations.availability.stash);
@@ -92,8 +96,6 @@
 
   const repositoryMessage = $derived(mutations.repositoryMessage);
   const repositoryAccessMessage = $derived(mutations.repositoryAccessMessage);
-  const stagingMessage = $derived(mutations.stagingMessage);
-  const commitResult = $derived(mutations.commitResult);
   const branchMessage = $derived(mutations.branchMessage);
   const remoteMessage = $derived(mutations.remoteMessage);
   const worktreeMessage = $derived(mutations.worktreeMessage);
@@ -106,11 +108,6 @@
   const onRepositoryClone = $derived(mutations.onRepositoryClone);
   const registerRepository = $derived(mutations.registerRepository);
   const revokeRepository = $derived(mutations.revokeRepository);
-  const onStage = $derived(mutations.onStage);
-  const onUnstage = $derived(mutations.onUnstage);
-  const onDiscard = $derived(mutations.onDiscard);
-  const onCommit = $derived(mutations.onCommit);
-  const onAmend = $derived(mutations.onAmend);
   const onBranchCreate = $derived(mutations.onBranchCreate);
   const onBranchSwitch = $derived(mutations.onBranchSwitch);
   const onBranchRename = $derived(mutations.onBranchRename);
@@ -185,6 +182,7 @@
   });
 
   function chooseView(id: string): void {
+    if (id === "working-copy") onWorkingCopy();
     selectSidebarView(navigation, id as SidebarViewId, sidebarViews);
   }
 </script>
@@ -260,7 +258,7 @@
             repositories={repositoryList}
             selectedId={selectedRepositoryId}
             onSelect={(repositoryId) => {
-              selectRepository(selection, repositoryId);
+              onRepositorySelect(repositoryId);
             }}
           />
         {/if}
@@ -289,51 +287,12 @@
     </SectionCard>
 
     {#if repository !== null}
-      <SectionCard
-        title="Changes"
-        class={activeView !== "working-copy" ? "hidden" : ""}
-        count={status.data ? status.data.entries.length : undefined}
-        open={true}
-      >
-        {#snippet icon()}
-          <FileDiff class="size-3.5 text-muted-foreground" />
-        {/snippet}
-        <div class="flex flex-col gap-2">
-          {#if status.isPending}
-            <StateBanner state="loading" title="Reading status…" />
-          {:else if status.isError}
-            <StateBanner
-              state="error"
-              title="Could not read status"
-              detail={describeProblem(status.error)}
-            >
-              {#snippet action()}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onclick={() => void status.refetch()}
-                >
-                  Retry
-                </Button>
-              {/snippet}
-            </StateBanner>
-          {:else if status.data !== undefined}
-            <StatusList
-              snapshot={status.data}
-              selectedPathId={selectedPath?.pathId ?? null}
-              disabled={mutationBusy}
-              busy={mutationBusy}
-              {onStage}
-              {onUnstage}
-              {onDiscard}
-              onSelect={(entry) => {
-                selectStatusPath(selection, entry);
-              }}
-            />
-          {/if}
+      {#if activeView === "working-copy"}
+        <div class="px-2 py-3 text-xs text-muted-foreground">
+          Select a worktree below. Its changed files and commit message are on
+          the right.
         </div>
-      </SectionCard>
-
+      {/if}
       {#if mergeAvailable && (operationInProgress !== null || mergeMessage !== null)}
         <ConflictPanel
           class={activeView !== "working-copy" ? "hidden" : ""}
@@ -345,57 +304,6 @@
           onContinue={onMergeContinue}
           onAbort={onMergeAbort}
         />
-      {/if}
-
-      {#if stagingAvailable}
-        <SectionCard
-          title="Stage & commit"
-          class={activeView !== "working-copy" ? "hidden" : ""}
-          count={status.data
-            ? status.data.entries.filter((entry) => entry.indexStatus !== ".")
-                .length
-            : undefined}
-          open={true}
-        >
-          {#snippet icon()}
-            <GitCommit class="size-3.5 text-muted-foreground" />
-          {/snippet}
-          <div class="flex flex-col gap-3">
-            {#if status.isPending}
-              <StateBanner state="loading" title="Reading status…" />
-            {:else if status.isError}
-              <StateBanner
-                state="error"
-                title="Could not read status"
-                detail={describeProblem(status.error)}
-              />
-            {:else if status.data !== undefined}
-              <StagingPanel
-                entries={status.data.entries}
-                disabled={mutationBusy}
-                busy={mutationBusy}
-                message={stagingMessage}
-                {onStage}
-                {onUnstage}
-                {onDiscard}
-              />
-              {#if commitAvailable}
-                <Separator />
-                <CommitPanel
-                  stagedCount={status.data.entries.filter(
-                    (entry) => entry.indexStatus !== ".",
-                  ).length}
-                  disabled={mutationBusy}
-                  busy={mutationBusy}
-                  canAmend={status.data.head.kind === "born"}
-                  message={commitResult}
-                  {onCommit}
-                  {onAmend}
-                />
-              {/if}
-            {/if}
-          </div>
-        </SectionCard>
       {/if}
 
       {#if branchAvailable}
@@ -549,7 +457,9 @@
       {#if worktreeAvailable}
         <SectionCard
           title="Worktrees"
-          class={activeView !== "worktrees" ? "hidden" : ""}
+          class={activeView !== "worktrees" && activeView !== "working-copy"
+            ? "hidden"
+            : ""}
           count={worktrees.data ? worktrees.data.worktrees.length : undefined}
           open={true}
         >
@@ -569,6 +479,9 @@
               <WorktreePanel
                 worktrees={worktrees.data?.worktrees ?? []}
                 branches={branchNames}
+                activeWorktreeId={queries.activeWorktreeId}
+                {onOpenWorktree}
+                {onOpenWorktreeInTab}
                 disabled={mutationBusy}
                 busy={mutationBusy}
                 message={worktreeMessage}

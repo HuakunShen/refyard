@@ -22,6 +22,10 @@
     /** True when the branch has at least one commit (amend needs a tip to rewrite). */
     canAmend?: boolean;
     message?: string | null;
+    /** The draft is bindable so each worktree can retain its own composer text. */
+    draft?: string;
+    /** Optional controlled-input bridge for hosts that key drafts by worktree. */
+    onDraftChange?: (draft: string) => void;
     onCommit: (message: string) => void;
     onAmend: (message: string | null) => void;
     class?: string;
@@ -33,13 +37,14 @@
     busy = false,
     canAmend = true,
     message = null,
+    draft = $bindable(""),
+    onDraftChange = undefined,
     onCommit,
     onAmend,
     class: className = "",
   }: Props = $props();
 
-  let text = $state("");
-  const trimmed = $derived(text.trim());
+  const trimmed = $derived(draft.trim());
   const commitReady = $derived(
     !disabled && !busy && trimmed.length > 0 && stagedCount > 0,
   );
@@ -48,17 +53,32 @@
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
       if (commitReady) {
         event.preventDefault();
-        onCommit(text);
+        onCommit(draft);
       }
     }
+  }
+
+  function handleInput(event: Event): void {
+    const target = event.currentTarget;
+    if (!(target instanceof HTMLTextAreaElement)) {
+      return;
+    }
+    draft = target.value;
+    onDraftChange?.(draft);
   }
 </script>
 
 <div class={cn("flex flex-col gap-2.5", className)} data-testid="commit-panel">
   <div class="flex items-center justify-between">
-    <label class="flex items-center gap-1.5 text-xs font-medium text-ink-muted" for="commit-message">
+    <label
+      class="flex items-center gap-1.5 text-xs font-medium text-ink-muted"
+      for="commit-message"
+    >
       <span>Commit message</span>
-      <kbd class="rounded border border-border/60 bg-muted/40 px-1 py-0.5 text-[10px] font-sans text-ink-faint">⌘↵</kbd>
+      <kbd
+        class="rounded border border-border/60 bg-muted/40 px-1 py-0.5 text-[10px] font-sans text-ink-faint"
+        >⌘↵</kbd
+      >
     </label>
     <span class="text-[11px] font-mono text-ink-faint">
       {stagedCount} staged path{stagedCount === 1 ? "" : "s"}
@@ -70,7 +90,8 @@
     data-testid="commit-message"
     class="min-h-16 w-full rounded-lg border border-input bg-transparent px-2.5 py-1.5 font-mono text-xs shadow-2xs outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50 transition-all placeholder:text-ink-faint"
     placeholder="What changed, and why"
-    bind:value={text}
+    value={draft}
+    oninput={handleInput}
     onkeydown={handleKeydown}
     disabled={disabled || busy}></textarea>
 
@@ -79,7 +100,7 @@
       size="sm"
       class="h-7 text-xs px-3 gap-1.5 shadow-xs"
       disabled={!commitReady}
-      onclick={() => onCommit(text)}
+      onclick={() => onCommit(draft)}
       data-testid="commit-button"
     >
       <GitCommit class="size-3.5" />
@@ -92,7 +113,7 @@
       description="Amend rewrites the last commit. This version performs no follow-up push."
       disabled={disabled || busy || !canAmend || trimmed.length === 0}
       {busy}
-      onConfirm={() => onAmend(text)}
+      onConfirm={() => onAmend(draft)}
       data-testid="amend-button"
     />
 
