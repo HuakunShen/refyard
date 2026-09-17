@@ -137,6 +137,8 @@ export {
   type ManagedRepository,
 } from "./components/RepositoryAccessPanel.svelte";
 export { default as RepositoryPanel } from "./components/RepositoryPanel.svelte";
+export { default as RepositoryLauncher } from "./components/RepositoryLauncher.svelte";
+export { default as RepositoryTabs } from "./components/RepositoryTabs.svelte";
 export type {
   CloneRequest as RepositoryCloneRequest,
   InitRequest as RepositoryInitRequest,

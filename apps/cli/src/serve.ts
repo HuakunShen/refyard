@@ -103,8 +103,8 @@ export interface ServiceAssembly {
   readonly repositoryIds: readonly string[];
   readonly allowedRootIds: readonly string[];
   /** Compatibility aliases for callers that intentionally serve one repository. */
-  readonly repositoryId: string;
-  readonly allowedRootId: string;
+  readonly repositoryId: string | null;
+  readonly allowedRootId: string | null;
   readonly gitPath: string;
   readonly gitVersion: string;
   readonly features: Awaited<ReturnType<typeof runDoctor>>["features"];
@@ -115,6 +115,8 @@ export interface AssembleOptions {
   readonly repositoryPath?: string;
   /** Every path is approved independently; no common parent is inferred. */
   readonly repositoryPaths?: readonly string[];
+  /** Development launcher mode may begin before a repository is chosen. */
+  readonly allowEmpty?: boolean;
   readonly gitPath: string;
   readonly write: (line: string) => void;
   /**
@@ -136,7 +138,7 @@ export async function assembleService(
   const requestedPaths =
     options.repositoryPaths ??
     (options.repositoryPath === undefined ? [] : [options.repositoryPath]);
-  if (requestedPaths.length === 0) {
+  if (requestedPaths.length === 0 && options.allowEmpty !== true) {
     throw new Error("at least one repository path is required");
   }
   const repositoryPaths: string[] = [];
@@ -243,10 +245,7 @@ export async function assembleService(
     }
   }
 
-  const firstRegistration = registrations[0];
-  if (firstRegistration === undefined) {
-    throw new Error("at least one repository registration is required");
-  }
+  const firstRegistration = registrations[0] ?? null;
   const repositoryManagement = createRepositoryApprovalManager({
     roots,
     repositories,
@@ -372,8 +371,8 @@ export async function assembleService(
     repositoryPaths,
     repositoryIds: registrations.map(({ record }) => record.repositoryId),
     allowedRootIds: registrations.map(({ root }) => root.allowedRootId),
-    repositoryId: firstRegistration.record.repositoryId,
-    allowedRootId: firstRegistration.root.allowedRootId,
+    repositoryId: firstRegistration?.record.repositoryId ?? null,
+    allowedRootId: firstRegistration?.root.allowedRootId ?? null,
     gitPath: options.gitPath,
     gitVersion: doctor?.gitVersion ?? "unknown",
     features,

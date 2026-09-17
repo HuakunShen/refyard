@@ -6,7 +6,7 @@
   "scripts": {
     "build": "turbo run build",
     "build:release": "turbo run build && bun scripts/build-release.ts",
-    "dev": "turbo run dev",
+    "dev": "bun scripts/dev.ts",
     "check": "turbo run check && tsc --noEmit -p tsconfig.json",
     "cli": "pnpm build:web && bun scripts/bundle-cli.ts && node .refyard-dev/cli.mjs",
     "check:boundaries": "bun scripts/check-boundaries.ts",

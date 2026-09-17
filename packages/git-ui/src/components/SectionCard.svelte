@@ -11,7 +11,7 @@
 
   interface Props {
     title: string;
-    icon?: any;
+    icon?: Snippet;
     count?: number | string | null;
     countTone?: "muted" | "branch" | "head" | "tag" | "warn" | "danger";
     defaultOpen?: boolean;
@@ -65,9 +65,7 @@
           <ChevronRight class="size-3.5" />
         {/if}
       </span>
-      {#if Icon}
-        <Icon class="size-3.5 text-primary/80 shrink-0" />
-      {/if}
+      {#if Icon}{@render Icon()}{/if}
       <span
         class="text-xs font-semibold tracking-wide text-ink-muted uppercase truncate"
       >

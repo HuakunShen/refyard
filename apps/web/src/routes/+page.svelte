@@ -24,6 +24,8 @@
     HistoryFilterBar,
     ConnectionPanel,
     DiffPanel,
+    RepositoryLauncher,
+    RepositoryTabs,
     ModeToggle,
     RefyardLogo,
     StateBanner,
@@ -51,12 +53,19 @@
     createWorkbenchSelectionState,
     selectCommit,
     selectDiffPath,
+    selectRepository,
   } from "$lib/workbench/selection.js";
   import {
     createWorkbenchQueries,
     invalidateWorkbenchBackgroundQueries,
   } from "$lib/workbench/queries.svelte.js";
   import { createWorkbenchMutations } from "$lib/workbench/mutations.svelte.js";
+  import {
+    closeRepositoryTab,
+    createRepositoryTabs,
+    selectRepositoryTab,
+  } from "$lib/workbench/repository-tabs.js";
+  import type { RecentRepository } from "$lib/workbench/repository-launcher.js";
   import {
     applyHistoryFilters,
     clearHistoryFilters,
@@ -171,6 +180,11 @@
 
   const selection = $state(createWorkbenchSelectionState());
   const selectedRepositoryId = $derived(selection.repositoryId);
+  const repositoryTabs = $state(createRepositoryTabs());
+  let launcherOpen = $state(true);
+  let recentRepositories = $state<RecentRepository[]>([]);
+  let recentLoaded = $state(false);
+  let launcherRequested = $state(false);
   const historyFilterState = $state(createHistoryFilterState());
   $effect(() => {
     if (historyFilterState.repositoryId !== selectedRepositoryId)
@@ -218,6 +232,7 @@
   const identity = queries.identity;
 
   const repository = $derived(queries.repository);
+  const repositoryList = $derived(queries.repositoryList);
   const commits = $derived(queries.commits);
   const graph = $derived(queries.graph);
   const historyNotices = $derived(queries.historyNotices);
@@ -226,6 +241,144 @@
   const diffRequest = $derived(queries.diffRequest);
   const sessionExpired = $derived(queries.sessionExpired);
   const primaryWorktreeId = $derived(queries.primaryWorktreeId);
+
+  $effect(() => {
+    if (browser && !recentLoaded) {
+      recentLoaded = true;
+      try {
+        const stored = JSON.parse(
+          window.localStorage.getItem("refyard.recent.repositories") ?? "[]",
+        ) as unknown;
+        if (Array.isArray(stored)) {
+          recentRepositories = stored.filter(
+            (entry): entry is RecentRepository =>
+              typeof entry === "object" &&
+              entry !== null &&
+              typeof Reflect.get(entry, "displayPath") === "string" &&
+              typeof Reflect.get(entry, "displayName") === "string" &&
+              typeof Reflect.get(entry, "repositoryId") === "string",
+          );
+        }
+      } catch {
+        recentRepositories = [];
+      }
+    }
+    const unseen = repositoryList
+      .filter(
+        (entry) =>
+          !repositoryTabs.tabs.some(
+            (tab) => tab.repositoryId === entry.repositoryId,
+          ),
+      )
+      .map((entry) => ({
+        repositoryId: entry.repositoryId,
+        displayName: entry.displayName,
+        displayPath: entry.displayPath,
+      }));
+    if (unseen.length > 0) {
+      repositoryTabs.tabs = [...repositoryTabs.tabs, ...unseen];
+      repositoryTabs.activeRepositoryId ??= unseen[0]?.repositoryId ?? null;
+      repositoryTabs.revision += 1;
+    }
+    if (
+      !launcherRequested &&
+      repositoryList.length > 0 &&
+      repositoryTabs.tabs.length > 0
+    ) {
+      launcherOpen = false;
+      if (selection.repositoryId === null) {
+        selectRepository(
+          selection,
+          repositoryTabs.tabs[0]?.repositoryId ?? null,
+        );
+      }
+    }
+  });
+
+  function rememberRecent(entry: RecentRepository): void {
+    const next = [
+      entry,
+      ...recentRepositories.filter(
+        (item) => item.displayPath !== entry.displayPath,
+      ),
+    ].slice(0, 30);
+    recentRepositories = next;
+    if (browser) {
+      window.localStorage.setItem(
+        "refyard.recent.repositories",
+        JSON.stringify(next),
+      );
+    }
+  }
+
+  $effect(() => {
+    const entry = repositoryList.find(
+      (candidate) => candidate.repositoryId === selection.repositoryId,
+    );
+    if (
+      entry !== undefined &&
+      !recentRepositories.some(
+        (item) => item.displayPath === entry.displayPath && item.available,
+      )
+    ) {
+      rememberRecent({
+        repositoryId: entry.repositoryId,
+        displayName: entry.displayName,
+        displayPath: entry.displayPath,
+        lastOpenedAt: new Date().toISOString(),
+        available: true,
+      });
+    }
+  });
+
+  function handleOpenRepository(path: string): void {
+    void writeController.registerRepository(path).then((opened) => {
+      if (opened) {
+        launcherRequested = false;
+        launcherOpen = false;
+      }
+    });
+  }
+
+  function handleRecentRepository(entry: RecentRepository): void {
+    const existing = repositoryList.find(
+      (item) => item.displayPath === entry.displayPath,
+    );
+    if (existing !== undefined) {
+      launcherRequested = false;
+      selectRepositoryTab(repositoryTabs, existing.repositoryId);
+      selectRepository(selection, existing.repositoryId);
+      selection.diffPathId = null;
+      launcherOpen = false;
+      return;
+    }
+    handleOpenRepository(entry.displayPath);
+  }
+
+  function handleNewRepositoryTab(): void {
+    launcherRequested = true;
+    launcherOpen = true;
+    selectRepository(selection, null);
+  }
+
+  function handleRepositoryTab(repositoryId: string): void {
+    launcherRequested = false;
+    selectRepositoryTab(repositoryTabs, repositoryId);
+    selectRepository(selection, repositoryId);
+    selection.diffPathId = null;
+    launcherOpen = false;
+  }
+
+  function closeRepository(repositoryId: string): void {
+    const wasActive = selection.repositoryId === repositoryId;
+    closeRepositoryTab(repositoryTabs, repositoryId);
+    if (wasActive) {
+      selectRepository(selection, repositoryTabs.activeRepositoryId);
+      selection.diffPathId = null;
+      launcherRequested = repositoryTabs.activeRepositoryId === null;
+      launcherOpen = repositoryTabs.activeRepositoryId === null;
+    }
+  }
 
   // The DOM listener stays at the composition root; query ownership only exposes the
   // invalidation intent and never reaches for `document` itself.
@@ -407,6 +560,18 @@
       {/if}
     </div>
 
+    {#if token !== null}
+      <div class="min-w-0 flex-1 px-2 lg:px-4">
+        <RepositoryTabs
+          tabs={repositoryTabs.tabs}
+          activeRepositoryId={repositoryTabs.activeRepositoryId}
+          onSelect={handleRepositoryTab}
+          onClose={closeRepository}
+          onNew={handleNewRepositoryTab}
+        />
+      </div>
+    {/if}
+
     {#if repository !== null}
       <div
         class="hidden items-center gap-1.5 rounded-full border border-border/80 bg-background/60 px-3 py-1 text-xs shadow-2xs backdrop-blur-xs md:flex"
@@ -554,210 +719,237 @@
   {:else}
     <main
       class="relative z-1 flex min-h-0 flex-1 flex-col overflow-y-auto lg:grid lg:overflow-visible lg:grid-cols-[18.5rem_minmax(0,1fr)_21rem] xl:grid-cols-[21rem_minmax(0,1fr)_25rem] 2xl:grid-cols-[23rem_minmax(0,1fr)_28rem]"
+      data-launcher-open={launcherOpen}
+      data-selected-repository={selectedRepositoryId ?? ""}
+      data-repository-count={repositoryList.length}
+      data-tab-count={repositoryTabs.tabs.length}
     >
-      <RepositorySidebar
-        {queries}
-        mutations={writeController}
-        {selection}
-        {token}
-        describeProblem={describeClientProblem}
-      />
-      <section
-        class="flex h-[44rem] min-h-[32rem] shrink-0 flex-col gap-2 p-3 lg:h-auto lg:min-h-0"
-        data-testid="history-panel"
-      >
-        <div class="shrink-0 flex items-center gap-2">
-          <h2 class="text-sm font-semibold">History</h2>
-          {#if repository !== null}
-            <span
-              class="truncate font-mono text-xs text-ink-faint"
-              title={repository.displayPath}
-            >
-              {repository.displayName}
-            </span>
-          {/if}
-          <span class="flex-1"></span>
-          <Button
-            size="sm"
-            variant="ghost"
-            class="h-7 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
-            disabled={history.isFetching}
-            onclick={() => void history.refetch()}
-          >
-            <RefreshCw
-              class={cn("size-3.5", history.isFetching && "animate-spin")}
-            />
-            Refresh
-          </Button>
-        </div>
-
-        <HistoryFilterBar
-          draft={historyFilterState.draft}
-          appliedLabels={historyFilterLabels(historyFilterState)}
-          appliedPath={historyFilterState.appliedPath}
-          error={historyFilterState.error}
-          onDraftChange={(draft) => (historyFilterState.draft = draft)}
-          refs={[
-            ...(refs.data?.branches ?? []),
-            ...(refs.data?.remoteBranches ?? []),
-            ...(refs.data?.tags ?? []),
-          ].map((ref) => ({ fullName: ref.fullName, displayName: ref.name }))}
-          paths={status.data?.entries ?? []}
-          disabled={selectedRepositoryId === null}
-          onApply={applyHistorySearch}
-          onClear={clearHistorySearch}
-        />
-        {#if queries.historyTopology === "sparse"}<p
-            class="shrink-0 text-xs text-muted-foreground"
-          >
-            Filtered history · graph hidden
-          </p>{/if}
-
-        {#if selectedRepositoryId === null}
-          <StateBanner state="empty" title="No repository selected" />
-        {:else if history.isPending}
-          <StateBanner state="loading" title="Reading history…" />
-        {:else if history.isError}
-          <StateBanner
-            state="error"
-            title="Could not read history"
-            detail={describeClientProblem(history.error)}
-          >
-            {#snippet action()}
-              <Button
-                size="sm"
-                variant="outline"
-                onclick={() => void history.refetch()}
-              >
-                Retry
-              </Button>
-            {/snippet}
-          </StateBanner>
-        {:else}
-          <CommitList
-            rows={graph.rows}
-            topology={queries.historyTopology}
-            filtered={historyFiltersActive(historyFilterState.applied)}
-            {commits}
-            {selectedOid}
-            {now}
-            hasMore={history.hasNextPage}
-            loadingMore={history.isFetchingNextPage}
-            truncated={historyNotices.truncated}
-            tipsMoved={historyNotices.tipsMoved}
-            shallow={historyNotices.shallow}
-            laneCount={graph.laneCount}
-            onSelect={(commit) => {
-              selectCommit(selection, commit.oid);
-            }}
-            onLoadMore={() => void history.fetchNextPage()}
-            contextDisabled={mutationBusy}
-            onCreateBranchAt={branchAvailable
-              ? onCommitCreateBranch
-              : undefined}
-            onCreateTagAt={tagAvailable ? onCommitCreateTag : undefined}
-            onCopyOid={onCommitCopyOid}
-            class="min-h-0 flex-1"
+      {#if launcherOpen || selectedRepositoryId === null}
+        <section
+          class="min-w-0 flex-1 overflow-y-auto lg:col-span-2"
+          data-testid="repository-launcher-panel"
+        >
+          <RepositoryLauncher
+            recent={recentRepositories}
+            roots={queries.workspaceRoots}
+            repositoryCreationAvailable={writeController.availability
+              .repositoryCreation}
+            disabled={!writeController.writesAllowed}
+            busy={writeController.busy}
+            message={writeController.repositoryAccessMessage ??
+              writeController.repositoryMessage}
+            onOpen={handleOpenRepository}
+            onRecent={handleRecentRepository}
+            onInit={writeController.onRepositoryInit}
+            onClone={writeController.onRepositoryClone}
           />
-        {/if}
-      </section>
-
-      <section
-        class="flex min-h-56 shrink-0 flex-col border-l border-border bg-canvas/30 lg:min-h-0"
-      >
-        {#if selectedPath !== null && selectedPath.kind === "ignored"}
-          <div class="p-3">
-            <StateBanner
-              state="info"
-              title="Ignored path"
-              detail="Git does not report content for an ignored path, so there is no diff to read."
-            />
-          </div>
-        {:else if diffRequest === null}
-          <div
-            class="flex flex-1 flex-col items-center justify-center p-6 text-center"
-          >
-            <div
-              class="mb-3 flex size-12 items-center justify-center rounded-2xl bg-muted/60 text-muted-foreground shadow-2xs border border-border/50"
+        </section>
+      {:else}
+        <RepositorySidebar
+          {queries}
+          mutations={writeController}
+          {selection}
+          {token}
+          describeProblem={describeClientProblem}
+        />
+        <section
+          class="flex h-[44rem] min-h-[32rem] shrink-0 flex-col gap-2 p-3 lg:h-auto lg:min-h-0"
+          data-testid="history-panel"
+        >
+          <div class="shrink-0 flex items-center gap-2">
+            <h2 class="text-sm font-semibold">History</h2>
+            {#if repository !== null}
+              <span
+                class="truncate font-mono text-xs text-ink-faint"
+                title={repository.displayPath}
+              >
+                {repository.displayName}
+              </span>
+            {/if}
+            <span class="flex-1"></span>
+            <Button
+              size="sm"
+              variant="ghost"
+              class="h-7 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+              disabled={history.isFetching}
+              onclick={() => void history.refetch()}
             >
-              <FileDiff class="size-6 text-primary/70" />
-            </div>
-            <h3 class="text-sm font-medium text-foreground">
-              No diff selected
-            </h3>
-            <p class="mt-1 max-w-xs text-xs text-muted-foreground">
-              Select a commit in History or a modified file in Changes to
-              inspect the diff.
-            </p>
-            <div class="mt-4 w-full max-w-xs">
-              <StateBanner
-                state="empty"
-                title="Nothing selected"
-                detail="Choose a commit or a changed path to read its diff."
+              <RefreshCw
+                class={cn("size-3.5", history.isFetching && "animate-spin")}
               />
-            </div>
+              Refresh
+            </Button>
           </div>
-        {:else}
-          {#if selectedOid !== null}
-            <CommitDetailPanel
-              commit={selectedCommit}
-              {detail}
-              class="max-h-72 shrink-0 border-b border-border"
+
+          <HistoryFilterBar
+            draft={historyFilterState.draft}
+            appliedLabels={historyFilterLabels(historyFilterState)}
+            appliedPath={historyFilterState.appliedPath}
+            error={historyFilterState.error}
+            onDraftChange={(draft) => (historyFilterState.draft = draft)}
+            refs={[
+              ...(refs.data?.branches ?? []),
+              ...(refs.data?.remoteBranches ?? []),
+              ...(refs.data?.tags ?? []),
+            ].map((ref) => ({ fullName: ref.fullName, displayName: ref.name }))}
+            paths={status.data?.entries ?? []}
+            disabled={selectedRepositoryId === null}
+            onApply={applyHistorySearch}
+            onClear={clearHistorySearch}
+          />
+          {#if queries.historyTopology === "sparse"}<p
+              class="shrink-0 text-xs text-muted-foreground"
+            >
+              Filtered history · graph hidden
+            </p>{/if}
+
+          {#if selectedRepositoryId === null}
+            <StateBanner state="empty" title="No repository selected" />
+          {:else if history.isPending}
+            <StateBanner state="loading" title="Reading history…" />
+          {:else if history.isError}
+            <StateBanner
+              state="error"
+              title="Could not read history"
+              detail={describeClientProblem(history.error)}
+            >
+              {#snippet action()}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onclick={() => void history.refetch()}
+                >
+                  Retry
+                </Button>
+              {/snippet}
+            </StateBanner>
+          {:else}
+            <CommitList
+              rows={graph.rows}
+              topology={queries.historyTopology}
+              filtered={historyFiltersActive(historyFilterState.applied)}
+              {commits}
+              {selectedOid}
+              {now}
+              hasMore={history.hasNextPage}
+              loadingMore={history.isFetchingNextPage}
+              truncated={historyNotices.truncated}
+              tipsMoved={historyNotices.tipsMoved}
+              shallow={historyNotices.shallow}
+              laneCount={graph.laneCount}
+              onSelect={(commit) => {
+                selectCommit(selection, commit.oid);
+              }}
+              onLoadMore={() => void history.fetchNextPage()}
+              contextDisabled={mutationBusy}
+              onCreateBranchAt={branchAvailable
+                ? onCommitCreateBranch
+                : undefined}
+              onCreateTagAt={tagAvailable ? onCommitCreateTag : undefined}
+              onCopyOid={onCommitCopyOid}
+              class="min-h-0 flex-1"
             />
           {/if}
-          <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-            {#if diff.isPending}
-              <div class="p-3">
-                <StateBanner state="loading" title="Reading diff…" />
+        </section>
+
+        <section
+          class="flex min-h-56 shrink-0 flex-col border-l border-border bg-canvas/30 lg:min-h-0"
+        >
+          {#if selectedPath !== null && selectedPath.kind === "ignored"}
+            <div class="p-3">
+              <StateBanner
+                state="info"
+                title="Ignored path"
+                detail="Git does not report content for an ignored path, so there is no diff to read."
+              />
+            </div>
+          {:else if diffRequest === null}
+            <div
+              class="flex flex-1 flex-col items-center justify-center p-6 text-center"
+            >
+              <div
+                class="mb-3 flex size-12 items-center justify-center rounded-2xl bg-muted/60 text-muted-foreground shadow-2xs border border-border/50"
+              >
+                <FileDiff class="size-6 text-primary/70" />
               </div>
-            {:else if diff.isError}
-              <div class="p-3">
+              <h3 class="text-sm font-medium text-foreground">
+                No diff selected
+              </h3>
+              <p class="mt-1 max-w-xs text-xs text-muted-foreground">
+                Select a commit in History or a modified file in Changes to
+                inspect the diff.
+              </p>
+              <div class="mt-4 w-full max-w-xs">
                 <StateBanner
-                  state="error"
-                  title="Could not read the diff"
-                  detail={describeClientProblem(diff.error)}
-                >
-                  {#snippet action()}
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onclick={() => void diff.refetch()}
-                    >
-                      Retry
-                    </Button>
-                  {/snippet}
-                </StateBanner>
+                  state="empty"
+                  title="Nothing selected"
+                  detail="Choose a commit or a changed path to read its diff."
+                />
               </div>
-            {:else}
-              <DiffPanel
-                diff={diff.data ?? null}
-                patch={diffPatch.data ?? null}
-                selectedPathId={selectedDiffPathId}
-                onSelectPath={(file) => {
-                  selectDiffPath(selection, file.pathId);
-                }}
-                class="p-3"
+            </div>
+          {:else}
+            {#if selectedOid !== null}
+              <CommitDetailPanel
+                commit={selectedCommit}
+                {detail}
+                class="max-h-72 shrink-0 border-b border-border"
               />
             {/if}
-          </div>
-        {/if}
+            <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+              {#if diff.isPending}
+                <div class="p-3">
+                  <StateBanner state="loading" title="Reading diff…" />
+                </div>
+              {:else if diff.isError}
+                <div class="p-3">
+                  <StateBanner
+                    state="error"
+                    title="Could not read the diff"
+                    detail={describeClientProblem(diff.error)}
+                  >
+                    {#snippet action()}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onclick={() => void diff.refetch()}
+                      >
+                        Retry
+                      </Button>
+                    {/snippet}
+                  </StateBanner>
+                </div>
+              {:else}
+                <DiffPanel
+                  diff={diff.data ?? null}
+                  patch={diffPatch.data ?? null}
+                  selectedPathId={selectedDiffPathId}
+                  onSelectPath={(file) => {
+                    selectDiffPath(selection, file.pathId);
+                  }}
+                  class="p-3"
+                />
+              {/if}
+            </div>
+          {/if}
 
-        {#if primaryWorktreeId !== null}
-          <footer
-            class="shrink-0 border-t border-border px-3 py-2 text-xs text-ink-faint"
-          >
-            worktree <span class="font-mono">{shortOid(primaryWorktreeId)}</span
+          {#if primaryWorktreeId !== null}
+            <footer
+              class="shrink-0 border-t border-border px-3 py-2 text-xs text-ink-faint"
             >
-            {#if repository !== null}· {repository.objectFormat}{/if}
-            {#if status.data !== undefined && status.data.truncated}
-              · status truncated
-            {/if}
-            {#if refs.data !== undefined && refs.data.truncated}
-              · refs truncated
-            {/if}
-          </footer>
-        {/if}
-      </section>
+              worktree <span class="font-mono"
+                >{shortOid(primaryWorktreeId)}</span
+              >
+              {#if repository !== null}· {repository.objectFormat}{/if}
+              {#if status.data !== undefined && status.data.truncated}
+                · status truncated
+              {/if}
+              {#if refs.data !== undefined && refs.data.truncated}
+                · refs truncated
+              {/if}
+            </footer>
+          {/if}
+        </section>
+      {/if}
     </main>
   {/if}
 </div>

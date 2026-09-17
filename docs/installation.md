@@ -93,6 +93,18 @@ the first one lost its session — press `p` and Enter in the serving terminal t
 a fresh URL. Each printed URL is single use; the terminal is the channel, so a pairing
 URL never appears in the machine-readable output.
 
+### Development launcher
+
+From a checkout, `pnpm dev` starts the Vite UI and an authenticated empty coordinator, then opens
+the repository launcher. Use **Open** to enter an absolute local repository path, **Recent** to
+reopen a repository explicitly opened in this browser, and **New Tab** to keep more than one
+approved repository in the same workbench. After a repository has been explicitly opened, the
+**Clone / Create** forms use its approved workspace root and return to the active repository tab.
+
+The browser never scans the filesystem or sends Git arguments. Each repository is registered
+through the same explicit approval path as `refyard open`; a failed or unavailable Recent entry
+must be opened and approved again.
+
 When `--allow-origin` or `--ui-origin` names a non-loopback origin, the CLI refuses to start
 unless `REFYARD_HOSTED_PASSWORD` is set. The hosted page submits that password only with the
 single ticket exchange; the service stores only a memory-only scrypt hash, rate-limits attempts,

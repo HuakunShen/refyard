@@ -11,6 +11,7 @@
     "./bin": "./src/bin.ts"
   },
   "scripts": {
+    "dev": "bun src/dev.ts",
     "check": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {

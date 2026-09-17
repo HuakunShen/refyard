@@ -82,6 +82,10 @@ npx refyard /absolute/path/to/repository
 refyard open /absolute/path/to/repository
 ```
 
+For local development, run `pnpm dev` to start an empty authenticated launcher. Open a local
+repository from the UI, reopen explicit Recent entries, or use New Tab to switch between multiple
+approved repositories. Clone and Create are available under an approved workspace root.
+
 ## Deploy the UI to your own Cloudflare account
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/HuakunShen/refyard)

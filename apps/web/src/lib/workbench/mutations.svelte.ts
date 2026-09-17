@@ -256,7 +256,7 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     );
   }
 
-  async function registerRepository(path: string): Promise<void> {
+  async function registerRepository(path: string): Promise<boolean> {
     busy = true;
     repositoryAccessMessage = null;
     try {
@@ -278,8 +278,10 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
       if (added !== undefined) {
         selectRepository(input.selection, added.repositoryId);
       }
+      return added !== undefined;
     } catch (error) {
       repositoryAccessMessage = describeClientProblem(error);
+      return false;
     } finally {
       busy = false;
     }
