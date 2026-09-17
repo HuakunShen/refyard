@@ -194,6 +194,9 @@ test.describe("history search", () => {
     await expect(search.getByRole("alert")).toHaveText(
       "Commit SHA needs 4–64 hexadecimal digits",
     );
+    await expect(search).toHaveAccessibleDescription(
+      "Commit SHA needs 4–64 hexadecimal digits",
+    );
     await expect(search.getByRole("alert")).not.toContainText(
       /pattern|schema|Invalid string/,
     );

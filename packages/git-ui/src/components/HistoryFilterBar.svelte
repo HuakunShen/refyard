@@ -193,7 +193,11 @@
       </p>
     </fieldset>
   {/if}
-  {#if error !== null}<p role="alert" class="text-xs text-destructive">
+  {#if error !== null}<p
+      id="history-filter-error"
+      role="alert"
+      class="text-xs text-destructive"
+    >
       {error}
     </p>{/if}
   {#if appliedLabels.length > 0}
