@@ -264,6 +264,7 @@ describe("native capabilities", () => {
     expect([...parsed.data.reads].sort()).toEqual([
       "capabilities",
       "diff",
+      "filesystem",
       "history",
       "refs",
       "repositories",

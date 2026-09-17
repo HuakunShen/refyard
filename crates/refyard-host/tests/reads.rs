@@ -96,6 +96,7 @@ impl Fixture {
             service_instance_id: "srvc_fixture".to_string(),
             target_id: "tgt_local".to_string(),
             target_generation: "gen_1".to_string(),
+            home: self.scratch.join("home"),
         });
         let response = service
             .register_repository(self.repo.to_str().expect("utf8 path"))

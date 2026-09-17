@@ -18,6 +18,7 @@
 //!   the only way to read them without turning "no" into an error.
 
 pub mod diff;
+pub mod filesystem;
 pub mod history;
 pub mod refs;
 pub mod status;

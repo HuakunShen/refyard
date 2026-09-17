@@ -28,9 +28,11 @@ pub mod dispatch;
 pub mod events;
 pub mod session;
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use refyard_host::providers::local::LocalGit;
+use refyard_host::reads::filesystem;
 use refyard_host::service::{ApplicationService, ApplicationServiceConfig};
 
 use crate::events::EventRegistry;
@@ -59,12 +61,16 @@ impl AppState {
     /// a fixture repository without a window.
     pub fn with_git(git: LocalGit) -> Self {
         let started = millis_since_epoch();
+        // The home a person browses from is the home this host runs Git with, so a fixture
+        // and the product cannot disagree about which `~` is meant.
+        let home = filesystem::home_from(git.environment()).unwrap_or_else(|| PathBuf::from("/"));
         Self {
             service: Arc::new(ApplicationService::new(ApplicationServiceConfig {
                 git,
                 service_instance_id: instance_id(std::process::id(), started),
                 target_id: "tgt_local".to_owned(),
                 target_generation: format!("gen_{started}"),
+                home,
             })),
             sessions: SessionRegistry::default(),
             events: EventRegistry::default(),

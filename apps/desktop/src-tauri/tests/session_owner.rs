@@ -374,13 +374,11 @@ async fn a_read_this_build_does_not_implement_is_refused_and_absent_from_capabil
         reads.iter().any(|kind| kind == "status"),
         "the reads this build does serve are listed: {reads:?}"
     );
-    for absent in [
-        "worktrees",
-        "submodules",
-        "stashes",
-        "previews",
-        "filesystem",
-    ] {
+    assert!(
+        reads.iter().any(|kind| kind == "filesystem"),
+        "the local picker is served, so the Browse control must stay available: {reads:?}"
+    );
+    for absent in ["worktrees", "submodules", "stashes", "previews"] {
         assert!(
             !reads.iter().any(|kind| kind == absent),
             "capabilities must not list {absent}: {reads:?}"
@@ -576,4 +574,56 @@ async fn the_host_reports_only_the_targets_and_abilities_it_has() {
     let hosts =
         commands::host_request(&state, MAIN, &session_id, json!({ "method": "sshHosts" })).await;
     assert_eq!(refusal_code(&hosts), ProblemCode::UnsupportedOperation);
+}
+
+#[tokio::test]
+async fn the_local_picker_lists_a_directory_through_the_session() {
+    let fixture = Fixture::new();
+    let state = fixture.state();
+    let (session_id, _) = fixture.open(&state).await;
+
+    // The directory above the fixture is what a person would browse first, and it has to
+    // offer the fixture itself as something that can be opened — that is the whole point of
+    // the read behind the Browse control.
+    let parent = fixture
+        .repo
+        .parent()
+        .expect("the fixture repo lives in a scratch directory");
+    let listed = commands::git_read(
+        &state,
+        MAIN,
+        &session_id,
+        json!({ "method": "filesystemEntries", "query": { "path": parent.to_str().expect("utf8") } }),
+    )
+    .await
+    .expect("lists the fixture's parent directory");
+
+    // The answer names the canonical directory: a symbolic path would not be a path the
+    // person can approve.
+    let canonical = std::fs::canonicalize(parent).expect("canonical parent");
+    assert_eq!(listed["path"], json!(canonical.to_str().expect("utf8")));
+    assert_eq!(listed["truncated"], json!(false));
+    let entries = listed["entries"].as_array().expect("entries");
+    assert!(
+        entries.iter().any(|entry| entry["kind"] == json!("repository")),
+        "the fixture repository is offered as a repository: {entries:?}"
+    );
+    assert!(
+        entries.iter().all(|entry| entry["name"] != ".git"),
+        "the Git directory is never an entry a person can open"
+    );
+
+    // A foreign target is refused before anything is listed: answering about this machine
+    // when another one was named is how a client gets a confident wrong answer.
+    let elsewhere = commands::git_read(
+        &state,
+        MAIN,
+        &session_id,
+        json!({
+            "method": "filesystemEntries",
+            "query": { "path": parent.to_str().expect("utf8"), "targetId": "tgt_elsewhere" }
+        }),
+    )
+    .await;
+    assert_eq!(refusal_code(&elsewhere), ProblemCode::UnsupportedOperation);
 }

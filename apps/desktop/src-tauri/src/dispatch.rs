@@ -61,6 +61,16 @@ pub struct StatusPayload {
     pub include_ignored: Option<bool>,
 }
 
+/// The local picker's query. `path` absent means the host's home directory.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FilesystemQuery {
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub target_id: Option<String>,
+}
+
 /// One read the adapter asked for.
 ///
 /// The variants a build does not implement still carry their payload so the request
@@ -81,7 +91,7 @@ pub enum GitReadRequest {
     Repositories,
     FilesystemEntries {
         #[serde(default)]
-        query: Option<Value>,
+        query: Option<FilesystemQuery>,
     },
     RegisterRepository {
         path: String,
@@ -194,6 +204,18 @@ pub async fn dispatch_read(
             to_value(capabilities)
         }
         GitReadRequest::Repositories => to_value(service.repositories().await),
+        GitReadRequest::FilesystemEntries { query } => {
+            let (path, target_id) = match query {
+                Some(query) => (query.path, query.target_id),
+                None => (None, None),
+            };
+            refuse_foreign_target(service, target_id.as_deref())?;
+            let entries = service
+                .filesystem_entries(path.as_deref())
+                .await
+                .map_err(failed)?;
+            to_value(entries)
+        }
         GitReadRequest::RegisterRepository { path, target_id } => {
             refuse_foreign_target(service, target_id.as_deref())?;
             let repositories = service.register_repository(&path).await.map_err(failed)?;

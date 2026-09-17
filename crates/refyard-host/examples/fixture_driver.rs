@@ -303,10 +303,12 @@ fn build_service(fixture_home: Option<&str>) -> Result<ApplicationService, Probl
         Some(home) => fixture_environment(home),
     };
     Ok(ApplicationService::new(ApplicationServiceConfig {
-        git: LocalGit::at(git.program().to_path_buf(), environment),
+        git: LocalGit::at(git.program().to_path_buf(), environment.clone()),
         service_instance_id: "srvc_fixture".to_string(),
         target_id: "tgt_local".to_string(),
         target_generation: "gen_1".to_string(),
+        home: refyard_host::reads::filesystem::home_from(&environment)
+            .unwrap_or_else(|| std::path::PathBuf::from("/")),
     }))
 }
 

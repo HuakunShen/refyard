@@ -28,9 +28,10 @@ use refyard_contract::diff::{DiffQuery, DiffResponse};
 use refyard_contract::history::{HistoryPage, HistoryQuery};
 use refyard_contract::problem::{DetailValue, Problem, ProblemCode};
 use refyard_contract::reads::{
-    AllowedRootSummary, CapabilitiesResponse, GitCapabilities, GitInfo, HeadKind, HeadState,
-    HostInfo, HostKind, ObjectFormat, OperationInProgress, ReadKind, RepositoriesResponse,
-    RepositorySummary, RuntimeLimits, StatusSnapshot, UnavailableReason, MUTATION_KINDS,
+    AllowedRootSummary, CapabilitiesResponse, FilesystemEntriesResponse, GitCapabilities, GitInfo,
+    HeadKind, HeadState, HostInfo, HostKind, ObjectFormat, OperationInProgress, ReadKind,
+    RepositoriesResponse, RepositorySummary, RuntimeLimits, StatusSnapshot, UnavailableReason,
+    MUTATION_KINDS,
 };
 use refyard_contract::refs::RefsSnapshot;
 
@@ -92,6 +93,10 @@ pub struct ApplicationServiceConfig {
     /// machine it runs on.
     pub target_id: String,
     pub target_generation: String,
+    /// The directory `~` expands to when a person browses for a repository. Passed in
+    /// rather than read from this process's environment so that a test fixture, the
+    /// desktop host and a future remote target each say which home they mean.
+    pub home: PathBuf,
 }
 
 /// One read query: the contract's request without the transport's own concerns.
@@ -122,6 +127,7 @@ pub struct ApplicationService {
     service_instance_id: String,
     target_id: String,
     target_generation: String,
+    home: PathBuf,
     git_version: Mutex<Option<String>>,
 }
 
@@ -144,6 +150,7 @@ impl ApplicationService {
             service_instance_id: config.service_instance_id,
             target_id: config.target_id,
             target_generation: config.target_generation,
+            home: config.home,
             git_version: Mutex::new(None),
         }
     }
@@ -205,6 +212,7 @@ impl ApplicationService {
     pub fn implemented_reads(&self) -> Vec<ReadKind> {
         vec![
             ReadKind::Capabilities,
+            ReadKind::Filesystem,
             ReadKind::Repositories,
             ReadKind::Status,
             ReadKind::History,
@@ -353,6 +361,18 @@ impl ApplicationService {
         Ok(self.repositories().await)
     }
 
+    /// One directory for the local picker: its subdirectories, and which of them are
+    /// repositories.
+    ///
+    /// Not a Git read. It answers what a person may descend into or open, so it works on a
+    /// directory that is not a repository and does not run a command.
+    pub async fn filesystem_entries(
+        &self,
+        path: Option<&str>,
+    ) -> Result<FilesystemEntriesResponse, Problem> {
+        reads::filesystem::read_filesystem_entries(path, &self.home).await
+    }
+
     /// Working-tree and index state.
     pub async fn status(&self, query: &StatusQuery) -> Result<StatusSnapshot, Problem> {
         let record = self.require_record(&query.repository_id)?;
@@ -470,6 +490,8 @@ mod tests {
             service_instance_id: "srvc_1".to_string(),
             target_id: "tgt_local".to_string(),
             target_generation: "gen_1".to_string(),
+            // These tests never browse; the picker is read through its own fixture below.
+            home: PathBuf::from("/nonexistent/home"),
         })
     }
 
@@ -481,6 +503,7 @@ mod tests {
             service_instance_id: "srvc_1".to_string(),
             target_id: "tgt_local".to_string(),
             target_generation: "gen_1".to_string(),
+            home: PathBuf::from("/nonexistent/home"),
         })
     }
 
@@ -491,6 +514,7 @@ mod tests {
             reads,
             vec![
                 ReadKind::Capabilities,
+                ReadKind::Filesystem,
                 ReadKind::Repositories,
                 ReadKind::Status,
                 ReadKind::History,
@@ -506,7 +530,6 @@ mod tests {
             ReadKind::Stashes,
             ReadKind::Operations,
             ReadKind::Events,
-            ReadKind::Filesystem,
         ] {
             assert!(!reads.contains(&absent), "{absent:?} must not be claimed");
         }
