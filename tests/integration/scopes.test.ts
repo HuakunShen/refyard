@@ -144,6 +144,17 @@ describe("authorization scopes", () => {
     expect(response.status).toBe(202);
   });
 
+  it("requires repository read authority for filtered history", async () => {
+    // Prevents search fields providing a read path around the existing scope gate.
+    const { service } = await start(["repository:write"]);
+    const token = await service.pair();
+    const response = await service.fetch(
+      `/api/v1/history?repositoryId=${service.repositoryId}&message=base`,
+      { token },
+    );
+    await expectScopeDenied(response, "repository:read");
+  });
+
   it("refuses SSE without repository read authority", async () => {
     const { service } = await start(["repository:write"]);
     const token = await service.pair();

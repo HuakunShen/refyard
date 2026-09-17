@@ -17,6 +17,7 @@ import {
   previewTokenSchema,
   type ClientRequestId,
 } from "./ids.js";
+import { historyQuerySchema, type HistoryQuery } from "./reads.js";
 import { LIMITS } from "./limits.js";
 import {
   branchNameSchema,
@@ -769,3 +770,114 @@ export function parseOperationPayload(
 }
 
 export type { ClientRequestId };
+
+/** Validate and normalize a history request without resolving host authority. */
+export function validateHistoryQuery(
+  input: unknown,
+): ValidationResult<HistoryQuery> {
+  const parsed = historyQuerySchema.safeParse(input);
+  if (!parsed.success)
+    return invalidMany(issuesToProblems(parsed.error, "InvalidRequest"));
+  const query = parsed.data;
+  const problems: ValidationProblem[] = [];
+  const reject = (message: string, path: string): void => {
+    problems.push({ code: "InvalidRequest", message, path });
+  };
+  const filters = [
+    "message",
+    "author",
+    "oidPrefix",
+    "refFullName",
+    "committedAfter",
+    "committedBefore",
+    "pathId",
+  ];
+  if (query.cursor !== undefined) {
+    for (const field of filters) {
+      if (Reflect.get(query, field) !== undefined)
+        reject("a cursor continuation cannot redefine history filters", field);
+    }
+  }
+  for (const [field, text] of Object.entries({
+    message: query.message,
+    author: query.author,
+  })) {
+    if (text === undefined) continue;
+    if (/[\0\r\n]/.test(text))
+      reject(
+        "literal history searches must be a single line without NUL",
+        field,
+      );
+    let scalars = 0;
+    let unpairedSurrogate = false;
+    for (const scalar of text.trim()) {
+      const code = scalar.charCodeAt(0);
+      if (scalar.length === 1 && code >= 0xd800 && code <= 0xdfff)
+        unpairedSurrogate = true;
+      scalars += 1;
+    }
+    if (unpairedSurrogate)
+      reject(
+        "literal history searches must not contain unpaired surrogates",
+        field,
+      );
+    if (scalars < 1 || scalars > 512)
+      reject(
+        "literal history searches must contain 1–512 Unicode scalar values after trimming",
+        field,
+      );
+  }
+  if (query.refFullName !== undefined) {
+    for (const finding of validateFullRefName(query.refFullName, "refFullName"))
+      reject(finding.message, "refFullName");
+  }
+  if (query.oidPrefix !== undefined && query.pathId !== undefined)
+    reject("object-id lookup cannot be combined with path history", "pathId");
+  for (const [field, timestamp] of Object.entries({
+    committedAfter: query.committedAfter,
+    committedBefore: query.committedBefore,
+  })) {
+    if (timestamp !== undefined && !validCalendarTimestamp(timestamp))
+      reject("must be a real UTC calendar instant", field);
+  }
+  if (
+    query.committedAfter !== undefined &&
+    query.committedBefore !== undefined &&
+    normalizedTimestamp(query.committedAfter) >
+      normalizedTimestamp(query.committedBefore)
+  )
+    reject(
+      "committedAfter must not be later than committedBefore",
+      "committedAfter",
+    );
+  if (problems.length > 0) return invalidMany(problems);
+  return {
+    ok: true,
+    value: {
+      ...query,
+      ...(query.message === undefined ? {} : { message: query.message.trim() }),
+      ...(query.author === undefined ? {} : { author: query.author.trim() }),
+    },
+  };
+}
+
+function normalizedTimestamp(timestamp: string): string {
+  return timestamp.length === 20 ? `${timestamp.slice(0, -1)}.000Z` : timestamp;
+}
+
+function validCalendarTimestamp(timestamp: string): boolean {
+  const year = Number(timestamp.slice(0, 4));
+  const month = Number(timestamp.slice(5, 7));
+  const day = Number(timestamp.slice(8, 10));
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return (
+    month >= 1 &&
+    month <= 12 &&
+    day >= 1 &&
+    day <= (days[month - 1] ?? 0) &&
+    Number(timestamp.slice(11, 13)) < 24 &&
+    Number(timestamp.slice(14, 16)) < 60 &&
+    Number(timestamp.slice(17, 19)) < 60
+  );
+}

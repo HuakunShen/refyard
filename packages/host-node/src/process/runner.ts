@@ -106,6 +106,10 @@ export async function runGit(
     ...(options.env === undefined ? {} : { extra: options.env }),
   });
 
+  // The planner selects only a closed search policy; locale/env mapping stays host-owned.
+  // buildGitEnvironment returned a fresh object, so user hooks and later commands retain their environment.
+  if (spec.textSearchLocale === "unicode") env["LC_ALL"] = "C.UTF-8";
+
   return new Promise<RunGitOutcome>((resolve) => {
     let settled = false;
     let termination: GitTermination = "unknown";

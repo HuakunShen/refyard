@@ -19,6 +19,7 @@
  * - **Unknown stays unknown.** A Git failure becomes a `Problem` with the exit code
  *   and bounded diagnostics — never a fabricated empty list.
  */
+import { createHash } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
@@ -28,6 +29,9 @@ import {
   capabilitiesResponseSchema,
   diffResponseSchema,
   historyPageSchema,
+  validateHistoryQuery,
+  OBJECT_ID_LENGTHS,
+  type HistoryQuery,
   previewsResponseSchema,
   refsSnapshotSchema,
   repositoriesResponseSchema,
@@ -62,6 +66,8 @@ import {
   readDiffFacts,
   readHeadFacts,
   readHistoryPage,
+  resolveCommitPrefix,
+  isCommitReachableFrom,
   readRecordedGitlinkOid,
   readRefFacts,
   readStashFacts,
@@ -86,6 +92,7 @@ import type { HostWorktree, WorktreeRegistry } from "../registry/worktrees.js";
 import type { RootRegistry } from "../registry/roots.js";
 import type { PreviewStore } from "../filesystem/preview.js";
 import type { SnapshotStore, SnapshotRecord } from "./snapshots.js";
+import type { NormalizedHistoryIntent } from "./snapshot-types.js";
 import { statusIndexKey } from "./preconditions.js";
 import {
   createGitDirLookup,
@@ -155,14 +162,7 @@ export interface StatusQuery {
   readonly includeIgnored?: boolean | undefined;
 }
 
-export interface HistoryQuery {
-  readonly repositoryId: string;
-  readonly worktreeId?: string | undefined;
-  readonly cursor?: string | undefined;
-  readonly limit?: number | undefined;
-  readonly detailOid?: string | undefined;
-  readonly firstParentOnly?: boolean | undefined;
-}
+export type { HistoryQuery } from "@refyard/git-contract";
 
 export interface DiffQuery {
   readonly repositoryId: string;
@@ -505,116 +505,144 @@ export function createReadService(options: ReadServiceOptions): ReadService {
       }
     },
 
-    async history(query): Promise<HistoryPage> {
+    async history(input): Promise<HistoryPage> {
       try {
+        const validated = validateHistoryQuery(input);
+        if (!validated.ok)
+          throw new ReadProblem({
+            code: "InvalidRequest",
+            message: validated.problems
+              .map((finding) => finding.message)
+              .join("; "),
+          });
+        const query = validated.value;
         const record = await options.repositories.require(query.repositoryId);
         const worktree = await options.repositories.worktree(
           query.repositoryId,
           query.worktreeId ?? null,
         );
         const handle = requireHandle(worktree);
-        const limit = query.limit ?? LIMITS.historyDefaultPageSize;
-        if (limit > LIMITS.historyMaxPageSize) {
-          throw new ReadProblem({
-            code: "InvalidRequest",
-            message: `limit may not exceed ${LIMITS.historyMaxPageSize}`,
-            details: { limit },
-          });
-        }
-
-        const refFacts = await readRefFacts(options.engine, {
-          cwdHandle: handle,
-        });
-        const head = await readHeadFacts(options.engine, handle);
-        const currentTips = collectTips(head.oid, refFacts.refs);
-        const decoration = decorationMap(refFacts.refs);
-
+        let limit: number;
         let snapshot: SnapshotRecord;
         let skip = 0;
-        if (query.cursor === undefined) {
-          snapshot = options.snapshots.create({
-            kind: "history",
-            repositoryId: record.repositoryId,
-            worktreeId: worktree.worktreeId,
-            tips: currentTips,
-            headOid: head.oid,
-          });
-        } else {
+
+        // Resolve continuations before reading any walk-defining request value.
+        if (query.cursor !== undefined) {
           const resolved = options.snapshots.resolveCursor(query.cursor);
-          if (!resolved.ok) {
+          if (!resolved.ok)
             throw new ReadProblem({
               code:
                 resolved.reason === "malformed"
                   ? "InvalidRequest"
                   : "StaleSnapshot",
-              message:
-                resolved.reason === "expired"
-                  ? "that cursor has expired; reload history"
-                  : "that cursor is not one this service issued; start the page again",
+              message: "that cursor is unavailable; reload history",
             });
-          }
           if (
             resolved.payload.repositoryId !== record.repositoryId ||
             resolved.payload.worktreeId !== worktree.worktreeId
-          ) {
-            // A real cursor, pointed at another repository: the state exists, so
-            // this is a scope violation rather than a malformed request.
+          )
             throw new ReadProblem({
               code: "Forbidden",
               message:
                 "that cursor belongs to a different repository or worktree",
             });
-          }
           const found = options.snapshots.get(resolved.payload.snapshotId);
-          if (found === null || found.kind !== "history") {
+          if (
+            resolved.payload.kind !== "history" ||
+            found === null ||
+            found.kind !== "history" ||
+            found.historyIntent === null
+          )
             throw new ReadProblem({
               code: "StaleSnapshot",
               message: "that page's snapshot has expired; reload history",
             });
-          }
+          limit = resolved.payload.limit;
+          if (
+            (query.limit !== undefined && query.limit !== limit) ||
+            (query.firstParentOnly !== undefined &&
+              query.firstParentOnly !== found.historyIntent.firstParentOnly)
+          )
+            throw new ReadProblem({
+              code: "InvalidRequest",
+              message:
+                "page size and first-parent mode are owned by the cursor",
+            });
           snapshot = found;
           skip = resolved.payload.skip;
-        }
-
-        if (snapshot.tips.length === 0) {
-          // An unborn repository has no topology to page. That is an empty history,
-          // not a failure, and there is no cursor to continue with.
-          return checked(
-            historyPageSchema,
-            {
-              snapshotId: snapshot.snapshotId,
-              repositoryId: record.repositoryId,
-              readAt: isoFromMs(now()),
-              objectFormat: record.objectFormat,
-              shallow: record.shallow,
-              commits: [],
-              nextCursor: null,
-              tipsMoved: false,
-              truncated: false,
-              detail: null,
-            },
-            "history",
+        } else {
+          limit = query.limit ?? LIMITS.historyDefaultPageSize;
+          // Authority is resolved even for an unborn or otherwise empty walk.
+          const refs = await readRefFacts(options.engine, {
+            cwdHandle: handle,
+          });
+          const head = await readHeadFacts(options.engine, handle);
+          const currentTips = collectTips(head.oid, refs.refs);
+          const normalized = await normalizeHistoryIntent(
+            query,
+            record,
+            worktree,
+            handle,
+            refs.refs,
+            currentTips,
           );
+          snapshot = options.snapshots.create({
+            kind: "history",
+            repositoryId: record.repositoryId,
+            worktreeId: worktree.worktreeId,
+            tips: normalized.tips,
+            observedRefsFingerprint: observedHistoryFingerprint(
+              head.oid,
+              refs.refs,
+            ),
+            headOid: head.oid,
+            historyIntent: normalized.intent,
+          });
         }
-
-        const page = await readHistoryPage(options.engine, {
-          cwdHandle: handle,
-          tips: snapshot.tips,
-          // One extra row answers "is there another page?" without claiming there is.
-          maxCount: limit + 1,
-          skip,
-          firstParentOnly: query.firstParentOnly === true,
-          decoration,
-        });
-        const hasMore = page.rows.length > limit;
-        const commits = page.commits
-          .slice(0, limit)
-          .map((commit) => commitSummary(commit));
+        const intent = snapshot.historyIntent;
+        if (intent === null)
+          throw new ReadProblem({
+            code: "InternalError",
+            message: "history snapshot has no normalized intent",
+          });
+        const refs = await readRefFacts(options.engine, { cwdHandle: handle });
+        const head = await readHeadFacts(options.engine, handle);
+        const tipsMoved =
+          snapshot.observedRefsFingerprint !==
+          observedHistoryFingerprint(head.oid, refs.refs);
         const detail =
           query.detailOid === undefined
             ? null
             : await readCommitDetail(query.detailOid, handle);
-        const tipsMoved = !sameTips(snapshot.tips, currentTips);
+        const empty =
+          snapshot.tips.length === 0 ||
+          (intent.oidLookup && intent.oid === null);
+        const page = empty
+          ? { rows: [], commits: [], missingObjects: [] }
+          : await readHistoryPage(options.engine, {
+              cwdHandle: handle,
+              tips: snapshot.tips,
+              maxCount: limit + 1,
+              skip,
+              firstParentOnly: intent.firstParentOnly,
+              decoration: decorationMap(refs.refs),
+              ...(intent.message === null ? {} : { message: intent.message }),
+              ...(intent.author === null ? {} : { author: intent.author }),
+              ...(intent.committedAfterSeconds === null
+                ? {}
+                : { committedAfterSeconds: intent.committedAfterSeconds }),
+              ...(intent.committedBeforeSeconds === null
+                ? {}
+                : { committedBeforeSeconds: intent.committedBeforeSeconds }),
+              ...(intent.resolvedPathText === null
+                ? {}
+                : { pathText: intent.resolvedPathText }),
+              ...(intent.oid === null ? {} : { onlyOid: intent.oid }),
+            });
+        const hasMore = page.rows.length > limit;
+        const commits = page.commits
+          .slice(0, limit)
+          .map((commit) => commitSummary(commit));
         const nextCursor = hasMore
           ? options.snapshots.createCursor({
               snapshotId: snapshot.snapshotId,
@@ -625,7 +653,6 @@ export function createReadService(options: ReadServiceOptions): ReadService {
               worktreeId: worktree.worktreeId,
             })
           : null;
-
         return checked(
           historyPageSchema,
           {
@@ -634,6 +661,7 @@ export function createReadService(options: ReadServiceOptions): ReadService {
             readAt: isoFromMs(now()),
             objectFormat: record.objectFormat,
             shallow: record.shallow,
+            topology: intent.topology,
             commits,
             nextCursor,
             tipsMoved,
@@ -643,7 +671,7 @@ export function createReadService(options: ReadServiceOptions): ReadService {
           "history",
         );
       } catch (error) {
-        throw problemFrom(error, { repositoryId: query.repositoryId });
+        throw problemFrom(error, { repositoryId: input.repositoryId });
       }
     },
 
@@ -1206,6 +1234,129 @@ export function createReadService(options: ReadServiceOptions): ReadService {
     return statusIndexKey(facts);
   }
 
+  async function normalizeHistoryIntent(
+    query: HistoryQuery,
+    record: RepositoryRecord,
+    worktree: HostWorktree,
+    handle: string,
+    refs: readonly RefRecord[],
+    currentTips: readonly string[],
+  ): Promise<{
+    readonly intent: NormalizedHistoryIntent;
+    readonly tips: readonly string[];
+  }> {
+    let tips = currentTips;
+    let resolvedRefOid: string | null = null;
+    if (query.refFullName !== undefined) {
+      const ref = refs.find((ref) => ref.refName === query.refFullName);
+      if (ref === undefined)
+        throw new ReadProblem({
+          code: "NotFound",
+          message: "that ref was not observed in this repository",
+        });
+      const resolved = await resolveCommitPrefix(options.engine, {
+        cwdHandle: handle,
+        prefix: ref.peeledOid ?? ref.oid,
+      });
+      resolvedRefOid =
+        resolved !== "none" && resolved.kind === "one" ? resolved.oid : null;
+      if (resolvedRefOid === null)
+        throw new ReadProblem({
+          code: "NotFound",
+          message: "that observed ref does not point to a commit",
+        });
+      tips = [resolvedRefOid];
+    }
+    const resolvedPathText =
+      query.pathId === undefined
+        ? null
+        : requirePathBinding({
+            repositoryId: record.repositoryId,
+            worktreeId: worktree.worktreeId,
+            pathId: query.pathId,
+          }).executionText;
+    let oid: string | null = null;
+    if (query.oidPrefix !== undefined) {
+      if (query.oidPrefix.length > OBJECT_ID_LENGTHS[record.objectFormat])
+        throw new ReadProblem({
+          code: "InvalidRequest",
+          message:
+            "object-id prefix exceeds this repository's object-name width",
+        });
+      const resolved = await resolveCommitPrefix(options.engine, {
+        cwdHandle: handle,
+        prefix: query.oidPrefix,
+      });
+      if (resolved !== "none" && resolved.kind === "ambiguous")
+        throw new ReadProblem({
+          code: "InvalidRequest",
+          message:
+            "that prefix matches multiple commits; supply more hexadecimal digits",
+        });
+      oid =
+        resolved !== "none" && resolved.kind === "one" ? resolved.oid : null;
+      if (
+        oid !== null &&
+        query.refFullName !== undefined &&
+        (resolvedRefOid === null ||
+          !(await isCommitReachableFrom(options.engine, {
+            cwdHandle: handle,
+            ancestorOid: oid,
+            descendantOid: resolvedRefOid,
+          })))
+      )
+        oid = null;
+      // A locator may find an otherwise unreachable commit in an empty scoped walk.
+      if (oid !== null) tips = [oid];
+    }
+    const sparse =
+      query.message !== undefined ||
+      query.author !== undefined ||
+      query.committedAfter !== undefined ||
+      query.committedBefore !== undefined ||
+      query.pathId !== undefined ||
+      query.oidPrefix !== undefined;
+    return {
+      tips,
+      intent: {
+        firstParentOnly: query.firstParentOnly === true,
+        message: query.message ?? null,
+        author: query.author ?? null,
+        resolvedRefOid,
+        committedAfterSeconds:
+          query.committedAfter === undefined
+            ? null
+            : Math.ceil(Date.parse(query.committedAfter) / 1000),
+        committedBeforeSeconds:
+          query.committedBefore === undefined
+            ? null
+            : Math.floor(Date.parse(query.committedBefore) / 1000),
+        resolvedPathText,
+        oid,
+        oidLookup: query.oidPrefix !== undefined,
+        topology: sparse ? "sparse" : "continuous",
+      },
+    };
+  }
+
+  function observedHistoryFingerprint(
+    headOid: string | null,
+    refs: readonly RefRecord[],
+  ): string {
+    const observedRefs = [...refs]
+      .sort((left, right) =>
+        left.refName < right.refName
+          ? -1
+          : left.refName > right.refName
+            ? 1
+            : 0,
+      )
+      .map((ref) => [ref.refName, ref.oid, ref.peeledOid]);
+    return createHash("sha256")
+      .update(JSON.stringify([headOid, observedRefs]))
+      .digest("hex");
+  }
+
   function collectTips(
     headOid: string | null,
     refs: readonly RefRecord[],
@@ -1486,15 +1637,6 @@ function refKind(fullName: string): "notes" | "replace" | "other" {
     return "replace";
   }
   return "other";
-}
-
-function sameTips(a: readonly string[], b: readonly string[]): boolean {
-  if (a.length !== b.length) {
-    return false;
-  }
-  const sortedA = [...a].sort();
-  const sortedB = [...b].sort();
-  return sortedA.every((value, index) => value === sortedB[index]);
 }
 
 function submoduleState(input: {

@@ -54,6 +54,8 @@ interface Harness {
   readonly service: ReadService;
   readonly repositoryId: string;
   readonly allowedRootId: string;
+  readonly clearPathBindings: (worktreeId: string) => void;
+  readonly bindPath: (worktreeId: string, bytes: Uint8Array) => string;
   /** Register a second repository under the same approved root and service. */
   registerAdditional(path: string, env: NodeJS.ProcessEnv): Promise<string>;
   dispose(): Promise<void>;
@@ -171,6 +173,10 @@ async function createHarness(
     service,
     repositoryId: record.repositoryId,
     allowedRootId: root.allowedRootId,
+    clearPathBindings: (worktreeId) => paths.clearWorktree(worktreeId),
+    bindPath: (worktreeId, bytes) =>
+      paths.bind({ repositoryId: record.repositoryId, worktreeId, bytes })
+        .pathId,
     async registerAdditional(path, _env) {
       // The second repository is registered under a newly approved root of its own,
       // because a registration names the root it was approved through.
@@ -450,6 +456,419 @@ describe("history reads and paging", () => {
   afterEach(async () => {
     await harness.dispose();
   });
+
+  it("filters literal messages, author identities, dates and exact observed refs with AND semantics", async () => {
+    await repo.write("search.txt", "one");
+    await repo.git(["add", "search.txt"]);
+    await repo.git(["commit", "-m", "fix [auth].* + spaces"], {
+      env: {
+        GIT_AUTHOR_NAME: "Alice (Dev)",
+        GIT_AUTHOR_DATE: "2026-06-01T00:00:00Z",
+        GIT_COMMITTER_DATE: "2026-06-01T00:00:00Z",
+      },
+    });
+    const match = await repo.headOid();
+    await repo.git(["branch", "chosen"]);
+    await repo.write("other.txt", "two");
+    await repo.commitAll("fix authZZ + spaces", {
+      date: "2026-07-01T00:00:00Z",
+    });
+    const page = await harness.service.history({
+      repositoryId: harness.repositoryId,
+      message: "  FIX [auth].* + spaces ",
+      author: "alice (dev)",
+      refFullName: "refs/heads/chosen",
+      committedAfter: "2026-05-01T00:00:00Z",
+      committedBefore: "2026-06-02T00:00:00Z",
+    });
+    expect(page.commits.map((commit) => commit.oid)).toEqual([match]);
+    expect(page.topology).toBe("sparse");
+    expect(page.tipsMoved).toBe(false);
+    const scoped = await harness.service.history({
+      repositoryId: harness.repositoryId,
+      refFullName: "refs/heads/chosen",
+    });
+    expect(scoped.topology).toBe("continuous");
+    expect(scoped.tipsMoved).toBe(false);
+    expect(scoped.commits[0]?.oid).toBe(match);
+    const empty = await harness.service.history({
+      repositoryId: harness.repositoryId,
+      message: "no such subject",
+    });
+    expect(empty.commits).toEqual([]);
+    expect(empty.topology).toBe("sparse");
+    expect(empty.nextCursor).toBeNull();
+  });
+
+  it("keeps walking past clock-skewed commits and includes exact epoch date bounds", async () => {
+    // Prevents an old tip timestamp stopping traversal before a newer parent.
+    await repo.write("newer.txt", "one");
+    const match = await repo.commitAll("newer parent", {
+      date: "2026-06-01T00:00:00Z",
+    });
+    await repo.write("older.txt", "two");
+    await repo.commitAll("older child", { date: "2026-03-01T00:00:00Z" });
+    const page = await harness.service.history({
+      repositoryId: harness.repositoryId,
+      committedAfter: "2026-06-01T00:00:00Z",
+      committedBefore: "2026-06-01T00:00:00Z",
+    });
+    expect(page.commits.map((commit) => commit.oid)).toEqual([match]);
+  });
+
+  it("locates one commit only and applies all other Git predicates independently of detail", async () => {
+    // Prevents SHA lookup expanding into the ancestor walk or ignoring predicates.
+    await repo.write("sha.txt", "one");
+    const located = await repo.commitAll("located exact commit", {
+      date: "2026-06-01T00:00:00Z",
+    });
+    const detailOid = located;
+    const page = await harness.service.history({
+      repositoryId: harness.repositoryId,
+      oidPrefix: located.slice(0, 8),
+      message: "EXACT",
+      author: "fixture",
+      committedAfter: "2026-06-01T00:00:00Z",
+      committedBefore: "2026-06-01T00:00:00Z",
+      refFullName: "refs/heads/main",
+    });
+    expect(page.commits.map((commit) => commit.oid)).toEqual([located]);
+    expect(page.topology).toBe("sparse");
+    const wrongMessage = await harness.service.history({
+      repositoryId: harness.repositoryId,
+      oidPrefix: located,
+      message: "absent",
+    });
+    expect(wrongMessage.commits).toEqual([]);
+    await repo.git(["branch", "before", `${located}~1`]);
+    expect(
+      (
+        await harness.service.history({
+          repositoryId: harness.repositoryId,
+          oidPrefix: located,
+          refFullName: "refs/heads/before",
+        })
+      ).commits,
+    ).toEqual([]);
+    const missing = await harness.service.history({
+      repositoryId: harness.repositoryId,
+      oidPrefix: "0".repeat(40),
+      detailOid,
+    });
+    expect(missing.commits).toEqual([]);
+    expect(missing.detail?.oid).toBe(detailOid);
+    const blob = new TextDecoder()
+      .decode(await repo.git(["rev-parse", "HEAD:sha.txt"]))
+      .trim();
+    expect(
+      (
+        await harness.service.history({
+          repositoryId: harness.repositoryId,
+          oidPrefix: blob,
+        })
+      ).commits,
+    ).toEqual([]);
+  });
+
+  it("pins exact literal path authority across registry eviction and scoped ref movement", async () => {
+    const path = "odd[1].txt";
+    await repo.write(path, "one");
+    const older = await repo.commitAll("path older");
+    await repo.write("odd1.txt", "wildcard must not match");
+    await repo.commitAll("decoy");
+    await repo.write(path, "two");
+    const newer = await repo.commitAll("path newer");
+    await repo.write(path, "dirty known file");
+    const status = await harness.service.status({
+      repositoryId: harness.repositoryId,
+    });
+    const entry = status.entries.find((entry) => entry.displayPath === path);
+    expect(entry).toBeDefined();
+    const first = await harness.service.history({
+      repositoryId: harness.repositoryId,
+      pathId: entry?.pathId ?? "",
+      refFullName: "refs/heads/main",
+      limit: 1,
+    });
+    expect(first.commits.map((commit) => commit.oid)).toEqual([newer]);
+    expect(first.commits[0]?.parents).toHaveLength(1);
+    expect(first.tipsMoved).toBe(false);
+    harness.clearPathBindings(status.worktreeId);
+    await repo.write("move.txt", "advance");
+    await repo.commitAll("later");
+    const second = await harness.service.history({
+      repositoryId: harness.repositoryId,
+      cursor: first.nextCursor ?? "",
+    });
+    expect(second.commits.map((commit) => commit.oid)).toEqual([older]);
+    expect(second.tipsMoved).toBe(true);
+    expect(second.topology).toBe("sparse");
+  });
+
+  it("owns page size and first-parent mode while rejecting every continuation filter", async () => {
+    for (let index = 0; index < 4; index += 1) {
+      await repo.write(`search-${index}.txt`, `${index}`);
+      await repo.commitAll(`match ${index}`);
+    }
+    const first = await harness.service.history({
+      repositoryId: harness.repositoryId,
+      limit: 1,
+      firstParentOnly: true,
+      message: "match",
+    });
+    const identity = {
+      repositoryId: harness.repositoryId,
+      cursor: first.nextCursor ?? "",
+    };
+    expect((await harness.service.history(identity)).commits).toHaveLength(1);
+    expect(
+      (
+        await harness.service.history({
+          ...identity,
+          limit: 1,
+          firstParentOnly: true,
+        })
+      ).commits,
+    ).toHaveLength(1);
+    // Prevents legacy repeated options changing the cursor-owned walk.
+    await expect(
+      harness.service.history({ ...identity, limit: 2 }),
+    ).rejects.toMatchObject({ code: "InvalidRequest" });
+    await expect(
+      harness.service.history({ ...identity, firstParentOnly: false }),
+    ).rejects.toMatchObject({ code: "InvalidRequest" });
+    const redefinitions = [
+      { message: "match" },
+      { author: "fixture" },
+      { oidPrefix: "abcd" },
+      { refFullName: "refs/heads/main" },
+      { committedAfter: "2026-01-01T00:00:00Z" },
+      { committedBefore: "2026-01-01T00:00:00Z" },
+      { pathId: "path_unknown" },
+    ];
+    for (const filter of redefinitions)
+      await expect(
+        harness.service.history({ ...identity, ...filter }),
+      ).rejects.toMatchObject({ code: "InvalidRequest" });
+  });
+
+  it("refuses unobserved refs, foreign paths and repository-width prefixes", async () => {
+    // Prevents browser aliases becoming Git revision/path authority.
+    await expect(
+      harness.service.history({
+        repositoryId: harness.repositoryId,
+        refFullName: "refs/heads/missing",
+      }),
+    ).rejects.toMatchObject({ code: "NotFound" });
+    await expect(
+      harness.service.history({
+        repositoryId: harness.repositoryId,
+        pathId: "path_foreign",
+      }),
+    ).rejects.toMatchObject({ code: "NotFound" });
+    await expect(
+      harness.service.history({
+        repositoryId: harness.repositoryId,
+        oidPrefix: "a".repeat(41),
+      }),
+    ).rejects.toMatchObject({ code: "InvalidRequest" });
+  });
+
+  it("validates authority in unborn histories and refuses unrepresentable known paths", async () => {
+    // Prevents an empty walk bypassing path/ref authority validation.
+    const empty = await createRepo();
+    const emptyHarness = await harnessFor(empty);
+    try {
+      await expect(
+        emptyHarness.service.history({
+          repositoryId: emptyHarness.repositoryId,
+          refFullName: "refs/heads/main",
+        }),
+      ).rejects.toMatchObject({ code: "NotFound" });
+      await expect(
+        emptyHarness.service.history({
+          repositoryId: emptyHarness.repositoryId,
+          pathId: "path_unknown",
+          message: "absent",
+        }),
+      ).rejects.toMatchObject({ code: "NotFound" });
+      const status = await emptyHarness.service.status({
+        repositoryId: emptyHarness.repositoryId,
+      });
+      const pathId = emptyHarness.bindPath(
+        status.worktreeId,
+        new Uint8Array([0x66, 0xff]),
+      );
+      await expect(
+        emptyHarness.service.history({
+          repositoryId: emptyHarness.repositoryId,
+          pathId,
+        }),
+      ).rejects.toMatchObject({ code: "UnsupportedPathEncoding" });
+      const page = await emptyHarness.service.history({
+        repositoryId: emptyHarness.repositoryId,
+        message: "absent",
+      });
+      expect(page.commits).toEqual([]);
+      expect(page.topology).toBe("sparse");
+    } finally {
+      await emptyHarness.dispose();
+    }
+  });
+
+  it("reports ambiguous prefixes instead of selecting an arbitrary commit", async () => {
+    // Prevents a short SHA resolving whichever object happened to be enumerated first.
+    const tree = new TextDecoder()
+      .decode(await repo.git(["rev-parse", "HEAD^{tree}"]))
+      .trim();
+    const seen = new Set<string>();
+    let prefix: string | null = null;
+    for (let index = 0; index < 2000 && prefix === null; index += 1) {
+      const oid = new TextDecoder()
+        .decode(
+          await repo.git(["commit-tree", tree, "-m", `collision ${index}`]),
+        )
+        .trim();
+      const key = oid.slice(0, 4);
+      if (seen.has(key)) prefix = key;
+      seen.add(key);
+    }
+    if (prefix === null)
+      throw new Error("fixture did not find a SHA-prefix collision");
+    await expect(
+      harness.service.history({
+        repositoryId: harness.repositoryId,
+        oidPrefix: prefix,
+      }),
+    ).rejects.toMatchObject({ code: "InvalidRequest" });
+  }, 20000);
+
+  it("applies fractional UTC bounds without including a whole-second commit outside them", async () => {
+    await repo.write("seconds.txt", "one");
+    await repo.commitAll("second precision", { date: "2026-06-01T00:00:00Z" });
+    const page = await harness.service.history({
+      repositoryId: harness.repositoryId,
+      committedAfter: "2026-06-01T00:00:00.001Z",
+    });
+    expect(page.commits).toEqual([]);
+    const before = await harness.service.history({
+      repositoryId: harness.repositoryId,
+      message: "second precision",
+      committedBefore: "2026-05-31T23:59:59.999Z",
+    });
+    expect(before.commits).toEqual([]);
+  });
+
+  it("observes scoped ref movement beyond the bounded default walk tips", async () => {
+    // Prevents historyTipsMax hiding movement of a ref explicitly chosen by the user.
+    await repo.write("tips.txt", "one");
+    const oldTip = await repo.commitAll("tip to scope");
+    for (let index = 0; index < 20; index += 1)
+      await repo.git(["branch", `a-${index}`]);
+    await repo.git(["branch", "zzz-scoped"]);
+    const first = await harness.service.history({
+      repositoryId: harness.repositoryId,
+      refFullName: "refs/heads/zzz-scoped",
+      limit: 1,
+    });
+    expect(first.tipsMoved).toBe(false);
+    const tree = new TextDecoder()
+      .decode(await repo.git(["rev-parse", "HEAD^{tree}"]))
+      .trim();
+    const next = new TextDecoder()
+      .decode(
+        await repo.git([
+          "commit-tree",
+          tree,
+          "-p",
+          oldTip,
+          "-m",
+          "move only scoped ref",
+        ]),
+      )
+      .trim();
+    await repo.git(["update-ref", "refs/heads/zzz-scoped", next]);
+    const second = await harness.service.history({
+      repositoryId: harness.repositoryId,
+      cursor: first.nextCursor ?? "",
+    });
+    expect(second.tipsMoved).toBe(true);
+    expect(second.commits.map((commit) => commit.subject)).toEqual(["base"]);
+  });
+
+  it("peels an observed annotated tag and refuses a tag that names a noncommit", async () => {
+    const oid = await repo.headOid();
+    await repo.git(["tag", "-a", "annotated", "-m", "annotation", oid]);
+    const page = await harness.service.history({
+      repositoryId: harness.repositoryId,
+      refFullName: "refs/tags/annotated",
+    });
+    expect(page.commits.map((commit) => commit.oid)).toEqual([oid]);
+    expect(page.topology).toBe("continuous");
+    const blob = new TextDecoder()
+      .decode(await repo.git(["rev-parse", "HEAD:a.txt"]))
+      .trim();
+    await repo.git(["tag", "blob", blob]);
+    // Prevents a valid observed ref to a blob becoming a rev-list object error.
+    await expect(
+      harness.service.history({
+        repositoryId: harness.repositoryId,
+        refFullName: "refs/tags/blob",
+      }),
+    ).rejects.toMatchObject({ code: "NotFound" });
+  });
+
+  it("interprets epoch and pre-epoch date bounds as instants rather than free-form dates", async () => {
+    // Prevents Git date syntax turning an epoch bound into a locale/current-time query.
+    const identity = { repositoryId: harness.repositoryId };
+    expect(
+      (
+        await harness.service.history({
+          ...identity,
+          committedBefore: "1970-01-01T00:00:00Z",
+        })
+      ).commits,
+    ).toEqual([]);
+    expect(
+      (
+        await harness.service.history({
+          ...identity,
+          committedBefore: "1969-12-31T23:59:59Z",
+        })
+      ).commits,
+    ).toEqual([]);
+    expect(
+      (
+        await harness.service.history({
+          ...identity,
+          committedAfter: "1969-12-31T23:59:59Z",
+        })
+      ).commits,
+    ).toHaveLength(1);
+  });
+
+  it.each(["message", "author"])(
+    "matches non-ASCII case pairs in %s literal filters",
+    async (field) => {
+      // Prevents an inherited non-UTF-8 locale silently dropping case-insensitive Unicode matches.
+      await repo.write("unicode.txt", "one");
+      await repo.git(["add", "unicode.txt"]);
+      await repo.git(["commit", "-m", "Éclair unicode case"], {
+        env: { GIT_AUTHOR_NAME: "Élodie" },
+      });
+      const oid = await repo.headOid();
+      const query =
+        field === "message" ? { message: "éclair" } : { author: "élodie" };
+      expect(
+        (
+          await harness.service.history({
+            repositoryId: harness.repositoryId,
+            ...query,
+          })
+        ).commits.map((commit) => commit.oid),
+      ).toEqual([oid]);
+    },
+  );
 
   it("returns topology with subjects, parents and decoration", async () => {
     await repo.write("b.txt", "b\n");
@@ -912,6 +1331,14 @@ describe("previews", () => {
       repositoryId: harness.repositoryId,
     });
     const linked = worktrees.worktrees.find((worktree) => !worktree.isMain);
+    // Prevents a path authority minted in one worktree being reused by history in another.
+    await expect(
+      harness.service.history({
+        repositoryId: harness.repositoryId,
+        worktreeId: linked?.worktreeId ?? "",
+        pathId,
+      }),
+    ).rejects.toMatchObject({ code: "NotFound" });
     await expect(
       harness.service.previews({
         repositoryId: harness.repositoryId,
@@ -999,6 +1426,13 @@ describe("a SHA-256 repository", () => {
     const history = await harness.service.history({
       repositoryId: harness.repositoryId,
     });
+    const located = await harness.service.history({
+      repositoryId: harness.repositoryId,
+      oidPrefix: head.slice(0, 12),
+      author: "fixture",
+    });
+    expect(located.topology).toBe("sparse");
+    expect(located.commits.map((commit) => commit.oid)).toEqual([head]);
     expect(history.objectFormat).toBe("sha256");
     expect(history.commits[0]?.oid).toBe(head);
     expect(history.commits[0]?.oid).toMatch(/^[0-9a-f]{64}$/);
