@@ -64,6 +64,15 @@ impl LocalGit {
         &self.program
     }
 
+    /// The environment every command from this provider runs with.
+    ///
+    /// Exposed so the repository-opening read can run under exactly the same environment
+    /// as every later command: two environments for one repository is how a fixture's
+    /// Git config gets applied to one read and not another.
+    pub fn environment(&self) -> &[(String, String)] {
+        &self.env
+    }
+
     /// Runs one planned command in `directory`.
     pub async fn run(
         &self,

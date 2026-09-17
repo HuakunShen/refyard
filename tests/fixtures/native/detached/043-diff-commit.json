@@ -1,0 +1,38 @@
+{
+  "snapshotId": "snap_b",
+  "repositoryId": "repo_1",
+  "worktreeId": "wt_2",
+  "readAt": "2026-09-17T23:36:05.348Z",
+  "request": {
+    "kind": "commit",
+    "oid": "70c8525383cd7f5cc9fa908c6bba86e8a0a32342",
+    "from": null,
+    "to": null,
+    "pathId": null
+  },
+  "files": [
+    {
+      "pathId": "path_c",
+      "displayPath": "b.txt",
+      "oldPathId": null,
+      "oldDisplayPath": null,
+      "changeKind": "added",
+      "isBinary": false,
+      "isSubmodule": false,
+      "insertions": 1,
+      "deletions": 0,
+      "modes": null,
+      "patch": {
+        "kind": "unavailable",
+        "reason": "no patch was requested for this path"
+      }
+    }
+  ],
+  "stats": {
+    "filesChanged": 1,
+    "insertions": 1,
+    "deletions": 0,
+    "binaryFiles": 0
+  },
+  "truncated": true
+}

@@ -1,0 +1,61 @@
+{
+  "case": "sha256",
+  "requests": [
+    {
+      "file": "010-status.json",
+      "body": {
+        "op": "status"
+      }
+    },
+    {
+      "file": "020-refs.json",
+      "body": {
+        "op": "refs"
+      }
+    },
+    {
+      "file": "030-history.json",
+      "body": {
+        "op": "history",
+        "limit": 10
+      }
+    },
+    {
+      "file": "040-diff-unstaged.json",
+      "body": {
+        "op": "diff",
+        "kind": "unstaged"
+      }
+    },
+    {
+      "file": "041-diff-staged.json",
+      "body": {
+        "op": "diff",
+        "kind": "staged"
+      }
+    },
+    {
+      "file": "042-diff-untracked.json",
+      "body": {
+        "op": "diff",
+        "kind": "untracked"
+      }
+    },
+    {
+      "file": "031-history-detail.json",
+      "body": {
+        "op": "history",
+        "limit": 10,
+        "detailOid": "942de53f4b2a2c0839815218efe1a99e110cfbc1a21a8839a049f7c7f99d0009"
+      }
+    },
+    {
+      "file": "043-diff-commit.json",
+      "body": {
+        "op": "diff",
+        "kind": "commit",
+        "oid": "942de53f4b2a2c0839815218efe1a99e110cfbc1a21a8839a049f7c7f99d0009"
+      }
+    }
+  ]
+}

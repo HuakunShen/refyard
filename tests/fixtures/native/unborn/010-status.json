@@ -1,0 +1,33 @@
+{
+  "snapshotId": "snap_4",
+  "repositoryId": "repo_1",
+  "worktreeId": "wt_2",
+  "readAt": "2026-09-17T23:36:00.545Z",
+  "head": {
+    "kind": "unborn",
+    "branchName": "main",
+    "oid": null,
+    "detached": false
+  },
+  "upstream": null,
+  "operationInProgress": null,
+  "entries": [
+    {
+      "pathId": "path_5",
+      "displayPath": "untracked.txt",
+      "pathEncoding": "utf8",
+      "kind": "untracked",
+      "indexStatus": "?",
+      "worktreeStatus": "?",
+      "originalPathId": null,
+      "originalDisplayPath": null,
+      "headOid": null,
+      "indexOid": null,
+      "modes": null,
+      "submodule": null,
+      "stages": null
+    }
+  ],
+  "entryCount": 1,
+  "truncated": false
+}

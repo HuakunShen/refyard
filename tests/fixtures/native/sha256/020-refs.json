@@ -1,0 +1,40 @@
+{
+  "snapshotId": "snap_5",
+  "repositoryId": "repo_1",
+  "readAt": "2026-09-17T23:36:12.799Z",
+  "objectFormat": "sha256",
+  "head": {
+    "kind": "born",
+    "branchName": "main",
+    "oid": "942de53f4b2a2c0839815218efe1a99e110cfbc1a21a8839a049f7c7f99d0009",
+    "detached": false
+  },
+  "branches": [
+    {
+      "name": "main",
+      "fullName": "refs/heads/main",
+      "oid": "942de53f4b2a2c0839815218efe1a99e110cfbc1a21a8839a049f7c7f99d0009",
+      "isCurrent": true,
+      "upstream": null
+    }
+  ],
+  "remoteBranches": [],
+  "tags": [
+    {
+      "name": "v1",
+      "fullName": "refs/tags/v1",
+      "oid": "6168f4e380bd4b7e614707969b1ce2704045dc670192872cb841e21d067da3ba",
+      "annotated": true,
+      "targetOid": "942de53f4b2a2c0839815218efe1a99e110cfbc1a21a8839a049f7c7f99d0009"
+    }
+  ],
+  "remotes": [
+    {
+      "name": "origin",
+      "fetchUrlDisplay": "https://example.test/sha256.git",
+      "pushUrlDisplay": "https://example.test/sha256.git"
+    }
+  ],
+  "otherRefs": [],
+  "truncated": false
+}

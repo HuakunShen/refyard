@@ -1,0 +1,30 @@
+{
+  "snapshotId": "snap_9",
+  "repositoryId": "repo_1",
+  "readAt": "2026-09-17T23:36:11.851Z",
+  "objectFormat": "sha1",
+  "shallow": false,
+  "topology": "continuous",
+  "commits": [
+    {
+      "oid": "4ad2727c624ec8705cc7b414f5a880798d9872e0",
+      "parents": [],
+      "subject": "base",
+      "authorName": "Refyard Fixture",
+      "authorEmail": "fixture@refyard.invalid",
+      "authoredAt": "2026-01-01T00:00:00.000Z",
+      "committedAt": "2026-01-01T00:00:00.000Z",
+      "refNames": [
+        "refs/heads/feature",
+        "refs/heads/main"
+      ],
+      "signed": false,
+      "boundary": false,
+      "missingParents": []
+    }
+  ],
+  "nextCursor": null,
+  "tipsMoved": false,
+  "truncated": false,
+  "detail": null
+}

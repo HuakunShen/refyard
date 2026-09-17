@@ -1,0 +1,13 @@
+{
+  "snapshotId": "snap_7",
+  "repositoryId": "repo_1",
+  "readAt": "2026-09-17T23:36:01.551Z",
+  "objectFormat": "sha1",
+  "shallow": false,
+  "topology": "continuous",
+  "commits": [],
+  "nextCursor": null,
+  "tipsMoved": false,
+  "truncated": false,
+  "detail": null
+}

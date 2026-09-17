@@ -1,0 +1,78 @@
+{
+  "snapshotId": "snap_f",
+  "repositoryId": "repo_1",
+  "worktreeId": "wt_2",
+  "readAt": "2026-09-17T23:36:08.312Z",
+  "request": {
+    "kind": "unstaged",
+    "oid": null,
+    "from": null,
+    "to": null,
+    "pathId": "path_5"
+  },
+  "files": [
+    {
+      "pathId": "path_5",
+      "displayPath": "b file.txt",
+      "oldPathId": null,
+      "oldDisplayPath": null,
+      "changeKind": "modified",
+      "isBinary": false,
+      "isSubmodule": false,
+      "insertions": 1,
+      "deletions": 1,
+      "modes": {
+        "old": "100644",
+        "new": "100644"
+      },
+      "patch": {
+        "kind": "text",
+        "hunks": [
+          {
+            "header": "@@ -1 +1 @@",
+            "oldStart": 1,
+            "oldLines": 1,
+            "newStart": 1,
+            "newLines": 1,
+            "lines": [
+              {
+                "kind": "remove",
+                "text": "space name",
+                "noNewline": false
+              },
+              {
+                "kind": "add",
+                "text": "space name changed",
+                "noNewline": false
+              }
+            ]
+          }
+        ],
+        "synthesized": false
+      }
+    },
+    {
+      "pathId": "path_6",
+      "displayPath": "名 前.txt",
+      "oldPathId": null,
+      "oldDisplayPath": null,
+      "changeKind": "modified",
+      "isBinary": false,
+      "isSubmodule": false,
+      "insertions": 1,
+      "deletions": 1,
+      "modes": null,
+      "patch": {
+        "kind": "unavailable",
+        "reason": "no patch was requested for this path"
+      }
+    }
+  ],
+  "stats": {
+    "filesChanged": 2,
+    "insertions": 2,
+    "deletions": 2,
+    "binaryFiles": 0
+  },
+  "truncated": false
+}

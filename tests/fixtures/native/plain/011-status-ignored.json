@@ -1,0 +1,124 @@
+{
+  "snapshotId": "snap_i",
+  "repositoryId": "repo_1",
+  "worktreeId": "wt_2",
+  "readAt": "2026-09-17T23:36:14.745Z",
+  "head": {
+    "kind": "born",
+    "branchName": "main",
+    "oid": "1fbb340e6b4363710972c928f4b3dd553f93b97c",
+    "detached": false
+  },
+  "upstream": null,
+  "operationInProgress": null,
+  "entries": [
+    {
+      "pathId": "path_5",
+      "displayPath": "deleted.txt",
+      "pathEncoding": "utf8",
+      "kind": "ordinary",
+      "indexStatus": ".",
+      "worktreeStatus": "D",
+      "originalPathId": null,
+      "originalDisplayPath": null,
+      "headOid": "5626abf0f72e58d7a153368ba57db4c673c0e171",
+      "indexOid": "5626abf0f72e58d7a153368ba57db4c673c0e171",
+      "modes": {
+        "head": "100644",
+        "index": "100644",
+        "worktree": null
+      },
+      "submodule": null,
+      "stages": null
+    },
+    {
+      "pathId": "path_6",
+      "displayPath": "gone-staged.txt",
+      "pathEncoding": "utf8",
+      "kind": "ordinary",
+      "indexStatus": "D",
+      "worktreeStatus": ".",
+      "originalPathId": null,
+      "originalDisplayPath": null,
+      "headOid": "5626abf0f72e58d7a153368ba57db4c673c0e171",
+      "indexOid": null,
+      "modes": {
+        "head": "100644",
+        "index": null,
+        "worktree": null
+      },
+      "submodule": null,
+      "stages": null
+    },
+    {
+      "pathId": "path_7",
+      "displayPath": "staged.txt",
+      "pathEncoding": "utf8",
+      "kind": "ordinary",
+      "indexStatus": "M",
+      "worktreeStatus": ".",
+      "originalPathId": null,
+      "originalDisplayPath": null,
+      "headOid": "5626abf0f72e58d7a153368ba57db4c673c0e171",
+      "indexOid": "f719efd430d52bcfc8566a43b2eb655688d38871",
+      "modes": {
+        "head": "100644",
+        "index": "100644",
+        "worktree": "100644"
+      },
+      "submodule": null,
+      "stages": null
+    },
+    {
+      "pathId": "path_8",
+      "displayPath": "unstaged.txt",
+      "pathEncoding": "utf8",
+      "kind": "ordinary",
+      "indexStatus": ".",
+      "worktreeStatus": "M",
+      "originalPathId": null,
+      "originalDisplayPath": null,
+      "headOid": "5626abf0f72e58d7a153368ba57db4c673c0e171",
+      "indexOid": "5626abf0f72e58d7a153368ba57db4c673c0e171",
+      "modes": {
+        "head": "100644",
+        "index": "100644",
+        "worktree": "100644"
+      },
+      "submodule": null,
+      "stages": null
+    },
+    {
+      "pathId": "path_9",
+      "displayPath": "untracked.txt",
+      "pathEncoding": "utf8",
+      "kind": "untracked",
+      "indexStatus": "?",
+      "worktreeStatus": "?",
+      "originalPathId": null,
+      "originalDisplayPath": null,
+      "headOid": null,
+      "indexOid": null,
+      "modes": null,
+      "submodule": null,
+      "stages": null
+    },
+    {
+      "pathId": "path_j",
+      "displayPath": "ignored.txt",
+      "pathEncoding": "utf8",
+      "kind": "ignored",
+      "indexStatus": "!",
+      "worktreeStatus": "!",
+      "originalPathId": null,
+      "originalDisplayPath": null,
+      "headOid": null,
+      "indexOid": null,
+      "modes": null,
+      "submodule": null,
+      "stages": null
+    }
+  ],
+  "entryCount": 6,
+  "truncated": false
+}

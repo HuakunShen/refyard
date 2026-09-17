@@ -1,0 +1,50 @@
+{
+  "snapshotId": "snap_5",
+  "repositoryId": "repo_1",
+  "readAt": "2026-09-17T23:36:10.450Z",
+  "objectFormat": "sha1",
+  "head": {
+    "kind": "born",
+    "branchName": "main",
+    "oid": "70c8525383cd7f5cc9fa908c6bba86e8a0a32342",
+    "detached": false
+  },
+  "branches": [
+    {
+      "name": "main",
+      "fullName": "refs/heads/main",
+      "oid": "70c8525383cd7f5cc9fa908c6bba86e8a0a32342",
+      "isCurrent": true,
+      "upstream": {
+        "fullName": "refs/remotes/origin/main",
+        "ahead": 0,
+        "behind": 0,
+        "gone": false
+      }
+    }
+  ],
+  "remoteBranches": [
+    {
+      "name": "origin/HEAD",
+      "fullName": "refs/remotes/origin/HEAD",
+      "oid": "70c8525383cd7f5cc9fa908c6bba86e8a0a32342",
+      "remoteName": "origin"
+    },
+    {
+      "name": "origin/main",
+      "fullName": "refs/remotes/origin/main",
+      "oid": "70c8525383cd7f5cc9fa908c6bba86e8a0a32342",
+      "remoteName": "origin"
+    }
+  ],
+  "tags": [],
+  "remotes": [
+    {
+      "name": "origin",
+      "fetchUrlDisplay": "https://example.test/upstream.git",
+      "pushUrlDisplay": "https://example.test/upstream.git"
+    }
+  ],
+  "otherRefs": [],
+  "truncated": false
+}

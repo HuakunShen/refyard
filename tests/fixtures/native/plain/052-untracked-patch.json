@@ -1,0 +1,54 @@
+{
+  "snapshotId": "snap_q",
+  "repositoryId": "repo_1",
+  "worktreeId": "wt_2",
+  "readAt": "2026-09-17T23:36:15.226Z",
+  "request": {
+    "kind": "untracked",
+    "oid": null,
+    "from": null,
+    "to": null,
+    "pathId": "path_9"
+  },
+  "files": [
+    {
+      "pathId": "path_9",
+      "displayPath": "untracked.txt",
+      "oldPathId": null,
+      "oldDisplayPath": null,
+      "changeKind": "added",
+      "isBinary": false,
+      "isSubmodule": false,
+      "insertions": 1,
+      "deletions": 0,
+      "modes": null,
+      "patch": {
+        "kind": "text",
+        "hunks": [
+          {
+            "header": "@@ -0,0 +1,1 @@",
+            "oldStart": 0,
+            "oldLines": 0,
+            "newStart": 1,
+            "newLines": 1,
+            "lines": [
+              {
+                "kind": "add",
+                "text": "fresh",
+                "noNewline": false
+              }
+            ]
+          }
+        ],
+        "synthesized": true
+      }
+    }
+  ],
+  "stats": {
+    "filesChanged": 1,
+    "insertions": 1,
+    "deletions": 0,
+    "binaryFiles": 0
+  },
+  "truncated": false
+}

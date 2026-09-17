@@ -13,6 +13,8 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use refyard_contract::history::Topology;
+
 use crate::paths::base36;
 
 /// What a snapshot was taken for. A cursor minted for one kind must not be honoured
@@ -44,6 +46,18 @@ impl SnapshotKind {
     }
 }
 
+/// The walk semantics a history page was started with.
+///
+/// A cursor continues the page it was minted for, so these values are owned by the
+/// snapshot: a client that asks for a different page size or first-parent mode on a
+/// continuation would otherwise silently receive a different walk than the one it is
+/// paging through.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HistoryIntent {
+    pub first_parent_only: bool,
+    pub topology: Topology,
+}
+
 /// One recorded read.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SnapshotRecord {
@@ -60,6 +74,8 @@ pub struct SnapshotRecord {
     pub observed_refs_fingerprint: Option<String>,
     /// The index fingerprint a write must still match.
     pub index_key: Option<String>,
+    /// Present on history snapshots, absent on every other kind.
+    pub history_intent: Option<HistoryIntent>,
 }
 
 /// One row of the index fingerprint.
@@ -113,6 +129,7 @@ pub struct SnapshotRequest<'a> {
     pub head_oid: Option<String>,
     pub observed_refs_fingerprint: Option<String>,
     pub index_key: Option<String>,
+    pub history_intent: Option<HistoryIntent>,
 }
 
 /// The result of resolving a cursor.
@@ -193,6 +210,7 @@ impl SnapshotStore {
             head_oid: request.head_oid,
             observed_refs_fingerprint: request.observed_refs_fingerprint,
             index_key: request.index_key,
+            history_intent: request.history_intent,
         };
         state.order.push(snapshot.snapshot_id.clone());
         state
@@ -327,6 +345,7 @@ mod tests {
             head_oid: None,
             observed_refs_fingerprint: None,
             index_key: None,
+            history_intent: None,
         }
     }
 

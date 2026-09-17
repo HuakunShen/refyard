@@ -1,0 +1,18 @@
+{
+  "snapshotId": "snap_6",
+  "repositoryId": "repo_1",
+  "readAt": "2026-09-17T23:36:00.718Z",
+  "objectFormat": "sha1",
+  "head": {
+    "kind": "unborn",
+    "branchName": "main",
+    "oid": null,
+    "detached": false
+  },
+  "branches": [],
+  "remoteBranches": [],
+  "tags": [],
+  "remotes": [],
+  "otherRefs": [],
+  "truncated": false
+}

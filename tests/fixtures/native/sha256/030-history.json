@@ -1,0 +1,45 @@
+{
+  "snapshotId": "snap_6",
+  "repositoryId": "repo_1",
+  "readAt": "2026-09-17T23:36:13.040Z",
+  "objectFormat": "sha256",
+  "shallow": false,
+  "topology": "continuous",
+  "commits": [
+    {
+      "oid": "942de53f4b2a2c0839815218efe1a99e110cfbc1a21a8839a049f7c7f99d0009",
+      "parents": [
+        "396606099d393c050e71c50806d533f529a817bbbdd0c8fc9ba674e2350eaf7c"
+      ],
+      "subject": "second",
+      "authorName": "Refyard Fixture",
+      "authorEmail": "fixture@refyard.invalid",
+      "authoredAt": "2026-01-01T00:00:00.000Z",
+      "committedAt": "2026-01-01T00:00:00.000Z",
+      "refNames": [
+        "refs/heads/main",
+        "refs/tags/v1"
+      ],
+      "signed": false,
+      "boundary": false,
+      "missingParents": []
+    },
+    {
+      "oid": "396606099d393c050e71c50806d533f529a817bbbdd0c8fc9ba674e2350eaf7c",
+      "parents": [],
+      "subject": "base",
+      "authorName": "Refyard Fixture",
+      "authorEmail": "fixture@refyard.invalid",
+      "authoredAt": "2026-01-01T00:00:00.000Z",
+      "committedAt": "2026-01-01T00:00:00.000Z",
+      "refNames": [],
+      "signed": false,
+      "boundary": false,
+      "missingParents": []
+    }
+  ],
+  "nextCursor": null,
+  "tipsMoved": false,
+  "truncated": false,
+  "detail": null
+}

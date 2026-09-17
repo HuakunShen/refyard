@@ -1,0 +1,54 @@
+{
+  "snapshotId": "snap_d",
+  "repositoryId": "repo_1",
+  "worktreeId": "wt_2",
+  "readAt": "2026-09-17T23:36:14.410Z",
+  "request": {
+    "kind": "staged",
+    "oid": null,
+    "from": null,
+    "to": null,
+    "pathId": null
+  },
+  "files": [
+    {
+      "pathId": "path_6",
+      "displayPath": "gone-staged.txt",
+      "oldPathId": null,
+      "oldDisplayPath": null,
+      "changeKind": "deleted",
+      "isBinary": false,
+      "isSubmodule": false,
+      "insertions": 0,
+      "deletions": 1,
+      "modes": null,
+      "patch": {
+        "kind": "unavailable",
+        "reason": "no patch was requested for this path"
+      }
+    },
+    {
+      "pathId": "path_7",
+      "displayPath": "staged.txt",
+      "oldPathId": null,
+      "oldDisplayPath": null,
+      "changeKind": "modified",
+      "isBinary": false,
+      "isSubmodule": false,
+      "insertions": 1,
+      "deletions": 1,
+      "modes": null,
+      "patch": {
+        "kind": "unavailable",
+        "reason": "no patch was requested for this path"
+      }
+    }
+  ],
+  "stats": {
+    "filesChanged": 2,
+    "insertions": 1,
+    "deletions": 2,
+    "binaryFiles": 0
+  },
+  "truncated": true
+}

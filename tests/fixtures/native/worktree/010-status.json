@@ -1,0 +1,52 @@
+{
+  "snapshotId": "snap_5",
+  "repositoryId": "repo_1",
+  "worktreeId": "wt_3",
+  "readAt": "2026-09-17T23:36:11.519Z",
+  "head": {
+    "kind": "born",
+    "branchName": "feature",
+    "oid": "4ad2727c624ec8705cc7b414f5a880798d9872e0",
+    "detached": false
+  },
+  "upstream": null,
+  "operationInProgress": null,
+  "entries": [
+    {
+      "pathId": "path_6",
+      "displayPath": "a.txt",
+      "pathEncoding": "utf8",
+      "kind": "ordinary",
+      "indexStatus": ".",
+      "worktreeStatus": "M",
+      "originalPathId": null,
+      "originalDisplayPath": null,
+      "headOid": "df967b96a579e45a18b8251732d16804b2e56a55",
+      "indexOid": "df967b96a579e45a18b8251732d16804b2e56a55",
+      "modes": {
+        "head": "100644",
+        "index": "100644",
+        "worktree": "100644"
+      },
+      "submodule": null,
+      "stages": null
+    },
+    {
+      "pathId": "path_7",
+      "displayPath": "linked-file.txt",
+      "pathEncoding": "utf8",
+      "kind": "untracked",
+      "indexStatus": "?",
+      "worktreeStatus": "?",
+      "originalPathId": null,
+      "originalDisplayPath": null,
+      "headOid": null,
+      "indexOid": null,
+      "modes": null,
+      "submodule": null,
+      "stages": null
+    }
+  ],
+  "entryCount": 2,
+  "truncated": false
+}

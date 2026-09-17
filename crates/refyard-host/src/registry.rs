@@ -119,11 +119,19 @@ pub struct OpenRequest<'a> {
     pub root_path: &'a Path,
     pub relative_path: &'a str,
     pub target_id: &'a str,
+    /// The generation of the target this repository was approved on. Bound at open time,
+    /// because a snapshot or cursor from an older generation must not be honoured after
+    /// the target was re-established.
+    pub target_generation: &'a str,
 }
 
 pub async fn open_repository(
     request: OpenRequest<'_>,
-    next_repository_id: &mut dyn FnMut() -> String,
+    // `Send` is part of the contract, not a convenience: the id is minted after the layout
+    // query has answered, so this borrow lives across an await, and an async host that
+    // requires `Send` futures — Tauri's IPC dispatcher, an axum handler — could not await
+    // this function otherwise. A test's counter and the registry both satisfy it.
+    next_repository_id: &mut (dyn FnMut() -> String + Send),
 ) -> OpenOutcome {
     let OpenRequest {
         program,
@@ -133,6 +141,7 @@ pub async fn open_repository(
         root_path,
         relative_path,
         target_id,
+        target_generation,
     } = request;
     let spec = |omit_top_level: bool| crate::process::ProcessSpec {
         program: program.to_path_buf(),
@@ -167,7 +176,7 @@ pub async fn open_repository(
             layout,
             location: RepositoryLocation {
                 target_id: target_id.to_string(),
-                target_generation: "gen_1".to_string(),
+                target_generation: target_generation.to_string(),
                 canonical_worktree,
                 canonical_common_dir: String::new(),
             },

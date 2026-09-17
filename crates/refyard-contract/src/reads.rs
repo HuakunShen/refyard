@@ -553,6 +553,51 @@ pub enum TargetKind {
     Worktree,
 }
 
+/// Every mutation kind the contract declares, in the order the published list uses.
+///
+/// The projection of `MUTATION_KINDS`/`OPERATION_TARGET_LIST` in
+/// `packages/git-contract/src/operations.ts`. A capability answer that has to name what
+/// this build does *not* implement needs the complete list, and deriving it from the
+/// contract rather than from a second hand-written table is what keeps the two from
+/// disagreeing.
+pub const MUTATION_KINDS: [MutationKind; 35] = [
+    MutationKind::InitRepository,
+    MutationKind::CloneRepository,
+    MutationKind::StagePaths,
+    MutationKind::UnstagePaths,
+    MutationKind::DiscardTrackedPaths,
+    MutationKind::Commit,
+    MutationKind::AmendCommit,
+    MutationKind::CreateBranch,
+    MutationKind::SwitchBranch,
+    MutationKind::RenameBranch,
+    MutationKind::DeleteBranch,
+    MutationKind::SetBranchUpstream,
+    MutationKind::AddRemote,
+    MutationKind::UpdateRemote,
+    MutationKind::RemoveRemote,
+    MutationKind::Fetch,
+    MutationKind::Push,
+    MutationKind::Pull,
+    MutationKind::CreateStash,
+    MutationKind::ApplyStash,
+    MutationKind::PopStash,
+    MutationKind::DropStash,
+    MutationKind::CreateTag,
+    MutationKind::DeleteTag,
+    MutationKind::PushTag,
+    MutationKind::CreateWorktree,
+    MutationKind::RemoveWorktree,
+    MutationKind::LockWorktree,
+    MutationKind::UnlockWorktree,
+    MutationKind::AddSubmodule,
+    MutationKind::UpdateSubmodule,
+    MutationKind::SyncSubmodule,
+    MutationKind::Merge,
+    MutationKind::ContinueMerge,
+    MutationKind::AbortMerge,
+];
+
 /// What a mutation is allowed to touch, discriminated by `kind`. An operation
 /// accepts only the kinds it declares.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1080,6 +1125,22 @@ mod tests {
     fn refuses_a_mutation_kind_that_is_not_in_the_contract() {
         let parsed: Result<MutationKind, _> = serde_json::from_str("\"teleport\"");
         assert!(parsed.is_err(), "an unknown mutation kind must not parse");
+    }
+
+    #[test]
+    fn the_mutation_list_names_every_kind_the_contract_declares() {
+        // A capability answer says "none of these is available", so a kind missing from
+        // this list would be silently advertised as supported by omission.
+        assert_eq!(MUTATION_KINDS.len(), 35);
+        let mut names: Vec<String> = MUTATION_KINDS
+            .iter()
+            .map(|kind| serde_json::to_string(kind).expect("serializes"))
+            .collect();
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), MUTATION_KINDS.len(), "no kind is repeated");
+        assert!(names.contains(&"\"stagePaths\"".to_string()));
+        assert!(names.contains(&"\"abortMerge\"".to_string()));
     }
 
     #[test]

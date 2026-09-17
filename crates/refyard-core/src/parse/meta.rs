@@ -1,18 +1,143 @@
-//! `git rev-list --parents` topology rows.
+//! `git rev-list --parents` topology rows, `git remote -v`, and object presence.
 //!
-//! Output is `<oid> <parent>…` per line, with a leading `-` on a row Git marked as a
-//! boundary. Only object names and single spaces appear, so this is the one history
-//! read that never touches a commit message: bodies come from `cat-file --batch`
-//! separately, which is what keeps a message containing a newline from looking like a
-//! new row.
+//! Topology output is `<oid> <parent>…` per line, with a leading `-` on a row Git
+//! marked as a boundary. Only object names and single spaces appear, so this is the
+//! one history read that never touches a commit message: bodies come from
+//! `cat-file --batch` separately, which is what keeps a message containing a newline
+//! from looking like a new row.
 //!
-//! The reference module also holds the `remote -v`, `config -z` and `ls-tree -z`
-//! parsers; only the topology read is ported in this file.
+//! `remote -v` is read for display only, and `cat-file --batch-check` answers the
+//! "which parent is not here" question that decides whether a history row is a
+//! boundary. A name Git did not answer for at all counts as missing: reporting it as
+//! present would draw a shallow edge as a loaded parent.
+//!
+//! The reference module also holds the `config -z` and `ls-tree -z` parsers; those are
+//! not ported yet because no read in this slice needs them.
 
 use crate::bytes::decode_ascii;
 use crate::problem::CoreError;
 
 const TOPOLOGY_FORMAT: &str = "rev-list --topo-order --parents";
+const REMOTE_FORMAT: &str = "remote -v";
+const PRESENCE_FORMAT: &str = "cat-file --batch-check";
+
+/* -------------------------------------------------------------------- remotes */
+
+/// Which URL a `remote -v` line was.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RemoteUrlKind {
+    Fetch,
+    Push,
+}
+
+impl RemoteUrlKind {
+    /// The word Git printed in parentheses.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            RemoteUrlKind::Fetch => "fetch",
+            RemoteUrlKind::Push => "push",
+        }
+    }
+}
+
+/// One `remote -v` line: a remote's name, one of its URLs, and which URL it is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteUrlRecord {
+    pub name: String,
+    pub url: String,
+    pub kind: RemoteUrlKind,
+}
+
+/// Parse `remote -v`: `<name>\t<url> (<kind>)`, one line per URL.
+///
+/// A remote with a separate push URL appears twice. Names are ASCII and validated as
+/// such; the URL is decoded leniently because it is display data that the host redacts
+/// before it is returned, and it is never used as an argument.
+pub fn parse_remote_list(bytes: &[u8]) -> Result<Vec<RemoteUrlRecord>, CoreError> {
+    let mut records = Vec::new();
+    for line in split_lines(bytes) {
+        if line.is_empty() {
+            continue;
+        }
+        let Some(tab) = line.iter().position(|byte| *byte == b'\t') else {
+            return Err(CoreError::output_unparsable(
+                REMOTE_FORMAT,
+                "expected <name>\\t<url> (<kind>) per line",
+            ));
+        };
+        if tab == 0 {
+            return Err(CoreError::output_unparsable(
+                REMOTE_FORMAT,
+                "expected <name>\\t<url> (<kind>) per line",
+            ));
+        }
+        let name = decode_ascii(&line[..tab], REMOTE_FORMAT)?;
+        let rest = &line[tab + 1..];
+        let (kind, url_end) = if has_suffix(rest, b" (fetch)") {
+            (RemoteUrlKind::Fetch, rest.len() - " (fetch)".len())
+        } else if has_suffix(rest, b" (push)") {
+            (RemoteUrlKind::Push, rest.len() - " (push)".len())
+        } else {
+            return Err(CoreError::output_unparsable(
+                REMOTE_FORMAT,
+                "a remote line did not end with (fetch) or (push)",
+            ));
+        };
+        records.push(RemoteUrlRecord {
+            name,
+            // Latin-1, not UTF-8: the reference maps each byte to one code unit, so a
+            // URL that is not valid UTF-8 still displays byte for byte.
+            url: latin1(&rest[..url_end]),
+            kind,
+        });
+    }
+    Ok(records)
+}
+
+/* -------------------------------------------------------------------- presence */
+
+/// Which of the requested names Git answered for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObjectPresence {
+    /// Names Git reported as present, in the order they were requested.
+    pub present: Vec<String>,
+    /// Names Git reported as missing.
+    pub missing: Vec<String>,
+}
+
+/// Parse `cat-file --batch-check=%(objectname)` output.
+///
+/// A present object prints its own name; a missing one prints `<input> missing`. The
+/// answer is presence only — no body is transferred. `requested` is the fallback name
+/// for a answered line that carries none, exactly as the reference uses it.
+pub fn parse_object_presence(
+    bytes: &[u8],
+    requested: &[&str],
+) -> Result<ObjectPresence, CoreError> {
+    let mut present = Vec::new();
+    let mut missing = Vec::new();
+    let lines: Vec<&[u8]> = split_lines(bytes)
+        .into_iter()
+        .filter(|line| !line.is_empty())
+        .collect();
+    for (index, line) in lines.iter().enumerate() {
+        let text = decode_ascii(line, PRESENCE_FORMAT)?;
+        if let Some(name) = text.strip_suffix(" missing") {
+            missing.push(name.to_string());
+            continue;
+        }
+        let oid = text.split(' ').next().unwrap_or_default();
+        let fallback = requested.get(index).copied().unwrap_or_default();
+        present.push(if oid.is_empty() {
+            fallback.to_string()
+        } else {
+            oid.to_string()
+        });
+    }
+    Ok(ObjectPresence { present, missing })
+}
+
+/* ------------------------------------------------------------------- topology */
 
 /// One row of the walk.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -85,6 +210,21 @@ fn split_on_byte(bytes: &[u8], separator: u8) -> Vec<&[u8]> {
         parts.push(&bytes[start..]);
     }
     parts
+}
+
+/// The `\n`-separated lines of a Git line format.
+fn split_lines(bytes: &[u8]) -> Vec<&[u8]> {
+    split_on_byte(bytes, b'\n')
+}
+
+/// True when `bytes` ends with an ASCII suffix.
+fn has_suffix(bytes: &[u8], suffix: &[u8]) -> bool {
+    bytes.len() >= suffix.len() && &bytes[bytes.len() - suffix.len()..] == suffix
+}
+
+/// One character per byte, so a value that is not valid UTF-8 survives as text.
+fn latin1(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| char::from(*byte)).collect()
 }
 
 #[cfg(test)]
@@ -190,5 +330,73 @@ mod tests {
         // command claims it is.
         let error = parse_rev_list_topology("aaaa\u{e9}bbbb\n".as_bytes()).expect_err("non-ASCII");
         assert!(matches!(error, CoreError::OutputUnparsable { .. }));
+    }
+
+    #[test]
+    fn reads_a_fetch_and_a_push_url_of_the_same_remote() {
+        let records = parse_remote_list(
+            b"origin\thttps://example.test/refyard.git (fetch)\norigin\tgit@example.test:refyard.git (push)\n",
+        )
+        .expect("remotes");
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].name, "origin");
+        assert_eq!(records[0].url, "https://example.test/refyard.git");
+        assert_eq!(records[0].kind, RemoteUrlKind::Fetch);
+        assert_eq!(records[1].kind, RemoteUrlKind::Push);
+        assert_eq!(records[1].url, "git@example.test:refyard.git");
+    }
+
+    #[test]
+    fn a_remote_url_that_is_not_utf8_still_decodes_byte_for_byte() {
+        // The host redacts a credential before display and never uses the URL as an
+        // argument, so the requirement here is only that no byte is lost.
+        let records =
+            parse_remote_list(b"odd\thttps://example.test/caf\xe9.git (fetch)\n").expect("remotes");
+        assert_eq!(records[0].url, "https://example.test/caf\u{e9}.git");
+    }
+
+    #[test]
+    fn refuses_a_remote_line_without_a_kind() {
+        // Without the suffix there is no way to tell a fetch URL from a push URL, and
+        // guessing would show the user the wrong endpoint for a push.
+        let error =
+            parse_remote_list(b"origin\thttps://example.test/x.git\n").expect_err("no kind");
+        assert!(error.to_string().contains("(fetch)"));
+    }
+
+    #[test]
+    fn refuses_a_remote_line_with_no_tab_separator() {
+        let error =
+            parse_remote_list(b"origin https://example.test/x.git (fetch)\n").expect_err("no tab");
+        assert!(matches!(error, CoreError::OutputUnparsable { .. }));
+    }
+
+    #[test]
+    fn reads_which_of_the_requested_names_git_answered_for() {
+        let requested = ["aaaa", "bbbb", "cccc"];
+        let bytes = b"aaaa\nbbbb missing\ncccc\n";
+        let presence = parse_object_presence(bytes, &requested).expect("presence");
+        assert_eq!(
+            presence.present,
+            vec!["aaaa".to_string(), "cccc".to_string()]
+        );
+        assert_eq!(presence.missing, vec!["bbbb".to_string()]);
+    }
+
+    #[test]
+    fn a_presence_line_with_no_name_falls_back_to_what_was_asked() {
+        // `cat-file --batch-check=%(objectname)` prints the name, but a Git that
+        // answered with an empty field must still be attributed to a request rather
+        // than dropped.
+        let presence = parse_object_presence(b" \n", &["aaaa"]).expect("presence");
+        assert_eq!(presence.present, vec!["aaaa".to_string()]);
+    }
+
+    #[test]
+    fn an_empty_presence_answer_is_an_empty_result() {
+        // A batch that asked nothing prints nothing, and that is not a failure.
+        let presence = parse_object_presence(b"", &[]).expect("presence");
+        assert!(presence.present.is_empty());
+        assert!(presence.missing.is_empty());
     }
 }

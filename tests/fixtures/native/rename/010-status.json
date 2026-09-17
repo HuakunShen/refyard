@@ -1,0 +1,37 @@
+{
+  "snapshotId": "snap_4",
+  "repositoryId": "repo_1",
+  "worktreeId": "wt_2",
+  "readAt": "2026-09-17T23:36:05.730Z",
+  "head": {
+    "kind": "born",
+    "branchName": "main",
+    "oid": "4ad2727c624ec8705cc7b414f5a880798d9872e0",
+    "detached": false
+  },
+  "upstream": null,
+  "operationInProgress": null,
+  "entries": [
+    {
+      "pathId": "path_5",
+      "displayPath": "renamed.txt",
+      "pathEncoding": "utf8",
+      "kind": "renamed",
+      "indexStatus": "R",
+      "worktreeStatus": ".",
+      "originalPathId": "path_6",
+      "originalDisplayPath": "a.txt",
+      "headOid": "df967b96a579e45a18b8251732d16804b2e56a55",
+      "indexOid": "df967b96a579e45a18b8251732d16804b2e56a55",
+      "modes": {
+        "head": "100644",
+        "index": "100644",
+        "worktree": "100644"
+      },
+      "submodule": null,
+      "stages": null
+    }
+  ],
+  "entryCount": 1,
+  "truncated": false
+}

@@ -1,0 +1,61 @@
+{
+  "case": "detached",
+  "requests": [
+    {
+      "file": "010-status.json",
+      "body": {
+        "op": "status"
+      }
+    },
+    {
+      "file": "020-refs.json",
+      "body": {
+        "op": "refs"
+      }
+    },
+    {
+      "file": "030-history.json",
+      "body": {
+        "op": "history",
+        "limit": 10
+      }
+    },
+    {
+      "file": "040-diff-unstaged.json",
+      "body": {
+        "op": "diff",
+        "kind": "unstaged"
+      }
+    },
+    {
+      "file": "041-diff-staged.json",
+      "body": {
+        "op": "diff",
+        "kind": "staged"
+      }
+    },
+    {
+      "file": "042-diff-untracked.json",
+      "body": {
+        "op": "diff",
+        "kind": "untracked"
+      }
+    },
+    {
+      "file": "031-history-detail.json",
+      "body": {
+        "op": "history",
+        "limit": 10,
+        "detailOid": "70c8525383cd7f5cc9fa908c6bba86e8a0a32342"
+      }
+    },
+    {
+      "file": "043-diff-commit.json",
+      "body": {
+        "op": "diff",
+        "kind": "commit",
+        "oid": "70c8525383cd7f5cc9fa908c6bba86e8a0a32342"
+      }
+    }
+  ]
+}

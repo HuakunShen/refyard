@@ -1,0 +1,17 @@
+{
+  "snapshotId": "snap_4",
+  "repositoryId": "repo_1",
+  "worktreeId": "wt_2",
+  "readAt": "2026-09-17T23:36:12.691Z",
+  "head": {
+    "kind": "born",
+    "branchName": "main",
+    "oid": "942de53f4b2a2c0839815218efe1a99e110cfbc1a21a8839a049f7c7f99d0009",
+    "detached": false
+  },
+  "upstream": null,
+  "operationInProgress": null,
+  "entries": [],
+  "entryCount": 0,
+  "truncated": false
+}

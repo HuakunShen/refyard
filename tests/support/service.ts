@@ -44,6 +44,7 @@ import {
   type JournalStore,
   type MutationCoordinator,
   type MutationEffect,
+  type ReadService,
   type RecoveryBackupWriter,
 } from "@refyard/host-node";
 import { createHostEngine, type GitEngine } from "@refyard/git-core";
@@ -63,6 +64,15 @@ export interface TestService {
   readonly allowedRootId: string;
   /** The mutation engine, wired exactly as the CLI wires it. */
   readonly mutations: MutationCoordinator;
+  /**
+   * The read service itself, wired exactly as the CLI wires it.
+   *
+   * Exposed so a differential case can drive the reads without HTTP: the wire schema is
+   * still enforced (the read service validates every response against it), and a case
+   * does not have to pair, address a port or re-implement the request encoding to ask a
+   * question.
+   */
+  readonly read: ReadService;
   /**
    * The effects this service registered, in the order the CLI registers them.
    *
@@ -354,6 +364,7 @@ export async function startTestService(
 
   return {
     http,
+    read,
     baseUrl,
     instanceId: http.serviceInstanceId,
     repositoryId: record.repositoryId,

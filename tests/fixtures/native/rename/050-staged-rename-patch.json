@@ -1,0 +1,57 @@
+{
+  "snapshotId": "snap_f",
+  "repositoryId": "repo_1",
+  "worktreeId": "wt_2",
+  "readAt": "2026-09-17T23:36:06.571Z",
+  "request": {
+    "kind": "staged",
+    "oid": null,
+    "from": null,
+    "to": null,
+    "pathId": "path_5"
+  },
+  "files": [
+    {
+      "pathId": "path_5",
+      "displayPath": "renamed.txt",
+      "oldPathId": "path_6",
+      "oldDisplayPath": "a.txt",
+      "changeKind": "renamed",
+      "isBinary": false,
+      "isSubmodule": false,
+      "insertions": 0,
+      "deletions": 0,
+      "modes": {
+        "old": null,
+        "new": "100644"
+      },
+      "patch": {
+        "kind": "text",
+        "hunks": [
+          {
+            "header": "@@ -0,0 +1 @@",
+            "oldStart": 0,
+            "oldLines": 0,
+            "newStart": 1,
+            "newLines": 1,
+            "lines": [
+              {
+                "kind": "add",
+                "text": "base",
+                "noNewline": false
+              }
+            ]
+          }
+        ],
+        "synthesized": false
+      }
+    }
+  ],
+  "stats": {
+    "filesChanged": 1,
+    "insertions": 0,
+    "deletions": 0,
+    "binaryFiles": 0
+  },
+  "truncated": false
+}

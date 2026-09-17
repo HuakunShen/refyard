@@ -4,7 +4,8 @@
 //! and where a repository's directories are is refs work, even though both read the
 //! same repository.
 
-use super::GitPlan;
+use super::{names_stdin, GitPlan};
+use crate::problem::CoreError;
 
 /// Resolves a name that should be a commit, refusing to treat a tag object as one.
 pub fn plan_rev_parse_commit(revision: &str) -> GitPlan {
@@ -32,6 +33,25 @@ pub fn plan_remotes() -> GitPlan {
     GitPlan::read(vec!["remote".to_string(), "-v".to_string()])
 }
 
+/// Presence of each object name, answered without transferring a body.
+///
+/// Used for the "missing parent" question: a graph that draws a parent as a root hides
+/// a shallow clone or a partially fetched repository, and `--batch-check` answers
+/// presence for a whole list in one process.
+pub fn plan_cat_file_exists(object_names: &[&str]) -> Result<GitPlan, CoreError> {
+    if object_names.is_empty() {
+        return Err(CoreError::invalid_input(
+            "plan_cat_file_exists requires at least one object name",
+        ));
+    }
+    let mut plan = GitPlan::new(vec![
+        "cat-file".to_string(),
+        "--batch-check=%(objectname)".to_string(),
+    ]);
+    plan.stdin = names_stdin(object_names);
+    Ok(plan)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -53,5 +73,22 @@ mod tests {
     fn ancestry_is_asked_as_a_question_not_a_failure() {
         let plan = plan_is_commit_ancestor("a", "b");
         assert_eq!(plan.argv, vec!["merge-base", "--is-ancestor", "a", "b"]);
+    }
+
+    #[test]
+    fn presence_is_asked_for_a_whole_list_in_one_process() {
+        // One `cat-file` for the page's parents, not one process per parent: a shallow
+        // clone's page can name dozens of them.
+        let plan = plan_cat_file_exists(&["aaaa", "bbbb"]).expect("plan");
+        assert_eq!(plan.argv, vec!["cat-file", "--batch-check=%(objectname)"]);
+        assert_eq!(plan.stdin, b"aaaa\nbbbb\n".to_vec());
+        assert_eq!(plan.deadline_class, DeadlineClass::Read);
+    }
+
+    #[test]
+    fn a_presence_check_with_no_names_is_refused() {
+        // `cat-file --batch-check` with no input would wait for stdin that never comes.
+        let error = plan_cat_file_exists(&[]).expect_err("empty");
+        assert!(matches!(error, CoreError::InvalidInput { .. }));
     }
 }

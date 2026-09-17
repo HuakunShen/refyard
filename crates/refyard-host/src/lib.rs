@@ -12,4 +12,5 @@ pub mod process;
 pub mod providers;
 pub mod reads;
 pub mod registry;
+pub mod service;
 pub mod snapshots;

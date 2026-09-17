@@ -1,0 +1,38 @@
+{
+  "snapshotId": "snap_a",
+  "repositoryId": "repo_1",
+  "readAt": "2026-09-17T23:36:14.070Z",
+  "objectFormat": "sha1",
+  "head": {
+    "kind": "born",
+    "branchName": "main",
+    "oid": "1fbb340e6b4363710972c928f4b3dd553f93b97c",
+    "detached": false
+  },
+  "branches": [
+    {
+      "name": "main",
+      "fullName": "refs/heads/main",
+      "oid": "1fbb340e6b4363710972c928f4b3dd553f93b97c",
+      "isCurrent": true,
+      "upstream": null
+    }
+  ],
+  "remoteBranches": [],
+  "tags": [],
+  "remotes": [
+    {
+      "name": "origin",
+      "fetchUrlDisplay": "https://example.test/plain.git",
+      "pushUrlDisplay": "https://example.test/plain.git"
+    }
+  ],
+  "otherRefs": [
+    {
+      "fullName": "refs/stash",
+      "oid": "d6d1d3aae75b9a7840c47489783f19c68e485b14",
+      "kind": "stash"
+    }
+  ],
+  "truncated": false
+}

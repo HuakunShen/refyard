@@ -1,0 +1,56 @@
+{
+  "snapshotId": "snap_4",
+  "repositoryId": "repo_1",
+  "worktreeId": "wt_2",
+  "readAt": "2026-09-17T23:36:07.276Z",
+  "head": {
+    "kind": "born",
+    "branchName": "main",
+    "oid": "9d2634eb8d675cc3ecbd3a7adddf47c1808e74be",
+    "detached": false
+  },
+  "upstream": null,
+  "operationInProgress": null,
+  "entries": [
+    {
+      "pathId": "path_5",
+      "displayPath": "b file.txt",
+      "pathEncoding": "utf8",
+      "kind": "ordinary",
+      "indexStatus": ".",
+      "worktreeStatus": "M",
+      "originalPathId": null,
+      "originalDisplayPath": null,
+      "headOid": "326d2716f8fc345ad40ad53421f0ef37dce17187",
+      "indexOid": "326d2716f8fc345ad40ad53421f0ef37dce17187",
+      "modes": {
+        "head": "100644",
+        "index": "100644",
+        "worktree": "100644"
+      },
+      "submodule": null,
+      "stages": null
+    },
+    {
+      "pathId": "path_6",
+      "displayPath": "名 前.txt",
+      "pathEncoding": "utf8",
+      "kind": "ordinary",
+      "indexStatus": ".",
+      "worktreeStatus": "M",
+      "originalPathId": null,
+      "originalDisplayPath": null,
+      "headOid": "77cdaa15c088a111eb8e42d1c60853b43f5ec52d",
+      "indexOid": "77cdaa15c088a111eb8e42d1c60853b43f5ec52d",
+      "modes": {
+        "head": "100644",
+        "index": "100644",
+        "worktree": "100644"
+      },
+      "submodule": null,
+      "stages": null
+    }
+  ],
+  "entryCount": 2,
+  "truncated": false
+}

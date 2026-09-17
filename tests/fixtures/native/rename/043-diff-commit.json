@@ -1,0 +1,38 @@
+{
+  "snapshotId": "snap_d",
+  "repositoryId": "repo_1",
+  "worktreeId": "wt_2",
+  "readAt": "2026-09-17T23:36:06.456Z",
+  "request": {
+    "kind": "commit",
+    "oid": "4ad2727c624ec8705cc7b414f5a880798d9872e0",
+    "from": null,
+    "to": null,
+    "pathId": null
+  },
+  "files": [
+    {
+      "pathId": "path_5",
+      "displayPath": "renamed.txt",
+      "oldPathId": "path_6",
+      "oldDisplayPath": "a.txt",
+      "changeKind": "renamed",
+      "isBinary": false,
+      "isSubmodule": false,
+      "insertions": 0,
+      "deletions": 0,
+      "modes": null,
+      "patch": {
+        "kind": "unavailable",
+        "reason": "no patch was requested for this path"
+      }
+    }
+  ],
+  "stats": {
+    "filesChanged": 1,
+    "insertions": 0,
+    "deletions": 0,
+    "binaryFiles": 0
+  },
+  "truncated": true
+}

@@ -485,8 +485,11 @@ fn parse_path_only(frame: &[u8], kind: StatusRecordKind) -> Result<StatusRecord,
     }
     Ok(StatusRecord {
         kind,
-        index_status: "?".to_string(),
-        worktree_status: "?".to_string(),
+        // `?` is porcelain v2's marker for an untracked path and `!` for an ignored one.
+        // The UI shows these letters, so reporting `?` for an ignored path would tell the
+        // user a file Git is deliberately not tracking is merely new.
+        index_status: path_only_status(kind).to_string(),
+        worktree_status: path_only_status(kind).to_string(),
         submodule_field: "N...".to_string(),
         mode_head: None,
         mode_index: None,
@@ -501,6 +504,14 @@ fn parse_path_only(frame: &[u8], kind: StatusRecordKind) -> Result<StatusRecord,
         submodule_modified: false,
         submodule_untracked: false,
     })
+}
+
+/// The status letter a path-only record carries.
+fn path_only_status(kind: StatusRecordKind) -> &'static str {
+    match kind {
+        StatusRecordKind::Ignored => "!",
+        _ => "?",
+    }
 }
 
 #[cfg(test)]
@@ -609,6 +620,17 @@ mod tests {
         assert_eq!(result.records[0].kind, StatusRecordKind::Untracked);
         assert_eq!(result.records[0].path, b"untracked\tname.txt");
         assert_eq!(result.records[1].kind, StatusRecordKind::Ignored);
+    }
+
+    #[test]
+    fn an_ignored_path_carries_gits_own_bang_marker_not_a_question_mark() {
+        // `?` means "untracked"; a UI that showed it for an ignored path would tell the
+        // user Git is not tracking a file it is deliberately ignoring.
+        let result = parse(b"? untracked.txt\0! ignored.txt\0");
+        assert_eq!(result.records[0].index_status, "?");
+        assert_eq!(result.records[0].worktree_status, "?");
+        assert_eq!(result.records[1].index_status, "!");
+        assert_eq!(result.records[1].worktree_status, "!");
     }
 
     #[test]

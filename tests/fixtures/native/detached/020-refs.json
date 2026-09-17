@@ -1,0 +1,26 @@
+{
+  "snapshotId": "snap_5",
+  "repositoryId": "repo_1",
+  "readAt": "2026-09-17T23:36:04.516Z",
+  "objectFormat": "sha1",
+  "head": {
+    "kind": "born",
+    "branchName": null,
+    "oid": "70c8525383cd7f5cc9fa908c6bba86e8a0a32342",
+    "detached": true
+  },
+  "branches": [
+    {
+      "name": "main",
+      "fullName": "refs/heads/main",
+      "oid": "70c8525383cd7f5cc9fa908c6bba86e8a0a32342",
+      "isCurrent": false,
+      "upstream": null
+    }
+  ],
+  "remoteBranches": [],
+  "tags": [],
+  "remotes": [],
+  "otherRefs": [],
+  "truncated": false
+}

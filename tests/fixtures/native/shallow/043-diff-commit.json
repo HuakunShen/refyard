@@ -1,0 +1,21 @@
+{
+  "snapshotId": "snap_b",
+  "repositoryId": "repo_1",
+  "worktreeId": "wt_2",
+  "readAt": "2026-09-17T23:36:11.159Z",
+  "request": {
+    "kind": "commit",
+    "oid": "70c8525383cd7f5cc9fa908c6bba86e8a0a32342",
+    "from": null,
+    "to": null,
+    "pathId": null
+  },
+  "files": [],
+  "stats": {
+    "filesChanged": 0,
+    "insertions": 0,
+    "deletions": 0,
+    "binaryFiles": 0
+  },
+  "truncated": false
+}

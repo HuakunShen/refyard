@@ -19,6 +19,7 @@ use refyard_core::parse::status::{
 
 use crate::paths::{to_display_path, PathRegistry};
 use crate::providers::local::LocalGit;
+use crate::reads::{parse_error, run_required, ReadError};
 use crate::registry::RepositoryRecord;
 use crate::snapshots::{
     index_fingerprint, IndexFingerprintEntry, SnapshotKind, SnapshotRequest, SnapshotStore,
@@ -58,29 +59,21 @@ pub async fn read_status(
     snapshots: &SnapshotStore,
     include_ignored: bool,
     read_at: &str,
-) -> Result<(StatusSnapshot, String), StatusReadError> {
+) -> Result<(StatusSnapshot, String), ReadError> {
     let plan = refyard_core::plan::status::plan_status(refyard_core::plan::status::StatusOptions {
         include_ignored,
         show_stash: false,
     });
-    let outcome = git
-        .run(
-            Path::new(record.location.canonical_worktree.as_str()),
-            &plan,
-            None,
-        )
-        .await;
-    if !outcome.succeeded() {
-        return Err(StatusReadError::Git(
-            outcome.exit_code,
-            String::from_utf8_lossy(&outcome.stderr).into_owned(),
-        ));
-    }
-    if !outcome.output_complete {
-        return Err(StatusReadError::Incomplete);
-    }
+    let stdout = run_required(
+        git,
+        Path::new(record.location.canonical_worktree.as_str()),
+        &plan,
+        STATUS_COMMAND,
+    )
+    .await?;
 
-    let parsed = parse_status(&outcome.stdout, STATUS_MAX_ENTRIES)?;
+    let parsed = parse_status(&stdout, STATUS_MAX_ENTRIES)
+        .map_err(|error| parse_error(STATUS_COMMAND, error))?;
     let head = head_state(&parsed);
     let worktree_id = record.worktree_id.clone();
 
@@ -100,6 +93,7 @@ pub async fn read_status(
         head_oid: head.oid.clone(),
         observed_refs_fingerprint: None,
         index_key: Some(index_key),
+        history_intent: None,
     });
 
     let upstream = match (&parsed.upstream, parsed.ahead, parsed.behind) {
@@ -195,11 +189,21 @@ fn status_entry(record: &StatusRecord, worktree_id: &str, paths: &PathRegistry) 
         original_display_path,
         head_oid: record.oid_head.clone(),
         index_oid: record.oid_index.clone(),
-        modes: Some(StatusEntryModes {
-            head: record.mode_head.clone(),
-            index: record.mode_index.clone(),
-            worktree: record.mode_worktree.clone(),
-        }),
+        // A path Git reported without any mode at all — an untracked or ignored one — has
+        // no mode triple to show; three nulls would be a different shape from the
+        // reference's `null`.
+        modes: if record.mode_head.is_none()
+            && record.mode_index.is_none()
+            && record.mode_worktree.is_none()
+        {
+            None
+        } else {
+            Some(StatusEntryModes {
+                head: record.mode_head.clone(),
+                index: record.mode_index.clone(),
+                worktree: record.mode_worktree.clone(),
+            })
+        },
         submodule: submodule_status(record),
         stages: if record.stages.is_empty() {
             None
@@ -256,19 +260,8 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-/// Why a status read failed.
-#[derive(Debug)]
-pub enum StatusReadError {
-    Git(Option<i32>, String),
-    Incomplete,
-    Parse(refyard_core::CoreError),
-}
-
-impl From<refyard_core::CoreError> for StatusReadError {
-    fn from(error: refyard_core::CoreError) -> Self {
-        StatusReadError::Parse(error)
-    }
-}
+/// The command this read is, as the reference host names it in a failure.
+const STATUS_COMMAND: &str = "status --porcelain=v2 --branch -z";
 
 #[cfg(test)]
 mod tests {

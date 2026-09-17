@@ -1,0 +1,40 @@
+{
+  "snapshotId": "snap_e",
+  "repositoryId": "repo_1",
+  "worktreeId": "wt_2",
+  "readAt": "2026-09-17T23:36:09.750Z",
+  "request": {
+    "kind": "unstaged",
+    "oid": null,
+    "from": null,
+    "to": null,
+    "pathId": "path_5"
+  },
+  "files": [
+    {
+      "pathId": "path_5",
+      "displayPath": "bin.dat",
+      "oldPathId": null,
+      "oldDisplayPath": null,
+      "changeKind": "modified",
+      "isBinary": true,
+      "isSubmodule": false,
+      "insertions": null,
+      "deletions": null,
+      "modes": {
+        "old": "100644",
+        "new": "100644"
+      },
+      "patch": {
+        "kind": "binary"
+      }
+    }
+  ],
+  "stats": {
+    "filesChanged": 1,
+    "insertions": 0,
+    "deletions": 0,
+    "binaryFiles": 1
+  },
+  "truncated": false
+}

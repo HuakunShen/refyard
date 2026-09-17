@@ -1,0 +1,37 @@
+{
+  "snapshotId": "snap_4",
+  "repositoryId": "repo_1",
+  "worktreeId": "wt_2",
+  "readAt": "2026-09-17T23:36:08.770Z",
+  "head": {
+    "kind": "born",
+    "branchName": "main",
+    "oid": "9a9bbf4ba5fe801c4cfe3015f5891658bd44a876",
+    "detached": false
+  },
+  "upstream": null,
+  "operationInProgress": null,
+  "entries": [
+    {
+      "pathId": "path_5",
+      "displayPath": "bin.dat",
+      "pathEncoding": "utf8",
+      "kind": "ordinary",
+      "indexStatus": ".",
+      "worktreeStatus": "M",
+      "originalPathId": null,
+      "originalDisplayPath": null,
+      "headOid": "e2613b3caa99ff78f481d27639d5500710722310",
+      "indexOid": "e2613b3caa99ff78f481d27639d5500710722310",
+      "modes": {
+        "head": "100644",
+        "index": "100644",
+        "worktree": "100644"
+      },
+      "submodule": null,
+      "stages": null
+    }
+  ],
+  "entryCount": 1,
+  "truncated": false
+}

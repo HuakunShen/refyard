@@ -1,0 +1,38 @@
+{
+  "snapshotId": "snap_8",
+  "repositoryId": "repo_1",
+  "worktreeId": "wt_2",
+  "readAt": "2026-09-17T23:36:09.180Z",
+  "request": {
+    "kind": "unstaged",
+    "oid": null,
+    "from": null,
+    "to": null,
+    "pathId": null
+  },
+  "files": [
+    {
+      "pathId": "path_5",
+      "displayPath": "bin.dat",
+      "oldPathId": null,
+      "oldDisplayPath": null,
+      "changeKind": "modified",
+      "isBinary": true,
+      "isSubmodule": false,
+      "insertions": null,
+      "deletions": null,
+      "modes": null,
+      "patch": {
+        "kind": "unavailable",
+        "reason": "no patch was requested for this path"
+      }
+    }
+  ],
+  "stats": {
+    "filesChanged": 1,
+    "insertions": 0,
+    "deletions": 0,
+    "binaryFiles": 1
+  },
+  "truncated": true
+}

@@ -70,10 +70,13 @@ pub fn parse_for_each_ref(bytes: &[u8], max_entries: usize) -> Result<Vec<RefRec
         }
         let normalized = normalize_line(line);
         let fields = split_nul_frames(&normalized, FOR_EACH_REF)?;
-        // Eight fields are written; the format's trailing %00 makes the final
-        // (peeled-object) field terminate the record, so a tag with no peeled object
-        // arrives as an empty eighth field rather than a missing one.
-        if fields.len() != 8 {
+        // Eight fields are written, but the format's last separator is the one *before*
+        // the peeled object name, and Git writes no trailing NUL: a ref whose peeled
+        // field is empty therefore arrives as seven NUL-terminated fields, and one whose
+        // peeled field is populated arrives as eight. Reading the first case as a short
+        // record is how every ordinary branch fails to parse.
+        let complete = fields.len() == 8 || (fields.len() == 7 && ends_with_nul(line));
+        if !complete {
             return Err(CoreError::output_unparsable(
                 FOR_EACH_REF,
                 format!("expected 8 fields per ref but found {}", fields.len()),
@@ -102,7 +105,11 @@ pub fn parse_for_each_ref(bytes: &[u8], max_entries: usize) -> Result<Vec<RefRec
             upstream: optional(4)?,
             upstream_track: parse_upstream_track(&field(5)?),
             is_head: field(6)? == "*",
-            peeled_oid: optional(7)?,
+            peeled_oid: if fields.len() == 8 {
+                optional(7)?
+            } else {
+                None
+            },
         });
     }
     Ok(records)
@@ -196,6 +203,14 @@ fn normalize_line(line: &[u8]) -> Vec<u8> {
     owned
 }
 
+/// True when the raw line already ended with its field separator.
+///
+/// This is what distinguishes "the eighth field is empty" from "the record stopped
+/// early": the first is an ordinary ref, the second is a truncated listing.
+fn ends_with_nul(line: &[u8]) -> bool {
+    line.last() == Some(&0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -240,6 +255,22 @@ mod tests {
             })
         );
         assert_eq!(record.peeled_oid, None);
+    }
+
+    #[test]
+    fn reads_a_branch_gits_format_actually_emits() {
+        // The format ends with the separator *before* the peeled object name and Git
+        // writes no trailing NUL, so an ordinary branch arrives as seven fields — the
+        // exact bytes a real `for-each-ref` produced for a non-annotated ref. Requiring
+        // eight fields refused every plain branch.
+        let text = "refs/heads/main\u{0}1111111111111111111111111111111111111111\u{0}commit\u{0}\u{0}\u{0}\u{0}*\u{0}\n";
+        let records = parse_for_each_ref(text.as_bytes(), 100).expect("parses");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].ref_name, "refs/heads/main");
+        assert!(records[0].is_head);
+        assert_eq!(records[0].peeled_oid, None);
+        assert_eq!(records[0].upstream, None);
+        assert_eq!(records[0].upstream_track, None);
     }
 
     #[test]

@@ -88,3 +88,18 @@ pub struct ProcessSpec {
     pub stdout_limit: usize,
     pub stderr_limit: usize,
 }
+
+/// One name per line on stdin, with a trailing newline.
+///
+/// The `--stdin` readers of `rev-list`, `cat-file` and `check-ignore` all split on
+/// newlines, and every name handed to them here is a full object name, so a newline
+/// inside one is impossible. Names go through stdin rather than argv so a name can
+/// never be read as an option.
+pub(crate) fn names_stdin(names: &[&str]) -> Vec<u8> {
+    let mut stdin = Vec::new();
+    for name in names {
+        stdin.extend_from_slice(name.as_bytes());
+        stdin.push(b'\n');
+    }
+    stdin
+}

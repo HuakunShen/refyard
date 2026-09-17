@@ -1,0 +1,99 @@
+{
+  "case": "plain",
+  "requests": [
+    {
+      "file": "010-status.json",
+      "body": {
+        "op": "status"
+      }
+    },
+    {
+      "file": "020-refs.json",
+      "body": {
+        "op": "refs"
+      }
+    },
+    {
+      "file": "030-history.json",
+      "body": {
+        "op": "history",
+        "limit": 10
+      }
+    },
+    {
+      "file": "040-diff-unstaged.json",
+      "body": {
+        "op": "diff",
+        "kind": "unstaged"
+      }
+    },
+    {
+      "file": "041-diff-staged.json",
+      "body": {
+        "op": "diff",
+        "kind": "staged"
+      }
+    },
+    {
+      "file": "042-diff-untracked.json",
+      "body": {
+        "op": "diff",
+        "kind": "untracked"
+      }
+    },
+    {
+      "file": "031-history-detail.json",
+      "body": {
+        "op": "history",
+        "limit": 10,
+        "detailOid": "1fbb340e6b4363710972c928f4b3dd553f93b97c"
+      }
+    },
+    {
+      "file": "043-diff-commit.json",
+      "body": {
+        "op": "diff",
+        "kind": "commit",
+        "oid": "1fbb340e6b4363710972c928f4b3dd553f93b97c"
+      }
+    },
+    {
+      "file": "011-status-ignored.json",
+      "body": {
+        "op": "status",
+        "includeIgnored": true
+      }
+    },
+    {
+      "file": "032-history-page.json",
+      "body": {
+        "op": "history",
+        "limit": 1
+      }
+    },
+    {
+      "file": "050-unstaged-patch.json",
+      "body": {
+        "op": "diff",
+        "kind": "unstaged",
+        "patchForDisplayPath": "unstaged.txt"
+      }
+    },
+    {
+      "file": "051-staged-patch.json",
+      "body": {
+        "op": "diff",
+        "kind": "staged",
+        "patchForDisplayPath": "staged.txt"
+      }
+    },
+    {
+      "file": "052-untracked-patch.json",
+      "body": {
+        "op": "diff",
+        "kind": "untracked",
+        "patchForDisplayPath": "untracked.txt"
+      }
+    }
+  ]
+}
