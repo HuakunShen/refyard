@@ -60,8 +60,8 @@ topology: "continuous" | "sparse";
 
 ### Field semantics
 
-- `message`: case-insensitive literal substring over commit messages. Length: 1–512 Unicode scalar values after trimming.
-- `author`: case-insensitive literal substring over Git author identity. Length: 1–512 after trimming.
+- `message`: case-insensitive literal substring over commit messages. Length: 1–512 Unicode scalar values after trimming; NUL, CR/LF and unpaired surrogates are rejected.
+- `author`: case-insensitive literal substring over Git author identity. Length: 1–512 Unicode scalar values after trimming, with the same single-line/control restrictions as message.
 - `oidPrefix`: lowercase hexadecimal, 4–64 characters. The host additionally validates the maximum against the repository object format.
 - `refFullName`: a fully qualified ref under `refs/`; it must also match a ref observed by the host for this repository.
 - `committedAfter` / `committedBefore`: UTC timestamps applied to committer time. If both exist, `committedAfter <= committedBefore` is required.
@@ -70,7 +70,7 @@ topology: "continuous" | "sparse";
 
 ### Cursor requests
 
-A request with `cursor` is a continuation request. It may include only `repositoryId`, optional `worktreeId`, `cursor`, and optional `detailOid`. It must not redefine `limit`, `firstParentOnly`, or any filter field. The host returns `InvalidRequest` if a continuation attempts to redefine walk semantics.
+A request with `cursor` is a continuation request. New clients include only `repositoryId`, optional `worktreeId`, `cursor`, and optional `detailOid`. It must not redefine any filter field. For existing v1 clients, redundant `limit` or `firstParentOnly` is accepted only when identical to the cursor/snapshot; conflicting values return `InvalidRequest`. New clients omit both fields. The cursor remains authoritative.
 
 `detailOid` remains orthogonal to the paged walk: callers may request one full commit body while continuing a history page.
 
@@ -131,7 +131,7 @@ Path filtering does not follow renames in this phase.
 
 The existing history workflow remains based on `rev-list` for topology and batched `cat-file` for commit bodies. `planRevList` is extended with typed optional filters; it remains the only place that constructs the history argv.
 
-For message/author search it uses fixed-string, case-insensitive Git limiting options. Date limits are passed as normalized numeric timestamps rather than locale-dependent free-form dates. Path input is supplied after `--` from the host-resolved binding. Tips remain OIDs sent through stdin, never browser-provided ref expressions.
+For message/author search it uses fixed-string, case-insensitive Git limiting options. Date limits are passed as normalized numeric timestamps rather than locale-dependent free-form dates. Path input is supplied after `--` from the host-resolved binding with literal pathspec handling. Date filtering traverses intervening older commits so clock skew cannot hide a matching ancestor. Tips remain OIDs sent through stdin, never browser-provided ref expressions.
 
 Representative semantics:
 
@@ -139,7 +139,7 @@ Representative semantics:
 git rev-list --topo-order --parents --max-count=N \
   --fixed-strings --regexp-ignore-case \
   --grep=<message> --author=<author> \
-  --max-age=<after-seconds> --min-age=<before-seconds> \
+  --since-as-filter=@<after-seconds> --min-age=<before-seconds> \
   --stdin -- <resolved-path>
 ```
 
@@ -240,7 +240,7 @@ The UI keeps the previous successful result visible while a new applied query is
 
 ## Compatibility
 
-The new query fields and `topology` response field are additive within the current API major. Existing clients that do not send filters receive the same continuous history behavior. Refyard's own client and web UI are updated in lockstep with the generated schema artifact.
+The new query fields and required `topology` response field use contract revision 1.1.0 within API major 1. Refyard's own client, service and web UI are updated in lockstep with the generated schema artifact. Older strict history clients may reject the additional response field, and newer clients reject old responses that lack topology. A mixed-version History response fails explicitly rather than silently assuming continuous ancestry; full old/new History interoperability is not claimed. Existing v1 callers that repeat a matching cursor page size/first-parent value are accepted without changing cursor authority.
 
 The MCP `get_commit` tool continues to request one full commit by OID and does not need search filters. A future MCP history-search tool can reuse the typed history query but is outside this phase.
 
