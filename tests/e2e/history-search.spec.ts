@@ -159,14 +159,18 @@ test.describe("history search", () => {
     const visibleRows = page.locator('[data-testid^="commit-row-"]');
     await expect(visibleRows.first()).toBeVisible();
     expect(await visibleRows.count()).toBeLessThan(100);
-    const more = page.getByRole("button", { name: "Load more", exact: true });
-    await more.scrollIntoViewIfNeeded();
+    const scrollList = page
+      .getByTestId("history-panel")
+      .locator("div.overflow-auto");
     const continuation = page.waitForRequest(
       (request) =>
         new URL(request.url()).pathname.endsWith("/history") &&
         new URL(request.url()).searchParams.has("cursor"),
     );
-    await more.click();
+    await scrollList.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+      element.dispatchEvent(new Event("scroll"));
+    });
     const url = new URL((await continuation).url());
     expect([...url.searchParams.keys()].sort()).toEqual([
       "cursor",
@@ -178,9 +182,6 @@ test.describe("history search", () => {
     ).toBeVisible();
     // Prevents page boundaries losing, repeating or reordering commits in the actual UI.
     const expectedOids = [...releaseOids].reverse();
-    const scrollList = page
-      .getByTestId("history-panel")
-      .locator("div.overflow-auto");
     const rowHeight = await visibleRows
       .first()
       .evaluate((element) => element.getBoundingClientRect().height);
@@ -224,7 +225,6 @@ test.describe("history search", () => {
     });
     await search.getByRole("button", { name: "Apply", exact: true }).click();
     await restart;
-    await expect(more).toBeVisible();
     await expect(
       page.getByText("End of the loaded history", { exact: true }),
     ).toHaveCount(0);

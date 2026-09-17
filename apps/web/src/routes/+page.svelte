@@ -838,7 +838,6 @@
               {now}
               hasMore={history.hasNextPage}
               loadingMore={history.isFetchingNextPage}
-              truncated={historyNotices.truncated}
               tipsMoved={historyNotices.tipsMoved}
               shallow={historyNotices.shallow}
               laneCount={graph.laneCount}

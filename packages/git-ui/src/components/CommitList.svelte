@@ -9,11 +9,10 @@
    * `metrics.rowHeight` is what the virtualizer estimates with and what the geometry uses
    * to place circles, which is the only reason the two can be trusted to agree.
    *
-   * Paging is explicit. `load more` asks the caller for the next page; the caller must
-   * continue the layout from the previous page's lanes (`layoutPages` in `@refyard/git-graph`)
-   * or the graph would restart at lane 0 mid-history. `tipsMoved` and `truncated` are shown
-   * rather than swallowed: a page served from the tips it started with is not a stale bug,
-   * it is the guarantee, and the reader deserves to know the branch has moved on.
+   * Paging is automatic. Reaching the scroll threshold asks the caller for the next page; the
+   * caller must continue the layout from the previous page's lanes (`layoutPages` in
+   * `@refyard/git-graph`) or the graph would restart at lane 0 mid-history. `tipsMoved` remains
+   * visible because it describes consistency, while page truncation is handled by scrolling.
    */
   import {
     createVirtualizer,
@@ -23,7 +22,6 @@
   import type { CommitSummary } from "@refyard/git-contract";
   import type { GraphRow } from "@refyard/git-graph";
   import { Badge } from "./ui/badge/index.js";
-  import { Button } from "./ui/button/index.js";
   import CommitGraph from "./CommitGraph.svelte";
   import CommitRefDialog from "./CommitRefDialog.svelte";
   import ContextActionMenu from "./ContextActionMenu.svelte";
@@ -48,7 +46,6 @@
     now: number;
     hasMore: boolean;
     loadingMore: boolean;
-    truncated: boolean;
     tipsMoved: boolean;
     shallow: boolean;
     laneCount: number;
@@ -75,7 +72,6 @@
     now,
     hasMore,
     loadingMore,
-    truncated,
     tipsMoved,
     shallow,
     laneCount,
@@ -90,6 +86,7 @@
   }: Props = $props();
 
   let scrollElement = $state<HTMLDivElement | null>(null);
+  let autoLoadPending = $state(false);
 
   const virtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
     // The effect below is the single owner of `count` and `estimateSize`: they change when
@@ -120,6 +117,38 @@
     const count = commits.length;
     const rowHeight = metrics.rowHeight;
     instance?.setOptions({ count, estimateSize: () => rowHeight });
+  });
+
+  function maybeLoadMore(): void {
+    const element = scrollElement;
+    if (
+      element === null ||
+      !hasMore ||
+      loadingMore ||
+      autoLoadPending ||
+      element.scrollHeight - element.scrollTop - element.clientHeight > 240
+    ) {
+      return;
+    }
+    autoLoadPending = true;
+    onLoadMore();
+  }
+
+  $effect(() => {
+    if (!loadingMore) {
+      autoLoadPending = false;
+      queueMicrotask(maybeLoadMore);
+    }
+  });
+
+  $effect(() => {
+    const element = scrollElement;
+    if (element === null) {
+      return;
+    }
+    element.addEventListener("scroll", maybeLoadMore, { passive: true });
+    queueMicrotask(maybeLoadMore);
+    return () => element.removeEventListener("scroll", maybeLoadMore);
   });
 
   const items = $derived($virtualizer.getVirtualItems());
@@ -187,13 +216,6 @@
 </script>
 
 <div class={cn("flex h-full min-h-0 flex-col gap-2", className)}>
-  {#if truncated}
-    <StateBanner
-      state="truncated"
-      title="This page was truncated"
-      detail="More commits are available. Load more to continue this history."
-    />
-  {/if}
   {#if tipsMoved}
     <StateBanner
       state="stale"
@@ -334,15 +356,10 @@
       </div>
 
       <div class="flex items-center justify-center border-t border-border p-2">
-        {#if hasMore}
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={loadingMore}
-            onclick={onLoadMore}
-          >
-            {loadingMore ? "Loading…" : "Load more"}
-          </Button>
+        {#if loadingMore}
+          <span class="text-xs text-ink-faint" aria-live="polite">Loading more…</span>
+        {:else if hasMore}
+          <span class="text-xs text-ink-faint">Scroll for more</span>
         {:else}
           <span class="text-xs text-ink-faint">End of the loaded history</span>
         {/if}
