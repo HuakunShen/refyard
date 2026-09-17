@@ -1,21 +1,24 @@
-//! The bounded process runner.
+//! Argument vectors for Git, and nothing else.
 //!
-//! Every Git command in the native host goes through this module. It exists because
-//! the failure modes of `Command` are the failure modes of the product: a child that
-//! blocks on a full pipe while we read the other stream, output that arrives faster
-//! than it is consumed, a command that never returns, and a process that outlives the
-//! operation that started it.
+//! Every production `git` invocation in the native host is built here. No other
+//! module constructs argv, which is what makes "the renderer cannot ask for arbitrary
+//! execution" checkable: a request maps to a planner, and a planner emits a fixed
+//! vector.
 //!
-//! Two rules are structural rather than conventional:
+//! Conventions that every planner follows:
 //!
-//! - stdout and stderr are drained **concurrently**, so a command that writes a lot
-//!   to both cannot deadlock on a pipe buffer.
-//! - output is bounded. A truncated stream is reported as truncated, because an
-//!   incomplete protocol frame parsed as if it were complete is a wrong answer, not a
-//!   partial one.
-//!
-//! The runner never builds a command line: it takes a program and an argument vector,
-//! and it never starts a shell.
+//! - the executable is not included — the host chooses the `git` binary;
+//! - `--no-optional-locks` on status, so a read cannot take the index lock;
+//! - `--no-ext-diff` and `--no-textconv` on every diff, so repository configuration
+//!   cannot turn a read into running an external program;
+//! - `-z`/`--porcelain` wherever Git offers a machine format;
+//! - stdin for anything unstructured (tips, pathspecs, messages) instead of
+//!   interpolating it into an argument.
+
+pub mod diff;
+pub mod history;
+pub mod refs;
+pub mod status;
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -60,6 +63,12 @@ impl GitPlan {
             stdin: Vec::new(),
             deadline_class: DeadlineClass::Read,
         }
+    }
+
+    /// A read-only command. Spelled out at call sites because a planner that runs
+    /// the user's hooks or touches the network must not be given a read deadline.
+    pub fn read(argv: Vec<String>) -> Self {
+        Self::new(argv)
     }
 }
 
