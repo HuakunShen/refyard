@@ -45,6 +45,7 @@ export function createKunkunBackend(
     health: () => client.health(),
     capabilities: () => client.capabilities(),
     repositories: () => client.repositories(),
+    filesystemEntries: (query) => client.filesystemEntries(query),
     registerRepository: (path) => client.registerRepository(path),
     revokeRepository: (repositoryId) => client.revokeRepository(repositoryId),
     status: (query) => client.status(query),
