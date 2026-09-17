@@ -122,3 +122,57 @@ export function planCatFileExists(
     stdin,
   };
 }
+
+/** Hex-only object enumeration; revisions and user options are not accepted. */
+export function planDisambiguateCommitPrefix(
+  context: PlanContext,
+  prefix: string,
+): GitCommandSpec {
+  if (!/^[0-9a-f]{4,64}$/.test(prefix))
+    throw new Error("invalid object ID prefix");
+  return spec(
+    context,
+    ["rev-parse", `--disambiguate=${prefix}`],
+    "resolve commit prefix",
+  );
+}
+
+/** Classify already enumerated objects without transferring their bodies. */
+export function planCatFileObjectTypes(
+  context: PlanContext,
+  oids: readonly string[],
+): GitCommandSpec {
+  if (oids.length === 0)
+    throw new Error("object type check requires candidates");
+  for (const oid of oids) requireFullOid(oid);
+  return {
+    ...spec(
+      context,
+      ["cat-file", "--batch-check=%(objectname) %(objecttype)"],
+      "check candidate object types",
+    ),
+    stdin: new Uint8Array(
+      [...`${oids.join("\n")}\n`].map((character) => character.charCodeAt(0)),
+    ),
+  };
+}
+
+/** Ancestry between two resolved full object IDs. */
+export function planIsCommitAncestor(
+  context: PlanContext,
+  ancestorOid: string,
+  descendantOid: string,
+): GitCommandSpec {
+  requireFullOid(ancestorOid);
+  requireFullOid(descendantOid);
+  return spec(
+    context,
+    ["merge-base", "--is-ancestor", ancestorOid, descendantOid],
+    "check commit ancestry",
+  );
+}
+
+function requireFullOid(oid: string): void {
+  if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(oid))
+    throw new Error("expected a full object ID");
+}

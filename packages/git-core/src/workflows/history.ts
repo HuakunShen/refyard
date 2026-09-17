@@ -24,13 +24,28 @@ import {
   isMissingEntry,
   parseCommitObject,
 } from "../parse/cat-file.js";
-import { parseObjectPresence, parseRevListTopology } from "../parse/meta.js";
-import { planCatFileExists } from "../plan/refs.js";
-import { planCatFileBatch, planRevList } from "../plan/status.js";
+import {
+  parseCommitCandidates,
+  parseDisambiguatedOids,
+  parseObjectPresence,
+  parseRevListTopology,
+} from "../parse/meta.js";
+import {
+  planCatFileExists,
+  planCatFileObjectTypes,
+  planDisambiguateCommitPrefix,
+  planIsCommitAncestor,
+} from "../plan/refs.js";
+import {
+  planCatFileBatch,
+  planRevList,
+  type HistoryFilters,
+} from "../plan/status.js";
 import {
   GitWorkflowError,
   parseFailure,
   runRequired,
+  runMeaningfulExit,
   type GitEngine,
 } from "./engine.js";
 
@@ -91,17 +106,10 @@ export async function readTopologyPage(
     readonly maxCount: number;
     readonly skip: number;
     readonly firstParentOnly?: boolean;
-  },
+    readonly onlyOid?: string;
+  } & HistoryFilters,
 ): Promise<readonly TopologyRow[]> {
-  const spec = planRevList(
-    { cwdHandle: input.cwdHandle },
-    {
-      tips: input.tips,
-      maxCount: input.maxCount,
-      skip: input.skip,
-      ...(input.firstParentOnly === true ? { firstParentOnly: true } : {}),
-    },
-  );
+  const spec = planRevList({ cwdHandle: input.cwdHandle }, input);
   try {
     return parseRevListTopology(await runRequired(engine, spec));
   } catch (error) {
@@ -250,15 +258,10 @@ export async function readHistoryPage(
     readonly skip: number;
     readonly firstParentOnly?: boolean;
     readonly decoration: ReadonlyMap<string, readonly string[]>;
-  },
+    readonly onlyOid?: string;
+  } & HistoryFilters,
 ): Promise<HistoryPageFacts> {
-  const rows = await readTopologyPage(engine, {
-    cwdHandle: input.cwdHandle,
-    tips: input.tips,
-    maxCount: input.maxCount,
-    skip: input.skip,
-    ...(input.firstParentOnly === true ? { firstParentOnly: true } : {}),
-  });
+  const rows = await readTopologyPage(engine, input);
 
   const pageOids = new Set(rows.map((row) => row.oid));
   const { bodies, missing: missingObjects } = await readCommitBodies(engine, {
@@ -276,7 +279,7 @@ export async function readHistoryPage(
   // a truncated history would be drawn as if its oldest row were a root.
   const parentsOf = (row: TopologyRow): readonly string[] => {
     const body = bodyByOid.get(row.oid);
-    if (body !== undefined && body.parents.length > 0) {
+    if (body !== undefined) {
       return body.parents;
     }
     return row.parentOids;
@@ -327,4 +330,57 @@ function firstLineBytes(bytes: Uint8Array): Uint8Array {
     }
   }
   return bytes;
+}
+
+/** Resolve only commit objects; a noncommit match does not locate a commit. */
+export async function resolveCommitPrefix(
+  engine: GitEngine,
+  input: { readonly cwdHandle: string; readonly prefix: string },
+): Promise<
+  | "none"
+  | { readonly kind: "one"; readonly oid: string }
+  | { readonly kind: "ambiguous" }
+> {
+  const context = { cwdHandle: input.cwdHandle };
+  const enumeration = planDisambiguateCommitPrefix(context, input.prefix);
+  try {
+    const candidates = parseDisambiguatedOids(
+      await runRequired(engine, enumeration),
+      CORE_LIMITS.refListMaxEntries,
+    );
+    if (candidates.length === 0) return "none";
+    const check = planCatFileObjectTypes(context, candidates);
+    const commits = parseCommitCandidates(
+      await runRequired(engine, check),
+      candidates,
+    );
+    const oid = commits[0];
+    if (oid === undefined) return "none";
+    return commits.length === 1 ? { kind: "one", oid } : { kind: "ambiguous" };
+  } catch (error) {
+    if (error instanceof GitWorkflowError) throw error;
+    throw parseFailure(enumeration.description, error);
+  }
+}
+
+/** Only Git exit 1 is a negative ancestry answer; every other failure propagates. */
+export async function isCommitReachableFrom(
+  engine: GitEngine,
+  input: {
+    readonly cwdHandle: string;
+    readonly ancestorOid: string;
+    readonly descendantOid: string;
+  },
+): Promise<boolean> {
+  return (
+    (await runMeaningfulExit(
+      engine,
+      planIsCommitAncestor(
+        { cwdHandle: input.cwdHandle },
+        input.ancestorOid,
+        input.descendantOid,
+      ),
+      [1],
+    )) !== null
+  );
 }

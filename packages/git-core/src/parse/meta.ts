@@ -231,6 +231,54 @@ export function parseObjectPresence(
   return { present, missing };
 }
 
+/** Strict bounded object enumeration from rev-parse --disambiguate. */
+export function parseDisambiguatedOids(
+  bytes: Uint8Array,
+  maxEntries: number,
+): readonly string[] {
+  const oids: string[] = [];
+  for (const line of splitOnByte(bytes, 0x0a)) {
+    if (line.byteLength === 0) continue;
+    const oid = decodeAscii(line, "object disambiguation");
+    if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(oid))
+      throw new GitOutputParseError(
+        "object disambiguation",
+        "invalid full object ID",
+      );
+    if (oids.length >= maxEntries)
+      throw new GitOutputParseError(
+        "object disambiguation",
+        "candidate count exceeds bound",
+      );
+    oids.push(oid);
+  }
+  return [...new Set(oids)];
+}
+
+/** Check exactly one ordered response for every object, refusing missing/malformed output. */
+export function parseCommitCandidates(
+  bytes: Uint8Array,
+  requested: readonly string[],
+): readonly string[] {
+  const lines = splitOnByte(bytes, 0x0a).filter((line) => line.byteLength > 0);
+  const format = "candidate object types";
+  if (lines.length !== requested.length)
+    throw new GitOutputParseError(format, "incomplete object type response");
+  const commits: string[] = [];
+  for (const [index, line] of lines.entries()) {
+    const fields = decodeAscii(line, format).split(" ");
+    const [oid, type] = fields;
+    if (
+      fields.length !== 2 ||
+      oid !== requested[index] ||
+      !["commit", "tree", "blob", "tag"].includes(type ?? "")
+    )
+      throw new GitOutputParseError(format, "invalid object type response");
+    if (type === "commit" && oid !== undefined) commits.push(oid);
+  }
+  return commits;
+}
+
 /* ----------------------------------------------------------------- helpers */
 
 function decodeAscii(bytes: Uint8Array, format: string): string {
