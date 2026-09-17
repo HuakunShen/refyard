@@ -59,7 +59,7 @@ test.describe("an offline workbench", () => {
     // would report the same count before and after a click and "the count did not move"
     // would stop being evidence of anything.
     await page.goto(service.pairingUrl);
-    await expect(page.getByTestId("staging-panel")).toBeVisible();
+    await expect(page.getByTestId("working-copy-panel")).toBeVisible();
     expect(await acceptedOperations(page)).toBe(0);
   });
 
@@ -69,15 +69,17 @@ test.describe("an offline workbench", () => {
   }) => {
     await repo.write("a.txt", "changed\n");
     await page.goto(service.pairingUrl);
-    await expect(page.getByTestId("select-all")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Stage a.txt", exact: true }),
+    ).toBeVisible();
     const before = await acceptedOperations(page);
 
     // The network drops while the page is loaded and usable: the case where a user
     // clicks a button that cannot reach the service.
     await context.setOffline(true);
-    await page.getByTestId("select-all").click();
-    await page.getByTestId("stage-selected").click();
-    await expect(page.getByTestId("staging-message")).toContainText(/offline/i);
+    await expect(
+      page.getByRole("button", { name: "Stage a.txt", exact: true }),
+    ).toBeDisabled();
 
     await context.setOffline(false);
     await page.waitForTimeout(1_000);
@@ -92,7 +94,7 @@ test.describe("an offline workbench", () => {
   }) => {
     await repo.write("a.txt", "changed\n");
     await page.goto(service.pairingUrl);
-    await expect(page.getByTestId("staging-panel")).toBeVisible();
+    await expect(page.getByTestId("working-copy-panel")).toBeVisible();
     const before = await acceptedOperations(page);
 
     // The service worker has to be in control before the service goes away, or the reload
@@ -131,10 +133,12 @@ test.describe("an offline workbench", () => {
     await expect(page.getByText("Could not list repositories")).toBeVisible();
     // The token survived in sessionStorage, so a page that had reached the service would
     // have data; nothing was readable, so no write control is offered at all.
-    await expect(page.getByTestId("stage-selected")).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Stage a.txt", exact: true }),
+    ).toHaveCount(0);
     // And the panel does not blame the build for a service that is not answering: "not
     // implemented in this build" is a claim about capabilities, and no capabilities arrived.
-    await expect(page.getByTestId("repository-panel")).toContainText(
+    await expect(page.getByTestId("repository-launcher-panel")).toContainText(
       "the service has not reported its operations",
     );
 
@@ -149,19 +153,24 @@ test.describe("an offline workbench", () => {
   }) => {
     await repo.write("a.txt", "changed\n");
     await page.goto(service.pairingUrl);
-    await expect(page.getByTestId("select-all")).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Stage a.txt", exact: true }),
+    ).toBeVisible();
     const before = await acceptedOperations(page);
 
     await context.setOffline(true);
-    await page.getByTestId("select-all").click();
-    await page.getByTestId("stage-selected").click();
-    await expect(page.getByTestId("staging-message")).toContainText(/offline/i);
+    await expect(
+      page.getByRole("button", { name: "Stage a.txt", exact: true }),
+    ).toBeDisabled();
 
     await context.setOffline(false);
     // The user asks again, deliberately — and this time it is accepted.
-    await page.getByTestId("select-all").click();
-    await page.getByTestId("stage-selected").click();
-    await expect(page.getByTestId("staging-message")).toContainText(/staged/i);
+    await page
+      .getByRole("button", { name: "Stage a.txt", exact: true })
+      .click();
+    await expect(
+      page.getByTestId("working-copy-staging-message"),
+    ).toContainText(/staged/i);
     expect(await acceptedOperations(page)).toBeGreaterThan(before);
   });
 });

@@ -162,3 +162,6 @@ export * from "./lib/geometry.js";
 export { cn } from "./lib/utils.js";
 
 export * from "./lib/context-actions.js";
+
+export { default as WorkingCopyPanel } from "./components/WorkingCopyPanel.svelte";
+export { default as WorktreeWipList } from "./components/WorktreeWipList.svelte";

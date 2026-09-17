@@ -161,11 +161,11 @@ test.describe("Git context menus", () => {
     await page.goto(service.pairingUrl);
 
     const pathRow = page
-      .locator('[data-testid^="status-row-"]')
+      .locator('[data-testid^="unstaged-row-"], [data-testid^="staged-row-"]')
       .filter({ hasText: "a.txt" });
     await expect(pathRow).toBeVisible();
     await pathRow.click({ button: "right" });
-    const pathMenu = page.locator('[data-testid^="status-context-"]:visible');
+    const pathMenu = page.getByRole("menu");
     await expect(pathMenu.getByText("Stage", { exact: true })).toBeVisible();
     await pathMenu.getByText("Stage", { exact: true }).click();
     await expect
@@ -179,14 +179,9 @@ test.describe("Git context menus", () => {
     await expect(pathRow).toBeVisible();
     await pathRow.click({ button: "right" });
     await expect(
-      page
-        .locator('[data-testid^="status-context-"]:visible')
-        .getByText("Unstage", { exact: true }),
+      page.getByRole("menu").getByText("Unstage", { exact: true }),
     ).toBeVisible();
-    await page
-      .locator('[data-testid^="status-context-"]:visible')
-      .getByText("Unstage", { exact: true })
-      .click();
+    await page.getByRole("menu").getByText("Unstage", { exact: true }).click();
     await expect
       .poll(async () =>
         new TextDecoder()
@@ -197,13 +192,10 @@ test.describe("Git context menus", () => {
 
     await expect(pathRow).toBeVisible();
     await pathRow.click({ button: "right" });
-    await page
-      .locator('[data-testid^="status-context-"]:visible')
-      .getByText("Discard…", { exact: true })
-      .click();
-    await expect(page.getByTestId("path-discard-dialog")).toBeVisible();
+    await page.getByRole("menu").getByText("Discard…", { exact: true }).click();
+    await expect(page.getByTestId("working-copy-discard-dialog")).toBeVisible();
     expect(await repo.readText("a.txt")).toBe("working-copy-change\n");
-    await page.getByTestId("path-discard-dialog-confirm").click();
+    await page.getByTestId("working-copy-discard-dialog-confirm").click();
     await expect.poll(() => repo.readText("a.txt")).toBe("second\n");
   });
   test("targets the clicked remote and confirms removal", async ({ page }) => {

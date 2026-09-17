@@ -24,6 +24,8 @@
   import FileText from "@lucide/svelte/icons/file-text";
   import { Badge } from "./ui/badge/index.js";
   import StateBanner from "./StateBanner.svelte";
+  import SplitPatch from "./SplitPatch.svelte";
+  import { Button } from "./ui/button/index.js";
   import { changeKindLabel, diffStatLabel } from "../lib/format.js";
   import { cn } from "../lib/utils.js";
 
@@ -36,6 +38,8 @@
     onSelectPath?: (file: DiffFile) => void;
     /** Shown when there is no change set to read. */
     placeholder?: string;
+    onlySelected?: boolean;
+    listingOnly?: boolean;
     class?: string;
   }
 
@@ -45,8 +49,12 @@
     selectedPathId = null,
     onSelectPath,
     placeholder = "Select a path or a commit to read its diff.",
+    onlySelected = false,
+    listingOnly = false,
     class: className = "",
   }: Props = $props();
+
+  let splitView = $state(true);
 
   const LINE_PREFIX = { context: " ", add: "+", remove: "−" } as const;
   const LINE_CLASS = {
@@ -116,14 +124,37 @@
         >{diff.stats.filesChanged}
         {diff.stats.filesChanged === 1 ? "file" : "files"}</span
       >
-      <span class="text-add font-mono font-medium">+{diff.stats.insertions}</span>
-      <span class="text-remove font-mono font-medium">−{diff.stats.deletions}</span>
+      <span class="text-add font-mono font-medium"
+        >+{diff.stats.insertions}</span
+      >
+      <span class="text-remove font-mono font-medium"
+        >−{diff.stats.deletions}</span
+      >
       {#if diff.stats.binaryFiles > 0}
-        <span class="text-muted-foreground">· {diff.stats.binaryFiles} binary</span>
+        <span class="text-muted-foreground"
+          >· {diff.stats.binaryFiles} binary</span
+        >
+      {/if}
+      {#if onlySelected}
+        <span class="flex-1"></span>
+        <div class="flex gap-1" aria-label="Diff view">
+          <Button
+            size="sm"
+            variant={splitView ? "default" : "ghost"}
+            aria-pressed={splitView}
+            onclick={() => (splitView = true)}>Split</Button
+          >
+          <Button
+            size="sm"
+            variant={!splitView ? "default" : "ghost"}
+            aria-pressed={!splitView}
+            onclick={() => (splitView = false)}>Unified</Button
+          >
+        </div>
       {/if}
     </header>
 
-    {#if awaitingPerPathPatches}
+    {#if awaitingPerPathPatches && !listingOnly && !onlySelected}
       <div class="shrink-0">
         <StateBanner
           state="info"
@@ -146,7 +177,7 @@
         No changed files for this request.
       </p>
     {:else}
-      {#each diff.files as file (file.pathId + file.changeKind)}
+      {#each onlySelected && selectedPathId !== null ? diff.files.filter((file) => file.pathId === selectedPathId) : diff.files as file (file.pathId + file.changeKind)}
         {@const selected = file.pathId === selectedPathId}
         {@const filePatch = patchFor(file)}
         <section
@@ -164,7 +195,7 @@
             )}
           >
             <span class="text-muted-foreground shrink-0 transition-transform">
-              {#if selected || filePatch.kind !== "unavailable"}
+              {#if !listingOnly && (selected || filePatch.kind !== "unavailable")}
                 <ChevronDown class="size-3.5" />
               {:else}
                 <ChevronRight class="size-3.5" />
@@ -196,7 +227,7 @@
             >
           </button>
 
-          {#if selected || filePatch.kind !== "unavailable"}
+          {#if !listingOnly && (selected || filePatch.kind !== "unavailable")}
             {#if filePatch.kind === "text"}
               {#if filePatch.synthesized}
                 <p
@@ -212,6 +243,8 @@
                 >
                   No line changes — the file's mode or type changed.
                 </p>
+              {:else if onlySelected && splitView}
+                <SplitPatch hunks={filePatch.hunks} />
               {:else}
                 <div
                   class="overflow-x-auto border-t border-border/60 bg-card/90 custom-scrollbar"

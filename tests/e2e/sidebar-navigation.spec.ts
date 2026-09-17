@@ -1,3 +1,4 @@
+/** Navigation preserves drafts while selected files use the main diff surface. */
 import { expect, test } from "@playwright/test";
 import { createRepo, type GitFixtureRepo } from "../support/repo.js";
 import { startE2eService } from "../support/e2e-service.js";
@@ -25,7 +26,7 @@ test.describe("repository sidebar navigation", () => {
     ).toHaveAttribute("aria-current", "page");
     await expect(page.getByRole("heading", { name: "History" })).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "Toggle Changes" }),
+      page.getByRole("button", { name: "Toggle Worktrees" }),
     ).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Toggle Branches" }),
@@ -57,7 +58,7 @@ test.describe("repository sidebar navigation", () => {
     await page.getByTestId("workbench-nav-repositories").click();
     await expect(page.getByTestId("repository-panel")).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "Toggle Changes" }),
+      page.getByRole("button", { name: "Toggle Worktrees" }),
     ).not.toBeVisible();
 
     await page.getByTestId("workbench-nav-branches").click();
@@ -84,18 +85,21 @@ test.describe("repository sidebar navigation", () => {
     await expect(page.getByTestId("branch-context-main-rename")).toBeVisible();
   });
 
-  test("selects a working-copy path without replacing the history center", async ({
+  test("opens a working-copy path in the main display and returns to history", async ({
     page,
   }) => {
     await page.goto(service.pairingUrl);
     const pathRow = page
-      .locator('[data-testid^="status-row-"]')
-      .filter({ hasText: "a.txt" });
+      .getByTestId("unstaged-files")
+      .getByText("a.txt", { exact: true });
     await expect(pathRow).toBeVisible();
     await pathRow.click();
 
-    await expect(page.getByText("unstaged", { exact: true })).toBeVisible();
-    await expect(page.getByText("+changed").first()).toBeVisible();
+    await expect(page.getByTestId("main-diff-panel")).toContainText("changed");
+    await expect(
+      page.getByRole("heading", { name: "History" }),
+    ).not.toBeVisible();
+    await page.getByRole("button", { name: "Back to history" }).click();
     await expect(page.getByRole("heading", { name: "History" })).toBeVisible();
   });
 });

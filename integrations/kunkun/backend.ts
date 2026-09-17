@@ -13,10 +13,7 @@ import {
   type Transport,
 } from "kkrpc/streaming";
 import type { EventEnvelope } from "@refyard/git-contract";
-import type {
-  GitClient,
-  MutationClient,
-} from "@refyard/git-client";
+import type { GitClient, MutationClient } from "@refyard/git-client";
 
 /** The public GitService methods available to the custom view. */
 export type KunkunGitService = Omit<GitClient, "exchangeTicket">;

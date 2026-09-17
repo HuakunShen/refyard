@@ -87,7 +87,7 @@ test.describe("repository creation", () => {
     // The page is working in the new repository, not merely listing it: the list marks
     // it as the selected one, which is what every panel below reads from.
     await expect(
-      page.getByRole("button", { name: /e2e-created/ }),
+      page.getByRole("button", { name: /e2e-created no commits/ }),
     ).toHaveAttribute("aria-current", "true");
   });
 
@@ -123,7 +123,7 @@ test.describe("repository creation", () => {
     );
     expect(await repo.readText("e2e-cloned/a.txt")).toBe("base\n");
     await expect(
-      page.getByRole("button", { name: /e2e-cloned/ }),
+      page.getByRole("button", { name: /e2e-cloned main/ }),
     ).toHaveAttribute("aria-current", "true");
   });
 

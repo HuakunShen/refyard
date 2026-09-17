@@ -33,7 +33,7 @@ test.describe("staging workbench", () => {
   });
 
   test.afterEach(async () => {
-    await service.stop();
+    await service?.stop();
     await repo.dispose();
   });
 
@@ -42,21 +42,25 @@ test.describe("staging workbench", () => {
   }) => {
     await repo.write("a.txt", "changed through the UI\n");
     await page.goto(service.pairingUrl);
-    await expect(page.getByTestId("staging-panel")).toBeVisible();
+    const working = page.getByTestId("working-copy-panel");
+    await expect(working).toBeVisible();
 
-    // Select exactly a.txt — the fixture also has an untracked file that must stay put.
-    await page.getByLabel("select a.txt").check();
-    await page.getByTestId("stage-selected").click();
+    // Stage exactly a.txt through its row action.
+    await working
+      .getByRole("button", { name: "Stage a.txt", exact: true })
+      .click();
 
-    await expect(page.getByTestId("staging-message")).toContainText(
-      /staged 1 path/,
-    );
-    // The change pane re-read: a.txt is now staged, and the commit panel counts it.
-    await expect(page.getByText("1 staged path")).toBeVisible();
+    await expect(
+      working.getByTestId("working-copy-staging-message"),
+    ).toContainText(/staged 1 path/);
+    // The change pane re-read: a.txt is now staged, with an explicit Unstage action.
+    await expect(
+      working.getByRole("button", { name: "Unstage a.txt", exact: true }),
+    ).toBeVisible();
 
-    await page.getByTestId("commit-message").fill("ui commit\n");
-    await page.getByTestId("commit-button").click();
-    await expect(page.getByTestId("commit-message-result")).toContainText(
+    await working.getByTestId("commit-message").fill("ui commit\n");
+    await working.getByTestId("commit-button").click();
+    await expect(working.getByTestId("commit-message-result")).toContainText(
       /created commit/,
     );
 
@@ -71,13 +75,18 @@ test.describe("staging workbench", () => {
     await repo.write("a.txt", "staged then unstaged\n");
     await repo.git(["add", "--", "a.txt"]);
     await page.goto(service.pairingUrl);
-    await expect(page.getByTestId("staging-panel")).toBeVisible();
+    const working = page.getByTestId("working-copy-panel");
+    await expect(working).toBeVisible();
 
-    await page.getByLabel("select a.txt").check();
-    await page.getByTestId("unstage-selected").click();
-    await expect(page.getByTestId("staging-message")).toContainText(
-      /unstaged 1 path/,
-    );
+    await working
+      .getByRole("button", { name: "Unstage a.txt", exact: true })
+      .click();
+    await expect(
+      working.getByTestId("working-copy-staging-message"),
+    ).toContainText(/unstaged 1 path/);
+    await expect(
+      working.getByRole("button", { name: "Stage a.txt", exact: true }),
+    ).toBeVisible();
 
     // The bytes on disk are exactly what the test wrote.
     expect(await repo.read("a.txt")).toEqual(
@@ -90,18 +99,25 @@ test.describe("staging workbench", () => {
   }) => {
     await repo.write("a.txt", "will be discarded\n");
     await page.goto(service.pairingUrl);
-    await expect(page.getByTestId("staging-panel")).toBeVisible();
+    const working = page.getByTestId("working-copy-panel");
+    await expect(working).toBeVisible();
 
-    await page.getByLabel("select a.txt").check();
     // First click arms the confirm; nothing has happened yet.
-    await page.getByTestId("discard-selected").click();
+    const pathRow = working
+      .locator('[data-testid^="unstaged-row-"]')
+      .filter({ hasText: "a.txt" });
+    await expect(pathRow).toBeVisible();
+    await pathRow.click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Discard…", exact: true }).click();
     expect(await repo.read("a.txt")).toEqual(
       new TextEncoder().encode("will be discarded\n"),
     );
-    await page.getByTestId("discard-selected-confirm").click();
-    await expect(page.getByTestId("staging-message")).toContainText(
-      /discarded 1 path/,
-    );
+    await expect(page.getByTestId("working-copy-discard-dialog")).toBeVisible();
+    await page.getByTestId("working-copy-discard-dialog-confirm").click();
+    await expect(
+      working.getByTestId("working-copy-staging-message"),
+    ).toContainText(/discarded 1 path/);
+    await expect(pathRow).toHaveCount(0);
 
     // Restored to the index content — the fixture committed "base\n".
     expect(await repo.read("a.txt")).toEqual(
@@ -112,12 +128,22 @@ test.describe("staging workbench", () => {
   test("refuses to discard an untracked path", async ({ page }) => {
     await repo.write("notes.md", "untracked work\n");
     await page.goto(service.pairingUrl);
-    await expect(page.getByTestId("staging-panel")).toBeVisible();
+    const working = page.getByTestId("working-copy-panel");
+    await expect(working).toBeVisible();
 
-    // Untracked entries have no discard affordance: the batch button excludes them
-    // because the host would refuse the whole selection.
-    await page.getByLabel("select notes.md").check();
-    await expect(page.getByTestId("discard-selected")).toBeDisabled();
+    // Untracked entries expose no destructive row button. Their context-menu discard
+    // action remains visible but disabled because the host only discards tracked paths.
+    const pathRow = working
+      .locator('[data-testid^="unstaged-row-"]')
+      .filter({ hasText: "notes.md" });
+    await expect(pathRow).toBeVisible();
+    await expect(
+      working.getByRole("button", { name: "Discard notes.md", exact: true }),
+    ).toHaveCount(0);
+    await pathRow.click({ button: "right" });
+    await expect(
+      page.getByRole("menuitem", { name: "Discard…", exact: true }),
+    ).toBeDisabled();
     expect(await repo.read("notes.md")).toEqual(
       new TextEncoder().encode("untracked work\n"),
     );
