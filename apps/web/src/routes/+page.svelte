@@ -74,6 +74,12 @@
     historyFilterLabels,
   } from "$lib/workbench/history-filters.js";
   import RepositorySidebar from "$lib/components/workbench/RepositorySidebar.svelte";
+  import ResizeHandle from "$lib/components/workbench/ResizeHandle.svelte";
+  import {
+    clampSidebarWidth,
+    SIDEBAR_WIDTHS,
+    storedSidebarWidth,
+  } from "$lib/workbench/layout-widths.js";
   import {
     clearStoredSession,
     readStoredAccent,
@@ -185,6 +191,24 @@
   let recentRepositories = $state<RecentRepository[]>([]);
   let recentLoaded = $state(false);
   let launcherRequested = $state(false);
+  let leftSidebarWidth = $state(
+    browser
+      ? storedSidebarWidth(
+          window.localStorage.getItem("refyard.layout.sidebar.left"),
+          SIDEBAR_WIDTHS.left.default,
+          SIDEBAR_WIDTHS.left,
+        )
+      : SIDEBAR_WIDTHS.left.default,
+  );
+  let rightSidebarWidth = $state(
+    browser
+      ? storedSidebarWidth(
+          window.localStorage.getItem("refyard.layout.sidebar.right"),
+          SIDEBAR_WIDTHS.right.default,
+          SIDEBAR_WIDTHS.right,
+        )
+      : SIDEBAR_WIDTHS.right.default,
+  );
   const historyFilterState = $state(createHistoryFilterState());
   $effect(() => {
     if (historyFilterState.repositoryId !== selectedRepositoryId)
@@ -382,6 +406,34 @@
       launcherRequested = repositoryTabs.activeRepositoryId === null;
       launcherOpen = repositoryTabs.activeRepositoryId === null;
     }
+  }
+
+  function resizeLeftSidebar(delta: number): void {
+    leftSidebarWidth = clampSidebarWidth(
+      leftSidebarWidth + delta,
+      SIDEBAR_WIDTHS.left,
+    );
+  }
+
+  function resizeRightSidebar(delta: number): void {
+    rightSidebarWidth = clampSidebarWidth(
+      rightSidebarWidth + delta,
+      SIDEBAR_WIDTHS.right,
+    );
+  }
+
+  function persistSidebarWidths(): void {
+    if (!browser) {
+      return;
+    }
+    window.localStorage.setItem(
+      "refyard.layout.sidebar.left",
+      String(leftSidebarWidth),
+    );
+    window.localStorage.setItem(
+      "refyard.layout.sidebar.right",
+      String(rightSidebarWidth),
+    );
   }
 
   // The DOM listener stays at the composition root; query ownership only exposes the
@@ -722,7 +774,8 @@
     </main>
   {:else}
     <main
-      class="relative z-1 flex min-h-0 flex-1 flex-col overflow-y-auto lg:grid lg:overflow-visible lg:grid-cols-[18.5rem_minmax(0,1fr)_21rem] xl:grid-cols-[21rem_minmax(0,1fr)_25rem] 2xl:grid-cols-[23rem_minmax(0,1fr)_28rem]"
+      class="relative z-1 flex min-h-0 flex-1 flex-col overflow-y-auto lg:grid lg:overflow-visible lg:grid-cols-[var(--left-sidebar-width)_minmax(0,1fr)_var(--right-sidebar-width)]"
+      style={`--left-sidebar-width: ${leftSidebarWidth}px; --right-sidebar-width: ${rightSidebarWidth}px;`}
       data-launcher-open={launcherOpen}
       data-selected-repository={selectedRepositoryId ?? ""}
       data-repository-count={repositoryList.length}
@@ -953,6 +1006,18 @@
             </footer>
           {/if}
         </section>
+        <ResizeHandle
+          side="left"
+          onResize={resizeLeftSidebar}
+          onResizeEnd={persistSidebarWidths}
+          style={`left: ${leftSidebarWidth}px`}
+        />
+        <ResizeHandle
+          side="right"
+          onResize={resizeRightSidebar}
+          onResizeEnd={persistSidebarWidths}
+          style={`right: ${rightSidebarWidth}px`}
+        />
       {/if}
     </main>
   {/if}
