@@ -72,6 +72,36 @@ export const cursorSchema = prefixedId("cur", {
   description: "Opaque continuation for a paged read; never parsed by clients.",
 });
 
+export const targetIdSchema = prefixedId("tgt", {
+  id: "TargetId",
+  description:
+    "One execution target: where Git runs for this session. Minted by the host; the browser only names it back.",
+});
+
+export const sshHostIdSchema = prefixedId("host", {
+  id: "SshHostId",
+  description:
+    "A host candidate the service read from an SSH configuration source. An identifier, never a credential.",
+});
+
+export const sshSourceIdSchema = prefixedId("source", {
+  id: "SshSourceId",
+  description:
+    "One SSH configuration source and its revision. Selecting a source is a trusted-host setting, so it is never supplied by a remote page as a free filesystem path.",
+});
+
+/**
+ * Identifies one build of a target. It changes when the target is rebuilt — the
+ * config was re-read, the alias resolves differently, the connection was replaced —
+ * so snapshots, cursors and preview tokens taken against the previous build are
+ * refused instead of silently applied to a different machine.
+ */
+export const targetGenerationSchema = z.string().min(1).max(128).meta({
+  id: "TargetGeneration",
+  description:
+    "Opaque revision of a target's construction. Not an identity proof of the remote host; trust stays with OpenSSH's known_hosts policy.",
+});
+
 export const clientRequestIdSchema = z
   .string()
   .regex(
@@ -136,6 +166,10 @@ export type SnapshotId = z.infer<typeof snapshotIdSchema>;
 export type OperationId = z.infer<typeof operationIdSchema>;
 export type PreviewToken = z.infer<typeof previewTokenSchema>;
 export type Cursor = z.infer<typeof cursorSchema>;
+export type TargetId = z.infer<typeof targetIdSchema>;
+export type SshHostId = z.infer<typeof sshHostIdSchema>;
+export type SshSourceId = z.infer<typeof sshSourceIdSchema>;
+export type TargetGeneration = z.infer<typeof targetGenerationSchema>;
 export type ClientRequestId = z.infer<typeof clientRequestIdSchema>;
 export type ObjectId = z.infer<typeof objectIdSchema>;
 export type ObjectFormat = z.infer<typeof objectFormatSchema>;

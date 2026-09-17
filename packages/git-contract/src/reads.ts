@@ -25,10 +25,12 @@ import {
   repositoryIdSchema,
   serviceInstanceIdSchema,
   snapshotIdSchema,
+  targetIdSchema,
   timestampSchema,
   worktreeIdSchema,
 } from "./ids.js";
 import { LIMITS, runtimeLimitsSchema } from "./limits.js";
+import { hostKindSchema } from "./host.js";
 import {
   branchNameSchema,
   fullRefNameSchema,
@@ -148,7 +150,7 @@ export const capabilitiesResponseSchema = z
     contractVersion: z.string().min(1).max(32),
     serviceInstanceId: serviceInstanceIdSchema,
     host: z.strictObject({
-      kind: z.literal("node"),
+      kind: hostKindSchema,
       version: z.string().min(1).max(64),
     }),
     git: z.strictObject({
@@ -191,6 +193,11 @@ export const repositorySummarySchema = z
   .strictObject({
     repositoryId: repositoryIdSchema,
     allowedRootId: allowedRootIdSchema,
+    /**
+     * Optional so a repository list from a service that predates execution
+     * targets stays readable; absence means the session's default local target.
+     */
+    targetId: targetIdSchema.optional(),
     displayName: z.string().min(1).max(256),
     displayPath: displayPathSchema,
     objectFormat: objectFormatSchema,
@@ -271,6 +278,11 @@ export const filesystemEntriesResponseSchema = z
 export const registerRepositoryRequestSchema = z
   .strictObject({
     path: z.string().min(1).max(4096),
+    /**
+     * Which execution target the path is on. Omitted means the session's default
+     * local target, which is what a service without execution targets assumes.
+     */
+    targetId: targetIdSchema.optional(),
   })
   .meta({
     id: "RegisterRepositoryRequest",
@@ -898,8 +910,15 @@ export const eventEnvelopeSchema = z
 /* ------------------------------------------------------------------ queries */
 
 export const capabilitiesQuerySchema = z
-  .strictObject({})
-  .meta({ id: "CapabilitiesQuery" });
+  .strictObject({
+    targetId: targetIdSchema.optional(),
+    repositoryId: repositoryIdSchema.optional(),
+  })
+  .meta({
+    id: "CapabilitiesQuery",
+    description:
+      "Which target the answer should describe. Empty keeps the original meaning: the host's default local target. Naming both a target and a repository that do not belong together is InvalidRequest — never a silent fallback to local.",
+  });
 export const repositoriesQuerySchema = z
   .strictObject({})
   .meta({ id: "RepositoriesQuery" });

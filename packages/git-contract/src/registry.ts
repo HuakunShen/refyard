@@ -20,9 +20,26 @@ import {
   repositoryIdSchema,
   serviceInstanceIdSchema,
   snapshotIdSchema,
+  sshHostIdSchema,
+  sshSourceIdSchema,
+  targetGenerationSchema,
+  targetIdSchema,
   timestampSchema,
   worktreeIdSchema,
 } from "./ids.js";
+import {
+  acknowledgeUncertainOperationRequestSchema,
+  createTargetRequestSchema,
+  disconnectTargetRequestSchema,
+  executionTargetKindSchema,
+  executionTargetStateSchema,
+  executionTargetSummarySchema,
+  hostCapabilitiesSchema,
+  hostKindSchema,
+  hostWarningSchema,
+  sshHostCandidateSchema,
+  sshHostListSchema,
+} from "./host.js";
 import { runtimeLimitsSchema } from "./limits.js";
 import {
   branchNameSchema,
@@ -120,6 +137,10 @@ export const CONTRACT_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   OperationId: operationIdSchema,
   PreviewToken: previewTokenSchema,
   Cursor: cursorSchema,
+  TargetId: targetIdSchema,
+  SshHostId: sshHostIdSchema,
+  SshSourceId: sshSourceIdSchema,
+  TargetGeneration: targetGenerationSchema,
   ClientRequestId: clientRequestIdSchema,
   ObjectId: objectIdSchema,
   ObjectFormat: objectFormatSchema,
@@ -201,6 +222,17 @@ export const CONTRACT_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   OperationQuery: operationQuerySchema,
   OperationsListQuery: operationsListQuerySchema,
   EventsQuery: eventsQuerySchema,
+  HostKind: hostKindSchema,
+  ExecutionTargetKind: executionTargetKindSchema,
+  ExecutionTargetState: executionTargetStateSchema,
+  HostCapabilities: hostCapabilitiesSchema,
+  HostWarning: hostWarningSchema,
+  SshHostCandidate: sshHostCandidateSchema,
+  SshHostList: sshHostListSchema,
+  ExecutionTargetSummary: executionTargetSummarySchema,
+  CreateTargetRequest: createTargetRequestSchema,
+  DisconnectTargetRequest: disconnectTargetRequestSchema,
+  AcknowledgeUncertainOperationRequest: acknowledgeUncertainOperationRequestSchema,
 };
 
 /** Names of the individual operation payload schemas, keyed by operation kind. */

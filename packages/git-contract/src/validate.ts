@@ -18,6 +18,10 @@ import {
   type ClientRequestId,
 } from "./ids.js";
 import { historyQuerySchema, type HistoryQuery } from "./reads.js";
+import {
+  createTargetRequestSchema,
+  type CreateTargetRequest,
+} from "./host.js";
 import { LIMITS } from "./limits.js";
 import {
   branchNameSchema,
@@ -880,4 +884,54 @@ function validCalendarTimestamp(timestamp: string): boolean {
     Number(timestamp.slice(14, 16)) < 60 &&
     Number(timestamp.slice(17, 19)) < 60
   );
+}
+
+/**
+ * A token that may be handed to the local `ssh` as its single destination
+ * argument.
+ *
+ * The character set is a safety property, not a style rule: a leading `-` would be
+ * read as an option (`-oProxyCommand=…` runs a local command), whitespace would
+ * split one argument into two, `*`/`?`/`!` would address more than one machine, and
+ * shell metacharacters would matter the moment anyone interpolates the value into a
+ * command string. An alias that fails here is refused before any process exists.
+ */
+const SSH_ALIAS_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:@+-]{0,127}$/;
+
+export function validateSshAlias(
+  value: string,
+  path = "manualAlias",
+): ValidationProblem[] {
+  if (!SSH_ALIAS_TOKEN.test(value)) {
+    return [
+      {
+        // A host request, not a mutation payload: the caller sent a malformed
+        // request rather than an unacceptable Git operation.
+        code: "InvalidRequest",
+        message:
+          "must be a concrete ssh host alias: 1–128 characters of [A-Za-z0-9._:@+-], not starting with punctuation, with no whitespace, wildcard, or shell metacharacter",
+        path,
+      },
+    ];
+  }
+  return [];
+}
+
+/**
+ * Validates a target-creation request, including the manual alias it may carry.
+ * The host resolves the alias through the real OpenSSH configuration; this check
+ * only guarantees the value cannot become an option, a word split, or a pattern.
+ */
+export function validateCreateTargetRequest(
+  input: unknown,
+): ValidationResult<CreateTargetRequest> {
+  const parsed = createTargetRequestSchema.safeParse(input);
+  if (!parsed.success)
+    return invalidMany(issuesToProblems(parsed.error, "InvalidRequest"));
+  const request = parsed.data;
+  if ("manualAlias" in request) {
+    const problems = validateSshAlias(request.manualAlias);
+    if (problems.length > 0) return invalidMany(problems);
+  }
+  return { ok: true, value: request };
 }

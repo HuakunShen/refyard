@@ -34,6 +34,7 @@
     "@refyard/git-contract": "workspace:*",
     "@refyard/git-core": "workspace:*",
     "@refyard/git-graph": "workspace:*",
+    "@refyard/git-service": "workspace:*",
     "@refyard/git-ui": "workspace:*",
     "@refyard/host-node": "workspace:*",
     "@types/node": "catalog:",

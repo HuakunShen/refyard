@@ -9,6 +9,7 @@
 export * from "./version.js";
 export * from "./ids.js";
 export * from "./limits.js";
+export * from "./host.js";
 export * from "./targets.js";
 export * from "./names.js";
 export * from "./operations.js";
