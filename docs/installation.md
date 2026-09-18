@@ -38,6 +38,50 @@ npm pack ./packages/npm-dist --pack-destination /tmp
 # /tmp/refyard-0.0.0.tgz
 ```
 
+## The native desktop app and CLI
+
+The native forms are built from source on this branch; they are not part of the npm tarball.
+They are the same application service — same closed JSON contract, same safety rules, same
+journal — with a Rust host instead of Node, and they never bundle or execute a JavaScript
+runtime (`pnpm native:verify` enforces this against the built artifacts).
+
+Requirements: Git 2.43.0+ (the same baseline `refyard-native doctor` reports), this machine's
+OpenSSH for remote repositories, and nothing else. macOS arm64 is what the test suites cover;
+other platforms are not verified yet.
+
+```sh
+# Desktop app (12.6 MiB installed, unsigned):
+pnpm desktop:build
+# → apps/desktop/src-tauri/target/release/bundle/macos/Refyard.app
+
+# Native CLI (4.16 MiB):
+cargo build --release -p refyard-native
+# → target/release/refyard-native
+```
+
+Native CLI commands:
+
+```sh
+refyard-native doctor [--json]                # exit 2 with a diagnosis when git is missing or too old
+refyard-native serve <path>... [options]      # API-only service
+refyard-native open <path>... [options]       # the same, plus the static workbench from apps/web/build
+```
+
+| Option              | Meaning                                                                                                                                                                    |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<path>...`         | Repositories approved for this run; they are what a paired session may reach.                                                                                              |
+| `--port <n>`        | Loopback port. Default `9595`; if that is busy another free port is taken and named; an explicitly requested busy port is refused; `0` asks the OS for one.                |
+| `--ticket-ttl <s>`  | Pairing-ticket lifetime in seconds.                                                                                                                                        |
+| `--no-open`         | Do not launch a browser. A single-use ticket consumed by the auto-opened browser is the reason this exists.                                                                |
+| `--json`            | Machine output: the readiness JSON (URL, port, service instance id, ticket policy) on stdout, the single-use pairing URL on **stderr** so logs cannot mistake it for data. |
+| `REFYARD_STATE_DIR` | Pin the private state directory (journal, backups). Default is the platform per-user directory, as below.                                                                  |
+
+The private state, the journal's crash behaviour, and uninstalling are the same as the Node
+forms: a mutation whose process is killed mid-flight is recovered as `unknown`, blocks that
+repository's writes, and yields only to an explicit in-app acknowledgement that never rewrites
+the outcome. `refyard-native doctor` diagnoses a missing Git or SSH instead of failing silently;
+missing SSH disables only remote repositories.
+
 ## Install and run
 
 From a tarball — no registry involved, and `--offline` proves it:

@@ -1,13 +1,13 @@
 # Native desktop + SSH — unfinished work (handoff for the next tool)
 
-Written 2026-09-18 at commit `41cd874` (branch `feat/native-desktop-ssh`, worktree
-`/Volumes/Portable2TB/ExtDev/refyard-native-desktop-ssh`, tree clean). This file is the
-"continue here" list: what is **not** done, with enough detail to start without re-deriving
-it. The measured state of everything already delivered is in
-`native-desktop-ssh-implementation-status.md` in this directory — read that first, then
-`AGENTS.md`, then this file.
+Written 2026-09-18 at commit `41cd874`; **updated through the D-track's end (D11–D14 complete,
+see the acceptance document's §9 and the status document)**. This file is the "continue here"
+list: what is **not** done, with enough detail to start without re-deriving it. The measured
+state of everything already delivered is in `native-desktop-ssh-implementation-status.md` in
+this directory — read that first, then `AGENTS.md`, then this file.
 
-Nothing below has been started. Do not redo what §2 of the status document records as done.
+D00–D14 are complete. The next planned work is P01–P04 (read parity, network writes,
+destructive workflows, distribution) — each gated on the artifacts staying runnable.
 
 ## 1. D12 — what is left of it
 
@@ -134,8 +134,8 @@ port answers nothing while stopped, finished work stays `succeeded` after restar
 (`tests/e2e/uncertain-outcome.spec.ts`, chromium+firefox; webkit skipped with reason)
 are in — see acceptance §9.5 (E13 now PASS) and §9.10. Along the way the HTTP client's
 `acknowledgeUncertainOperation` stopped requiring the host-extension probe (the ack is a
-*service* route that exists on the native HTTP host, which has no host routes); see
-§9.10. Still named, not done: a human click-through *inside* the Tauri window
+_service_ route that exists on the native HTTP host, which has no host routes); see
+§9.10. Still named, not done: a human click-through _inside_ the Tauri window
 (WKWebView has no WebDriver; `session_owner.rs` covers the command layer).
 
 `tests/e2e/native-mutations.spec.ts` from the plan **cannot** be a browser test on macOS —
@@ -144,14 +144,15 @@ already in place is `session_owner.rs` (production command bodies with a window 
 write a fake spec to tick the box; if a spec is written at all, it can only drive the
 Node-service web app — which `uncertain-outcome.spec.ts` now does.
 
-## 4. D14 tail
+## 4. D14 — DONE (2026-09-18)
 
-- Acceptance F rows (F01–F08, native HTTP entry) — blocked on D12.
-- `README.md` and `docs/installation.md` still describe only the Node CLI; add the app and
-  `refyard-native`.
-- One full pass of the existing suite (`pnpm check`, `test:unit`, `test:integration`,
-  `test:e2e`, `pnpm build`) with exit codes recorded into acceptance §9; last full JS-suite
-  run predates D11 (which changed no TypeScript).
+Acceptance §9 records every deliverable verdict, every gate with exit codes, and every not-run
+cell with its reason. `README.md` and `docs/installation.md` document the native app and CLI.
+Full-suite pass: `pnpm check` 0 · `test:unit` 428 · `test:integration` 467 (incl. 49 native)
+· `cargo test --workspace` 539/0/20 · desktop 25/0/1 · `pnpm build` 0 · chromium e2e 58/0 ·
+`pnpm native:verify` green · `pnpm native:bench` measured. The full-engine e2e run carries two
+pre-existing firefox/webkit context-menu failures (reproduced on the committed tree without
+this round's changes).
 
 ## 5. Known gaps carried (named, unfixed)
 
@@ -169,11 +170,14 @@ rows — ask before using them.
 ```sh
 cd /Volumes/Portable2TB/ExtDev/refyard-native-desktop-ssh
 pnpm native:ssh:fixture -- start          # SSH fixture; state in target/native-ssh-fixture/state.json
-cargo test --workspace                    # 494 + 7, no fixture needed
+cargo test --workspace                    # 539 passed, no fixture needed
 cargo test -p refyard-host --test ssh_exec -- --ignored --test-threads=1   # needs the fixture
-(cd apps/desktop/src-tauri && cargo test) # 24 desktop tests
+(cd apps/desktop/src-tauri && cargo test) # 25 desktop tests
 pnpm desktop:build                        # Refyard.app
 pnpm native:ssh:fixture -- stop
+pnpm native:verify                        # artifact scan (app + CLI)
+pnpm native:bench                         # runtime measurements -> docs/evidence/native-runtime.json
+pnpm build:web && bun scripts/bundle-cli.ts   # rebuild before e2e: the e2e serves .refyard-dev/web
 ```
 
 As of this handoff the fixture container `refyard-native-ssh-fixture` is still **running**

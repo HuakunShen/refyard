@@ -35,12 +35,14 @@ API proxy, and it never receives Git contents.
 
 ## What ships
 
-| Surface               | Where it runs                             | What it owns                                    |
-| --------------------- | ----------------------------------------- | ----------------------------------------------- |
-| `refyard` npm package | Your Node machine                         | Git service plus bundled local workbench        |
-| Refyard PWA           | Local loopback or your Cloudflare account | UI, session negotiation, presentation           |
-| Git Core              | Trusted TypeScript runtime                | Git intentions, parsers, planners, safety rules |
-| Cloudflare Worker     | Cloudflare edge                           | Static assets and secure response headers only  |
+| Surface               | Where it runs                             | What it owns                                                       |
+| --------------------- | ----------------------------------------- | ------------------------------------------------------------------ |
+| `refyard` npm package | Your Node machine                         | Git service plus bundled local workbench                           |
+| Native desktop app    | Your machine, built from source           | The same workbench over Tauri IPC; no JS runtime, no localhost hop |
+| `refyard-native` CLI  | Your machine, built from source           | Native `doctor`/`serve`/`open` with the same closed contract       |
+| Refyard PWA           | Local loopback or your Cloudflare account | UI, session negotiation, presentation                              |
+| Git Core              | Trusted TypeScript runtime                | Git intentions, parsers, planners, safety rules                    |
+| Cloudflare Worker     | Cloudflare edge                           | Static assets and secure response headers only                     |
 
 The current release line is `0.1.x`. The next package release prepared in this repository is
 `0.1.2`; it is published only by the tag-triggered `publish.yml` workflow after its gates pass.
@@ -87,6 +89,37 @@ repository from the UI, use Browse to choose a folder through the local coordina
 explicit Recent entries, or use New Tab to switch between multiple approved repositories. Clone
 and Create are available under an approved workspace root.
 
+## The native desktop app and CLI
+
+Alongside the Node runtime, this repository carries a **native** desktop app and a native CLI
+(`crates/`, Rust): the same application service and the same closed JSON contract, with the UI
+compiled into the app and every Git call driven by the machine's own `git` and OpenSSH. The app
+carries no JavaScript runtime, no backend bundle, and no localhost detour — the workbench talks
+to the host process over Tauri's IPC, and `pnpm native:verify` fails the build if a JavaScript
+engine ever shows up in the bundle. SSH targets are chosen from the machine's own SSH config and
+run the system `ssh`; nothing is installed on the remote.
+
+Build from source (macOS arm64 is what the tests cover):
+
+```sh
+pnpm desktop:build      # Refyard.app under apps/desktop/src-tauri/target/release/bundle/macos
+cargo build --release -p refyard-native   # native CLI at target/release/refyard-native
+```
+
+The native CLI mirrors the Node commands and the supervisor contract:
+
+```sh
+refyard-native doctor                          # what this machine can do, exit 2 when unusable
+refyard-native serve <path> --json --no-open   # API-only; readiness JSON on stdout, pairing URL on stderr
+refyard-native open <path>                     # the same plus the static workbench from apps/web/build
+```
+
+`--port` (an explicitly requested busy port is refused), `--no-open`, `--json` and
+`--ticket-ttl` behave as in the Node CLI. A killed process records its in-flight operation as
+`unknown` in the journal (under the platform state directory) and the repository's next write
+stays blocked until a person confirms the state in the app. Runtime measurements and budgets
+live in `pnpm native:bench` and [`docs/evidence/native-runtime.json`](docs/evidence/native-runtime.json).
+
 ## Deploy the UI to your own Cloudflare account
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/HuakunShen/refyard)
@@ -130,8 +163,13 @@ requirements apply to that deployment.
 | ----------------------- | ------------------------------------------------------------------------ |
 | `apps/web`              | SvelteKit shell, static adapter, PWA, asset-only Worker                  |
 | `apps/cli`              | CLI grammar, `doctor`, `open`/`serve` lifecycle                          |
+| `crates/refyard-core`   | Host-free Git planners, parsers, safety rules (Rust)                     |
+| `crates/refyard-host`   | Service, journal, queue, local and SSH providers (Rust)                  |
+| `crates/refyard-http`   | Native loopback HTTP entry with the same closed contract (Rust)          |
+| `crates/refyard-cli`    | Native CLI: `doctor`, `serve`, `open` (Rust)                             |
+| `apps/desktop`          | Tauri desktop shell over the same service; no JS runtime in the bundle   |
 | `packages/git-contract` | Public Zod schemas and JSON Schema                                       |
-| `packages/git-core`     | Host-free bytes, parsers, planners, workflows                            |
+| `packages/git-core`     | Host-free bytes, parsers, planners, workflows (TypeScript)               |
 | `packages/host-node`    | Processes, filesystem, registries, coordinator, HTTP host                |
 | `packages/git-client`   | Browser/Node HTTP and SSE client                                         |
 | `packages/git-ui`       | Reusable Svelte 5 components                                             |

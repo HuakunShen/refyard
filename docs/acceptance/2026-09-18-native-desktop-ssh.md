@@ -283,7 +283,7 @@ Remote no-install proof: 见 D01/D13；容器内无 node/bun/deno/refyard/python
 Commands actually run and exit codes: 见下方逐行表与 B、C 记录“本轮跑过的闸门”
 Existing regression failures: chromium 项目无失败（`pnpm test:e2e` 全引擎跑：170 passed / 2 skipped / 2 failed——失败为 context-menu.spec 在 firefox+webkit，已在未含本改动的已提交树上复现，属既有引擎问题，非本轮引入；root Rust 539 / desktop 25 / native vitest 49 均 0 failed）
 Not-run matrix cells: A06；B01–B04、B06–B09；C03–C06、C08、C10、C12–C14；D06–D12、D14；E06、E08、E09、E11、E12（App 内）、E14、E15；断网场景；第 5 节除 app/CLI 字节、延迟与 RSS 外的预算项
-Next executable task: D14（E13 UI 入口仍按 9.8 记录为未完成）
+Next executable task: D 轨收官；后续为 P01（完整只读 parity 与远端目录浏览），进入条件——releaseApp 可用且核心 SSH 不回归（均满足）
 ```
 
 ### 9.1 A 节（架构与运行时）
@@ -318,44 +318,48 @@ Next executable task: D14（E13 UI 入口仍按 9.8 记录为未完成）
 | 其余 B/C/D 行 | NOT RUN | 逐行原因见第 9.4 节                                                                                                                                                                                            |
 
 ### 9.3 本轮跑过的闸门（命令与退出状态）
-| 命令                                                                                         | 退出 | 结果                                                                     |
-| -------------------------------------------------------------------------------------------- | ---- | ------------------------------------------------------------------------ |
-| `cargo test --workspace`                                                                     | 0    | 494 passed / 0 failed / 20 ignored（D11 后重跑；此前 397 / 14）          |
-| `cargo test -p refyard-host --test ssh_exec -- --ignored --test-threads=1`（fixture 已启动） | 0    | 14 passed                                                                |
-| `cargo test`（`apps/desktop/src-tauri`，独立 workspace）                                     | 0    | 24 passed（新增 D11 写入与 journal 用例）                                |
-| `cargo clippy --workspace --all-targets -- -D warnings` / `cargo fmt --all -- --check`       | 0    | 无输出                                                                   |
-| `pnpm check`                                                                                 | 0    | 11 tasks 通过，根 `tsc` 干净，svelte-check 0 error 0 warning             |
-| `pnpm test:unit`                                                                             | 0    | 47 files / 428 tests passed                                              |
-| `pnpm test:integration`                                                                      | 0    | 32 files / 418 tests passed                                              |
-| `pnpm check:boundaries` / `pnpm check:contract`                                              | 0    | 3 portable 包无 host 依赖；500 个 schema `$ref` 全部解析                 |
-| `pnpm exec playwright test --project=chromium`                                               | 0    | 56 passed（首次运行 55 passed / 1 failed 的竞态已定位并修复，见 B 记录） |
-| `pnpm exec playwright test tests/e2e/ssh-repository-launcher.spec.ts`                        | 0    | 15 passed（chromium + firefox + webkit）                                 |
-| `cargo test -p refyard-http`                                                                  | 0    | 22 unit + 10 gate passed（gate 走真实 socket + fixture 仓库）             |
-| `pnpm exec vitest run tests/native`                                                           | 0    | 44 passed（security 10 + contract 24 + helper；release binary 驱动）      |
-| `cargo build -p refyard-native --release`                                                     | 0    | 4304496 bytes（≤20 MiB 预算）                                            |
-| `pnpm desktop:build`                                                                         | 0    | `Refyard.app`，12 MiB installed                                          |
-| **D13 轮追加：**                                                                              |      |                                                                          |
-| `cargo test --workspace`（D13 后重跑）                                                       | 0    | 537 passed / 0 failed / 20 ignored（含 journal 种子新用例）              |
-| `cargo test`（`apps/desktop/src-tauri`）                                                     | 0    | 25 passed / 0 failed / 1 ignored                                         |
-| `pnpm exec vitest run tests/native`                                                          | 0    | 46 passed（新增 http-shutdown：SIGKILL 未知结果 + SIGTERM 优雅关闭）     |
-| `pnpm native:verify`                                                                         | 0    | .app 12.6 MiB / CLI 4.16 MiB，系统链接，无 JS runtime（≤30/≤20 MiB 预算）|
-| `pnpm native:bench`                                                                          | 0    | ready 52ms · first status 44–49ms · history 144–154ms · idle RSS ~4.5MB · 工作后 4592 kB（`docs/evidence/native-runtime.json`） |
-| **D12 补齐轮追加：**                                                                          |      |                                                                          |
-| `cargo test -p refyard-http`                                                                 | 0    | 22 unit + 10 gate + 2 two-boundaries passed                              |
-| `pnpm exec vitest run tests/native`                                                          | 0    | 49 passed（新增 http-events：线上 SSE 3 例）                              |
-| **D11 收尾（E13 面板）轮追加：**                                                              |      |                                                                          |
-| `pnpm test:e2e`（全引擎）                                                                     | 1    | 170 passed / 2 skipped（webkit 注明原因）/ 2 failed——失败为 context-menu.spec firefox+webkit，已在未含本改动的提交树上复现（stash 后 bundle 重跑仍失败），属既有问题 |
-| `pnpm exec playwright test tests/e2e/uncertain-outcome.spec.ts --project=chromium`           | 0    | 2 passed                                                                 |
-| `pnpm exec playwright test tests/e2e/uncertain-outcome.spec.ts --project=firefox`            | 0    | 2 passed                                                                 |
-| `pnpm desktop:build`（含面板重建）                                                           | 0    | `Refyard.app` b3eb30a2…，12.6 MiB；`native:verify` 仍绿                    |
+
+| 命令                                                                                         | 退出 | 结果                                                                                                                                                                 |
+| -------------------------------------------------------------------------------------------- | ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cargo test --workspace`                                                                     | 0    | 494 passed / 0 failed / 20 ignored（D11 后重跑；此前 397 / 14）                                                                                                      |
+| `cargo test -p refyard-host --test ssh_exec -- --ignored --test-threads=1`（fixture 已启动） | 0    | 14 passed                                                                                                                                                            |
+| `cargo test`（`apps/desktop/src-tauri`，独立 workspace）                                     | 0    | 24 passed（新增 D11 写入与 journal 用例）                                                                                                                            |
+| `cargo clippy --workspace --all-targets -- -D warnings` / `cargo fmt --all -- --check`       | 0    | 无输出                                                                                                                                                               |
+| `pnpm check`                                                                                 | 0    | 11 tasks 通过，根 `tsc` 干净，svelte-check 0 error 0 warning                                                                                                         |
+| `pnpm test:unit`                                                                             | 0    | 47 files / 428 tests passed                                                                                                                                          |
+| `pnpm test:integration`                                                                      | 0    | 32 files / 418 tests passed                                                                                                                                          |
+| `pnpm check:boundaries` / `pnpm check:contract`                                              | 0    | 3 portable 包无 host 依赖；500 个 schema `$ref` 全部解析                                                                                                             |
+| `pnpm exec playwright test --project=chromium`                                               | 0    | 56 passed（首次运行 55 passed / 1 failed 的竞态已定位并修复，见 B 记录）                                                                                             |
+| `pnpm exec playwright test tests/e2e/ssh-repository-launcher.spec.ts`                        | 0    | 15 passed（chromium + firefox + webkit）                                                                                                                             |
+| `cargo test -p refyard-http`                                                                 | 0    | 22 unit + 10 gate passed（gate 走真实 socket + fixture 仓库）                                                                                                        |
+| `pnpm exec vitest run tests/native`                                                          | 0    | 44 passed（security 10 + contract 24 + helper；release binary 驱动）                                                                                                 |
+| `cargo build -p refyard-native --release`                                                    | 0    | 4304496 bytes（≤20 MiB 预算）                                                                                                                                        |
+| `pnpm desktop:build`                                                                         | 0    | `Refyard.app`，12 MiB installed                                                                                                                                      |
+| **D13 轮追加：**                                                                             |      |                                                                                                                                                                      |
+| `cargo test --workspace`（D13 后重跑）                                                       | 0    | 537 passed / 0 failed / 20 ignored（含 journal 种子新用例）                                                                                                          |
+| `cargo test`（`apps/desktop/src-tauri`）                                                     | 0    | 25 passed / 0 failed / 1 ignored                                                                                                                                     |
+| `pnpm exec vitest run tests/native`                                                          | 0    | 46 passed（新增 http-shutdown：SIGKILL 未知结果 + SIGTERM 优雅关闭）                                                                                                 |
+| `pnpm native:verify`                                                                         | 0    | .app 12.6 MiB / CLI 4.16 MiB，系统链接，无 JS runtime（≤30/≤20 MiB 预算）                                                                                            |
+| `pnpm native:bench`                                                                          | 0    | ready 52ms · first status 44–49ms · history 144–154ms · idle RSS ~4.5MB · 工作后 4592 kB（`docs/evidence/native-runtime.json`）                                      |
+| **D12 补齐轮追加：**                                                                         |      |                                                                                                                                                                      |
+| `cargo test -p refyard-http`                                                                 | 0    | 22 unit + 10 gate + 2 two-boundaries passed                                                                                                                          |
+| `pnpm exec vitest run tests/native`                                                          | 0    | 49 passed（新增 http-events：线上 SSE 3 例）                                                                                                                         |
+| **D11 收尾（E13 面板）轮追加：**                                                             |      |                                                                                                                                                                      |
+| `pnpm test:e2e`（全引擎）                                                                    | 1    | 170 passed / 2 skipped（webkit 注明原因）/ 2 failed——失败为 context-menu.spec firefox+webkit，已在未含本改动的提交树上复现（stash 后 bundle 重跑仍失败），属既有问题 |
+| `pnpm exec playwright test tests/e2e/uncertain-outcome.spec.ts --project=chromium`           | 0    | 2 passed                                                                                                                                                             |
+| `pnpm exec playwright test tests/e2e/uncertain-outcome.spec.ts --project=firefox`            | 0    | 2 passed                                                                                                                                                             |
+| `pnpm desktop:build`（含面板重建）                                                           | 0    | `Refyard.app` b3eb30a2…，12.6 MiB；`native:verify` 仍绿                                                                                                              |
+| **D14 收官轮：**                                                                             |      |                                                                                                                                                                      |
+| `pnpm build`                                                                                 | 0    | 全 workspace 构建                                                                                                                                                    |
+| `pnpm exec playwright test --project=chromium`                                               | 0    | 58 passed（56 + uncertain-outcome 2）                                                                                                                                |
 
 ### 9.4 未测行及原因
 
 - **B01–B04、B06–B09**：这些行由既有测试与本次改动共同覆盖（native ready 无 bearer、DTO 错误拒绝、exactly once、迟到响应、订阅竞态、事件隔离、dispose、feature gating），但本轮没有把每一项单独作为 case 记录，因此不标 PASS。
 - **C 节（C03–C06、C08、C10、C12–C14）**：D07 记录了对真实 29 个别名的比对与 include/通配符处理的实测（`docs/evidence/native-desktop-ssh/ssh-config-discovery.md`），但本节尚未逐行归档。
 - **D 节剩余行**：D04 需要写入路径（D11）；D06/D09 需要 unborn/detached/bare/worktree fixture；D07 需要分页压力用例；D08 需要 binary/超大 fixture；D10（连接丢失）需要 UI 断线用例；D11（非 POSIX 远端 shell）没有对应 fixture；D12（SSH 复用/不影响用户既有连接）需要与用户终端并存测量；D14（凭据生态）需要真实 1Password/key agent。
-- **E、F 两节**：写入与 native HTTP 入口都还不存在（D11/D12）。
-- **第 5 节全部预算**：尚未测量，没有任何数字被写进本文件以外的结论。
+- **E、F 两节**（本节为 D11/D12 之前的轮次记录；两节现状见 9.5–9.10）：E01–E05、E07、E10、E13、E16 与 F01–F08 已测，其余行见下方各节。
+- **第 5 节预算**（本节为早期记录；app/CLI 字节、压缩体积、延迟与 RSS 已于 9.9 测量，其余预算项仍未测）。
 
 ### 9.5 D11 结果（E 节最小写入闭环，2026-09-18）
 
@@ -364,17 +368,17 @@ Next executable task: D14（E13 UI 入口仍按 9.8 记录为未完成）
 commit」，随后用服务器/本机自己的 `git` 读回。完整过程、argv 采样与关闭检查见
 `docs/evidence/native-desktop-ssh/c-local-and-ssh-writes.md`。
 
-| ID  | 结果    | 证据                                                                                                                                                                             |
-| --- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| E01 | PASS    | 只选中的路径进入 index：`A. c.txt`，其余不变；本地与远端同流程；`ssh_mutations.rs`、`session_owner.rs` 覆盖单文件与批量                                                          |
-| E02 | PASS    | staged diff 由同一 status/diff 读取给出；窗口显示 `Staged Files 1 · A. c.txt` 并与 `git diff --cached --name-only` 一致                                                            |
-| E03 | PASS    | unstage 走 `git restore --staged --pathspec-from-file=- --pathspec-file-nul`（argv 实测），窗口提示 `unstaged 1 path (working tree untouched)`，工作文件内容未变                    |
-| E04 | PASS    | unborn 分支 unstage 由 `ssh_mutations.rs` 用例覆盖（不退回 `git restore`，不删工作文件）                                                                                          |
-| E05 | PASS    | 远端 `git log` 显示 app 提交的同一 OID（`459b43f9…`），作者/提交者是容器自身身份；本地为 `5314383a…`；commit 不自动 stage                                                          |
-| E07 | PASS    | preview 绑定内容指纹，内容变动即 `StalePreview` 拒绝（D10 用例 + 桌面命令层）                                                                                                    |
-| E10 | PASS    | 同 clientRequestId + 同 payload 返回 `duplicate` 与原记录，不重复写入；桌面用例断言 Git 侧无第二次写入                                                                            |
+| ID  | 结果    | 证据                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| --- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| E01 | PASS    | 只选中的路径进入 index：`A. c.txt`，其余不变；本地与远端同流程；`ssh_mutations.rs`、`session_owner.rs` 覆盖单文件与批量                                                                                                                                                                                                                                                                                                               |
+| E02 | PASS    | staged diff 由同一 status/diff 读取给出；窗口显示 `Staged Files 1 · A. c.txt` 并与 `git diff --cached --name-only` 一致                                                                                                                                                                                                                                                                                                               |
+| E03 | PASS    | unstage 走 `git restore --staged --pathspec-from-file=- --pathspec-file-nul`（argv 实测），窗口提示 `unstaged 1 path (working tree untouched)`，工作文件内容未变                                                                                                                                                                                                                                                                      |
+| E04 | PASS    | unborn 分支 unstage 由 `ssh_mutations.rs` 用例覆盖（不退回 `git restore`，不删工作文件）                                                                                                                                                                                                                                                                                                                                              |
+| E05 | PASS    | 远端 `git log` 显示 app 提交的同一 OID（`459b43f9…`），作者/提交者是容器自身身份；本地为 `5314383a…`；commit 不自动 stage                                                                                                                                                                                                                                                                                                             |
+| E07 | PASS    | preview 绑定内容指纹，内容变动即 `StalePreview` 拒绝（D10 用例 + 桌面命令层）                                                                                                                                                                                                                                                                                                                                                         |
+| E10 | PASS    | 同 clientRequestId + 同 payload 返回 `duplicate` 与原记录，不重复写入；桌面用例断言 Git 侧无第二次写入                                                                                                                                                                                                                                                                                                                                |
 | E13 | PASS    | 被阻塞仓库的解除入口已落地：`UncertainOutcomePanel`（git-ui，纯 props）+ 控制器 ack 流（读新快照 → `confirmed: true` → 记录保持 `unknown`，若被改写则报错不信任）；e2e 真浏览器点击验证面板出现、勾选前按钮禁用、ack 请求体、解除后真正可写（chromium/firefox；webkit 因拦截限制跳过并注明）。Tauri 命令层由 `session_owner.rs` 覆盖；窗口内人工点击未自动化（WKWebView 无 WebDriver），证据链为共享 UI 组件的 e2e + Tauri 命令层测试 |
-| E16 | PARTIAL | 本地与远端共用同一 planner/effect/队列代码路径，并各自被真实 Git 验证；但 E06/E11/E12/E14 未在两种 provider 上逐一实测，故不标 PASS                                                  |
+| E16 | PARTIAL | 本地与远端共用同一 planner/effect/队列代码路径，并各自被真实 Git 验证；但 E06/E11/E12/E14 未在两种 provider 上逐一实测，故不标 PASS                                                                                                                                                                                                                                                                                                   |
 
 其余 E 行未测，原因见 9.4。
 
@@ -384,16 +388,16 @@ commit」，随后用服务器/本机自己的 `git` 读回。完整过程、arg
 `ApplicationService` 经 Tauri 与 HTTP 两个边界服务。完整测量与逐条证据见
 `docs/evidence/native-desktop-ssh/d-native-http-entry.md`。
 
-| ID  | 结果    | 证据                                                                                                                               |
-| --- | ------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| F01 | PASS    | 所有读取需 bearer（含 capabilities）：无票据 401，`http_gate.rs` + `http-security.test.ts`                                        |
-| F02 | PASS    | Host/Origin 精确匹配；`attacker.example`/外源 Origin/`null` 均 403 且先于鉴权；无通配 CORS；线上由 `node:http` 设 Host 验证        |
-| F03 | PASS    | 票据单次（二次 401，Rust+线上）、60s TTL、超量/过期清理（Rust 单测）、常量时间比较、绑定 origin+instance（错配即焚）                |
-| F04 | PASS    | 未知 `/api` 路径：先鉴权后 JSON 404，绝不回退 SPA（Rust+线上）；缺失 asset 同为 JSON 404；shell 仅给 route 形路径                  |
-| F05 | PASS    | 线上 SSE：真实 socket 订阅 release binary，写入时帧序列 `id`/`event`/`data` 单调且过 `eventEnvelopeSchema`，`retry: 3000` 在重放后、首 tick keep-alive 注释帧被忽略；`?since=0` 重放游标之后全部事件、游标处无重放（`tests/native/http-events.test.ts` 3 passed） |
-| F06 | PASS    | 仓库级授权：第二会话读第一会话的仓库 403（Rust）；线上未授权 id 403；target 级由 host 拒绝（`createTarget` 无 HTTP 路由，默认关）   |
-| F07 | PASS    | 并排比较（`crates/refyard-http/tests/two_boundaries.rs`）：同一 fixture 六个读取（capabilities/repositories/status/history/refs/diff）HTTP JSON 与 service 直答完全一致（仅差每次调用自带的 `readAt`/`snapshotId`）；线上提交的 operation 在 service journal 视图中逐字段相同；direct 边界接受同一请求类型 |
-| F08 | PASS    | SSH host 列表无 HTTP 路由（默认关；D13 决定继续不加路由，见 9.9 末行）；网页不接触本机密钥；票据仅 loopback                        |
+| ID  | 结果 | 证据                                                                                                                                                                                                                                                                                                       |
+| --- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F01 | PASS | 所有读取需 bearer（含 capabilities）：无票据 401，`http_gate.rs` + `http-security.test.ts`                                                                                                                                                                                                                 |
+| F02 | PASS | Host/Origin 精确匹配；`attacker.example`/外源 Origin/`null` 均 403 且先于鉴权；无通配 CORS；线上由 `node:http` 设 Host 验证                                                                                                                                                                                |
+| F03 | PASS | 票据单次（二次 401，Rust+线上）、60s TTL、超量/过期清理（Rust 单测）、常量时间比较、绑定 origin+instance（错配即焚）                                                                                                                                                                                       |
+| F04 | PASS | 未知 `/api` 路径：先鉴权后 JSON 404，绝不回退 SPA（Rust+线上）；缺失 asset 同为 JSON 404；shell 仅给 route 形路径                                                                                                                                                                                          |
+| F05 | PASS | 线上 SSE：真实 socket 订阅 release binary，写入时帧序列 `id`/`event`/`data` 单调且过 `eventEnvelopeSchema`，`retry: 3000` 在重放后、首 tick keep-alive 注释帧被忽略；`?since=0` 重放游标之后全部事件、游标处无重放（`tests/native/http-events.test.ts` 3 passed）                                          |
+| F06 | PASS | 仓库级授权：第二会话读第一会话的仓库 403（Rust）；线上未授权 id 403；target 级由 host 拒绝（`createTarget` 无 HTTP 路由，默认关）                                                                                                                                                                          |
+| F07 | PASS | 并排比较（`crates/refyard-http/tests/two_boundaries.rs`）：同一 fixture 六个读取（capabilities/repositories/status/history/refs/diff）HTTP JSON 与 service 直答完全一致（仅差每次调用自带的 `readAt`/`snapshotId`）；线上提交的 operation 在 service journal 视图中逐字段相同；direct 边界接受同一请求类型 |
+| F08 | PASS | SSH host 列表无 HTTP 路由（默认关；D13 决定继续不加路由，见 9.9 末行）；网页不接触本机密钥；票据仅 loopback                                                                                                                                                                                                |
 
 ### 9.7 D12 未完成项（不得当作已实现）
 
@@ -426,20 +430,20 @@ commit」，随后用服务器/本机自己的 `git` 读回。完整过程、arg
 完整测量与逐条证据见 `docs/evidence/native-desktop-ssh/e-native-artifacts-shutdown.md`；
 原始运行数据在 `docs/evidence/native-runtime.json`。
 
-| 项 | 结果 | 证据 |
-| --- | --- | --- |
-| 打包扫描 | PASS | `pnpm native:verify`：.app 12.6 MiB（≤30 MiB）、CLI 4.16 MiB（≤20 MiB），Mach-O 按 magic 识别、`otool -L` 仅系统库、内嵌前端按引擎 marker 扫描且不误报 Svelte 产物 |
-| 压缩体积 | PASS | `ditto -c -k` zip 3,585,815 bytes（非签名分发产物，仅作对比数字） |
-| minimal PATH 启动 | PASS | bench 以仅含 git/ssh 的 PATH 三次启动 release CLI；无任何 JS runtime 可达 |
-| 缺 git | PASS | `doctor` 退出 2 并打印诊断；`serve` 退出 2 `git was not found on PATH`——诊断而非白屏 |
-| 缺 ssh（有 git） | PASS | `doctor` 退出 0：七个读取与三个操作全部列出，仅 ssh 目标被拒——缺 ssh 只禁用 ssh |
-| 断网 | NOT RUN | 需要切断本机网络接口，本轮未做；127.0.0.1 绑定与本地仓库不经过网络是构造性说明，不是测量 |
-| 启动/读取延迟与内存 | PASS | ready 52ms、first status 44–49ms、history 144–154ms、idle RSS ~4.5MB、status+diff 后 4592 kB；App 注册 66ms（window-ready 未脚本化）；无 PSS/总量虚构，CLI 无 WebView 故无共享页重复计数 |
-| SIGKILL 中途写 | PASS | release binary 被杀后重启：操作 `unknown`、仓库写被拒、三步 ack（400/404/200 且不改写 unknown）、此后写 202；暴露并修复重启后 `op_1` 撞号的种子 bug（`next_operation_seed` + 单测） |
-| SIGTERM 优雅关闭 | PASS | 退出码 0；停机期间端口拒绝连接；重启后已完成操作仍 `succeeded`（优雅关闭绝不把完成改写为 unknown）、无需 ack 即可继续写 |
-| SSH 子进程清理（关机时） | NOT RUN | 关闭用例为本地仓库，无 SSH 子进程可清理；不标 PASS |
-| 读取消除（关机时） | NOT RUN | 优雅排水内没有可观测的进行中读；不标 PASS |
-| SSH host 列表 HTTP 路由 | 决定：保持关闭 | D13 未添加任何 host 列表路由；F08 的「待 D13 决定」以维持默认关告终 |
+| 项                       | 结果           | 证据                                                                                                                                                                                     |
+| ------------------------ | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 打包扫描                 | PASS           | `pnpm native:verify`：.app 12.6 MiB（≤30 MiB）、CLI 4.16 MiB（≤20 MiB），Mach-O 按 magic 识别、`otool -L` 仅系统库、内嵌前端按引擎 marker 扫描且不误报 Svelte 产物                       |
+| 压缩体积                 | PASS           | `ditto -c -k` zip 3,585,815 bytes（非签名分发产物，仅作对比数字）                                                                                                                        |
+| minimal PATH 启动        | PASS           | bench 以仅含 git/ssh 的 PATH 三次启动 release CLI；无任何 JS runtime 可达                                                                                                                |
+| 缺 git                   | PASS           | `doctor` 退出 2 并打印诊断；`serve` 退出 2 `git was not found on PATH`——诊断而非白屏                                                                                                     |
+| 缺 ssh（有 git）         | PASS           | `doctor` 退出 0：七个读取与三个操作全部列出，仅 ssh 目标被拒——缺 ssh 只禁用 ssh                                                                                                          |
+| 断网                     | NOT RUN        | 需要切断本机网络接口，本轮未做；127.0.0.1 绑定与本地仓库不经过网络是构造性说明，不是测量                                                                                                 |
+| 启动/读取延迟与内存      | PASS           | ready 52ms、first status 44–49ms、history 144–154ms、idle RSS ~4.5MB、status+diff 后 4592 kB；App 注册 66ms（window-ready 未脚本化）；无 PSS/总量虚构，CLI 无 WebView 故无共享页重复计数 |
+| SIGKILL 中途写           | PASS           | release binary 被杀后重启：操作 `unknown`、仓库写被拒、三步 ack（400/404/200 且不改写 unknown）、此后写 202；暴露并修复重启后 `op_1` 撞号的种子 bug（`next_operation_seed` + 单测）      |
+| SIGTERM 优雅关闭         | PASS           | 退出码 0；停机期间端口拒绝连接；重启后已完成操作仍 `succeeded`（优雅关闭绝不把完成改写为 unknown）、无需 ack 即可继续写                                                                  |
+| SSH 子进程清理（关机时） | NOT RUN        | 关闭用例为本地仓库，无 SSH 子进程可清理；不标 PASS                                                                                                                                       |
+| 读取消除（关机时）       | NOT RUN        | 优雅排水内没有可观测的进行中读；不标 PASS                                                                                                                                                |
+| SSH host 列表 HTTP 路由  | 决定：保持关闭 | D13 未添加任何 host 列表路由；F08 的「待 D13 决定」以维持默认关告终                                                                                                                      |
 
 ### 9.10 D11 收尾结果（E13 阻塞解除面板，2026-09-18）
 
@@ -451,7 +455,7 @@ commit」，随后用服务器/本机自己的 `git` 读回。完整过程、arg
 InternalError 拒绝（绝不信任改写）→ 成功后清面板并刷新读取。写成功也会清除面板。
 
 配套客户端修正：`packages/backend-http` 的 `acknowledgeUncertainOperation` 不再以 host
-extension 探测为前置——ack 是 *service* 路由，native HTTP 边界有该路由而没有 host 路由；
+extension 探测为前置——ack 是 _service_ 路由，native HTTP 边界有该路由而没有 host 路由；
 先探测 host 能力会在最需要 ack 的服务上错误地拒绝它。没有该路由的服务（旧 Node 服务）由
 其自身的 JSON 404 拒绝，仍然诚实。
 

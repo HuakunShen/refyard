@@ -1,6 +1,6 @@
 # Native desktop + SSH — implementation status
 
-Written 2026-09-18 at commit `d9f1dd1`, in the worktree
+Updated 2026-09-18 through the D-track's end (D11–D14), in the worktree
 `/Volumes/Portable2TB/ExtDev/refyard-native-desktop-ssh` on branch `feat/native-desktop-ssh`.
 This is a handoff, not a completion notice: it says what was measured, on which machine, and
 what the next executable steps are. Where something was not run, it says so instead of
@@ -8,15 +8,15 @@ implying it.
 
 ## 1. Where things are
 
-| | |
-| --- | --- |
-| Worktree | `/Volumes/Portable2TB/ExtDev/refyard-native-desktop-ssh` (branch `feat/native-desktop-ssh`) |
-| Commits | `73a1ff0` → `88832cb` → `004539c` → `761a83c` → `93ee1e0` → `a6a3346` (D11) → `d9f1dd1` (CLI) |
-| Desktop app | `apps/desktop/src-tauri/target/release/bundle/macos/Refyard.app` · executable sha256 `df903851b7143f68867e4165407ccf9ce15e7fe274f9bcce7b7cd707ec614860` · 12869856 bytes · 12.6 MiB installed · unsigned |
-| Native CLI | `target/release/refyard-native` · sha256 `21c1a23aae6a82c4c6fc97458d9e9b677a0eedd0691c6e2f8563aec7dcdade03` · 4304496 bytes (with the HTTP entry; the doctor-only build was 1525712) |
-| SSH fixture | `pnpm native:ssh:fixture -- start\|stop\|status`; state in `target/native-ssh-fixture/state.json`; container `refyard-native-ssh-fixture`, alias `refyard-ssh-fixture` |
-| Evidence | `docs/evidence/native-desktop-ssh/{a-local-app,b-remote-repository,c-local-and-ssh-writes,ssh-config-discovery}.md` |
-| Acceptance | `docs/acceptance/2026-09-18-native-desktop-ssh.md` (§9 is the incremental record) |
+|             |                                                                                                                                                                                                           |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Worktree    | `/Volumes/Portable2TB/ExtDev/refyard-native-desktop-ssh` (branch `feat/native-desktop-ssh`)                                                                                                               |
+| Commits     | … → `a6a3346` (D11) → `d9f1dd1` → `a1659b9` (D12) → `2b4bf2b` (D13) → `4df521b` (F05/F07) → `f725796` (E13 panel) → this update (D14)                                                                     |
+| Desktop app | `apps/desktop/src-tauri/target/release/bundle/macos/Refyard.app` · executable sha256 `b3eb30a2104bc079ed2381dc5c6dfbdc62b171bd22407b7af2eaae696d986b99` · 12870336 bytes · 12.6 MiB installed · unsigned  |
+| Native CLI  | `target/release/refyard-native` · sha256 `27b5a6b6c462ea7bc498f9f5e5aba08738af5865a347b76aba20588b9d811fc1` · 4360464 bytes (with the HTTP entry and journal seed fix)                                    |
+| SSH fixture | `pnpm native:ssh:fixture -- start\|stop\|status`; state in `target/native-ssh-fixture/state.json`; container `refyard-native-ssh-fixture`, alias `refyard-ssh-fixture`                                    |
+| Evidence    | `docs/evidence/native-desktop-ssh/{a-local-app,b-remote-repository,c-local-and-ssh-writes,ssh-config-discovery,d-native-http-entry,e-native-artifacts-shutdown}.md` + `docs/evidence/native-runtime.json` |
+| Acceptance  | `docs/acceptance/2026-09-18-native-desktop-ssh.md` (§9 is the incremental record)                                                                                                                         |
 
 Measured on: macOS 26.6 arm64, git 2.50.1 (Apple Git-155), OpenSSH_10.3p1. Remote: Alpine 3.20
 container, git 2.45.4, OpenSSH 9.7p1. Rust 1.98, Node v26.8.2. **No Windows or Linux run has
@@ -24,36 +24,38 @@ been made**, for the app, the CLI, or the fixture.
 
 ## 2. Deliverable status
 
-| | Status | What that means |
-| --- | --- | --- |
-| **A** Local desktop | PASS | Window opens without a terminal or a backend, reads a local repository, no listener, no JS runtime in the process tree. |
-| **B** Agentless SSH reads | PARTIAL | The real App reads a remote repository through the machine's own OpenSSH; credential ecosystem (1Password/agent), remote path browsing and pagination stress are not exercised. |
-| **C** Local + SSH writes | PARTIAL | Stage, unstage and commit run through the window on both providers and are verified by the server's own Git. Hook failure, connection loss, crash/restart and cancel are not exercised in the app; the acknowledgement flow has no UI entry point. |
-| **D** Native CLI / HTTP | PARTIAL | `refyard-native doctor`/`serve`/`open` implemented and measured: ticket→bearer pairing, exact Host/Origin, JSON 404 for unknown `/api`, repository grants, idempotent replays, the built workbench served with a hashed-inline-script CSP. SSE over the wire and a side-by-side two-boundary comparison are not exercised (acceptance 9.6/9.7). Evidence: `d-native-http-entry.md`. |
+|                           | Status  | What that means                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A** Local desktop       | PASS    | Window opens without a terminal or a backend, reads a local repository, no listener, no JS runtime in the process tree.                                                                                                                                                                                                                               |
+| **B** Agentless SSH reads | PARTIAL | The real App reads a remote repository through the machine's own OpenSSH; credential ecosystem (1Password/agent), remote path browsing and pagination stress are not exercised.                                                                                                                                                                       |
+| **C** Local + SSH writes  | PARTIAL | Stage, unstage and commit run through the window on both providers and are verified by the server's own Git. The uncertain-outcome acknowledgement panel exists and is e2e-proven (acceptance 9.5/9.10). Hook failure, connection loss, in-app crash/restart and cancel are not exercised in the window.                                              |
+| **D** Native CLI / HTTP   | PARTIAL | All F01–F08 rows PASS: the wire-level SSE suite and the two-boundary differential closed F05/F07; F-rows evidence in `d-native-http-entry.md` + `two_boundaries.rs` + `http-events.test.ts`. Still PARTIAL as a deliverable because the hosted form is refused by construction (not implemented) and `/mcp`, `/openapi.json`, `/scalar` do not exist. |
 
 ### What a person can do today with these artifacts
 
 Open `Refyard.app`, choose `This machine` or an SSH host from the launcher, open a repository,
-read history/working copy/diff, stage, unstage, commit, and watch the history update. Run
-`refyard-native doctor` to see what the machine can do. Nothing else: no fetch/pull/push, no
-discard, no stash, no worktree management, no HTTP API, no terminal.
+read history/working copy/diff, stage, unstage, commit, and watch the history update; if a
+previous crash left the repository blocked, the panel explains it and lifts the block after an
+explicit confirmation. Run `refyard-native doctor`, or `serve`/`open` for the same workbench
+over loopback HTTP with the browser clients. Nothing else: no fetch/pull/push, no discard, no
+stash, no worktree management, no hosted form, no MCP/OpenAPI surface.
 
 ### Gates actually run (this workstream, as of D12 leftovers + D13, 2026-09-18)
 
-| Command | Exit | Result |
-| --- | --- | --- |
-| `cargo test --workspace` | 0 | 539 passed / 0 failed / 20 ignored |
-| `cargo test` in `apps/desktop/src-tauri` | 0 | 25 passed / 0 failed / 1 ignored |
-| `cargo test -p refyard-http` | 0 | 22 unit + 10 gate + 2 two-boundaries passed |
-| `pnpm exec vitest run tests/native` | 0 | 49 passed (release binary driven) |
-| `cargo clippy --workspace --all-targets -- -D warnings` | 0 | clean |
-| `cargo fmt --all -- --check` | 0 | clean |
-| `pnpm native:verify` | 0 | app 12.6 MiB / CLI 4.16 MiB, system links only, no JS runtime |
-| `pnpm native:bench` | 0 | ready 52ms, first status 44–49ms, history 144–154ms, idle RSS ~4.5MB (`docs/evidence/native-runtime.json`) |
-| `cargo test -p refyard-host --test ssh_exec -- --ignored` (fixture up) | 0 | 14 passed (as of D11; not rerun since) |
-| `pnpm desktop:build` | 0 | `Refyard.app`, 12.6 MiB installed (as of D11; app unchanged since) |
-| `pnpm check` / `test:unit` / `test:integration` / `check:boundaries` / `check:contract` | 0 | 428 unit, 418 integration, 500 schema refs resolved — last full JS-suite pass D12; D13 added `tests/native` files only |
-| `pnpm exec playwright test --project=chromium` | 0 | 56 passed — measured before D11 |
+| Command                                                                                 | Exit | Result                                                                                                                 |
+| --------------------------------------------------------------------------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------- |
+| `cargo test --workspace`                                                                | 0    | 539 passed / 0 failed / 20 ignored                                                                                     |
+| `cargo test` in `apps/desktop/src-tauri`                                                | 0    | 25 passed / 0 failed / 1 ignored                                                                                       |
+| `cargo test -p refyard-http`                                                            | 0    | 22 unit + 10 gate + 2 two-boundaries passed                                                                            |
+| `pnpm exec vitest run tests/native`                                                     | 0    | 49 passed (release binary driven)                                                                                      |
+| `cargo clippy --workspace --all-targets -- -D warnings`                                 | 0    | clean                                                                                                                  |
+| `cargo fmt --all -- --check`                                                            | 0    | clean                                                                                                                  |
+| `pnpm native:verify`                                                                    | 0    | app 12.6 MiB / CLI 4.16 MiB, system links only, no JS runtime                                                          |
+| `pnpm native:bench`                                                                     | 0    | ready 52ms, first status 44–49ms, history 144–154ms, idle RSS ~4.5MB (`docs/evidence/native-runtime.json`)             |
+| `cargo test -p refyard-host --test ssh_exec -- --ignored` (fixture up)                  | 0    | 14 passed (as of D11; not rerun since)                                                                                 |
+| `pnpm desktop:build`                                                                    | 0    | `Refyard.app`, 12.6 MiB installed (as of D11; app unchanged since)                                                     |
+| `pnpm check` / `test:unit` / `test:integration` / `check:boundaries` / `check:contract` | 0    | 428 unit, 418 integration, 500 schema refs resolved — last full JS-suite pass D12; D13 added `tests/native` files only |
+| `pnpm exec playwright test --project=chromium`                                          | 0    | 56 passed — measured before D11                                                                                        |
 
 ## 3. Remaining executable steps
 
@@ -93,13 +95,14 @@ and read cancellation at shutdown — named in the remaining-tasks file §2.
   with a window label; that is what D11 used, and it is why the E rows are marked PARTIAL
   rather than PASS.
 
-### 3.4 D14 tail
+### 3.4 D14 — closing the round
 
-- The acceptance matrix's F rows (F01–F08, the native HTTP entry) need D12 to exist.
-- `README.md` and `docs/installation.md` still describe the Node CLI only; neither mentions
-  `Refyard.app` or `refyard-native`.
-- The full existing suite should be re-run once at the end (`pnpm check`, `test:unit`,
-  `test:integration`, `test:e2e`, `pnpm build`) in one pass, with the exit codes recorded in §9.
+- `README.md` and `docs/installation.md` now document the native app and `refyard-native`
+  (built from source, macOS arm64 measured; not part of the npm tarball).
+- Full-suite pass recorded in acceptance §9.3: `pnpm check`, `test:unit` (428),
+  `test:integration` (467, including the 49 native vitest), `cargo test --workspace` (539),
+  desktop (25), `pnpm test:e2e` (chromium project clean; firefox+webkit carry two pre-existing
+  context-menu failures reproduced on the committed tree without this round's changes).
 
 ## 4. Known gaps, named
 
