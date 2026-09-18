@@ -1015,3 +1015,100 @@ async fn a_target_whose_probe_fails_is_answered_unavailable_with_its_reason() {
     assert_eq!(refused.code, ProblemCode::Unavailable);
     assert!(refused.message.contains("probe-fails"));
 }
+
+#[tokio::test]
+#[ignore = "requires the docker fixture: pnpm native:ssh:fixture -- start"]
+async fn a_preview_of_a_remote_path_reads_the_far_sides_bytes() {
+    let Some(fixture) = Fixture::load_or_skip() else {
+        return;
+    };
+    let service = fixture_service(&fixture);
+    let hosts = service
+        .ssh_hosts()
+        .await
+        .expect("the fixture config listing");
+    let candidate = hosts
+        .hosts
+        .iter()
+        .find(|candidate| candidate.alias == fixture.alias)
+        .expect("the fixture alias");
+    let target = service
+        .create_target(CreateTargetRequest::SshConfig {
+            host_id: candidate.host_id.clone(),
+        })
+        .await
+        .expect("target created");
+    assert_eq!(target.state, ExecutionTargetState::Ready);
+
+    let registered = service
+        .register_repository_on(&fixture.repo_path, Some(&target.target_id))
+        .await
+        .expect("the remote repository opens");
+    let repository_id = registered
+        .repositories
+        .first()
+        .expect("one repository")
+        .repository_id
+        .clone();
+
+    let status = service
+        .status(&StatusQuery::new(&repository_id))
+        .await
+        .expect("remote status");
+    let entry = status
+        .entries
+        .iter()
+        .find(|entry| entry.display_path == "a.txt")
+        .expect("the fixture's modified file is reported");
+
+    // The local *copy* of the same repository is made to disagree with the far side. If the
+    // host read this machine's file, the size below would be the size this test just wrote;
+    // a preview of a remote path that consulted the local filesystem would show the wrong
+    // machine's bytes and no test of the transport would catch it.
+    let local_path = fixture.local_repo_path.join("a.txt");
+    let original = std::fs::read(&local_path).expect("the local copy is there");
+    std::fs::write(&local_path, vec![b'x'; original.len() + 64]).expect("the local copy diverges");
+
+    let previews = service
+        .previews(&refyard_contract::reads::PreviewsRequest {
+            repository_id: repository_id.clone(),
+            worktree_id: status.worktree_id.clone(),
+            path_ids: vec![entry.path_id.clone()],
+        })
+        .await;
+    std::fs::write(&local_path, &original).expect("the local copy is restored");
+
+    let previews = previews.expect("the remote path is previewable");
+    let token = previews.tokens.first().expect("one token");
+    assert_eq!(token.path_id, entry.path_id);
+    assert_eq!(
+        token.size_bytes,
+        Some(original.len() as u64),
+        "the size is the far side's, not this machine's copy the test just grew"
+    );
+    assert_eq!(
+        token.content_kind,
+        refyard_contract::reads::ContentKind::Text
+    );
+    assert!(token.preview_token.starts_with("pt_"));
+    assert!(
+        previews.snapshot_id.starts_with("snap_"),
+        "a preview names the state it was taken against"
+    );
+
+    // The bytes are read on the far side, so a path that only exists here cannot be
+    // previewed: the id has to have been minted for this repository.
+    let invented = service
+        .previews(&refyard_contract::reads::PreviewsRequest {
+            repository_id,
+            worktree_id: status.worktree_id,
+            path_ids: vec!["path_never_minted".to_string()],
+        })
+        .await;
+    assert_eq!(
+        invented
+            .expect_err("an unminted path id is not a path")
+            .code,
+        ProblemCode::NotFound
+    );
+}

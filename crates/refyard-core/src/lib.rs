@@ -12,6 +12,7 @@ pub mod bytes;
 pub mod outcome;
 pub mod parse;
 pub mod plan;
+pub mod preconditions;
 pub mod problem;
 
 pub use bytes::{decode_ascii, is_object_name, split_nul_frames, FrameReader};

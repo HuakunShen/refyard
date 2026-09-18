@@ -197,6 +197,27 @@ impl PathRegistry {
         state.bytes_by_id.get(path_id).cloned()
     }
 
+    /// The bytes an id was bound to *in this worktree* on this build of the target.
+    ///
+    /// The worktree is part of the binding because an id from one worktree must never
+    /// address a file in another, even when the bytes are identical. A read that acts on a
+    /// path — a preview, a file read, a write — resolves through this method, so an id
+    /// minted elsewhere is refused rather than followed.
+    pub fn resolve_in(
+        &self,
+        worktree_id: &str,
+        target_generation: &str,
+        path_id: &str,
+    ) -> Option<Vec<u8>> {
+        let bytes = self.resolve(target_generation, path_id)?;
+        let state = self.inner.lock().expect("path registry lock");
+        let expected = binding_key(worktree_id, &bytes);
+        if state.id_by_key.get(&expected).map(String::as_str) != Some(path_id) {
+            return None;
+        }
+        Some(bytes)
+    }
+
     /// The bytes an id was bound to, whichever build minted it.
     ///
     /// Exposed for the fixture driver, which resolves a display path to an id the way a
@@ -288,6 +309,15 @@ mod tests {
             registry.resolve("gen_1", &first).as_deref(),
             Some(&b"a.txt"[..])
         );
+        // And the worktree-aware lookup, which is what a read that acts on the path uses,
+        // refuses the id in the other worktree even though the bytes are the same.
+        assert_eq!(
+            registry.resolve_in("wt_1", "gen_1", &first).as_deref(),
+            Some(&b"a.txt"[..])
+        );
+        assert_eq!(registry.resolve_in("wt_2", "gen_1", &first), None);
+        assert_eq!(registry.resolve_in("wt_1", "gen_1", &second), None);
+        assert_eq!(registry.resolve_in("wt_1", "gen_2", &first), None);
     }
 
     #[test]

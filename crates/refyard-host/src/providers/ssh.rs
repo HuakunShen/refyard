@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 
 use refyard_contract::problem::Problem;
 use refyard_core::outcome::ExecutionState;
-use refyard_core::plan::GitPlan;
+use refyard_core::plan::{DeadlineClass, GitPlan};
 
 use crate::process::{CancelSignal, RunOutcome};
 use crate::providers::local::{STDERR_DIAGNOSTIC_MAX_BYTES, STRUCTURED_STDOUT_MAX_BYTES};
@@ -181,6 +181,32 @@ impl SshGit {
                 stdout_limit.unwrap_or(STRUCTURED_STDOUT_MAX_BYTES),
                 STDERR_DIAGNOSTIC_MAX_BYTES,
                 cancel,
+            )
+            .await
+    }
+
+    /// Runs one fixed remote command string with a caller-supplied output bound.
+    ///
+    /// The Git provider only ever runs planned Git commands. This is the one seam the
+    /// remote *file* reader needs, and it exists so that reader does not have to reach
+    /// into the connection: the command has already been built from a fixed template with
+    /// every value single-quote encoded, and nothing here accepts a command from a
+    /// renderer. The stdout bound is a parameter because a file read and a Git read
+    /// buffer different amounts, and a bound the caller states is the one it can enforce.
+    pub async fn run_raw_command(
+        &self,
+        remote_command: &str,
+        stdout_limit: usize,
+        stderr_limit: usize,
+    ) -> RunOutcome {
+        self.connection
+            .run(
+                remote_command,
+                Vec::new(),
+                attempt_deadline(DeadlineClass::Read),
+                stdout_limit,
+                stderr_limit,
+                None,
             )
             .await
     }

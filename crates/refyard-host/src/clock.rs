@@ -8,13 +8,20 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// The current instant as `YYYY-MM-DDTHH:MM:SS.mmmZ`.
-pub fn now_iso8601() -> String {
-    let millis = SystemTime::now()
+/// The current instant as milliseconds since the Unix epoch.
+///
+/// The same clock the ISO-8601 formatting is built on, so a journal timestamp and a
+/// preview's expiry cannot come from two different ideas of "now".
+pub fn now_millis() -> i64 {
+    SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis() as i64)
-        .unwrap_or(0);
-    format_iso8601_millis(millis)
+        .unwrap_or(0)
+}
+
+/// The current instant as `YYYY-MM-DDTHH:MM:SS.mmmZ`.
+pub fn now_iso8601() -> String {
+    format_iso8601_millis(now_millis())
 }
 
 /// Formats a Unix timestamp in milliseconds, truncating toward the past.

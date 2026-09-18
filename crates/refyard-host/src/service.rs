@@ -22,6 +22,7 @@
 //! `rev-parse --show-object-format` during registration, never assumed.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::Mutex;
 
 use refyard_contract::diff::{DiffKind, DiffQuery, DiffResponse};
@@ -29,14 +30,23 @@ use refyard_contract::history::{HistoryPage, HistoryQuery};
 use refyard_contract::host::{ExecutionTargetKind, ExecutionTargetState, SshHostList};
 use refyard_contract::problem::{DetailValue, Problem, ProblemCode};
 use refyard_contract::reads::{
-    AllowedRootSummary, CapabilitiesResponse, FilesystemEntriesResponse, GitCapabilities, GitInfo,
-    HeadKind, HeadState, HostInfo, HostKind, ObjectFormat, OperationInProgress, ReadKind,
-    RepositoriesResponse, RepositorySummary, RuntimeLimits, StatusSnapshot, UnavailableReason,
-    MUTATION_KINDS,
+    AllowedRootSummary, CapabilitiesResponse, ContentKind, FilesystemEntriesResponse,
+    FingerprintAlgorithm, GitCapabilities, GitInfo, HeadKind, HeadState, HostInfo, HostKind,
+    MutationKind, MutationTarget, ObjectFormat, OperationCapability, OperationInProgress,
+    OperationRecord, OperationStatus, OperationsListResponse, PathPreviewToken, PreviewsRequest,
+    PreviewsResponse, ReadKind, RepositoriesResponse, RepositorySummary, RuntimeLimits,
+    StatusSnapshot, TargetKind, UnavailableReason, MUTATION_KINDS,
 };
 use refyard_contract::refs::RefsSnapshot;
+use refyard_core::preconditions::{GatheredRefusal, PreconditionContext};
 
-use crate::clock::now_iso8601;
+use crate::clock::{format_iso8601_millis, now_iso8601, now_millis};
+use crate::files::preview::{PreviewCheck, PreviewClaim, PreviewStore};
+use crate::files::PREVIEW_MAX_BYTES;
+use crate::files::{self, FileRead};
+use crate::jobs::journal::Journal;
+use crate::jobs::recovery::Recovery;
+use crate::jobs::{MutationEngine, MutationRequest, PreconditionSource, SubmitResult};
 use crate::paths::{base36, PathRegistry};
 use crate::providers::local::LocalGit;
 use crate::providers::ssh::SshGit;
@@ -126,6 +136,20 @@ impl StatusQuery {
     }
 }
 
+/// One preview submission: the paths a caller selected, and the tokens it was given for
+/// them.
+///
+/// The two lists are parallel and are checked to be the same length: a submission that
+/// named three paths and two tokens would otherwise have one path checked against the
+/// wrong token, and the whole point of a token is that it names what it was issued for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreviewSubmission {
+    pub repository_id: String,
+    pub worktree_id: String,
+    pub path_ids: Vec<String>,
+    pub preview_tokens: Vec<String>,
+}
+
 /// The read half of the application service.
 pub struct ApplicationService {
     /// The local Git executable, kept for the capability answer that describes *this*
@@ -148,6 +172,16 @@ pub struct ApplicationService {
     /// The environment the SSH client runs with, when a caller needs a controlled one.
     /// `None` uses this process's allow-listed environment.
     ssh_environment: Option<Vec<(String, String)>>,
+    /// Content fingerprints issued to a caller, and the store that refuses one whose
+    /// content moved.
+    previews: PreviewStore,
+    /// The durable record of every operation this host accepted.
+    journal: Arc<Journal>,
+    /// The write blocks a restart or an unknown outcome left behind.
+    recovery: Arc<Recovery>,
+    /// The write path. With no effects registered, `submit` refuses every mutation before
+    /// anything is journalled, which is what `capabilities().operations` being empty says.
+    engine: Arc<MutationEngine>,
 }
 
 /// One approved root: the key it is unique by, and the text a client is shown.
@@ -177,6 +211,230 @@ struct RootState {
     roots: Vec<(String, RootKey)>,
 }
 
+/// The most paths one preview request may name, from `LIMITS.pathSelectionMaxEntries`.
+const PATH_SELECTION_MAX_ENTRIES: usize = 1_000;
+
+/// The write-key prefix for an operation that addresses a location rather than a
+/// repository. It cannot collide with `repo:` and it says which kind of resource the key
+/// names without a second field.
+const WORKSPACE_WRITE_KEY_PREFIX: &str = "root:";
+
+/// What a mutation addresses, in the key it serialises and blocks under.
+///
+/// For a repository or worktree target this is the repository's *stable* identity: its
+/// execution target and the path of its worktree as the far side spells it. The client-facing
+/// repository id is deliberately not part of it — that id is minted per process, and a write
+/// block has to be findable again after a restart.
+fn repository_write_key(target_id: &str, record: &RepositoryRecord) -> String {
+    // The design's key is "target + common Git directory". This record's common directory is
+    // whatever the open read resolved; when that is empty — no read fills it in this slice —
+    // the worktree the repository was opened at is the stable identity beside the target.
+    let identity = if record.location.canonical_common_dir.is_empty() {
+        record.location.canonical_worktree.as_str()
+    } else {
+        record.location.canonical_common_dir.as_str()
+    };
+    format!("repo:{target_id}\u{0}{identity}")
+}
+
+/// The target kinds one implemented mutation may address.
+///
+/// Read from the operation rather than assumed for all of them: a stage, an unstage and a
+/// commit address a worktree, and a capability answer that claimed a repository target for
+/// them would promise a request shape the contract does not accept.
+fn operation_targets(kind: MutationKind) -> Vec<TargetKind> {
+    match kind {
+        MutationKind::InitRepository | MutationKind::CloneRepository => vec![TargetKind::Workspace],
+        MutationKind::StagePaths
+        | MutationKind::UnstagePaths
+        | MutationKind::DiscardTrackedPaths
+        | MutationKind::Commit
+        | MutationKind::AmendCommit
+        | MutationKind::SwitchBranch
+        | MutationKind::CreateStash
+        | MutationKind::ApplyStash
+        | MutationKind::PopStash
+        | MutationKind::Merge
+        | MutationKind::ContinueMerge
+        | MutationKind::AbortMerge => vec![TargetKind::Worktree],
+        _ => vec![TargetKind::Repository],
+    }
+}
+
+/// The name an in-progress operation is known by, for the preconditions that compare
+/// against it. The same spelling the contract's `OperationInProgress` publishes.
+fn operation_in_progress_name(operation: OperationInProgress) -> String {
+    match operation {
+        OperationInProgress::Merge => "merge",
+        OperationInProgress::CherryPick => "cherry-pick",
+        OperationInProgress::Revert => "revert",
+        OperationInProgress::Rebase => "rebase",
+        OperationInProgress::Bisect => "bisect",
+        OperationInProgress::ApplyMailbox => "apply-mailbox",
+        OperationInProgress::Unknown => "unknown",
+    }
+    .to_string()
+}
+
+fn operation_status_name(status: refyard_contract::reads::OperationStatus) -> &'static str {
+    use refyard_contract::reads::OperationStatus;
+    match status {
+        OperationStatus::Accepted => "accepted",
+        OperationStatus::Running => "running",
+        OperationStatus::Succeeded => "succeeded",
+        OperationStatus::Failed => "failed",
+        OperationStatus::NeedsAttention => "needsAttention",
+        OperationStatus::Unknown => "unknown",
+        OperationStatus::Cancelled => "cancelled",
+    }
+}
+
+/// The content kind the contract publishes.
+fn contract_content_kind(kind: crate::files::ContentKind) -> ContentKind {
+    match kind {
+        crate::files::ContentKind::Text => ContentKind::Text,
+        crate::files::ContentKind::Binary => ContentKind::Binary,
+        crate::files::ContentKind::Unrepresentable => ContentKind::Unrepresentable,
+    }
+}
+
+/// The engine's view of this service: the facts a submission is judged against.
+///
+/// It borrows the service for the length of one `submit` call and is never stored, which is
+/// what keeps the service from having to hold a reference to itself.
+struct ServiceFacts<'a> {
+    service: &'a ApplicationService,
+}
+
+impl ServiceFacts<'_> {
+    /// The refusal, in the shape the core's precondition decision takes.
+    fn refused(problem: Problem) -> PreconditionContext {
+        PreconditionContext {
+            refusal: Some(GatheredRefusal {
+                code: problem.code,
+                message: problem.message,
+                retryable: problem.retryable,
+            }),
+            ..PreconditionContext::default()
+        }
+    }
+
+    async fn facts(&self, request: &MutationRequest) -> Result<PreconditionContext, Problem> {
+        let service = self.service;
+        let Some(repository_id) = request.repository_id() else {
+            // A workspace target has no repository yet: there is nothing to compare a
+            // snapshot against and no index to have moved. The restart block is still
+            // consulted, under the same key the queue and the journal use.
+            return Ok(PreconditionContext {
+                index_unchanged: true,
+                may_run_during: refyard_core::preconditions::may_run_during_operation(
+                    request.operation.kind(),
+                ),
+                ..PreconditionContext::default()
+            });
+        };
+        let record = match service.require_record(repository_id) {
+            Ok(record) => record,
+            Err(problem) => return Ok(Self::refused(problem)),
+        };
+        let target = match service.target_for(&record) {
+            Ok(target) => target,
+            Err(problem) => return Ok(Self::refused(problem)),
+        };
+        let worktree_id = match reads::require_worktree(&record, request.worktree_id()) {
+            Ok(worktree_id) => worktree_id,
+            Err(error) => return Ok(Self::refused(error.to_problem())),
+        };
+        let executor = match target.executor() {
+            Ok(executor) => executor,
+            Err(problem) => return Ok(Self::refused(problem)),
+        };
+        // The facts themselves can fail — a Git directory that moved, a repository whose
+        // directory was replaced, a `git` that stopped answering. None of those is an
+        // internal error, and none of them accepted anything.
+        let (status, fresh_snapshot_id) = match reads::status::read_status(
+            executor,
+            &record,
+            &service.paths,
+            &service.snapshots,
+            false,
+            &now_iso8601(),
+        )
+        .await
+        {
+            Ok(facts) => facts,
+            Err(error) => return Ok(Self::refused(error.to_problem())),
+        };
+        let fresh_index_key = service
+            .snapshots
+            .get(&fresh_snapshot_id)
+            .and_then(|snapshot| snapshot.index_key);
+
+        let expected_snapshot_id = match &request.target {
+            MutationTarget::Repository {
+                expected_snapshot_id,
+                ..
+            }
+            | MutationTarget::Worktree {
+                expected_snapshot_id,
+                ..
+            } => Some(expected_snapshot_id.as_str()),
+            MutationTarget::Workspace { .. } => None,
+        };
+        let snapshot = expected_snapshot_id.and_then(|id| service.snapshots.get(id));
+        // An unknown or expired snapshot fails this comparison, which is what makes a
+        // request prepared against a state nobody can find again a stale one.
+        let index_unchanged = match (&snapshot, &fresh_index_key) {
+            (Some(snapshot), Some(fresh)) => {
+                snapshot.repository_id == record.repository_id
+                    && snapshot.worktree_id.as_deref() == Some(worktree_id.as_str())
+                    && snapshot.index_key.as_ref() == Some(fresh)
+            }
+            _ => false,
+        };
+        Ok(PreconditionContext {
+            snapshot_head_oid: snapshot.and_then(|snapshot| snapshot.head_oid),
+            current_head_oid: status.head.oid,
+            index_unchanged,
+            operation_in_progress: status.operation_in_progress.map(operation_in_progress_name),
+            may_run_during: refyard_core::preconditions::may_run_during_operation(
+                request.operation.kind(),
+            ),
+            // Filled in by the engine from the recovery, so a blocked repository cannot be
+            // written to because a source forgot to look.
+            restart_block: None,
+            // Preview fingerprints are spent by the effect that acts on the paths, through
+            // `redeem_previews`: the reference computes them there too, so that the read is
+            // one read and not two.
+            preview_checks: Vec::new(),
+            refusal: None,
+        })
+    }
+}
+
+impl PreconditionSource for ServiceFacts<'_> {
+    fn write_key(&self, request: &MutationRequest) -> Result<String, Problem> {
+        match &request.target {
+            MutationTarget::Workspace {
+                allowed_root_id, ..
+            } => Ok(format!("{WORKSPACE_WRITE_KEY_PREFIX}{allowed_root_id}")),
+            MutationTarget::Repository { repository_id, .. }
+            | MutationTarget::Worktree { repository_id, .. } => {
+                self.service.write_key_for_repository(repository_id)
+            }
+        }
+    }
+
+    fn context<'a>(
+        &'a self,
+        request: &'a MutationRequest,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<PreconditionContext, Problem>> + Send + 'a>,
+    > {
+        Box::pin(self.facts(request))
+    }
+}
+
 impl ApplicationService {
     /// Builds a service around already-resolved host pieces.
     pub fn new(config: ApplicationServiceConfig) -> Self {
@@ -203,6 +461,10 @@ impl ApplicationService {
     /// remote machine — the same reason `LocalGit::at` exists beside `LocalGit::discover`.
     /// It is not a second way to add a target in production.
     pub fn with_targets(config: ApplicationServiceConfig, targets: TargetRegistry) -> Self {
+        let journal =
+            Arc::new(Journal::open(None).expect("an in-memory journal cannot fail to open"));
+        let recovery = Arc::new(Recovery::new());
+        let engine = MutationEngine::new(Arc::clone(&journal), Arc::clone(&recovery), Vec::new());
         Self {
             git: config.git,
             targets,
@@ -217,7 +479,34 @@ impl ApplicationService {
             git_version: Mutex::new(None),
             ssh_source: None,
             ssh_environment: None,
+            previews: PreviewStore::with_contract_limits(),
+            journal,
+            recovery,
+            engine,
         }
+    }
+
+    /// Gives this service a private state directory for its operation journal.
+    ///
+    /// The directory is the host's own (a per-user application state directory, or a
+    /// fixture's scratch tree), never a repository: the journal must not be something a
+    /// Git operation, a hook or a checkout can move. Opening it loads every record the
+    /// previous process left and reconciles what it did not finish, so the block a crash
+    /// left behind exists before the first read is answered.
+    ///
+    /// Without this call the journal works and does not survive the process, which is what
+    /// a host that named no directory actually has.
+    pub fn with_state_root(self, root: PathBuf) -> Result<Self, Problem> {
+        let journal = Arc::new(Journal::open(Some(root))?);
+        let recovery = Arc::new(Recovery::new());
+        recovery.reconcile(&journal, crate::clock::now_millis())?;
+        let engine = MutationEngine::new(Arc::clone(&journal), Arc::clone(&recovery), Vec::new());
+        Ok(Self {
+            journal,
+            recovery,
+            engine,
+            ..self
+        })
     }
 
     /// Binds SSH discovery and execution to one explicitly chosen configuration source.
@@ -469,6 +758,32 @@ impl ApplicationService {
     /// What this build can do right now.
     pub async fn capabilities(&self) -> Result<CapabilitiesResponse, Problem> {
         let version = self.git_version().await?;
+        // The mutations this build implements and the ones it does not are one list split
+        // in two, derived from the effects the engine holds. A build with no effects — this
+        // one — therefore names every mutation as unavailable, and a build that registers
+        // one reports the rest without anybody having to remember to edit a second table.
+        let implemented = self.engine.implemented_kinds();
+        let operations: Vec<OperationCapability> = implemented
+            .iter()
+            .map(|kind| OperationCapability {
+                kind: *kind,
+                targets: operation_targets(*kind),
+            })
+            .collect();
+        let remaining: Vec<MutationKind> = MUTATION_KINDS
+            .iter()
+            .copied()
+            .filter(|kind| !implemented.contains(kind))
+            .collect();
+        let unavailable = if remaining.is_empty() {
+            Vec::new()
+        } else {
+            vec![UnavailableReason {
+                code: "not-implemented".to_string(),
+                message: NOT_IMPLEMENTED_MESSAGE.to_string(),
+                operations: remaining,
+            }]
+        };
         Ok(CapabilitiesResponse {
             api_major: API_MAJOR,
             contract_version: CONTRACT_VERSION.to_string(),
@@ -490,15 +805,12 @@ impl ApplicationService {
                 },
             },
             reads: self.implemented_reads(),
-            // Empty on purpose: a mutation this build cannot run is absent from this list
-            // and named in `unavailable` instead of being offered and then refused.
-            operations: Vec::new(),
+            // Derived from the effects this build registered, never from a wish: a mutation
+            // this build cannot run is absent from this list and named in `unavailable`
+            // instead of being offered and then refused.
+            operations,
             limits: runtime_limits(),
-            unavailable: vec![UnavailableReason {
-                code: "not-implemented".to_string(),
-                message: NOT_IMPLEMENTED_MESSAGE.to_string(),
-                operations: MUTATION_KINDS.to_vec(),
-            }],
+            unavailable,
         })
     }
 
@@ -871,6 +1183,320 @@ impl ApplicationService {
     /// from an earlier build cannot be used by one.
     pub fn resolve_path_id(&self, path_id: &str) -> Option<Vec<u8>> {
         self.paths.resolve_any(path_id)
+    }
+
+    /* --------------------------------------------------------------- previews */
+
+    /// Content fingerprints for selected paths, bound to the state they were read in.
+    ///
+    /// The preview is a read of *content*: every named path is resolved through this
+    /// worktree and this build of the target, read through the target that owns the
+    /// repository — never this machine's filesystem for a remote one — and fingerprinted
+    /// here. The response names the snapshot the read was taken against, so a write built
+    /// on it is refused when the index moved in between.
+    ///
+    /// One path the host cannot read does not fail the batch: it gets a token with no size
+    /// and no content, and a write against it is refused as stale, which is the reference's
+    /// behaviour for a path that no longer exists. One path over the read bound *does* fail
+    /// the batch, because fingerprinting a prefix of it would be a claim about bytes nobody
+    /// read.
+    pub async fn previews(&self, query: &PreviewsRequest) -> Result<PreviewsResponse, Problem> {
+        let record = self.require_record(&query.repository_id)?;
+        let target = self.target_for(&record)?;
+        let worktree_id = reads::require_worktree(&record, Some(&query.worktree_id))
+            .map_err(|error| error.to_problem())?;
+        if query.path_ids.is_empty() {
+            return Err(Problem::new(
+                ProblemCode::InvalidRequest,
+                "at least one path id is required",
+            ));
+        }
+        if query.path_ids.len() > PATH_SELECTION_MAX_ENTRIES {
+            return Err(Problem::new(
+                ProblemCode::LimitExceeded,
+                format!("at most {PATH_SELECTION_MAX_ENTRIES} paths may be previewed at once"),
+            )
+            .with_detail(
+                "pathCount",
+                DetailValue::Integer(query.path_ids.len() as i64),
+            ));
+        }
+        let executor = target.executor()?;
+        let read_at = now_iso8601();
+        // The state the preview is taken against. Reading it also mints the path ids for
+        // every changed path, which is how a client gets an id it may name here at all.
+        let (_status, snapshot_id) = reads::status::read_status(
+            executor,
+            &record,
+            &self.paths,
+            &self.snapshots,
+            false,
+            &read_at,
+        )
+        .await
+        .map_err(|error| error.to_problem())?;
+
+        // Every read happens before any token is issued: a batch that is refused for one
+        // path must not leave tokens behind for the others.
+        let mut reads: Vec<(String, FileRead)> = Vec::with_capacity(query.path_ids.len());
+        for path_id in &query.path_ids {
+            let bytes = self.authorised_path_bytes(&record, &worktree_id, path_id)?;
+            let read = self.read_file(executor, &record, &bytes).await;
+            if let FileRead::Oversize { size_bytes } = read {
+                return Err(Problem::new(
+                    ProblemCode::LimitExceeded,
+                    format!(
+                        "a selected path is larger than the {PREVIEW_MAX_BYTES} byte bound this host reads for a preview; it cannot be previewed and so cannot be changed through a previewed request"
+                    ),
+                )
+                .with_detail("pathId", DetailValue::Text(path_id.clone()))
+                .with_detail(
+                    "sizeBytes",
+                    DetailValue::Integer(size_bytes.unwrap_or(0) as i64),
+                ));
+            }
+            reads.push((path_id.clone(), read));
+        }
+
+        let mut tokens = Vec::with_capacity(reads.len());
+        for (path_id, read) in reads {
+            let issued = self.previews.issue(PreviewClaim {
+                repository_id: record.repository_id.clone(),
+                worktree_id: worktree_id.clone(),
+                target_generation: record.location.target_generation.clone(),
+                path_id: path_id.clone(),
+                fingerprint_hex: read.fingerprint_hex(),
+                size_bytes: read.size_bytes(),
+                content_kind: read.content_kind(),
+            });
+            tokens.push(PathPreviewToken {
+                path_id,
+                preview_token: issued.preview_token,
+                size_bytes: read.size_bytes(),
+                content_kind: contract_content_kind(read.content_kind()),
+                fingerprint_algorithm: FingerprintAlgorithm::Sha256,
+                expires_at: format_iso8601_millis(issued.expires_at_ms),
+            });
+        }
+        Ok(PreviewsResponse {
+            repository_id: record.repository_id,
+            worktree_id,
+            snapshot_id,
+            read_at,
+            tokens,
+        })
+    }
+
+    /// Re-reads the selected paths and spends the tokens they were given.
+    ///
+    /// This is the check a write is built on, and it is deliberately not the same thing as
+    /// the status read that produced the change set: a path can be edited from one modified
+    /// state into another and stay `M`, so only the bytes answer whether the content the
+    /// user was shown is still the content that would be changed.
+    ///
+    /// All-or-nothing: one stale entry leaves every token unused, because a partially
+    /// consumed batch would force the client to re-preview paths it never touched.
+    pub async fn redeem_previews(&self, submission: &PreviewSubmission) -> Result<(), Problem> {
+        let record = self.require_record(&submission.repository_id)?;
+        let target = self.target_for(&record)?;
+        let worktree_id = reads::require_worktree(&record, Some(&submission.worktree_id))
+            .map_err(|error| error.to_problem())?;
+        if submission.path_ids.len() != submission.preview_tokens.len() {
+            return Err(Problem::new(
+                ProblemCode::InvalidRequest,
+                "one preview token is required per selected path",
+            ));
+        }
+        let executor = target.executor()?;
+        let mut checks = Vec::with_capacity(submission.path_ids.len());
+        for (index, path_id) in submission.path_ids.iter().enumerate() {
+            let bytes = self.authorised_path_bytes(&record, &worktree_id, path_id)?;
+            let read = self.read_file(executor, &record, &bytes).await;
+            checks.push(PreviewCheck {
+                preview_token: submission.preview_tokens[index].clone(),
+                repository_id: record.repository_id.clone(),
+                worktree_id: worktree_id.clone(),
+                target_generation: record.location.target_generation.clone(),
+                path_id: path_id.clone(),
+                current_fingerprint_hex: read.fingerprint_hex(),
+            });
+        }
+        self.previews
+            .redeem(&checks)
+            .map_err(|refusal| refusal.problem(None))
+    }
+
+    /// Resolves a path id a read may act on: this worktree, this build of the target.
+    ///
+    /// A path id the caller was never shown does not exist here, and one minted for another
+    /// worktree or an earlier build is refused rather than followed.
+    fn authorised_path_bytes(
+        &self,
+        record: &RepositoryRecord,
+        worktree_id: &str,
+        path_id: &str,
+    ) -> Result<Vec<u8>, Problem> {
+        self.paths
+            .resolve_in(worktree_id, &record.location.target_generation, path_id)
+            .ok_or_else(|| {
+                Problem::new(
+                    ProblemCode::NotFound,
+                    "a selected path is unknown in this worktree; reload the change set and retry",
+                )
+                .with_detail("pathId", DetailValue::Text(path_id.to_string()))
+            })
+    }
+
+    /// Reads one path through the target that owns the repository.
+    ///
+    /// The two arms are the two readers, and neither consults the other machine: a local
+    /// repository is read from this filesystem below the worktree it was opened at, and a
+    /// remote one is read by the SSH provider's fixed command on the far side.
+    async fn read_file(
+        &self,
+        executor: &GitExecutor,
+        record: &RepositoryRecord,
+        path_bytes: &[u8],
+    ) -> FileRead {
+        let worktree = record.location.canonical_worktree.as_str();
+        match executor {
+            GitExecutor::Local(_) => files::local::read(Path::new(worktree), path_bytes),
+            GitExecutor::Ssh(ssh) => files::remote::read(ssh, worktree, path_bytes).await,
+        }
+    }
+
+    /* ------------------------------------------------------------- operations */
+
+    /// One operation this host recorded.
+    pub fn operation(&self, operation_id: &str) -> Result<OperationRecord, Problem> {
+        self.journal
+            .get(operation_id)
+            .map(|record| record.to_operation_record())
+            .ok_or_else(|| {
+                Problem::new(
+                    ProblemCode::NotFound,
+                    format!("unknown operation {operation_id}"),
+                )
+            })
+    }
+
+    /// The operations one actor submitted, newest first.
+    pub fn operations(&self, actor: &str, limit: usize) -> OperationsListResponse {
+        self.engine.list(actor, limit)
+    }
+
+    /// Submits one mutation through the write path.
+    ///
+    /// With no effects registered this refuses every request with `UnsupportedOperation`
+    /// before anything is journalled — the same answer `capabilities` gives by listing no
+    /// operation.
+    pub async fn submit_mutation(
+        &self,
+        actor: &str,
+        request: MutationRequest,
+    ) -> Result<SubmitResult, Problem> {
+        let source = ServiceFacts { service: self };
+        self.engine.submit(actor, request, &source).await
+    }
+
+    /// Cancels an operation that has not started.
+    pub fn cancel_operation(
+        &self,
+        actor: &str,
+        operation_id: &str,
+    ) -> Result<OperationRecord, Problem> {
+        self.engine.cancel(actor, operation_id)
+    }
+
+    /// The resources a write block is held under, for a UI that has to explain itself.
+    pub fn blocked_repositories(&self) -> Vec<String> {
+        self.recovery.blocked_keys()
+    }
+
+    /// The key an operation on this repository is serialised and blocked under.
+    ///
+    /// The repository's *stable* identity — its target and common Git directory — and not
+    /// the id this process minted: a block has to be findable again after a restart, when
+    /// the minted id is gone.
+    pub fn write_key_for_repository(&self, repository_id: &str) -> Result<String, Problem> {
+        let record = self.require_record(repository_id)?;
+        Ok(repository_write_key(&record.location.target_id, &record))
+    }
+
+    /// Lifts the write block an uncertain operation left behind.
+    ///
+    /// Three things are required, and all three are about not accepting a confirmation for
+    /// a state nobody looked at: the operation must be one that is *uncertain*, the named
+    /// snapshot must be one this service minted, and it must be newer than the operation's
+    /// own finish and cover the repository the operation touched.
+    ///
+    /// The operation's outcome is never rewritten: the record stays `unknown` because that
+    /// is what is true, and the acknowledgement only says a person has looked at the
+    /// repository since.
+    pub fn acknowledge_uncertain_operation(
+        &self,
+        operation_id: &str,
+        confirmed_snapshot_id: &str,
+    ) -> Result<OperationRecord, Problem> {
+        let record = self.journal.get(operation_id).ok_or_else(|| {
+            Problem::new(
+                ProblemCode::NotFound,
+                format!("unknown operation {operation_id}"),
+            )
+        })?;
+        if record.status != OperationStatus::Unknown {
+            return Err(Problem::new(
+                ProblemCode::Conflict,
+                format!(
+                    "operation {operation_id} is {} and left no write block to lift",
+                    operation_status_name(record.status)
+                ),
+            ));
+        }
+        let snapshot = self.snapshots.get(confirmed_snapshot_id).ok_or_else(|| {
+            Problem::new(
+                ProblemCode::NotFound,
+                format!(
+                    "the snapshot {confirmed_snapshot_id} was not minted by this service; re-read the repository and confirm against that snapshot"
+                ),
+            )
+        })?;
+        if let Some(finished_at) = record.finished_at_ms {
+            if (snapshot.created_at_ms as i64) < finished_at {
+                return Err(Problem::new(
+                    ProblemCode::StaleSnapshot,
+                    "the snapshot predates the operation it is meant to confirm; re-read the repository and confirm again",
+                ));
+            }
+        }
+        let recorded_key =
+            match self.write_key_for_repository(&snapshot.repository_id) {
+                Ok(key) => key,
+                Err(_) => return Err(Problem::new(
+                    ProblemCode::Conflict,
+                    "the confirming snapshot does not belong to a repository this service holds",
+                )),
+            };
+        if recorded_key != record.write_key {
+            return Err(Problem::new(
+                ProblemCode::Conflict,
+                "the confirming snapshot is of a different repository than the one the operation touched; confirm the repository the operation changed",
+            ));
+        }
+        if !self.recovery.resolve_block(&record.write_key) {
+            return Err(Problem::new(
+                ProblemCode::Conflict,
+                format!("operation {operation_id} left no write block to lift"),
+            )
+            .for_operation(operation_id));
+        }
+        // The confirmation is recorded before it is reported. A block is derived from the
+        // record, so an acknowledgement that lived only in this process would be forgotten by
+        // the next start — and the same person would be asked to confirm the same thing after
+        // every restart. The status stays `unknown`: this says somebody looked, not that the
+        // operation did something else.
+        let acknowledged = self.journal.acknowledge(operation_id, now_millis())?;
+        Ok(acknowledged.to_operation_record())
     }
 
     fn require_record(&self, repository_id: &str) -> Result<RepositoryRecord, Problem> {

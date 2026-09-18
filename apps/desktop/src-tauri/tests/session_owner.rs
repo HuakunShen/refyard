@@ -378,13 +378,154 @@ async fn a_read_this_build_does_not_implement_is_refused_and_absent_from_capabil
         reads.iter().any(|kind| kind == "filesystem"),
         "the local picker is served, so the Browse control must stay available: {reads:?}"
     );
-    for absent in ["worktrees", "submodules", "stashes", "previews"] {
+    for absent in ["worktrees", "submodules", "stashes"] {
         assert!(
             !reads.iter().any(|kind| kind == absent),
             "capabilities must not list {absent}: {reads:?}"
         );
     }
+    // `previews` is served and is still absent from this list, because the vocabulary has no
+    // word for it: the reference host does not list it either and the contract's `ReadKind`
+    // has no such member. A UI that gated the read on a capability name would have to invent
+    // one, so the read is not gated.
+    assert!(!reads.iter().any(|kind| kind == "previews"));
     assert_eq!(capabilities["host"]["kind"], json!("rust"));
+}
+
+#[tokio::test]
+async fn a_preview_read_answers_for_a_path_the_status_read_showed() {
+    let fixture = Fixture::new();
+    let state = fixture.state();
+    let (session_id, repository_id) = fixture.open(&state).await;
+    fixture.write("README.md", "changed after the commit\n");
+    fixture.git(&["add", "--", "README.md"]);
+    fixture.git(&["commit", "--quiet", "-m", "second"]);
+    fixture.write("README.md", "working copy change\n");
+
+    let status = commands::git_read(&state, MAIN, &session_id, status_query(&repository_id))
+        .await
+        .expect("status");
+    let entry = status["entries"]
+        .as_array()
+        .expect("entries")
+        .iter()
+        .find(|entry| entry["displayPath"] == json!("README.md"))
+        .expect("the modified file is reported")
+        .clone();
+    let worktree_id = status["worktreeId"].as_str().expect("worktreeId").to_string();
+
+    let previews = commands::git_read(
+        &state,
+        MAIN,
+        &session_id,
+        json!({
+            "method": "previews",
+            "query": {
+                "repositoryId": repository_id,
+                "worktreeId": worktree_id,
+                "pathIds": [entry["pathId"]],
+            }
+        }),
+    )
+    .await
+    .expect("previews");
+
+    assert_eq!(previews["repositoryId"], json!(repository_id));
+    assert_eq!(previews["worktreeId"], json!(worktree_id));
+    // A preview reads the state again rather than trusting the caller's snapshot: the tokens
+    // have to be made against the bytes as they are now, so a preview taken after a status
+    // read names the *newer* snapshot — and the path ids it accepts are the ones that state
+    // read minted, which is what the next assertion checks they agree on.
+    assert_ne!(
+        previews["snapshotId"], status["snapshotId"],
+        "the preview read the state for itself"
+    );
+    assert!(previews["snapshotId"]
+        .as_str()
+        .is_some_and(|value| !value.is_empty()));
+    let tokens = previews["tokens"].as_array().expect("tokens");
+    assert_eq!(tokens.len(), 1);
+    let token = &tokens[0];
+    assert_eq!(token["pathId"], entry["pathId"]);
+    assert!(
+        token["previewToken"]
+            .as_str()
+            .is_some_and(|value| value.starts_with("pt_")),
+        "the token is opaque and prefixed: {token:?}"
+    );
+    assert_eq!(token["fingerprintAlgorithm"], json!("sha256"));
+    assert_eq!(token["contentKind"], json!("text"));
+    assert_eq!(
+        token["sizeBytes"],
+        json!("working copy change\n".len()),
+        "the size is the bytes that were read"
+    );
+    assert!(token["expiresAt"].as_str().is_some_and(|value| !value.is_empty()));
+
+    // A path id this session never minted is not a path. The read refuses it rather than
+    // reading something else — the whole point of addressing content by id.
+    let invented = commands::git_read(
+        &state,
+        MAIN,
+        &session_id,
+        json!({
+            "method": "previews",
+            "query": {
+                "repositoryId": repository_id,
+                "worktreeId": worktree_id,
+                "pathIds": ["path_never_minted"],
+            }
+        }),
+    )
+    .await;
+    assert_eq!(refusal_code(&invented), ProblemCode::NotFound);
+
+    // And a request without a query is a shape error, not an empty answer.
+    let empty = commands::git_read(&state, MAIN, &session_id, json!({ "method": "previews" })).await;
+    assert_eq!(refusal_code(&empty), ProblemCode::InvalidRequest);
+}
+
+#[tokio::test]
+async fn acknowledging_an_uncertain_operation_is_reachable_and_refuses_what_it_should() {
+    let fixture = Fixture::new();
+    let state = fixture.state();
+    let (session_id, _) = fixture.open(&state).await;
+
+    // The method is wired: an operation this host never recorded is a not-found, not an
+    // unimplemented method that a client would have to detect by string.
+    let unknown = commands::host_request(
+        &state,
+        MAIN,
+        &session_id,
+        json!({
+            "method": "acknowledgeUncertainOperation",
+            "request": {
+                "operationId": "op_none",
+                "confirmedSnapshotId": "snap_none",
+                "confirmed": true,
+            }
+        }),
+    )
+    .await;
+    assert_eq!(refusal_code(&unknown), ProblemCode::NotFound);
+
+    // A request that does not confirm must not lift anything: reading `confirmed` and
+    // ignoring it would be the host inventing a confirmation nobody gave.
+    let not_confirmed = commands::host_request(
+        &state,
+        MAIN,
+        &session_id,
+        json!({
+            "method": "acknowledgeUncertainOperation",
+            "request": {
+                "operationId": "op_none",
+                "confirmedSnapshotId": "snap_none",
+                "confirmed": false,
+            }
+        }),
+    )
+    .await;
+    assert_eq!(refusal_code(&not_confirmed), ProblemCode::InvalidRequest);
 }
 
 #[tokio::test]

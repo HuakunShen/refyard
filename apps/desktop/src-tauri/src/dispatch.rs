@@ -14,6 +14,7 @@
 use refyard_contract::diff::DiffQuery;
 use refyard_contract::history::HistoryQuery;
 use refyard_contract::host::{ExecutionTargetKind, HostCapabilities};
+use refyard_contract::reads::PreviewsRequest;
 use refyard_contract::problem::{Problem, ProblemCode, ProblemResponse};
 use refyard_host::service::{ApplicationService, StatusQuery, API_MAJOR};
 use refyard_host::targets::CreateTargetRequest;
@@ -253,6 +254,11 @@ pub async fn dispatch_read(
             let response = service.diff(&query).await.map_err(failed)?;
             to_value(response)
         }
+        GitReadRequest::Previews { query } => {
+            let request: PreviewsRequest = decode_required(query, "previews")?;
+            let response = service.previews(&request).await.map_err(failed)?;
+            to_value(response)
+        }
         unimplemented => Err(not_implemented(unimplemented.method())),
     }
 }
@@ -286,6 +292,16 @@ pub async fn dispatch_host(
             // The adapter's `disconnectTarget` answers with no body.
             Ok(Value::Null)
         }
+        HostRequest::AcknowledgeUncertainOperation { request } => {
+            let acknowledgement = decode_acknowledgement(request)?;
+            let record = service
+                .acknowledge_uncertain_operation(
+                    &acknowledgement.operation_id,
+                    &acknowledgement.confirmed_snapshot_id,
+                )
+                .map_err(failed)?;
+            to_value(record)
+        }
         unimplemented => Err(not_implemented(unimplemented.method())),
     }
 }
@@ -313,6 +329,61 @@ fn decode_create_target(request: Value) -> Result<CreateTargetRequest, ProblemRe
             format!("the createTarget request is not one this host implements: {error}"),
         ))),
     }
+}
+
+/// The contract's acknowledgement, with the confirmation itself checked.
+///
+/// `confirmed` is published as the literal `true`. A request that carries `false` is a
+/// caller asking *not* to confirm, and lifting the write block for it would be the host
+/// inventing a confirmation nobody gave — so the field is read and refused, never ignored.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct UncertainAcknowledgement {
+    operation_id: String,
+    confirmed_snapshot_id: String,
+    confirmed: bool,
+}
+
+fn decode_acknowledgement(request: Value) -> Result<UncertainAcknowledgement, ProblemResponse> {
+    let acknowledgement: UncertainAcknowledgement = decode(request, "acknowledgeUncertainOperation")?;
+    if !acknowledgement.confirmed {
+        return Err(failed(Problem::new(
+            ProblemCode::InvalidRequest,
+            "acknowledgeUncertainOperation lifts a write block only for a caller that \
+             confirms, so `confirmed` must be true; a request that says otherwise is refused \
+             rather than treated as a confirmation",
+        )));
+    }
+    Ok(acknowledgement)
+}
+
+/// Decodes a payload the union publishes as required.
+///
+/// The transport carries queries for the methods this build does not implement as optional
+/// values, so an absent one is a shape error here rather than an empty answer.
+fn decode_required<T: serde::de::DeserializeOwned>(
+    query: Option<Value>,
+    method: &str,
+) -> Result<T, ProblemResponse> {
+    match query {
+        Some(query) => decode(query, method),
+        None => Err(failed(Problem::new(
+            ProblemCode::InvalidRequest,
+            format!("{method} needs a query; it was called without one"),
+        ))),
+    }
+}
+
+fn decode<T: serde::de::DeserializeOwned>(
+    payload: Value,
+    method: &str,
+) -> Result<T, ProblemResponse> {
+    serde_json::from_value(payload).map_err(|error| {
+        failed(Problem::new(
+            ProblemCode::InvalidRequest,
+            format!("the {method} request is not one this host implements: {error}"),
+        ))
+    })
 }
 
 /// What this process can do about targets and machines.
