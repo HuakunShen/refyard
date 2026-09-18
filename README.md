@@ -9,11 +9,11 @@ service their repository.**
 [![License](https://img.shields.io/github/license/HuakunShen/refyard)](LICENSE)
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/HuakunShen/refyard)
 
-![Refyard showing the VS Code history graph](docs/assets/vscode-history.png)
+![The Refyard workbench running against its own repository](docs/assets/desktop-workbench.png)
 
-_A real read-only session against the public Microsoft VS Code checkout: merge lanes, refs,
-authors, and the selected repository all remain visible. The image is a demo fixture, not bundled
-Git data._
+_Refyard reading this repository itself: one tab strip along the top, the signed history with
+its branch lane, the working copy with staged and unstaged files, and the commit box — a real
+local session, nothing mocked. The desktop app embeds this exact UI without a web server._
 
 ## The idea
 
@@ -38,7 +38,7 @@ API proxy, and it never receives Git contents.
 | Surface               | Where it runs                             | What it owns                                                       |
 | --------------------- | ----------------------------------------- | ------------------------------------------------------------------ |
 | `refyard` npm package | Your Node machine                         | Git service plus bundled local workbench                           |
-| Native desktop app    | Your machine, built from source           | The same workbench over Tauri IPC; no JS runtime, no localhost hop |
+| Native desktop app    | Your machine — release download or source | The same workbench over Tauri IPC; no JS runtime, no localhost hop |
 | `refyard-native` CLI  | Your machine, built from source           | Native `doctor`/`serve`/`open` with the same closed contract       |
 | Refyard PWA           | Local loopback or your Cloudflare account | UI, session negotiation, presentation                              |
 | Git Core              | Trusted TypeScript runtime                | Git intentions, parsers, planners, safety rules                    |
@@ -120,6 +120,36 @@ refyard-native open <path>                     # the same plus the static workbe
 stays blocked until a person confirms the state in the app. Runtime measurements and budgets
 live in `pnpm native:bench` and [`docs/evidence/native-runtime.json`](docs/evidence/native-runtime.json).
 
+### What the native form adds
+
+- **One strip, browser-style.** The repository tabs are the window's topmost layer under an
+  overlay title bar; appearance — light/dark, accent, background, glass — lives in the in-app
+  Settings sheet instead of spending header space.
+- **Native open flows.** A folder opens through the system folder picker or a drag-and-drop
+  from Finder; the browser keeps its in-app path picker.
+- **SSH without installing anything remotely.** Hosts come from the machine's own SSH
+  configuration (parsed, never executed); Git runs through the system `ssh`, and reads work
+  against a remote repository with nothing on the far side but OpenSSH and Git.
+- **Offline by construction.** Local repositories keep working with the network gone — the app
+  holds no network sockets at all, measured under a process-scoped no-network sandbox
+  ([acceptance §9.15](docs/acceptance/2026-09-18-native-desktop-ssh.md)).
+- **Crash honesty.** A process killed mid-write records that operation as `unknown`, blocks the
+  repository's next write, and lifts the block only after an explicit acknowledgement in the UI.
+
+### Releases and install
+
+Pushing an `app-v<version>` tag runs [`release.yml`](.github/workflows/release.yml): the test
+contract gates first, then five runners build the app — macOS for Apple Silicon and Intel (DMG),
+Linux x86_64 and arm64 (deb, AppImage), Windows x64 (NSIS installer) — and publish the artifacts
+to a GitHub release automatically. A Homebrew cask tracks those DMGs
+([`packaging/homebrew/Casks/refyard.rb`](packaging/homebrew/Casks/refyard.rb)); once the first
+release is published, filling in its sha256 and pushing the cask to
+[`HuakunShen/homebrew-tap`](https://github.com/HuakunShen/homebrew-tap) makes it:
+
+```sh
+brew install --cask HuakunShen/refyard/refyard
+```
+
 ## Deploy the UI to your own Cloudflare account
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/HuakunShen/refyard)
@@ -141,7 +171,8 @@ Refyard relay.
 ## Release and trust
 
 `ci.yml` is the test workflow. `publish.yml` is the only npm publisher and runs on `v*` tags after
-the package build and smoke tests. It uses npm Trusted Publishing through GitHub OIDC with
+the package build and smoke tests; `release.yml` is the only desktop publisher and runs on
+`app-v*` tags after the same gate, so the two release lines can never be confused. It uses npm Trusted Publishing through GitHub OIDC with
 `environment: publish`; no `NPM_TOKEN` or `NODE_AUTH_TOKEN` is needed.
 
 The package and repository are licensed under the [GNU Affero General Public License v3.0 only](LICENSE).
