@@ -7,6 +7,7 @@
 //! own.
 
 pub mod clock;
+pub mod events;
 pub mod files;
 pub mod jobs;
 pub mod paths;
@@ -17,4 +18,6 @@ pub mod registry;
 pub mod service;
 pub mod snapshots;
 pub mod ssh;
+pub mod state_root;
 pub mod targets;
+pub mod writes;

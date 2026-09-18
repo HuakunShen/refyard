@@ -5,22 +5,38 @@
 //! The host's half of that is: answer the handshake with an id and a watermark, remember who
 //! owns the subscription, and deliver every later frame to that window and no other.
 //!
-//! This build emits nothing yet, and the handshake says so rather than implying otherwise:
-//! the replay is empty and the watermark is zero because there is no mutation and therefore
-//! no journal entry to replay. A subscription is still a real subscription — the id is what
-//! the emitter will address — so the adapter's merge logic is exercised against the host that
-//! will emit rather than against a mock.
+//! The stream itself is the service's: [`crate::relay`] reads the service's sink and hands
+//! each envelope to the windows that subscribed, through the ownership recorded here. This
+//! module stays about *who may receive what* — the handshake, the ownership check and the
+//! per-subscription frames — so all of it is decidable without a window, and the tests drive
+//! it that way.
+//!
+//! Nothing here becomes a second source of truth: an event says something changed and the
+//! caller re-reads. A client that never subscribed, or that was disconnected while a write
+//! happened, still finds every fact through `operation`/`operations`, which read the journal.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use refyard_contract::problem::{Problem, ProblemCode};
-use refyard_contract::reads::EventEnvelope;
+use refyard_contract::reads::{EventEnvelope, EventPayload};
 use serde::Serialize;
 
 /// The event name the adapter listens on, fixed by the adapter contract.
 pub const NATIVE_EVENT_NAME: &str = "refyard://event";
+
+/// Where the service's stream stands when a subscription is opened.
+///
+/// The host answers the handshake with the position it will not go back behind: `replay` is
+/// what the ring still holds for a caller that named a cursor, and `high_watermark` is the
+/// last sequence minted. A subscription with no cursor gets no replay — it has nothing to
+/// compare against, and the caller re-reads what it needs on mount anyway.
+#[derive(Debug, Clone, Default)]
+pub struct StreamPosition {
+    pub high_watermark: u64,
+    pub replay: Vec<EventEnvelope>,
+}
 
 /// What `refyard_events_subscribe` answers. The TypeScript half is `subscriptionAckSchema`.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -28,9 +44,7 @@ pub const NATIVE_EVENT_NAME: &str = "refyard://event";
 pub struct NativeSubscriptionAck {
     pub subscription_id: String,
     pub service_instance_id: String,
-    /// The last sequence this subscription has seen. Zero means the stream has never carried
-    /// an event, which is not the same as "everything is up to date" — the adapter re-reads
-    /// when it is told something changed, and this build changes nothing.
+    /// The last sequence this subscription will have seen after its replay is applied.
     pub high_watermark: u64,
     pub replay: Vec<EventEnvelope>,
 }
@@ -40,13 +54,25 @@ pub struct NativeSubscriptionAck {
 /// The four fields are the adapter's filter (`scopedEventFrameSchema`): a frame whose session,
 /// subscription or service instance does not match the subscriber is dropped, so a rename here
 /// would silently stop every event from arriving. `tests/session_owner.rs` pins the shape.
+///
+/// It owns its fields because one envelope becomes one frame *per subscriber*, each with its
+/// own subscription id: a borrowing frame would either leak or force the caller to keep every
+/// subscription alive for as long as a frame travels.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ScopedEventFrame<'a> {
-    pub session_id: &'a str,
-    pub subscription_id: &'a str,
-    pub service_instance_id: &'a str,
-    pub event: &'a EventEnvelope,
+pub struct ScopedEventFrame {
+    pub session_id: String,
+    pub subscription_id: String,
+    pub service_instance_id: String,
+    pub event: EventEnvelope,
+}
+
+/// One subscription, as the relay needs it: who owns it and which session it belongs to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LiveSubscription {
+    pub subscription_id: String,
+    pub session_id: String,
+    pub owner_label: String,
 }
 
 struct SubscriptionEntry {
@@ -68,6 +94,7 @@ impl EventRegistry {
         session_id: &str,
         owner_label: &str,
         service_instance_id: &str,
+        stream: StreamPosition,
     ) -> NativeSubscriptionAck {
         let subscription_id = format!("sub_{}", self.minted.fetch_add(1, Ordering::Relaxed) + 1);
         self.entries().insert(
@@ -80,9 +107,21 @@ impl EventRegistry {
         NativeSubscriptionAck {
             subscription_id,
             service_instance_id: service_instance_id.to_owned(),
-            high_watermark: 0,
-            replay: Vec::new(),
+            high_watermark: stream.high_watermark,
+            replay: stream.replay,
         }
+    }
+
+    /// Every live subscription, so the relay can address its frames.
+    pub fn live(&self) -> Vec<LiveSubscription> {
+        self.entries()
+            .iter()
+            .map(|(subscription_id, entry)| LiveSubscription {
+                subscription_id: subscription_id.clone(),
+                session_id: entry.session_id.clone(),
+                owner_label: entry.owner_label.clone(),
+            })
+            .collect()
     }
 
     /// Ends a subscription.
@@ -137,5 +176,42 @@ impl EventRegistry {
         self.subscriptions
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// One frame per live subscription, each addressed to the window that opened it.
+///
+/// Pure on purpose: this is the part of delivery that can be wrong without anything failing —
+/// a frame sent to the wrong window, or dropped, is exactly the bug the ownership record
+/// exists to prevent — so it is decided by a function the tests can drive without a window.
+pub fn frames_for(
+    registry: &EventRegistry,
+    service_instance_id: &str,
+    event: &EventEnvelope,
+) -> Vec<(String, ScopedEventFrame)> {
+    registry
+        .live()
+        .into_iter()
+        .map(|subscription| {
+            let frame = ScopedEventFrame {
+                session_id: subscription.session_id,
+                subscription_id: subscription.subscription_id,
+                service_instance_id: service_instance_id.to_owned(),
+                event: event.clone(),
+            };
+            (subscription.owner_label, frame)
+        })
+        .collect()
+}
+
+/// The frame that tells a subscriber it fell behind.
+///
+/// A gap is published through the sink rather than invented here, because the sink owns the
+/// sequence: a subscriber that minted its own would produce a frame the client cannot order
+/// against the events around it, and the client drops anything at or below what it has seen.
+pub fn gap_payload(from_sequence: u64, to_sequence: u64) -> EventPayload {
+    EventPayload::EventGap {
+        from_sequence,
+        to_sequence,
     }
 }

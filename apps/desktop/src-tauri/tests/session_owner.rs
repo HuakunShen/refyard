@@ -16,7 +16,7 @@ use std::process::Command;
 use refyard_contract::problem::{ProblemCode, ProblemResponse};
 use refyard_contract::reads::{EventEnvelope, EventPayload};
 use refyard_desktop::commands;
-use refyard_desktop::events::ScopedEventFrame;
+use refyard_desktop::events::{frames_for, ScopedEventFrame};
 use refyard_desktop::AppState;
 use refyard_host::providers::local::LocalGit;
 use serde_json::{json, Value};
@@ -86,9 +86,26 @@ impl Fixture {
         self.repo.to_str().expect("utf8 path")
     }
 
+    /// A state directory inside this fixture, which is what a caller with a durable journal
+    /// names.
+    fn state_root(&self) -> PathBuf {
+        self._temp.path().join("state")
+    }
+
     /// The whole shell, pointed at this fixture instead of the machine's own Git config.
     fn state(&self) -> AppState {
         AppState::with_git(LocalGit::at(git_program(), self.env.clone()))
+    }
+
+    /// The same shell with the private state directory named, so a test can look at what a
+    /// restart would read.
+    fn state_at(&self, state_root: &Path) -> AppState {
+        AppState::with_state_root(
+            LocalGit::at(git_program(), self.env.clone()),
+            None,
+            state_root.to_path_buf(),
+        )
+        .expect("the fixture's state directory is writable")
     }
 
     /// What a window does on connect: open a session, then register this repository.
@@ -412,7 +429,10 @@ async fn a_preview_read_answers_for_a_path_the_status_read_showed() {
         .find(|entry| entry["displayPath"] == json!("README.md"))
         .expect("the modified file is reported")
         .clone();
-    let worktree_id = status["worktreeId"].as_str().expect("worktreeId").to_string();
+    let worktree_id = status["worktreeId"]
+        .as_str()
+        .expect("worktreeId")
+        .to_string();
 
     let previews = commands::git_read(
         &state,
@@ -460,7 +480,9 @@ async fn a_preview_read_answers_for_a_path_the_status_read_showed() {
         json!("working copy change\n".len()),
         "the size is the bytes that were read"
     );
-    assert!(token["expiresAt"].as_str().is_some_and(|value| !value.is_empty()));
+    assert!(token["expiresAt"]
+        .as_str()
+        .is_some_and(|value| !value.is_empty()));
 
     // A path id this session never minted is not a path. The read refuses it rather than
     // reading something else — the whole point of addressing content by id.
@@ -481,7 +503,8 @@ async fn a_preview_read_answers_for_a_path_the_status_read_showed() {
     assert_eq!(refusal_code(&invented), ProblemCode::NotFound);
 
     // And a request without a query is a shape error, not an empty answer.
-    let empty = commands::git_read(&state, MAIN, &session_id, json!({ "method": "previews" })).await;
+    let empty =
+        commands::git_read(&state, MAIN, &session_id, json!({ "method": "previews" })).await;
     assert_eq!(refusal_code(&empty), ProblemCode::InvalidRequest);
 }
 
@@ -558,43 +581,362 @@ async fn a_foreign_target_is_refused_rather_than_answered_for_this_machine() {
 
 /* ------------------------------------------------------------------- writes */
 
+/// Reads status for one repository through the command surface.
+async fn status_of(state: &AppState, session_id: &str, repository_id: &str) -> Value {
+    commands::git_read(state, MAIN, session_id, status_query(repository_id))
+        .await
+        .expect("status")
+}
+
+/// Submits a worktree write and follows it to its terminal state.
+async fn submit_and_settle(state: &AppState, session_id: &str, request: Value) -> Value {
+    let submitted = commands::mutation_submit(state, MAIN, session_id, request)
+        .await
+        .expect("the write is accepted");
+    let operation_id = submitted["accepted"]["operationId"]
+        .as_str()
+        .expect("operationId")
+        .to_owned();
+    for _ in 0..400 {
+        let record =
+            commands::operation_get(state, MAIN, session_id, &operation_id).expect("operation");
+        match record["status"].as_str().expect("status") {
+            "accepted" | "running" => {
+                tokio::time::sleep(std::time::Duration::from_millis(25)).await
+            }
+            _ => return record,
+        }
+    }
+    panic!("the operation never reached a terminal state");
+}
+
 #[tokio::test]
-async fn every_write_command_is_refused_after_the_ownership_check() {
+async fn a_write_command_answers_only_the_session_that_owns_it() {
     let fixture = Fixture::new();
     let state = fixture.state();
     let (session_id, _) = fixture.open(&state).await;
 
-    let refusals: [(Result<Value, ProblemResponse>, &str); 4] = [
-        (
-            commands::mutation_submit(&state, MAIN, &session_id),
-            "mutation_submit",
-        ),
-        (
-            commands::operation_get(&state, MAIN, &session_id),
-            "operation_get",
-        ),
-        (
-            commands::operation_list(&state, MAIN, &session_id),
-            "operation_list",
-        ),
-        (
-            commands::operation_cancel(&state, MAIN, &session_id),
-            "operation_cancel",
-        ),
-    ];
-    for (result, command) in refusals {
-        assert_eq!(
-            refusal_code(&result),
-            ProblemCode::UnsupportedOperation,
-            "{command} must refuse rather than report an empty result"
-        );
-    }
-
-    // A refusal that skipped the gate would teach a caller the gate is optional.
+    // The gate comes first, and it is the same gate the reads use: a window that does not own
+    // the session cannot submit for it, read its operations, or cancel one.
+    let staged = json!({
+        "clientRequestId": "crid_owned",
+        "target": {
+            "kind": "worktree",
+            "repositoryId": "repo_none",
+            "worktreeId": "wt_none",
+            "expectedSnapshotId": "snap_none",
+        },
+        "operation": { "kind": "commit", "message": "no" },
+    });
     assert_eq!(
-        refusal_code(&commands::mutation_submit(&state, SECOND, &session_id)),
+        refusal_code(&commands::mutation_submit(&state, SECOND, &session_id, staged.clone()).await),
         ProblemCode::Forbidden
     );
+    assert_eq!(
+        refusal_code(&commands::operation_get(
+            &state,
+            SECOND,
+            &session_id,
+            "op_1"
+        )),
+        ProblemCode::Forbidden
+    );
+    assert_eq!(
+        refusal_code(&commands::operation_cancel(
+            &state,
+            SECOND,
+            &session_id,
+            "op_1"
+        )),
+        ProblemCode::Forbidden
+    );
+
+    // An operation this host never recorded is a not-found, not an empty answer.
+    assert_eq!(
+        refusal_code(&commands::operation_get(
+            &state,
+            MAIN,
+            &session_id,
+            "op_none"
+        )),
+        ProblemCode::NotFound
+    );
+    assert_eq!(
+        refusal_code(&commands::operation_cancel(
+            &state,
+            MAIN,
+            &session_id,
+            "op_none"
+        )),
+        ProblemCode::NotFound
+    );
+
+    // A session that has written nothing has an empty list, and the list says it is not a
+    // truncated view of something larger.
+    let listed = commands::operation_list(&state, MAIN, &session_id, None).expect("list");
+    assert_eq!(listed["operations"], json!([]));
+    assert_eq!(listed["truncated"], json!(false));
+
+    // A submission whose shape the contract does not publish is an invalid request rather
+    // than a write: the host refuses it before anything is journalled.
+    assert_eq!(
+        refusal_code(&commands::mutation_submit(&state, MAIN, &session_id, json!({})).await),
+        ProblemCode::InvalidRequest
+    );
+}
+
+#[tokio::test]
+async fn a_stage_through_the_window_moves_the_path_it_was_given_and_leaves_the_rest() {
+    let fixture = Fixture::new();
+    let state = fixture.state();
+    let (session_id, repository_id) = fixture.open(&state).await;
+    // Two changed files: the one that is staged must move and the other must not.
+    fixture.write("README.md", "rewritten\n");
+    fixture.write("other.txt", "another change\n");
+    fixture.git(&["add", "--", "other.txt"]);
+
+    let status = status_of(&state, &session_id, &repository_id).await;
+    let worktree_id = status["worktreeId"]
+        .as_str()
+        .expect("worktreeId")
+        .to_owned();
+    let entry = status["entries"]
+        .as_array()
+        .expect("entries")
+        .iter()
+        .find(|entry| entry["displayPath"] == json!("README.md"))
+        .expect("the unstaged file is reported")
+        .clone();
+    let path_id = entry["pathId"].as_str().expect("pathId").to_owned();
+
+    // The preview is what binds the bytes: the token is minted over the content the write is
+    // about to replace, and the host refuses the write if the bytes move under it.
+    let previews = commands::git_read(
+        &state,
+        MAIN,
+        &session_id,
+        json!({
+            "method": "previews",
+            "query": {
+                "repositoryId": repository_id,
+                "worktreeId": worktree_id,
+                "pathIds": [path_id],
+            }
+        }),
+    )
+    .await
+    .expect("previews");
+    let preview_token = previews["tokens"][0]["previewToken"]
+        .as_str()
+        .expect("previewToken")
+        .to_owned();
+
+    // The target is the snapshot the caller was shown, read after the preview — the same order
+    // the workbench uses.
+    let target_snapshot = status_of(&state, &session_id, &repository_id).await;
+    let settled = submit_and_settle(
+        &state,
+        &session_id,
+        json!({
+            "clientRequestId": "crid_stage",
+            "target": {
+                "kind": "worktree",
+                "repositoryId": repository_id,
+                "worktreeId": worktree_id,
+                "expectedSnapshotId": target_snapshot["snapshotId"],
+            },
+            "operation": {
+                "kind": "stagePaths",
+                "pathIds": [path_id],
+                "previewTokens": [preview_token],
+            }
+        }),
+    )
+    .await;
+    assert_eq!(settled["status"], json!("succeeded"), "{settled:?}");
+    assert_eq!(settled["kind"], json!("stagePaths"));
+
+    // Git's own answer, not the host's. The index gained the selected path and nothing else,
+    // the file that was already staged is still exactly as it was, and the working copy is
+    // untouched: staging moves the index and never the working file.
+    let staged =
+        String::from_utf8(fixture.git(&["diff", "--cached", "--name-only"])).expect("utf8");
+    let mut staged: Vec<&str> = staged.lines().collect();
+    staged.sort_unstable();
+    assert_eq!(staged, vec!["README.md", "other.txt"]);
+    assert_eq!(
+        String::from_utf8(fixture.git(&["diff", "--name-only"])).expect("utf8"),
+        "",
+        "every changed file is staged now, and a staged file is not a worktree change"
+    );
+    assert_eq!(
+        std::fs::read_to_string(fixture.repo.join("README.md")).expect("read"),
+        "rewritten\n",
+        "staging moves the index, never the working file"
+    );
+
+    // The same request id and payload is a duplicate, not a second write.
+    let repeated = commands::mutation_submit(
+        &state,
+        MAIN,
+        &session_id,
+        json!({
+            "clientRequestId": "crid_stage",
+            "target": {
+                "kind": "worktree",
+                "repositoryId": repository_id,
+                "worktreeId": worktree_id,
+                "expectedSnapshotId": target_snapshot["snapshotId"],
+            },
+            "operation": {
+                "kind": "stagePaths",
+                "pathIds": [path_id],
+                "previewTokens": [preview_token],
+            }
+        }),
+    )
+    .await
+    .expect("a repeated request is answered, not refused");
+    assert_eq!(repeated["kind"], json!("duplicate"));
+    assert_eq!(repeated["record"]["status"], json!("succeeded"));
+}
+
+#[tokio::test]
+async fn a_commit_through_the_window_commits_the_index_and_leaves_the_working_copy_alone() {
+    let fixture = Fixture::new();
+    let state = fixture.state();
+    let (session_id, repository_id) = fixture.open(&state).await;
+    fixture.write("README.md", "committed change\n");
+    fixture.write("notes.txt", "not to be committed\n");
+    fixture.git(&["add", "--", "README.md"]);
+
+    let status = status_of(&state, &session_id, &repository_id).await;
+    let worktree_id = status["worktreeId"]
+        .as_str()
+        .expect("worktreeId")
+        .to_owned();
+    let settled = submit_and_settle(
+        &state,
+        &session_id,
+        json!({
+            "clientRequestId": "crid_commit",
+            "target": {
+                "kind": "worktree",
+                "repositoryId": repository_id,
+                "worktreeId": worktree_id,
+                "expectedSnapshotId": status["snapshotId"],
+            },
+            "operation": { "kind": "commit", "message": "a message about the change\n" },
+        }),
+    )
+    .await;
+    assert_eq!(settled["status"], json!("succeeded"), "{settled:?}");
+
+    // The commit exists with the exact message, the untracked file is still untracked, and
+    // nothing was staged on the caller's behalf.
+    let log = String::from_utf8(fixture.git(&["log", "-1", "--format=%s"])).expect("utf8");
+    assert_eq!(log, "a message about the change\n");
+    let untracked =
+        String::from_utf8(fixture.git(&["status", "--porcelain", "--untracked-files=all"]))
+            .expect("utf8");
+    assert!(
+        untracked.contains("?? notes.txt"),
+        "the commit must not have staged anything: {untracked}"
+    );
+
+    // History read through the same session shows it, which is how the UI learns the commit
+    // landed — not from an event.
+    let history = commands::git_read(
+        &state,
+        MAIN,
+        &session_id,
+        json!({ "method": "history", "query": { "repositoryId": repository_id } }),
+    )
+    .await
+    .expect("history");
+    assert_eq!(
+        history["commits"][0]["subject"],
+        json!("a message about the change")
+    );
+}
+
+/* --------------------------------------------------------------- the journal */
+
+#[tokio::test]
+async fn a_write_through_the_window_leaves_a_record_the_next_process_can_read() {
+    let fixture = Fixture::new();
+    let state_root = fixture.state_root();
+    let state = fixture.state_at(&state_root);
+    let (session_id, repository_id) = fixture.open(&state).await;
+    fixture.write("README.md", "staged from the window\n");
+
+    let status = status_of(&state, &session_id, &repository_id).await;
+    let worktree_id = status["worktreeId"].as_str().expect("worktreeId").to_owned();
+    let entry = status["entries"]
+        .as_array()
+        .expect("entries")
+        .iter()
+        .find(|entry| entry["displayPath"] == json!("README.md"))
+        .expect("the changed file is reported")
+        .clone();
+    let path_id = entry["pathId"].as_str().expect("pathId").to_owned();
+    let previews = commands::git_read(
+        &state,
+        MAIN,
+        &session_id,
+        json!({
+            "method": "previews",
+            "query": {
+                "repositoryId": repository_id,
+                "worktreeId": worktree_id,
+                "pathIds": [path_id],
+            }
+        }),
+    )
+    .await
+    .expect("previews");
+    let preview_token = previews["tokens"][0]["previewToken"]
+        .as_str()
+        .expect("previewToken")
+        .to_owned();
+    let target_snapshot = status_of(&state, &session_id, &repository_id).await;
+    let settled = submit_and_settle(
+        &state,
+        &session_id,
+        json!({
+            "clientRequestId": "crid_durable",
+            "target": {
+                "kind": "worktree",
+                "repositoryId": repository_id,
+                "worktreeId": worktree_id,
+                "expectedSnapshotId": target_snapshot["snapshotId"],
+            },
+            "operation": {
+                "kind": "stagePaths",
+                "pathIds": [path_id],
+                "previewTokens": [preview_token],
+            }
+        }),
+    )
+    .await;
+    assert_eq!(settled["status"], json!("succeeded"), "{settled:?}");
+    let operation_id = settled["operationId"].as_str().expect("operationId");
+
+    // The record is where a restart looks for it, and it carries the outcome. A desktop
+    // process that kept its journal in memory would answer every panel correctly and then
+    // forget, on exit, which write might have happened — which is exactly when the answer
+    // matters. Reopening this layout and reconciling it is proved in the host crate's own
+    // tests (`journal.rs`, `recovery.rs`), against the same directory shape asserted here.
+    let record = state_root
+        .join("journal")
+        .join("records")
+        .join(format!("{operation_id}.json"));
+    let written: Value =
+        serde_json::from_str(&std::fs::read_to_string(&record).expect("the record is on disk"))
+            .expect("the record is JSON");
+    assert_eq!(written["operationId"], json!(operation_id));
+    assert_eq!(written["status"], json!("succeeded"));
+    assert_eq!(written["kind"], json!("stagePaths"));
 }
 
 /* ------------------------------------------------------------------- events */
@@ -628,6 +970,85 @@ async fn a_subscription_belongs_to_the_window_that_opened_it() {
     assert!(state.events.is_empty());
 }
 
+#[tokio::test]
+async fn a_published_event_becomes_one_frame_per_subscription_addressed_to_its_window() {
+    let fixture = Fixture::new();
+    let state = fixture.state();
+    let (first_session, repository_id) = fixture.open(&state).await;
+    let second_session = commands::connect(&state, SECOND)
+        .expect("connect")
+        .session_id;
+
+    // Two windows subscribe. The handshake reports where the stream stands, so the adapter
+    // knows which replayed events it has already seen.
+    let first_ack = commands::events_subscribe(&state, MAIN, &first_session).expect("subscribe");
+    let second_ack =
+        commands::events_subscribe(&state, SECOND, &second_session).expect("subscribe");
+    let first_subscription = first_ack["subscriptionId"].as_str().expect("id").to_owned();
+    let second_subscription = second_ack["subscriptionId"]
+        .as_str()
+        .expect("id")
+        .to_owned();
+    assert_ne!(first_subscription, second_subscription);
+
+    // A write the host recorded is what a client is told about. The event is published by the
+    // service, exactly as the write path publishes it.
+    let envelope = state
+        .service
+        .events()
+        .publish(EventPayload::RepositoryChanged {
+            repository_id: repository_id.clone(),
+            worktree_ids: vec!["wt_1".to_string()],
+            snapshot_invalidated: true,
+        });
+
+    let frames = frames_for(
+        &state.events,
+        state.service.service_instance_id(),
+        &envelope,
+    );
+    assert_eq!(frames.len(), 2, "every subscription is addressed");
+
+    let mut by_label: Vec<&str> = frames.iter().map(|(label, _)| label.as_str()).collect();
+    by_label.sort_unstable();
+    assert_eq!(by_label, vec![MAIN, SECOND]);
+
+    for (label, frame) in &frames {
+        // The session that owns the subscription is carried in the frame, so a frame that
+        // reached the wrong window is discarded by the adapter rather than merged into the
+        // wrong repository's cache.
+        let expected_session = if label == MAIN {
+            &first_session
+        } else {
+            &second_session
+        };
+        assert_eq!(&frame.session_id, expected_session);
+        assert_eq!(
+            frame.service_instance_id,
+            state.service.service_instance_id()
+        );
+        assert_eq!(frame.event.sequence, envelope.sequence);
+        assert!(
+            frame.subscription_id == first_subscription
+                || frame.subscription_id == second_subscription
+        );
+    }
+    assert_ne!(frames[0].1.subscription_id, frames[1].1.subscription_id);
+
+    // Ending one subscription stops addressing that window and leaves the other alone: a
+    // window that closed is not a window that silences another's stream.
+    commands::events_unsubscribe(&state, MAIN, &first_session, &first_subscription)
+        .expect("unsubscribe");
+    let remaining = frames_for(
+        &state.events,
+        state.service.service_instance_id(),
+        &envelope,
+    );
+    assert_eq!(remaining.len(), 1);
+    assert_eq!(remaining[0].0, SECOND);
+    assert_eq!(remaining[0].1.subscription_id, second_subscription);
+}
+
 #[test]
 fn the_event_frame_carries_the_four_fields_the_adapter_filters_on() {
     let envelope = EventEnvelope {
@@ -640,10 +1061,10 @@ fn the_event_frame_carries_the_four_fields_the_adapter_filters_on() {
         },
     };
     let frame = ScopedEventFrame {
-        session_id: "sess_1",
-        subscription_id: "sub_1",
-        service_instance_id: "srvc_1",
-        event: &envelope,
+        session_id: "sess_1".to_string(),
+        subscription_id: "sub_1".to_string(),
+        service_instance_id: "srvc_1".to_string(),
+        event: envelope,
     };
 
     // `scopedEventFrameSchema` in packages/backend-tauri drops a frame whose session,
@@ -701,7 +1122,9 @@ async fn the_host_reports_only_the_targets_and_abilities_it_has() {
     assert_eq!(capabilities["localFolderPicker"], json!(false));
     assert_eq!(
         capabilities["uncertainOperationAcknowledgement"],
-        json!(false)
+        json!(true),
+        "a write can now end uncertain and block its repository, so the entry point that \
+         lifts the block has to be offered"
     );
 
     let targets = commands::host_request(&state, MAIN, &session_id, json!({ "method": "targets" }))

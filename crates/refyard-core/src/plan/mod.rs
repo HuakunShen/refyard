@@ -15,8 +15,10 @@
 //! - stdin for anything unstructured (tips, pathspecs, messages) instead of
 //!   interpolating it into an argument.
 
+pub mod commit;
 pub mod diff;
 pub mod history;
+pub mod paths;
 pub mod refs;
 pub mod status;
 

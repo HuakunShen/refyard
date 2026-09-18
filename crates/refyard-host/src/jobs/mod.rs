@@ -25,12 +25,14 @@ use std::sync::Arc;
 
 use refyard_contract::problem::{Problem, ProblemCode};
 use refyard_contract::reads::{
-    MutationKind, MutationTarget, OperationRecord, OperationStatus, OperationsListResponse,
+    EventPayload, MutationKind, MutationTarget, OperationRecord, OperationStatus,
+    OperationsListResponse,
 };
 use refyard_core::preconditions::{check_preconditions, PreconditionContext, RestartWriteBlock};
 use serde::{Deserialize, Serialize};
 
 use crate::clock::now_millis;
+use crate::events::EventSink;
 use crate::jobs::journal::{canonical_payload_digest, EffectOutcome, Journal, JournalRecord};
 use crate::jobs::queue::{EnqueueRefusal, Queue, QueueLimits, QueueMode, QueueTicket};
 use crate::jobs::recovery::{Recovery, WriteBlock};
@@ -175,6 +177,10 @@ pub struct MutationEngine {
     effects: Vec<Box<dyn MutationEffect>>,
     queue: Queue<MutationRequest>,
     next_operation: AtomicU64,
+    /// Where state changes are announced. `None` is an engine nobody subscribed to —
+    /// tests, and a host that has not wired its event transport — and it changes nothing
+    /// about what is journalled.
+    events: Option<Arc<EventSink>>,
 }
 
 impl MutationEngine {
@@ -185,13 +191,46 @@ impl MutationEngine {
         recovery: Arc<Recovery>,
         effects: Vec<Box<dyn MutationEffect>>,
     ) -> Arc<Self> {
+        Self::with_event_sink(journal, recovery, effects, None)
+    }
+
+    /// The same engine, announcing every state change to `events`.
+    pub fn with_event_sink(
+        journal: Arc<Journal>,
+        recovery: Arc<Recovery>,
+        effects: Vec<Box<dyn MutationEffect>>,
+        events: Option<Arc<EventSink>>,
+    ) -> Arc<Self> {
         Arc::new(Self {
             journal,
             recovery,
             effects,
             queue: Queue::new(QueueLimits::default()),
             next_operation: AtomicU64::new(0),
+            events,
         })
+    }
+
+    /// Publishes one record's state as an operation event, and — for an outcome that
+    /// changed the repository — the invalidation a client needs to re-read.
+    ///
+    /// This is a hint, never the evidence: the record itself is in the journal, and a
+    /// client that never subscribed reads it there.
+    fn publish(&self, record: &JournalRecord) {
+        let Some(events) = &self.events else {
+            return;
+        };
+        events.publish(EventPayload::Operation {
+            operation: record.to_operation_record(),
+        });
+        if matches!(
+            record.status,
+            OperationStatus::Succeeded | OperationStatus::NeedsAttention
+        ) {
+            if let Some(payload) = repository_changed(record) {
+                events.publish(payload);
+            }
+        }
     }
 
     /// The kinds this build can run, in the order the contract lists them.
@@ -299,6 +338,9 @@ impl MutationEngine {
             )
             .retryable());
         }
+        if let Some(record) = self.journal.get(&operation_id) {
+            self.publish(&record);
+        }
 
         if let Err(refusal) = self.queue.enqueue(
             operation_id.clone(),
@@ -320,8 +362,10 @@ impl MutationEngine {
                 ),
             };
             let problem = Problem::new(code, message);
-            self.journal
-                .finish_without_start(&operation_id, problem.clone(), now_millis())?;
+            let finished =
+                self.journal
+                    .finish_without_start(&operation_id, problem.clone(), now_millis())?;
+            self.publish(&finished);
             return Err(if retryable {
                 problem.retryable()
             } else {
@@ -409,6 +453,7 @@ impl MutationEngine {
             .for_operation(operation_id));
         }
         let cancelled = self.journal.mark_cancelled(operation_id, now_millis())?;
+        self.publish(&cancelled);
         Ok(cancelled.to_operation_record())
     }
 
@@ -432,16 +477,16 @@ impl MutationEngine {
             id: ticket.id.clone(),
         };
         let operation_id = ticket.id.clone();
-        if self
-            .journal
-            .mark_started(&operation_id, now_millis())
-            .is_err()
-        {
-            // The record is not in a state that may start; leaving it accepted is what the
-            // next restart reconciles, and inventing a terminal state here would claim an
-            // outcome nobody observed.
-            return;
-        }
+        let started = match self.journal.mark_started(&operation_id, now_millis()) {
+            Ok(record) => record,
+            Err(_) => {
+                // The record is not in a state that may start; leaving it accepted is what
+                // the next restart reconciles, and inventing a terminal state here would
+                // claim an outcome nobody observed.
+                return;
+            }
+        };
+        self.publish(&started);
         let Some(effect) = self
             .effects
             .iter()
@@ -458,6 +503,7 @@ impl MutationEngine {
             })
             .await;
         if let Ok(record) = self.journal.finish(&operation_id, outcome, now_millis()) {
+            self.publish(&record);
             if record.status == OperationStatus::Unknown {
                 // An unknown outcome blocks the repository exactly as a restart does: the
                 // next write would be made on top of a change nobody has confirmed.
@@ -483,6 +529,34 @@ fn restart_block_of(block: &WriteBlock) -> RestartWriteBlock {
     RestartWriteBlock {
         reason: block.reason.clone(),
         operation_ids: block.operation_ids.clone(),
+    }
+}
+
+/// The invalidation a finished operation produces, when it can name a repository.
+///
+/// A workspace operation's write key names the approved root it wrote into, and there is
+/// no repository id to publish — the contract's `repositoryChanged` carries one, and
+/// inventing a value there would be a lie a client can validate. Nothing is published for
+/// it: the client learns about the new repository from its own re-read of the list.
+fn repository_changed(record: &JournalRecord) -> Option<EventPayload> {
+    match &record.target {
+        MutationTarget::Worktree {
+            repository_id,
+            worktree_id,
+            ..
+        } => Some(EventPayload::RepositoryChanged {
+            repository_id: repository_id.clone(),
+            // Naming the worktree is more than the journal must know and exactly what a
+            // client needs: only this worktree's cached reads are stale.
+            worktree_ids: vec![worktree_id.clone()],
+            snapshot_invalidated: true,
+        }),
+        MutationTarget::Repository { repository_id, .. } => Some(EventPayload::RepositoryChanged {
+            repository_id: repository_id.clone(),
+            worktree_ids: Vec::new(),
+            snapshot_invalidated: true,
+        }),
+        MutationTarget::Workspace { .. } => None,
     }
 }
 

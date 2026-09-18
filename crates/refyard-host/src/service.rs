@@ -41,7 +41,8 @@ use refyard_contract::refs::RefsSnapshot;
 use refyard_core::preconditions::{GatheredRefusal, PreconditionContext};
 
 use crate::clock::{format_iso8601_millis, now_iso8601, now_millis};
-use crate::files::preview::{PreviewCheck, PreviewClaim, PreviewStore};
+use crate::events::{EventSink, EventSubscription};
+use crate::files::preview::{PreviewClaim, PreviewStore};
 use crate::files::PREVIEW_MAX_BYTES;
 use crate::files::{self, FileRead};
 use crate::jobs::journal::Journal;
@@ -63,6 +64,7 @@ use crate::targets::{
     probe_facts, ssh_target_generation, ssh_target_id, CreateTargetRequest, TargetRecord,
     TargetRegistry,
 };
+use crate::writes::WriteHost;
 
 /// The contract revision this build serves. It matches `CONTRACT_VERSION` in
 /// `packages/git-contract/src/version.ts`; a mismatch is a bug rather than a feature.
@@ -72,6 +74,34 @@ pub const API_MAJOR: u32 = 1;
 
 /// Why this build has no mutations yet, said in the contract's own vocabulary.
 const NOT_IMPLEMENTED_MESSAGE: &str = "this build implements the read half of the contract only; every mutation is named here and none of them is reported as available";
+
+/// Why the mutations this build does not implement are absent.
+const PARTIALLY_IMPLEMENTED_MESSAGE: &str = "this build implements staging, unstaging and committing only; every other mutation is named here and none of them is reported as available";
+
+/// Builds the engine, registering the write effects exactly when the host asked for them.
+///
+/// One constructor for both calls that build an engine — the service's own construction
+/// and a later one after a state directory is named — so the write path cannot be
+/// registered in one place and silently dropped in the other.
+fn build_engine(
+    journal: &Arc<Journal>,
+    recovery: &Arc<Recovery>,
+    writes_host: &Arc<WriteHost>,
+    writes_enabled: bool,
+    events: &Arc<EventSink>,
+) -> Arc<MutationEngine> {
+    let effects = if writes_enabled {
+        WriteHost::effects(writes_host)
+    } else {
+        Vec::new()
+    };
+    MutationEngine::with_event_sink(
+        Arc::clone(journal),
+        Arc::clone(recovery),
+        effects,
+        Some(Arc::clone(events)),
+    )
+}
 
 /// The limits this build enforces, as the contract publishes them.
 ///
@@ -156,9 +186,12 @@ pub struct ApplicationService {
     /// machine. The local target's executor is the same program.
     git: LocalGit,
     targets: TargetRegistry,
-    repositories: RepositoryRegistry,
-    paths: PathRegistry,
-    snapshots: SnapshotStore,
+    /// The stores a read mints state in — repositories, path ids, snapshots, preview
+    /// tokens — behind shared handles, because a write effect runs after the call that
+    /// accepted it and resolves its path ids and tokens in the very same stores.
+    repositories: Arc<RepositoryRegistry>,
+    paths: Arc<PathRegistry>,
+    snapshots: Arc<SnapshotStore>,
     roots: Mutex<RootState>,
     service_instance_id: String,
     /// The local target's id and generation, as the constructor was given them.
@@ -174,14 +207,23 @@ pub struct ApplicationService {
     ssh_environment: Option<Vec<(String, String)>>,
     /// Content fingerprints issued to a caller, and the store that refuses one whose
     /// content moved.
-    previews: PreviewStore,
+    previews: Arc<PreviewStore>,
     /// The durable record of every operation this host accepted.
     journal: Arc<Journal>,
     /// The write blocks a restart or an unknown outcome left behind.
     recovery: Arc<Recovery>,
     /// The write path. With no effects registered, `submit` refuses every mutation before
     /// anything is journalled, which is what `capabilities().operations` being empty says.
+    /// [`Self::with_writes`] registers the three this build implements.
     engine: Arc<MutationEngine>,
+    /// Whether the three write effects are registered. The effects themselves live in the
+    /// engine; this is what a later rebuild of the engine (a state directory being named)
+    /// reads so the write path is not silently dropped.
+    writes_enabled: bool,
+    /// The host pieces the effects resolve against, shared with the engine's effects.
+    writes_host: Arc<WriteHost>,
+    /// The bounded ring of state changes and invalidations, with live subscriptions.
+    events: Arc<EventSink>,
 }
 
 /// One approved root: the key it is unique by, and the text a client is shown.
@@ -464,13 +506,24 @@ impl ApplicationService {
         let journal =
             Arc::new(Journal::open(None).expect("an in-memory journal cannot fail to open"));
         let recovery = Arc::new(Recovery::new());
-        let engine = MutationEngine::new(Arc::clone(&journal), Arc::clone(&recovery), Vec::new());
+        let repositories = Arc::new(RepositoryRegistry::new());
+        let paths = Arc::new(PathRegistry::new());
+        let snapshots = Arc::new(SnapshotStore::default());
+        let previews = Arc::new(PreviewStore::with_contract_limits());
+        let events = Arc::new(EventSink::new());
+        let writes_host = Arc::new(WriteHost::new(
+            targets.clone(),
+            Arc::clone(&repositories),
+            Arc::clone(&paths),
+            Arc::clone(&previews),
+        ));
+        let engine = build_engine(&journal, &recovery, &writes_host, false, &events);
         Self {
             git: config.git,
             targets,
-            repositories: RepositoryRegistry::new(),
-            paths: PathRegistry::new(),
-            snapshots: SnapshotStore::default(),
+            repositories,
+            paths,
+            snapshots,
             roots: Mutex::new(RootState::default()),
             service_instance_id: config.service_instance_id,
             target_id: config.target_id,
@@ -479,10 +532,13 @@ impl ApplicationService {
             git_version: Mutex::new(None),
             ssh_source: None,
             ssh_environment: None,
-            previews: PreviewStore::with_contract_limits(),
+            previews,
             journal,
             recovery,
             engine,
+            writes_enabled: false,
+            writes_host,
+            events,
         }
     }
 
@@ -500,13 +556,58 @@ impl ApplicationService {
         let journal = Arc::new(Journal::open(Some(root))?);
         let recovery = Arc::new(Recovery::new());
         recovery.reconcile(&journal, crate::clock::now_millis())?;
-        let engine = MutationEngine::new(Arc::clone(&journal), Arc::clone(&recovery), Vec::new());
+        let engine = build_engine(
+            &journal,
+            &recovery,
+            &self.writes_host,
+            self.writes_enabled,
+            &self.events,
+        );
         Ok(Self {
             journal,
             recovery,
             engine,
             ..self
         })
+    }
+
+    /// Registers the three write effects this build implements: `stagePaths`,
+    /// `unstagePaths` and `commit`.
+    ///
+    /// Registration is explicit rather than part of `new`, because a service that has not
+    /// been given the write path answers exactly as the read-only build did: no operation
+    /// is offered in `capabilities`, and every submission is refused with
+    /// `UnsupportedOperation` before anything is journalled. A read-only inspector, the
+    /// differential fixture and a host whose writes are not yet wired rely on that; a host
+    /// that wants the minimal write loop calls this once, in its composition root.
+    ///
+    /// The effects are the same three whichever target a repository was opened on: the
+    /// planner builds one argument vector and the provider decides whether it runs here or
+    /// over SSH.
+    pub fn with_writes(mut self) -> Self {
+        self.writes_enabled = true;
+        self.engine = build_engine(
+            &self.journal,
+            &self.recovery,
+            &self.writes_host,
+            true,
+            &self.events,
+        );
+        self
+    }
+
+    /// The event sink: state changes and invalidations, with live subscriptions.
+    ///
+    /// Events are hints. A client that never subscribes recovers every fact through
+    /// `operation`/`operations`, which read the journal; this sink is how a client that is
+    /// listening refreshes sooner.
+    pub fn events(&self) -> &EventSink {
+        &self.events
+    }
+
+    /// Subscribes for live event delivery. A shortcut for `self.events().subscribe()`.
+    pub fn subscribe_events(&self) -> EventSubscription {
+        self.events.subscribe()
     }
 
     /// Binds SSH discovery and execution to one explicitly chosen configuration source.
@@ -780,7 +881,11 @@ impl ApplicationService {
         } else {
             vec![UnavailableReason {
                 code: "not-implemented".to_string(),
-                message: NOT_IMPLEMENTED_MESSAGE.to_string(),
+                message: if implemented.is_empty() {
+                    NOT_IMPLEMENTED_MESSAGE.to_string()
+                } else {
+                    PARTIALLY_IMPLEMENTED_MESSAGE.to_string()
+                },
                 operations: remaining,
             }]
         };
@@ -1297,33 +1402,14 @@ impl ApplicationService {
     /// All-or-nothing: one stale entry leaves every token unused, because a partially
     /// consumed batch would force the client to re-preview paths it never touched.
     pub async fn redeem_previews(&self, submission: &PreviewSubmission) -> Result<(), Problem> {
-        let record = self.require_record(&submission.repository_id)?;
-        let target = self.target_for(&record)?;
-        let worktree_id = reads::require_worktree(&record, Some(&submission.worktree_id))
-            .map_err(|error| error.to_problem())?;
-        if submission.path_ids.len() != submission.preview_tokens.len() {
-            return Err(Problem::new(
-                ProblemCode::InvalidRequest,
-                "one preview token is required per selected path",
-            ));
-        }
-        let executor = target.executor()?;
-        let mut checks = Vec::with_capacity(submission.path_ids.len());
-        for (index, path_id) in submission.path_ids.iter().enumerate() {
-            let bytes = self.authorised_path_bytes(&record, &worktree_id, path_id)?;
-            let read = self.read_file(executor, &record, &bytes).await;
-            checks.push(PreviewCheck {
-                preview_token: submission.preview_tokens[index].clone(),
-                repository_id: record.repository_id.clone(),
-                worktree_id: worktree_id.clone(),
-                target_generation: record.location.target_generation.clone(),
-                path_id: path_id.clone(),
-                current_fingerprint_hex: read.fingerprint_hex(),
-            });
-        }
-        self.previews
-            .redeem(&checks)
-            .map_err(|refusal| refusal.problem(None))
+        self.writes_host
+            .redeem_submission(
+                &submission.repository_id,
+                &submission.worktree_id,
+                &submission.path_ids,
+                &submission.preview_tokens,
+            )
+            .await
     }
 
     /// Resolves a path id a read may act on: this worktree, this build of the target.
@@ -1358,11 +1444,12 @@ impl ApplicationService {
         record: &RepositoryRecord,
         path_bytes: &[u8],
     ) -> FileRead {
-        let worktree = record.location.canonical_worktree.as_str();
-        match executor {
-            GitExecutor::Local(_) => files::local::read(Path::new(worktree), path_bytes),
-            GitExecutor::Ssh(ssh) => files::remote::read(ssh, worktree, path_bytes).await,
-        }
+        files::read_through(
+            executor,
+            record.location.canonical_worktree.as_str(),
+            path_bytes,
+        )
+        .await
     }
 
     /* ------------------------------------------------------------- operations */
@@ -1378,6 +1465,30 @@ impl ApplicationService {
                     format!("unknown operation {operation_id}"),
                 )
             })
+    }
+
+    /// One operation, when it belongs to this actor.
+    ///
+    /// A caller that did not submit an operation is told it does not exist — the same answer
+    /// `cancel` gives — because a session that could read another's operations could infer
+    /// what another window is doing. The difference between "not yours" and "not here" is
+    /// deliberately not published.
+    pub fn operation_for(
+        &self,
+        actor: &str,
+        operation_id: &str,
+    ) -> Result<OperationRecord, Problem> {
+        let unknown = || {
+            Problem::new(
+                ProblemCode::NotFound,
+                format!("unknown operation {operation_id}"),
+            )
+        };
+        let record = self.journal.get(operation_id).ok_or_else(unknown)?;
+        if record.actor != actor {
+            return Err(unknown());
+        }
+        Ok(record.to_operation_record())
     }
 
     /// The operations one actor submitted, newest first.
@@ -1500,12 +1611,7 @@ impl ApplicationService {
     }
 
     fn require_record(&self, repository_id: &str) -> Result<RepositoryRecord, Problem> {
-        self.repositories.get(repository_id).ok_or_else(|| {
-            Problem::new(
-                ProblemCode::NotFound,
-                format!("unknown repository {repository_id}"),
-            )
-        })
+        self.writes_host.require_record(repository_id)
     }
 
     /// One target this session has, or the refusal the Node host also gives for a target it
@@ -1525,29 +1631,7 @@ impl ApplicationService {
     /// refused here rather than read: its paths and snapshots describe a build that no
     /// longer exists, and the executor may no longer be the one that opened it.
     fn target_for(&self, record: &RepositoryRecord) -> Result<TargetRecord, Problem> {
-        let target = self.targets.get(&record.location.target_id).ok_or_else(|| {
-            Problem::new(
-                ProblemCode::NotFound,
-                format!(
-                    "repository {} was opened on target {} and that target is no longer connected; open the repository again",
-                    record.repository_id, record.location.target_id
-                ),
-            )
-        })?;
-        if target.generation != record.location.target_generation {
-            return Err(Problem::new(
-                ProblemCode::StaleSnapshot,
-                format!(
-                    "repository {} was opened on an earlier build of target {}; open the repository again",
-                    record.repository_id, record.location.target_id
-                ),
-            )
-            .with_detail(
-                "targetGeneration",
-                DetailValue::Text(target.generation.clone()),
-            ));
-        }
-        Ok(target)
+        self.writes_host.target_for(record)
     }
 
     /// One row's HEAD, read through the target the repository lives on.

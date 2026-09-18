@@ -23,6 +23,22 @@ pub mod remote;
 
 use sha2::{Digest, Sha256};
 
+use crate::providers::GitExecutor;
+
+/// Reads one path through the provider that owns the repository.
+///
+/// The two arms are the two readers, and neither consults the other machine: a local
+/// repository is read from this filesystem below the worktree it was opened at, and a
+/// remote one is read by the SSH provider's fixed command on the far side. Every caller
+/// that reads a path a write acts on goes through here, so a preview, a redemption and a
+/// stage all have the same idea of what "the bytes at this path" means.
+pub async fn read_through(executor: &GitExecutor, worktree: &str, path_bytes: &[u8]) -> FileRead {
+    match executor {
+        GitExecutor::Local(_) => local::read(std::path::Path::new(worktree), path_bytes),
+        GitExecutor::Ssh(ssh) => remote::read(ssh, worktree, path_bytes).await,
+    }
+}
+
 /// The most this host will read for one preview: `LIMITS.previewMaxBytes`-class bound,
 /// stated here because a read that silently truncated would fingerprint a prefix.
 pub const PREVIEW_MAX_BYTES: u64 = 8 * 1024 * 1024;

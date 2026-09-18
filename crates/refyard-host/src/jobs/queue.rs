@@ -262,3 +262,123 @@ fn can_start<J>(state: &QueueState<J>, ticket: &QueueTicket<J>, limits: &QueueLi
         .unwrap_or(0)
         < limits.max_readers_per_repository
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Queues one write and answers with the ids that may start now.
+    fn startable_after(queue: &Queue<u32>) -> Vec<String> {
+        queue
+            .take_startable()
+            .into_iter()
+            .map(|ticket| ticket.id)
+            .collect()
+    }
+
+    #[test]
+    fn one_writer_per_key_runs_until_its_slot_is_released() {
+        // Prevents: two mutations of one repository running at once, which is how a stage
+        // and a commit interleave into an index nobody can explain.
+        let queue = Queue::new(QueueLimits::default());
+        for (id, key) in [("op_1", "repo/a"), ("op_2", "repo/a"), ("op_3", "repo/b")] {
+            queue
+                .enqueue(id, "owner", key, QueueMode::Write, 1)
+                .expect("queued");
+        }
+        assert_eq!(
+            startable_after(&queue),
+            vec!["op_1".to_string(), "op_3".to_string()],
+            "a different repository is not blocked by the first one's writer"
+        );
+        assert_eq!(queue.running_count(), 2);
+        assert_eq!(queue.pending_count(), 1);
+
+        queue.release("op_1");
+        assert_eq!(
+            startable_after(&queue),
+            vec!["op_2".to_string()],
+            "the waiting writer starts as soon as the key is free"
+        );
+        queue.release("op_2");
+        queue.release("op_3");
+        assert_eq!(queue.running_count(), 0);
+        assert_eq!(queue.pending_count(), 0);
+    }
+
+    #[test]
+    fn a_reader_does_not_run_alongside_a_writer_of_the_same_repository() {
+        // Prevents: a status read racing an index write, which would let the UI show a
+        // half-written index as a settled one.
+        let queue = Queue::new(QueueLimits::default());
+        queue
+            .enqueue("write", "owner", "repo/a", QueueMode::Write, 1)
+            .expect("queued");
+        queue
+            .enqueue("read", "owner", "repo/a", QueueMode::Read, 2)
+            .expect("queued");
+        queue
+            .enqueue("other-read", "owner", "repo/b", QueueMode::Read, 3)
+            .expect("queued");
+        assert_eq!(
+            startable_after(&queue),
+            vec!["write".to_string(), "other-read".to_string()]
+        );
+        queue.release("write");
+        assert_eq!(startable_after(&queue), vec!["read".to_string()]);
+    }
+
+    #[test]
+    fn a_released_slot_is_reusable_and_a_cancelled_ticket_never_starts() {
+        // Prevents: a repository that looks permanently busy after one failure, and a
+        // queued operation that runs after its cancellation was reported.
+        let queue = Queue::new(QueueLimits::default());
+        queue
+            .enqueue("op_1", "owner", "repo/a", QueueMode::Write, 1)
+            .expect("queued");
+        assert!(queue.cancel("op_1"));
+        assert!(
+            startable_after(&queue).is_empty(),
+            "a cancelled ticket is gone"
+        );
+        assert!(!queue.cancel("op_1"), "cancelling twice is not an error");
+
+        queue
+            .enqueue("op_2", "owner", "repo/a", QueueMode::Write, 2)
+            .expect("queued");
+        assert_eq!(startable_after(&queue), vec!["op_2".to_string()]);
+        queue.release("op_2");
+        queue
+            .enqueue("op_3", "owner", "repo/a", QueueMode::Write, 3)
+            .expect("queued");
+        assert_eq!(
+            startable_after(&queue),
+            vec!["op_3".to_string()],
+            "the key is free again after a release"
+        );
+    }
+
+    #[test]
+    fn the_queue_is_bounded_per_actor() {
+        // Prevents: a client that submits faster than work completes growing the process
+        // until it dies; it is told the queue is full instead.
+        let queue = Queue::new(QueueLimits {
+            max_queued_per_actor: 2,
+            ..QueueLimits::default()
+        });
+        assert!(queue
+            .enqueue("op_1", "owner", "repo/a", QueueMode::Write, 1)
+            .is_ok());
+        assert!(queue
+            .enqueue("op_2", "owner", "repo/b", QueueMode::Write, 2)
+            .is_ok());
+        assert!(matches!(
+            queue.enqueue("op_3", "owner", "repo/c", QueueMode::Write, 3),
+            Err(EnqueueRefusal::QueueFull)
+        ));
+        // Another actor has its own bound.
+        assert!(queue
+            .enqueue("op_4", "other", "repo/c", QueueMode::Write, 4)
+            .is_ok());
+    }
+}

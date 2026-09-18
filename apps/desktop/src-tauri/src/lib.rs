@@ -26,14 +26,18 @@
 pub mod commands;
 pub mod dispatch;
 pub mod events;
+pub mod relay;
 pub mod session;
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use tauri::Manager;
+
 use refyard_host::providers::local::LocalGit;
 use refyard_host::reads::filesystem;
 use refyard_host::service::{ApplicationService, ApplicationServiceConfig};
+use refyard_host::state_root::default_state_root;
 
 use crate::events::EventRegistry;
 use crate::session::SessionRegistry;
@@ -44,17 +48,24 @@ pub struct AppState {
     /// arrives with the SSH provider, and a session will then name the one it talks to.
     pub service: Arc<ApplicationService>,
     pub sessions: SessionRegistry,
-    pub events: EventRegistry,
+    /// Kept behind an `Arc` because the relay task outlives the command that opened a
+    /// subscription: it reads the same registry the handshake wrote to.
+    pub events: Arc<EventRegistry>,
 }
 
 impl AppState {
-    /// Builds the state a desktop process serves: the local target, discovered once.
+    /// Builds the state a desktop process serves: the local target, discovered once, with the
+    /// private state directory this machine's platform gives a per-user application.
     ///
     /// Discovery happens before the window opens, so a machine without `git` fails to start
     /// with that sentence on stderr instead of opening a workbench whose every panel reports
     /// an error.
     pub fn for_this_machine() -> Result<Self, String> {
-        Ok(Self::with_git(LocalGit::discover()?))
+        let git = LocalGit::discover()?;
+        let environment: Vec<(String, String)> = std::env::vars().collect();
+        let ssh_config = ssh_config_from(&environment);
+        let root = default_state_root(&environment, std::env::consts::OS);
+        Self::build(git, ssh_config, Some(root))
     }
 
     /// The same state around an already-resolved Git, so a test can point the whole shell at
@@ -72,6 +83,29 @@ impl AppState {
     /// from `HOME`: a process whose `HOME` was set for it would otherwise list one file and
     /// execute another, and neither the fixture nor a person would be told.
     pub fn with_ssh_config(git: LocalGit, ssh_config: Option<PathBuf>) -> Self {
+        Self::build(git, ssh_config, None).expect("a state directory named by no one cannot fail")
+    }
+
+    /// The same, with the private state directory named outright.
+    ///
+    /// This is how a process that is not the windowed app — the CLI, or a test — pins where
+    /// its journal lives, including into a fixture's scratch tree.
+    pub fn with_state_root(
+        git: LocalGit,
+        ssh_config: Option<PathBuf>,
+        state_root: PathBuf,
+    ) -> Result<Self, String> {
+        Self::build(git, ssh_config, Some(state_root))
+    }
+
+    /// The one place a desktop service is constructed.
+    ///
+    /// `state_root` is `None` only for tests, which want a journal that cannot outlive the
+    /// test. A process that names no directory still works and does not remember: its records
+    /// die with it, which is what the product must not ship — a write whose result is unknown
+    /// has to block the next one *after* a restart too, and that is only true if the record
+    /// was on disk before the process that made it went away.
+    fn build(git: LocalGit, ssh_config: Option<PathBuf>, state_root: Option<PathBuf>) -> Result<Self, String> {
         let started = millis_since_epoch();
         // The home a person browses from is the home this host runs Git with, so a fixture
         // and the product cannot disagree about which `~` is meant.
@@ -86,11 +120,17 @@ impl AppState {
         if let Some(ssh_config) = ssh_config {
             service = service.with_ssh_config_file(ssh_config);
         }
-        Self {
-            service: Arc::new(service),
-            sessions: SessionRegistry::default(),
-            events: EventRegistry::default(),
+        if let Some(root) = state_root {
+            service = service.with_state_root(root).map_err(|problem| problem.to_string())?;
         }
+        // Writes are registered here, at the composition root: the service that answers
+        // `capabilities` and the service a caller submits to have to be the same one, or the
+        // host would advertise operations it refuses — or accept operations it does not list.
+        Ok(Self {
+            service: Arc::new(service.with_writes()),
+            sessions: SessionRegistry::default(),
+            events: Arc::new(EventRegistry::default()),
+        })
     }
 }
 
@@ -152,6 +192,17 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(state)
+        .setup(|app| {
+            // One relay for the process: it reads the service's event stream and hands each
+            // frame to the windows that subscribed, so a write in one window reaches another
+            // window watching the same repository.
+            let handle = app.handle().clone();
+            let state = app.state::<AppState>();
+            let service = Arc::clone(&state.service);
+            let events = Arc::clone(&state.events);
+            tauri::async_runtime::spawn(relay::run(handle, service, events));
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::refyard_connect,
             commands::refyard_disconnect,

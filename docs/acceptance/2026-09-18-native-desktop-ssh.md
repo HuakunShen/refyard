@@ -264,21 +264,23 @@ Baseline commit: 5692787 (feat(ssh): execute git remotely through system openssh
 Implementation commit: 73a1ff0 (feat(workbench): open local and ssh repositories through one ui)
                        004539c (fix(git-ui): stop calling a complete diff listing truncated)
                        88832cb (fix(native): run the ssh fixture's child processes through node)
+                       93ee1e0 (feat(native): enforce preview freshness and durable mutation state)
+                       D11 (feat(native): support safe local and ssh staging and commits)
 Test platform / Git / SSH: macOS 26.6 arm64 · git 2.50.1 · OpenSSH 10.3p1 → Alpine 3.20 sshd 9.7p1
 A Local desktop: PASS
 B Agentless SSH reads: PARTIAL（本地 App 真实读取通过；凭据生态 D14、远端浏览 P01 未做）
-C Local + SSH writes: NOT RUN（D11 未实现）
+C Local + SSH writes: PARTIAL（真实 App 两种 provider 完成 stage/unstage/commit 并被服务器 Git 验证；E06 hook 失败、E11 断线、E12 crash/restart、E14 取消 尚未在 App 内实测；E13 目前只有命令层入口，UI 入口待补）
 D Native CLI / HTTP: NOT RUN（D12 未实现）
 Artifact .app absolute path + SHA-256 + installed bytes:
   /Volumes/Portable2TB/ExtDev/refyard-native-desktop-ssh/apps/desktop/src-tauri/target/release/bundle/macos/Refyard.app
-  2e0c12e6b8b7a913149fdb3fa337a0907ba511d5734c371136712998ef7cfc6e · 12 MiB（walked）· 未签名
+  df903851b7143f68867e4165407ccf9ce15e7fe274f9bcce7b7cd707ec614860 · 12869856 bytes executable · 12.6 MiB installed · 未签名
 Artifact CLI absolute path + SHA-256 + bytes: 不存在（D12）
-No-Node proof: 见 A02/A04 与 B 记录；App 以 PATH=/usr/bin:/bin 启动并完成读取，进程树无 JS runtime 子进程
+No-Node proof: 见 A02/A04 与 B 记录；App 以 PATH=/usr/bin:/bin 启动并完成读取与写入，进程树无 JS runtime 子进程
 Remote no-install proof: 见 D01/D13；容器内无 node/bun/deno/refyard/python3/npx/curl，/ 下唯一 refyard 命名路径是种子仓库目录
-Commands actually run and exit codes: 见下方逐行表与 B 记录“本轮跑过的闸门”
-Existing regression failures: 无（56 e2e、418 integration、428 unit、397 Rust 全绿；一个 e2e 竞态已修，见 B 记录）
-Not-run matrix cells: A06；B01–B04、B06–B09；C01–C14；D04、D06–D12、D14；E01–E16；F01–F08；第 5 节全部预算项
-Next executable task: D10 → D11
+Commands actually run and exit codes: 见下方逐行表与 B、C 记录“本轮跑过的闸门”
+Existing regression failures: 无（494 Rust passed / 0 failed / 20 ignored；418 integration；428 unit；56 e2e chromium）
+Not-run matrix cells: A06；B01–B04、B06–B09；C03–C06、C08、C10、C12–C14；D04、D06–D12、D14；E06、E08、E09、E11、E12、E14、E15；F01–F08；第 5 节全部预算项
+Next executable task: D12
 ```
 
 ### 9.1 A 节（架构与运行时）
@@ -313,12 +315,11 @@ Next executable task: D10 → D11
 | 其余 B/C/D 行 | NOT RUN | 逐行原因见第 9.4 节                                                                                                                                                                                            |
 
 ### 9.3 本轮跑过的闸门（命令与退出状态）
-
 | 命令                                                                                         | 退出 | 结果                                                                     |
 | -------------------------------------------------------------------------------------------- | ---- | ------------------------------------------------------------------------ |
-| `cargo test --workspace`                                                                     | 0    | 397 passed / 0 failed / 14 ignored                                       |
+| `cargo test --workspace`                                                                     | 0    | 494 passed / 0 failed / 20 ignored（D11 后重跑；此前 397 / 14）          |
 | `cargo test -p refyard-host --test ssh_exec -- --ignored --test-threads=1`（fixture 已启动） | 0    | 14 passed                                                                |
-| `cargo test`（`apps/desktop/src-tauri`，独立 workspace）                                     | 0    | 18 passed + 1 unit；`--ignored` 时 SSH target 用例 1 passed              |
+| `cargo test`（`apps/desktop/src-tauri`，独立 workspace）                                     | 0    | 24 passed（新增 D11 写入与 journal 用例）                                |
 | `cargo clippy --workspace --all-targets -- -D warnings` / `cargo fmt --all -- --check`       | 0    | 无输出                                                                   |
 | `pnpm check`                                                                                 | 0    | 11 tasks 通过，根 `tsc` 干净，svelte-check 0 error 0 warning             |
 | `pnpm test:unit`                                                                             | 0    | 47 files / 428 tests passed                                              |
@@ -335,3 +336,40 @@ Next executable task: D10 → D11
 - **D 节剩余行**：D04 需要写入路径（D11）；D06/D09 需要 unborn/detached/bare/worktree fixture；D07 需要分页压力用例；D08 需要 binary/超大 fixture；D10（连接丢失）需要 UI 断线用例；D11（非 POSIX 远端 shell）没有对应 fixture；D12（SSH 复用/不影响用户既有连接）需要与用户终端并存测量；D14（凭据生态）需要真实 1Password/key agent。
 - **E、F 两节**：写入与 native HTTP 入口都还不存在（D11/D12）。
 - **第 5 节全部预算**：尚未测量，没有任何数字被写进本文件以外的结论。
+
+### 9.5 D11 结果（E 节最小写入闭环，2026-09-18）
+
+真实 App（release bundle，哈希见上）在一个窗口内同时打开远端 fixture 与本地临时 repo，
+两者都完成「看 diff → stage → 看 staged diff → unstage → stage → commit → history 看到新
+commit」，随后用服务器/本机自己的 `git` 读回。完整过程、argv 采样与关闭检查见
+`docs/evidence/native-desktop-ssh/c-local-and-ssh-writes.md`。
+
+| ID  | 结果    | 证据                                                                                                                                                                             |
+| --- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| E01 | PASS    | 只选中的路径进入 index：`A. c.txt`，其余不变；本地与远端同流程；`ssh_mutations.rs`、`session_owner.rs` 覆盖单文件与批量                                                          |
+| E02 | PASS    | staged diff 由同一 status/diff 读取给出；窗口显示 `Staged Files 1 · A. c.txt` 并与 `git diff --cached --name-only` 一致                                                            |
+| E03 | PASS    | unstage 走 `git restore --staged --pathspec-from-file=- --pathspec-file-nul`（argv 实测），窗口提示 `unstaged 1 path (working tree untouched)`，工作文件内容未变                    |
+| E04 | PASS    | unborn 分支 unstage 由 `ssh_mutations.rs` 用例覆盖（不退回 `git restore`，不删工作文件）                                                                                          |
+| E05 | PASS    | 远端 `git log` 显示 app 提交的同一 OID（`459b43f9…`），作者/提交者是容器自身身份；本地为 `5314383a…`；commit 不自动 stage                                                          |
+| E07 | PASS    | preview 绑定内容指纹，内容变动即 `StalePreview` 拒绝（D10 用例 + 桌面命令层）                                                                                                    |
+| E10 | PASS    | 同 clientRequestId + 同 payload 返回 `duplicate` 与原记录，不重复写入；桌面用例断言 Git 侧无第二次写入                                                                            |
+| E13 | PARTIAL | 命令层可用且有测试（`acknowledging_an_uncertain_operation_is_reachable_and_refuses_what_it_should`；ack 不改写 `unknown`）；**UI 尚无解除按钮**，见 9.6                                  |
+| E16 | PARTIAL | 本地与远端共用同一 planner/effect/队列代码路径，并各自被真实 Git 验证；但 E06/E11/E12/E14 未在两种 provider 上逐一实测，故不标 PASS                                                  |
+
+其余 E 行未测，原因见 9.4。
+
+### 9.6 D11 未完成项（不得当作已实现）
+
+- **E13 的 UI 入口**：blocked repository 在窗口里没有「确认并解除」的入口，只有 Tauri 命令
+  `acknowledgeUncertainOperation` 与 dispatcher/test 覆盖。真实用户被 block 后目前只能从
+  API 解除。
+- **`tests/e2e/native-mutations.spec.ts`**：计划里列的 native e2e 未创建。macOS 上 WKWebView
+  没有可用的 WebDriver，桌面端 e2e 无法用 Playwright 驱动；本轮以 `session_owner.rs`（直接
+  调用生产 command body）作为等价覆盖，理由与差距同时记录在此，不用一份假 spec 充数。
+- **E06**：hook 失败的保留只由 host 层用例覆盖（无 `--no-verify`，失败即失败），未在真实 App
+  里用 fixture hook 演示。
+- **E11/E12/E14**：断线、crash/restart、取消未在真实 App 内制造。命令行层的对应行为由
+  `uncertain.rs`、`journal.rs`、`recovery.rs` 用例覆盖；App 内实测留给 D13（shutdown/kill 场景）。
+- **App 的 journal 位置**（本轮修复）：窗口进程此前把 journal 放在内存里，退出即忘；现已改为
+  平台每用户目录（`REFYARD_STATE_DIR` 可覆盖），并有 `state_root.rs` 单测、桌面用例与两次真实
+  启动实测（`…/Library/Application Support/refyard/journal/records` 在写入前即存在）。

@@ -64,20 +64,7 @@ pub async fn read_status(
     include_ignored: bool,
     read_at: &str,
 ) -> Result<(StatusSnapshot, String), ReadError> {
-    let plan = refyard_core::plan::status::plan_status(refyard_core::plan::status::StatusOptions {
-        include_ignored,
-        show_stash: false,
-    });
-    let stdout = run_required(
-        runs,
-        record.location.canonical_worktree.as_str(),
-        &plan,
-        STATUS_COMMAND,
-    )
-    .await?;
-
-    let parsed = parse_status(&stdout, STATUS_MAX_ENTRIES)
-        .map_err(|error| parse_error(STATUS_COMMAND, error))?;
+    let parsed = read_parsed_status(runs, record, include_ignored).await?;
     let head = head_state(&parsed);
     let worktree_id = record.worktree_id.clone();
     let target_generation = record.location.target_generation.as_str();
@@ -133,6 +120,55 @@ pub async fn read_status(
         truncated: false,
     };
     Ok((snapshot_dto, snapshot.snapshot_id))
+}
+
+/// The facts one write needs before and after it runs: where HEAD is, the index
+/// fingerprint the preconditions compare, and the raw records (a rename has to stage its
+/// origin path, and the commit pre-check reads the index columns).
+///
+/// This is deliberately the *same* parse and the *same* fingerprint function
+/// [`read_status`] uses, so the state a write records as "before" is the state the
+/// submit-time precondition compared against. Unlike `read_status` it mints no snapshot:
+/// it is evidence for a write's own decision, not a read a client may hold.
+pub struct WriteFacts {
+    pub head: HeadState,
+    pub index_key: String,
+    pub records: Vec<StatusRecord>,
+}
+
+/// Reads the write facts for one worktree.
+pub async fn read_write_facts(
+    runs: &GitExecutor,
+    record: &RepositoryRecord,
+) -> Result<WriteFacts, ReadError> {
+    let parsed = read_parsed_status(runs, record, false).await?;
+    let head = head_state(&parsed);
+    let rows: Vec<IndexFingerprintEntry> = parsed.records.iter().map(fingerprint_entry).collect();
+    Ok(WriteFacts {
+        index_key: index_fingerprint(head.oid.as_deref(), &rows),
+        head,
+        records: parsed.records,
+    })
+}
+
+/// Runs the status command and parses its bytes, without naming any of them.
+async fn read_parsed_status(
+    runs: &GitExecutor,
+    record: &RepositoryRecord,
+    include_ignored: bool,
+) -> Result<StatusParseResult, ReadError> {
+    let plan = refyard_core::plan::status::plan_status(refyard_core::plan::status::StatusOptions {
+        include_ignored,
+        show_stash: false,
+    });
+    let stdout = run_required(
+        runs,
+        record.location.canonical_worktree.as_str(),
+        &plan,
+        STATUS_COMMAND,
+    )
+    .await?;
+    parse_status(&stdout, STATUS_MAX_ENTRIES).map_err(|error| parse_error(STATUS_COMMAND, error))
 }
 
 /// Where HEAD is, in the three states the contract distinguishes.

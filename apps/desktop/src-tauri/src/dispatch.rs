@@ -14,8 +14,8 @@
 use refyard_contract::diff::DiffQuery;
 use refyard_contract::history::HistoryQuery;
 use refyard_contract::host::{ExecutionTargetKind, HostCapabilities};
-use refyard_contract::reads::PreviewsRequest;
 use refyard_contract::problem::{Problem, ProblemCode, ProblemResponse};
+use refyard_contract::reads::PreviewsRequest;
 use refyard_host::service::{ApplicationService, StatusQuery, API_MAJOR};
 use refyard_host::targets::CreateTargetRequest;
 use serde::{Deserialize, Serialize};
@@ -345,7 +345,8 @@ struct UncertainAcknowledgement {
 }
 
 fn decode_acknowledgement(request: Value) -> Result<UncertainAcknowledgement, ProblemResponse> {
-    let acknowledgement: UncertainAcknowledgement = decode(request, "acknowledgeUncertainOperation")?;
+    let acknowledgement: UncertainAcknowledgement =
+        decode(request, "acknowledgeUncertainOperation")?;
     if !acknowledgement.confirmed {
         return Err(failed(Problem::new(
             ProblemCode::InvalidRequest,
@@ -388,10 +389,15 @@ fn decode<T: serde::de::DeserializeOwned>(
 
 /// What this process can do about targets and machines.
 ///
-/// Two of these are properties of the *service* — whether it reads this machine's SSH
-/// configuration, and which targets it can create — and two are properties of this process:
-/// a folder dialog needs a plugin this build does not link, and no mutation is wired yet, so
-/// nothing can be acknowledged.
+/// Three of these are properties of the *service*: whether it reads this machine's SSH
+/// configuration, which targets it can create, and whether it can lift the write block an
+/// uncertain outcome leaves behind. The last is true because the composition root registers
+/// the write effects — an uncertain outcome is only reachable through a write, so a host that
+/// advertised this while refusing every mutation would be promising an entry point nobody can
+/// arrive at.
+///
+/// The fourth is a property of this process: a folder dialog needs a plugin this build does
+/// not link, so the picker is the service's own rather than the OS's.
 ///
 /// `targetKinds` names both because both can be created: `createTarget` builds an SSH target
 /// from a listed candidate, probes it, and reports `unavailable` with the reason when the
@@ -400,7 +406,7 @@ fn host_capabilities() -> HostCapabilities {
     HostCapabilities {
         ssh_config: true,
         local_folder_picker: false,
-        uncertain_operation_acknowledgement: false,
+        uncertain_operation_acknowledgement: true,
         target_kinds: vec![ExecutionTargetKind::Local, ExecutionTargetKind::SshConfig],
     }
 }

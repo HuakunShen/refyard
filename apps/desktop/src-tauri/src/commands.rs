@@ -11,13 +11,24 @@
 //! of an IPC deserialization error that reaches the caller as an untyped failure.
 
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use serde_json::Value;
 use tauri::State;
 
 use crate::dispatch::{self, GitReadRequest, HostRequest};
+use crate::events::StreamPosition;
 use crate::session::NativeSessionMetadata;
 use crate::AppState;
 use refyard_contract::problem::{Problem, ProblemCode, ProblemResponse};
+use refyard_contract::reads::{OperationRecord, OperationStatus};
+use refyard_host::jobs::{MutationRequest, SubmitResult};
+
+/// How many operations `operation_list` answers with when the caller does not say.
+///
+/// The journal keeps everything; this is only the page size, and a caller that asks for more
+/// gets a bounded answer rather than an unbounded scan of the state directory.
+const DEFAULT_OPERATION_LIMIT: u32 = 50;
+const MAX_OPERATION_LIMIT: u32 = 200;
 
 /// `refyard_connect` — mints a session for the calling window.
 ///
@@ -84,9 +95,18 @@ pub fn events_subscribe(
         .sessions
         .service_for(session_id, caller_label)
         .map_err(failed)?;
-    let ack = state
-        .events
-        .subscribe(session_id, caller_label, service.service_instance_id());
+    // The handshake carries the position of the stream this subscription is joining: the
+    // watermark the adapter merges against, and whatever the ring still holds for a caller
+    // with a cursor. A subscription that has no cursor gets no replay, and re-reads on mount.
+    let ack = state.events.subscribe(
+        session_id,
+        caller_label,
+        service.service_instance_id(),
+        StreamPosition {
+            high_watermark: service.events().high_watermark(),
+            replay: service.events().replay(None),
+        },
+    );
     to_value(ack)
 }
 
@@ -103,64 +123,85 @@ pub fn events_unsubscribe(
         .map_err(failed)
 }
 
-/// `refyard_mutation_submit` — refused, and refused *after* the ownership check.
+/// `refyard_mutation_submit` — one write through the session the caller owns.
 ///
-/// Every write command goes through the same gate as the reads even though none of them can
-/// do anything yet: a refusal that skipped the gate would teach a caller that the gate is
-/// optional.
-pub fn mutation_submit(
+/// The **session is the actor**: two windows hold two sessions, so the operation one of them
+/// submitted is the operation only it can list, read or cancel. The write itself goes to the
+/// service, which decides — the caller cannot name a program, a path or an argument here, and
+/// what it asks for is checked against the repository's approved state before Git is started.
+pub async fn mutation_submit(
     state: &AppState,
     caller_label: &str,
     session_id: &str,
+    request: Value,
 ) -> Result<Value, ProblemResponse> {
-    state
+    let service = state
         .sessions
         .service_for(session_id, caller_label)
         .map_err(failed)?;
-    Err(writes_not_implemented("refyard_mutation_submit"))
+    let request: MutationRequest = decode(request)?;
+    let submitted = service
+        .submit_mutation(session_id, request)
+        .await
+        .map_err(failed)?;
+    to_value(submission_answer(&submitted))
 }
 
-/// `refyard_operation_get` — refused: nothing in this build mints an operation.
+/// `refyard_operation_get` — one operation, if this session submitted it.
 pub fn operation_get(
     state: &AppState,
     caller_label: &str,
     session_id: &str,
+    operation_id: &str,
 ) -> Result<Value, ProblemResponse> {
-    state
+    let service = state
         .sessions
         .service_for(session_id, caller_label)
         .map_err(failed)?;
-    Err(writes_not_implemented("refyard_operation_get"))
+    let record = service
+        .operation_for(session_id, operation_id)
+        .map_err(failed)?;
+    to_value(record)
 }
 
-/// `refyard_operation_list` — refused. An empty list would read as "you have no operations",
-/// which is a different claim from "this build cannot run one".
+/// `refyard_operation_list` — this session's operations, newest first.
+///
+/// An empty list is the truth here, not a claim that nothing can be written: whether writing is
+/// possible at all is `capabilities().operations`, and a build with no effects lists none.
 pub fn operation_list(
     state: &AppState,
     caller_label: &str,
     session_id: &str,
+    limit: Option<u32>,
 ) -> Result<Value, ProblemResponse> {
-    state
+    let service = state
         .sessions
         .service_for(session_id, caller_label)
         .map_err(failed)?;
-    Err(writes_not_implemented("refyard_operation_list"))
+    let limit = limit
+        .unwrap_or(DEFAULT_OPERATION_LIMIT)
+        .clamp(1, MAX_OPERATION_LIMIT) as usize;
+    to_value(service.operations(session_id, limit))
 }
 
-/// `refyard_operation_cancel` — refused.
+/// `refyard_operation_cancel` — cancels an operation that has not started.
 pub fn operation_cancel(
     state: &AppState,
     caller_label: &str,
     session_id: &str,
+    operation_id: &str,
 ) -> Result<Value, ProblemResponse> {
-    state
+    let service = state
         .sessions
         .service_for(session_id, caller_label)
         .map_err(failed)?;
-    Err(writes_not_implemented("refyard_operation_cancel"))
+    let record = service
+        .cancel_operation(session_id, operation_id)
+        .map_err(failed)?;
+    to_value(record)
 }
 
-/// Turns a payload that is not the request the union publishes into an `InvalidRequest`.
+/// Turning a payload that is not the request the union publishes into an `InvalidRequest`.
 ///
 /// The message names the field or variant serde rejected, which is what makes a mismatch
 /// between the adapter and the host diagnosable; it never echoes the payload back.
@@ -173,15 +214,50 @@ fn decode<T: DeserializeOwned>(request: Value) -> Result<T, ProblemResponse> {
     })
 }
 
-fn writes_not_implemented(command: &str) -> ProblemResponse {
-    failed(Problem::new(
-        ProblemCode::UnsupportedOperation,
-        format!(
-            "{command} is not implemented: this build reads repositories and cannot change \
-             one, so no mutation is accepted, no operation exists to report, and \
-             capabilities lists none"
-        ),
-    ))
+/// The submission answer the adapter publishes (`NativeSubmission` in the adapter).
+///
+/// An acceptance is not the operation's outcome — the write has not run yet, and a client that
+/// treated this as success would be reporting something it has not observed. It is the
+/// operation's identity, which the caller follows with `operation`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+enum NativeSubmission {
+    Accepted {
+        accepted: AcceptedOperation,
+    },
+    /// Boxed because a record is far larger than an acceptance: the enum is built once per
+    /// submission and mostly holds the smaller variant.
+    Duplicate {
+        record: Box<OperationRecord>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AcceptedOperation {
+    operation_id: String,
+    status: OperationStatus,
+    accepted_at: String,
+}
+
+fn submission_answer(submitted: &SubmitResult) -> NativeSubmission {
+    if submitted.duplicate {
+        NativeSubmission::Duplicate {
+            record: Box::new(submitted.record.clone()),
+        }
+    } else {
+        NativeSubmission::Accepted {
+            accepted: AcceptedOperation {
+                operation_id: submitted.record.operation_id.clone(),
+                status: submitted.record.status,
+                accepted_at: submitted.record.accepted_at.clone(),
+            },
+        }
+    }
 }
 
 fn failed(problem: Problem) -> ProblemResponse {
@@ -260,8 +336,9 @@ pub async fn refyard_mutation_submit(
     window: tauri::WebviewWindow,
     state: State<'_, AppState>,
     session_id: String,
+    request: Value,
 ) -> Result<Value, ProblemResponse> {
-    mutation_submit(&state, window.label(), &session_id)
+    mutation_submit(&state, window.label(), &session_id, request).await
 }
 
 #[tauri::command]
@@ -269,8 +346,9 @@ pub async fn refyard_operation_get(
     window: tauri::WebviewWindow,
     state: State<'_, AppState>,
     session_id: String,
+    operation_id: String,
 ) -> Result<Value, ProblemResponse> {
-    operation_get(&state, window.label(), &session_id)
+    operation_get(&state, window.label(), &session_id, &operation_id)
 }
 
 #[tauri::command]
@@ -278,8 +356,9 @@ pub async fn refyard_operation_list(
     window: tauri::WebviewWindow,
     state: State<'_, AppState>,
     session_id: String,
+    limit: Option<u32>,
 ) -> Result<Value, ProblemResponse> {
-    operation_list(&state, window.label(), &session_id)
+    operation_list(&state, window.label(), &session_id, limit)
 }
 
 #[tauri::command]
@@ -287,6 +366,7 @@ pub async fn refyard_operation_cancel(
     window: tauri::WebviewWindow,
     state: State<'_, AppState>,
     session_id: String,
+    operation_id: String,
 ) -> Result<Value, ProblemResponse> {
-    operation_cancel(&state, window.label(), &session_id)
+    operation_cancel(&state, window.label(), &session_id, &operation_id)
 }
