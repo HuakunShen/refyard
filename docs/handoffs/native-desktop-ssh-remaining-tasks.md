@@ -127,21 +127,22 @@ port answers nothing while stopped, finished work stays `succeeded` after restar
 - offline (network cut) local-repo operation — not exercised;
 - owned SSH child cleanup at shutdown; in-flight read cancellation at shutdown.
 
-## 3. D11 tail — the acknowledgement entry point
+## 3. D11 tail — the acknowledgement entry point — DONE (2026-09-18)
 
-`acknowledgeUncertainOperation` exists in `packages/backend-tauri` and is tested at the
-command level (`acknowledging_an_uncertain_operation_is_reachable_and_refuses_what_it_should`
-in `apps/desktop/src-tauri/tests/session_owner.rs`), but **nothing in `packages/git-ui` calls
-it**: a blocked repository has no in-app way out. Build the surface: surface the block
-(there is a `blocked_repositories` on the service), explain it, require an explicit
-confirmation, call the adapter method, show that the outcome stays `unknown`.
-This is E13's user-facing half and the reason E13 is PARTIAL in the acceptance record.
+`UncertainOutcomePanel` (git-ui, plain props) plus the controller flow in
+`apps/web/src/lib/workbench/mutations.svelte.ts` and an e2e spec
+(`tests/e2e/uncertain-outcome.spec.ts`, chromium+firefox; webkit skipped with reason)
+are in — see acceptance §9.5 (E13 now PASS) and §9.10. Along the way the HTTP client's
+`acknowledgeUncertainOperation` stopped requiring the host-extension probe (the ack is a
+*service* route that exists on the native HTTP host, which has no host routes); see
+§9.10. Still named, not done: a human click-through *inside* the Tauri window
+(WKWebView has no WebDriver; `session_owner.rs` covers the command layer).
 
 `tests/e2e/native-mutations.spec.ts` from the plan **cannot** be a browser test on macOS —
-WKWebView has no usable WebDriver, so Playwright cannot drive the Tauri window. The substitute
+WKWebView has no usable WebDriver, so a Tauri window cannot be driven by Playwright. The substitute
 already in place is `session_owner.rs` (production command bodies with a window label). Do not
 write a fake spec to tick the box; if a spec is written at all, it can only drive the
-Node-service web app.
+Node-service web app — which `uncertain-outcome.spec.ts` now does.
 
 ## 4. D14 tail
 

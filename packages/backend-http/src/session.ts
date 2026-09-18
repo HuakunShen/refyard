@@ -290,7 +290,11 @@ export function createHttpBackendSession(
     acknowledgeUncertainOperation: async (
       request,
     ): Promise<OperationRecord> => {
-      await requireExtension("acknowledge an uncertain operation");
+      // Deliberately NOT gated on the host-extension probe: the acknowledge route is a
+      // *service* route, and it exists on the native HTTP host, which has no host routes
+      // at all. Probing host capabilities first would refuse the acknowledgement on
+      // exactly the service where uncertain outcomes happen. A service that lacks the
+      // route answers its own JSON 404, which is the honest refusal.
       const payload = await requestJson(
         probePorts,
         "/api/v1/operations/acknowledge",

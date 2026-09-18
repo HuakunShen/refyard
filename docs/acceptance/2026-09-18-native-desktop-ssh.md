@@ -270,18 +270,18 @@ Implementation commit: 73a1ff0 (feat(workbench): open local and ssh repositories
 Test platform / Git / SSH: macOS 26.6 arm64 · git 2.50.1 · OpenSSH 10.3p1 → Alpine 3.20 sshd 9.7p1
 A Local desktop: PASS
 B Agentless SSH reads: PARTIAL（本地 App 真实读取通过；凭据生态 D14、远端浏览 P01 未做）
-C Local + SSH writes: PARTIAL（真实 App 两种 provider 完成 stage/unstage/commit 并被服务器 Git 验证；E06 hook 失败、E11 断线、E12 crash/restart、E14 取消 尚未在 App 内实测；E13 目前只有命令层入口，UI 入口待补）
+C Local + SSH writes: PARTIAL（真实 App 两种 provider 完成 stage/unstage/commit 并被服务器 Git 验证；E13 阻塞解除面板已完成（见 9.5）；E06 hook 失败、E11 断线、E12 crash/restart（App 内）、E14 取消 尚未在 App 内实测）
 D Native CLI / HTTP: PARTIAL（refyard-native doctor/serve/open 已实现并被真实套件验证：票据→bearer、Host/Origin 精确校验、JSON 404、授权仓库、幂等重放；SSE 已有线上的帧序列与 since 重放用例，两边界并排比较一致（F01–F08 全 PASS）；hosted 形式按构造拒绝；MCP/OpenAPI/Scalar 未实现）
 Artifact .app absolute path + SHA-256 + installed bytes:
   /Volumes/Portable2TB/ExtDev/refyard-native-desktop-ssh/apps/desktop/src-tauri/target/release/bundle/macos/Refyard.app
-  df903851b7143f68867e4165407ccf9ce15e7fe274f9bcce7b7cd707ec614860 · 12869856 bytes executable · 12.6 MiB installed · 未签名
+  b3eb30a2104bc079ed2381dc5c6dfbdc62b171bd22407b7af2eaae696d986b99 · 12870336 bytes executable · 12.6 MiB installed · 未签名（含 E13 解除面板重建）
 Artifact CLI absolute path + SHA-256 + bytes:
   /Volumes/Portable2TB/ExtDev/refyard-native-desktop-ssh/target/release/refyard-native
   27b5a6b6c462ea7bc498f9f5e5aba08738af5865a347b76aba20588b9d811fc1 · 4360464 bytes（D13 重建：journal 种子修复；哈希随代码变化，见 9.9）
 No-Node proof: 见 A02/A04 与 B、D 记录；App 以 PATH=/usr/bin:/bin 启动并完成读取与写入，进程树无 JS runtime 子进程；refyard-native 链接仅 libSystem/libiconv，依赖树无 JS runtime 与 WebView；`pnpm native:verify` 对 .app 与 CLI 全量扫描（9.9）
 Remote no-install proof: 见 D01/D13；容器内无 node/bun/deno/refyard/python3/npx/curl，/ 下唯一 refyard 命名路径是种子仓库目录
 Commands actually run and exit codes: 见下方逐行表与 B、C 记录“本轮跑过的闸门”
-Existing regression failures: 无（root workspace Rust 539 passed / 0 failed / 20 ignored；desktop 25 / 0 / 1；418 integration；428 unit；56 e2e chromium；native vitest 49）
+Existing regression failures: chromium 项目无失败（`pnpm test:e2e` 全引擎跑：170 passed / 2 skipped / 2 failed——失败为 context-menu.spec 在 firefox+webkit，已在未含本改动的已提交树上复现，属既有引擎问题，非本轮引入；root Rust 539 / desktop 25 / native vitest 49 均 0 failed）
 Not-run matrix cells: A06；B01–B04、B06–B09；C03–C06、C08、C10、C12–C14；D06–D12、D14；E06、E08、E09、E11、E12（App 内）、E14、E15；断网场景；第 5 节除 app/CLI 字节、延迟与 RSS 外的预算项
 Next executable task: D14（E13 UI 入口仍按 9.8 记录为未完成）
 ```
@@ -343,6 +343,11 @@ Next executable task: D14（E13 UI 入口仍按 9.8 记录为未完成）
 | **D12 补齐轮追加：**                                                                          |      |                                                                          |
 | `cargo test -p refyard-http`                                                                 | 0    | 22 unit + 10 gate + 2 two-boundaries passed                              |
 | `pnpm exec vitest run tests/native`                                                          | 0    | 49 passed（新增 http-events：线上 SSE 3 例）                              |
+| **D11 收尾（E13 面板）轮追加：**                                                              |      |                                                                          |
+| `pnpm test:e2e`（全引擎）                                                                     | 1    | 170 passed / 2 skipped（webkit 注明原因）/ 2 failed——失败为 context-menu.spec firefox+webkit，已在未含本改动的提交树上复现（stash 后 bundle 重跑仍失败），属既有问题 |
+| `pnpm exec playwright test tests/e2e/uncertain-outcome.spec.ts --project=chromium`           | 0    | 2 passed                                                                 |
+| `pnpm exec playwright test tests/e2e/uncertain-outcome.spec.ts --project=firefox`            | 0    | 2 passed                                                                 |
+| `pnpm desktop:build`（含面板重建）                                                           | 0    | `Refyard.app` b3eb30a2…，12.6 MiB；`native:verify` 仍绿                    |
 
 ### 9.4 未测行及原因
 
@@ -368,7 +373,7 @@ commit」，随后用服务器/本机自己的 `git` 读回。完整过程、arg
 | E05 | PASS    | 远端 `git log` 显示 app 提交的同一 OID（`459b43f9…`），作者/提交者是容器自身身份；本地为 `5314383a…`；commit 不自动 stage                                                          |
 | E07 | PASS    | preview 绑定内容指纹，内容变动即 `StalePreview` 拒绝（D10 用例 + 桌面命令层）                                                                                                    |
 | E10 | PASS    | 同 clientRequestId + 同 payload 返回 `duplicate` 与原记录，不重复写入；桌面用例断言 Git 侧无第二次写入                                                                            |
-| E13 | PARTIAL | 命令层可用且有测试（`acknowledging_an_uncertain_operation_is_reachable_and_refuses_what_it_should`；ack 不改写 `unknown`）；**UI 尚无解除按钮**，见 9.8                                  |
+| E13 | PASS    | 被阻塞仓库的解除入口已落地：`UncertainOutcomePanel`（git-ui，纯 props）+ 控制器 ack 流（读新快照 → `confirmed: true` → 记录保持 `unknown`，若被改写则报错不信任）；e2e 真浏览器点击验证面板出现、勾选前按钮禁用、ack 请求体、解除后真正可写（chromium/firefox；webkit 因拦截限制跳过并注明）。Tauri 命令层由 `session_owner.rs` 覆盖；窗口内人工点击未自动化（WKWebView 无 WebDriver），证据链为共享 UI 组件的 e2e + Tauri 命令层测试 |
 | E16 | PARTIAL | 本地与远端共用同一 planner/effect/队列代码路径，并各自被真实 Git 验证；但 E06/E11/E12/E14 未在两种 provider 上逐一实测，故不标 PASS                                                  |
 
 其余 E 行未测，原因见 9.4。
@@ -398,9 +403,10 @@ commit」，随后用服务器/本机自己的 `git` 读回。完整过程、arg
 
 ### 9.8 D11 未完成项（不得当作已实现）
 
-- **E13 的 UI 入口**：blocked repository 在窗口里没有「确认并解除」的入口，只有 Tauri 命令
-  `acknowledgeUncertainOperation` 与 dispatcher/test 覆盖。真实用户被 block 后目前只能从
-  API 解除。
+- **E13 的 UI 入口（已于 2026-09-18 补齐，见 9.5 与 E13 行）**：`UncertainOutcomePanel`
+  组件 + 控制器 ack 流 + e2e（chromium/firefox）+ `session_owner.rs` 命令层。仍缺的只是
+  窗口内的人工点击演示（WKWebView 无 WebDriver，无法自动化驱动 Tauri 窗口），面板与
+  桌面命令共享同一适配器接口。
 - **`tests/e2e/native-mutations.spec.ts`**：计划里列的 native e2e 未创建。macOS 上 WKWebView
   没有可用的 WebDriver，桌面端 e2e 无法用 Playwright 驱动；本轮以 `session_owner.rs`（直接
   调用生产 command body）作为等价覆盖，理由与差距同时记录在此，不用一份假 spec 充数。
@@ -434,3 +440,22 @@ commit」，随后用服务器/本机自己的 `git` 读回。完整过程、arg
 | SSH 子进程清理（关机时） | NOT RUN | 关闭用例为本地仓库，无 SSH 子进程可清理；不标 PASS |
 | 读取消除（关机时） | NOT RUN | 优雅排水内没有可观测的进行中读；不标 PASS |
 | SSH host 列表 HTTP 路由 | 决定：保持关闭 | D13 未添加任何 host 列表路由；F08 的「待 D13 决定」以维持默认关告终 |
+
+### 9.10 D11 收尾结果（E13 阻塞解除面板，2026-09-18）
+
+被阻塞仓库的解除入口已落地。`UncertainOutcomePanel`（`packages/git-ui`，纯 props、无 `$app/*`）
+展示服务给出的原因与 uncertain 操作 id；解除按钮在复选框勾选前禁用（确认是显式的）。控制器
+流（`apps/web/src/lib/workbench/mutations.svelte.ts`）：写被拒且 `code === "UncertainOutcome"`
+时按详情里的 `operations` 建立面板状态 → 解除时重读 status 取新 `snapshotId` → 逐个调用
+`host.acknowledgeUncertainOperation({confirmed: true})` → 回答若不是 `unknown` 则作为
+InternalError 拒绝（绝不信任改写）→ 成功后清面板并刷新读取。写成功也会清除面板。
+
+配套客户端修正：`packages/backend-http` 的 `acknowledgeUncertainOperation` 不再以 host
+extension 探测为前置——ack 是 *service* 路由，native HTTP 边界有该路由而没有 host 路由；
+先探测 host 能力会在最需要 ack 的服务上错误地拒绝它。没有该路由的服务（旧 Node 服务）由
+其自身的 JSON 404 拒绝，仍然诚实。
+
+e2e（`tests/e2e/uncertain-outcome.spec.ts`，chromium+firefox 各 2 例）：真实浏览器 + 真实
+Node 服务，仅拦截两条需要“杀进程才能产生”的回答（阻塞拒绝与 ack 应答）；断言面板出现、
+原因与操作 id 可见、未勾选时按钮禁用、ack 请求体为契约形状（新快照 + `confirmed: true`）、
+解除后面板消失且同一 stage 对真实服务成功。webkit 因拦截不可靠跳过并注明。

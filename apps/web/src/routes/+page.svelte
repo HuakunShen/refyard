@@ -36,6 +36,7 @@
     ModeToggle,
     RefyardLogo,
     StateBanner,
+    UncertainOutcomePanel,
     cn,
     shortOid,
     type ExecutionTargetSelection,
@@ -1416,6 +1417,18 @@
                   state="error"
                   title="Could not read working copy"
                   detail={describeBackendProblem(status.error)}
+                />
+              </div>
+            {/if}
+            {#if writeController.uncertainBlock !== null}
+              <div class="p-3 pb-0">
+                <UncertainOutcomePanel
+                  reason={writeController.uncertainBlock.reason}
+                  operationIds={writeController.uncertainBlock.operationIds}
+                  note={writeController.uncertainNote ?? undefined}
+                  busy={writeController.busy}
+                  onAcknowledge={() =>
+                    void writeController.onAcknowledgeUncertain()}
                 />
               </div>
             {/if}

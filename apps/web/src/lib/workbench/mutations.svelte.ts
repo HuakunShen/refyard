@@ -9,6 +9,7 @@
  */
 import {
   BackendError,
+  isBackendError,
   type GitReadService,
   type HostService,
   type MutationService,
@@ -171,6 +172,18 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
   let mergeMessage = $state<string | null>(null);
   let stashResult = $state<string | null>(null);
   let tagResult = $state<string | null>(null);
+  /**
+   * The write block an uncertain operation left on one repository: the service refuses
+   * every new write there until a person confirms the state. Scoped to the repository,
+   * not the worktree — the service blocks by repository write key.
+   */
+  let uncertainBlock = $state<{
+    repositoryId: string;
+    reason: string;
+    operationIds: string[];
+  } | null>(null);
+  /** What the acknowledgement answered, for the panel that asked for it. */
+  let uncertainNote = $state<string | null>(null);
 
   const availability = $derived(
     mutationAvailabilityFor(input.queries.capabilities.data?.operations),
@@ -204,6 +217,85 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     return sameMutationContext(message.context, { repositoryId, worktreeId })
       ? message.message
       : null;
+  }
+
+  /**
+   * A write refused with `UncertainOutcome` is not just a failure to report — it is
+   * the service naming the block and the operations involved, which is exactly what
+   * the acknowledgement panel needs. Anything else clears the stale panel: the block
+   * may have been lifted elsewhere, and a panel that outlives its refusal lies.
+   */
+  function noteUncertainOutcome(
+    error: unknown,
+    context: MutationContext | null,
+  ): void {
+    if (
+      !isBackendError(error) ||
+      error.code !== "UncertainOutcome" ||
+      context === null
+    ) {
+      return;
+    }
+    const operations = error.details["operations"];
+    const ids =
+      typeof operations === "string" && operations.length > 0
+        ? operations.split(",")
+        : [];
+    uncertainBlock = {
+      repositoryId: context.repositoryId,
+      reason: error.message,
+      operationIds: ids,
+    };
+    uncertainNote = null;
+  }
+
+  /**
+   * The person's answer to the block: re-read the repository for a fresh snapshot,
+   * then acknowledge every uncertain operation against it. The record that comes back
+   * stays `unknown` — this call records a confirmation, it never rewrites history.
+   */
+  async function onAcknowledgeUncertain(): Promise<void> {
+    const block = uncertainBlock;
+    if (block === null) {
+      return;
+    }
+    busy = true;
+    uncertainNote = null;
+    try {
+      const snapshot = await requireReads().status({
+        repositoryId: block.repositoryId,
+      });
+      const host = input.host();
+      if (host === null) {
+        throw new BackendError({
+          code: "UnsupportedOperation",
+          message:
+            "this session has no host surface, so the block cannot be acknowledged here",
+          retryable: false,
+        });
+      }
+      for (const operationId of block.operationIds) {
+        const record = await host.acknowledgeUncertainOperation({
+          operationId,
+          confirmedSnapshotId: snapshot.snapshotId,
+          confirmed: true,
+        });
+        if (record.status !== "unknown") {
+          throw new BackendError({
+            code: "InternalError",
+            message: `acknowledging ${operationId} answered ${record.status}; the outcome must stay unknown, so this answer is not trusted`,
+            retryable: false,
+          });
+        }
+      }
+      uncertainBlock = null;
+      uncertainNote = `confirmed against snapshot ${snapshot.snapshotId}; the operation${block.operationIds.length === 1 ? "" : "s"} remain${block.operationIds.length === 1 ? "s" : ""} recorded as unknown`;
+      await invalidateRepositoryReads(block.repositoryId);
+    } catch (error) {
+      uncertainNote = describeBackendProblem(error);
+    } finally {
+      busy = false;
+    }
   }
 
   /**
@@ -322,8 +414,15 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
           onSucceeded(targetContext);
         }
       }
+      if (
+        uncertainBlock !== null &&
+        uncertainBlock.repositoryId === targetContext.repositoryId
+      ) {
+        uncertainBlock = null;
+      }
       await invalidateRepositoryReads(targetContext.repositoryId);
     } catch (error) {
+      noteUncertainOutcome(error, context);
       reportForContext(describeBackendProblem(error));
     } finally {
       busy = false;
@@ -1184,6 +1283,21 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     get tagResult() {
       return tagResult;
     },
+    /**
+     * The uncertain-outcome block for the *selected* repository, or null: a panel for
+     * a repository the user has navigated away from would be an alarm that lies.
+     */
+    get uncertainBlock() {
+      const repositoryId = input.selection.repositoryId;
+      return uncertainBlock !== null &&
+        uncertainBlock.repositoryId === repositoryId
+        ? uncertainBlock
+        : null;
+    },
+    get uncertainNote() {
+      return uncertainNote;
+    },
+    onAcknowledgeUncertain,
     onRepositoryInit,
     onRepositoryClone,
     registerRepository,

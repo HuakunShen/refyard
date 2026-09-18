@@ -80,11 +80,13 @@ fully usable; SIGKILL-mid-write on the release binary recovers as unknown + bloc
 Unmeasured leftovers: the windowed-app kill, the App with no Git, offline, SSH-child cleanup
 and read cancellation at shutdown — named in the remaining-tasks file §2.
 
-### 3.3 The D11 tail
+### 3.3 The D11 tail — DONE (2026-09-18)
 
-- **An acknowledgement entry point in the UI.** `acknowledgeUncertainOperation` exists in the
-  adapter and is tested at the command level, but nothing in `packages/git-ui` calls it, so a
-  blocked repository currently has no in-app way out. This is E13's user-facing half.
+- **An acknowledgement entry point in the UI — DONE.** `UncertainOutcomePanel` (git-ui) plus
+  the controller flow and e2e (`tests/e2e/uncertain-outcome.spec.ts`, chromium+firefox) are in;
+  E13 is PASS in acceptance §9.5, details in §9.10. The HTTP client no longer gates the ack on
+  the host-extension probe. Only a human click-through inside the Tauri window remains
+  unautomated (WKWebView has no WebDriver); `session_owner.rs` covers the command layer.
 - `tests/e2e/native-mutations.spec.ts` cannot be written as a browser test on macOS: WKWebView
   has no usable WebDriver, so a Tauri window cannot be driven by Playwright. The substitute is
   `apps/desktop/src-tauri/tests/session_owner.rs`, which calls the production command bodies
