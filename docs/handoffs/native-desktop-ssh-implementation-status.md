@@ -38,61 +38,35 @@ read history/working copy/diff, stage, unstage, commit, and watch the history up
 `refyard-native doctor` to see what the machine can do. Nothing else: no fetch/pull/push, no
 discard, no stash, no worktree management, no HTTP API, no terminal.
 
-### Gates actually run (this workstream)
+### Gates actually run (this workstream, as of D12 leftovers + D13, 2026-09-18)
 
 | Command | Exit | Result |
 | --- | --- | --- |
-| `cargo test --workspace` | 0 | 494 passed / 0 failed / 20 ignored |
-| `cargo test` in `apps/desktop/src-tauri` | 0 | 24 passed |
-| `cargo test -p refyard-native` | 0 | 9 passed |
-| `cargo test -p refyard-http` | 0 | 22 unit + 10 gate passed |
-| `pnpm exec vitest run tests/native` | 0 | 44 passed (release binary driven) |
+| `cargo test --workspace` | 0 | 539 passed / 0 failed / 20 ignored |
+| `cargo test` in `apps/desktop/src-tauri` | 0 | 25 passed / 0 failed / 1 ignored |
+| `cargo test -p refyard-http` | 0 | 22 unit + 10 gate + 2 two-boundaries passed |
+| `pnpm exec vitest run tests/native` | 0 | 49 passed (release binary driven) |
 | `cargo clippy --workspace --all-targets -- -D warnings` | 0 | clean |
 | `cargo fmt --all -- --check` | 0 | clean |
-| `cargo test -p refyard-host --test ssh_exec -- --ignored` (fixture up) | 0 | 14 passed |
-| `pnpm desktop:build` | 0 | `Refyard.app`, 12.6 MiB installed |
-| `cargo build -p refyard-native --release` | 0 | 1525712 bytes |
-| `pnpm check` / `test:unit` / `test:integration` / `check:boundaries` / `check:contract` | 0 | 428 unit, 418 integration, 500 schema refs resolved — measured before D11, which changed no TypeScript |
+| `pnpm native:verify` | 0 | app 12.6 MiB / CLI 4.16 MiB, system links only, no JS runtime |
+| `pnpm native:bench` | 0 | ready 52ms, first status 44–49ms, history 144–154ms, idle RSS ~4.5MB (`docs/evidence/native-runtime.json`) |
+| `cargo test -p refyard-host --test ssh_exec -- --ignored` (fixture up) | 0 | 14 passed (as of D11; not rerun since) |
+| `pnpm desktop:build` | 0 | `Refyard.app`, 12.6 MiB installed (as of D11; app unchanged since) |
+| `pnpm check` / `test:unit` / `test:integration` / `check:boundaries` / `check:contract` | 0 | 428 unit, 418 integration, 500 schema refs resolved — last full JS-suite pass D12; D13 added `tests/native` files only |
 | `pnpm exec playwright test --project=chromium` | 0 | 56 passed — measured before D11 |
 
 ## 3. Remaining executable steps
 
-### 3.1 D12 — the native HTTP entry (the largest gap)
+### 3.1 D12 — the native HTTP entry — DONE (commit a1659b9 + the F05/F07 follow-up)
 
-`serve` (API only) and `open` (API plus the static UI) in `crates/refyard-http`, wired from
-`crates/refyard-cli/src/{serve,open}.rs`. Both commands currently refuse; the crate does not
-exist.
-
-The route surface is already enumerated by the browser client
-(`packages/git-client/src/client.ts`, `mutations.ts`, `events.ts`) and must be replicated
-exactly, because the SPA does not negotiate:
-
-```
-POST /api/v1/session/exchange            ticket → bearer
-GET  /api/v1/capabilities
-GET  /api/v1/repositories                POST /api/v1/repositories/register
-                                         POST /api/v1/repositories/revoke
-GET  /api/v1/filesystem/entries
-GET  /api/v1/status   /history   /refs   /diff   /worktrees   /submodules   /stashes
-POST /api/v1/previews
-POST /api/v1/operations                  GET /api/v1/operations[?operationId=|?limit=]
-POST /api/v1/operations/cancel
-GET  /api/v1/events                      SSE, `?since=` for replay
-```
-
-Rules to carry over from `packages/host-node/src/http/` rather than reinvent: loopback bind
-only; every read authenticated, including `capabilities`; `Host` and `Origin` compared exactly
-(no wildcard CORS); the bootstrap ticket single-use and short-lived, exchanged for an in-memory
-bearer; unknown `/api` paths answer JSON 404 and never fall through to the SPA; SSE carries the
-bearer in a header, not in the URL. The readiness line the CLI prints for a supervising parent
-is the JSON one already agreed for parent processes (URL + ticket policy), and the ticket must
-not appear in ordinary logs.
-
-Then: `tests/native/http-contract.test.ts` and `tests/native/http-security.test.ts` (vitest,
-driving the built binary, the RED list in the plan's D12), plus a differential check that the
-same fixture answers the same DTOs through the HTTP adapter and through the Tauri boundary —
-`crates/refyard-host/tests/fixture_driver.rs` already exists for the Node oracle and is the
-pattern to follow.
+`crates/refyard-http` exists: the full route surface the browser client speaks, ticket→bearer
+auth with exact Host/Origin checks, JSON 404 for unknown `/api`, repository grants, strict
+queries/bodies, idempotent replays, SSE with `?since=` replay, and the static workbench with
+per-build CSP hashing — served by `refyard-native serve` (API-only) and `open` (API + UI),
+which print the JSON readiness line on stdout and the pairing URL on stderr. Evidence:
+`docs/evidence/native-desktop-ssh/d-native-http-entry.md`, acceptance §9.6. The wire-level
+SSE suite (`tests/native/http-events.test.ts`) and the two-boundary differential
+(`crates/refyard-http/tests/two_boundaries.rs`) closed F05/F07 on 2026-09-18.
 
 ### 3.2 D13 — packaging, no-Node proof, budgets, shutdown — DONE (2026-09-18)
 

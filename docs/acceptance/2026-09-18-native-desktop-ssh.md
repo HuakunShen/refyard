@@ -271,7 +271,7 @@ Test platform / Git / SSH: macOS 26.6 arm64 · git 2.50.1 · OpenSSH 10.3p1 → 
 A Local desktop: PASS
 B Agentless SSH reads: PARTIAL（本地 App 真实读取通过；凭据生态 D14、远端浏览 P01 未做）
 C Local + SSH writes: PARTIAL（真实 App 两种 provider 完成 stage/unstage/commit 并被服务器 Git 验证；E06 hook 失败、E11 断线、E12 crash/restart、E14 取消 尚未在 App 内实测；E13 目前只有命令层入口，UI 入口待补）
-D Native CLI / HTTP: PARTIAL（refyard-native doctor/serve/open 已实现并被真实套件验证：票据→bearer、Host/Origin 精确校验、JSON 404、授权仓库、幂等重放；SSE 仅单元级；hosted 形式按构造拒绝；MCP/OpenAPI/Scalar 未实现）
+D Native CLI / HTTP: PARTIAL（refyard-native doctor/serve/open 已实现并被真实套件验证：票据→bearer、Host/Origin 精确校验、JSON 404、授权仓库、幂等重放；SSE 已有线上的帧序列与 since 重放用例，两边界并排比较一致（F01–F08 全 PASS）；hosted 形式按构造拒绝；MCP/OpenAPI/Scalar 未实现）
 Artifact .app absolute path + SHA-256 + installed bytes:
   /Volumes/Portable2TB/ExtDev/refyard-native-desktop-ssh/apps/desktop/src-tauri/target/release/bundle/macos/Refyard.app
   df903851b7143f68867e4165407ccf9ce15e7fe274f9bcce7b7cd707ec614860 · 12869856 bytes executable · 12.6 MiB installed · 未签名
@@ -281,9 +281,9 @@ Artifact CLI absolute path + SHA-256 + bytes:
 No-Node proof: 见 A02/A04 与 B、D 记录；App 以 PATH=/usr/bin:/bin 启动并完成读取与写入，进程树无 JS runtime 子进程；refyard-native 链接仅 libSystem/libiconv，依赖树无 JS runtime 与 WebView；`pnpm native:verify` 对 .app 与 CLI 全量扫描（9.9）
 Remote no-install proof: 见 D01/D13；容器内无 node/bun/deno/refyard/python3/npx/curl，/ 下唯一 refyard 命名路径是种子仓库目录
 Commands actually run and exit codes: 见下方逐行表与 B、C 记录“本轮跑过的闸门”
-Existing regression failures: 无（root workspace Rust 537 passed / 0 failed / 20 ignored；desktop 25 / 0 / 1；418 integration；428 unit；56 e2e chromium；native vitest 46）
-Not-run matrix cells: A06；B01–B04、B06–B09；C03–C06、C08、C10、C12–C14；D06–D12、D14；E06、E08、E09、E11、E12（App 内）、E14、E15；F05（线上 SSE 端到端）；断网场景；第 5 节除 app/CLI 字节、延迟与 RSS 外的预算项
-Next executable task: D14（F05/F07 与 E13 UI 入口仍按 9.7/9.8 记录为未完成）
+Existing regression failures: 无（root workspace Rust 539 passed / 0 failed / 20 ignored；desktop 25 / 0 / 1；418 integration；428 unit；56 e2e chromium；native vitest 49）
+Not-run matrix cells: A06；B01–B04、B06–B09；C03–C06、C08、C10、C12–C14；D06–D12、D14；E06、E08、E09、E11、E12（App 内）、E14、E15；断网场景；第 5 节除 app/CLI 字节、延迟与 RSS 外的预算项
+Next executable task: D14（E13 UI 入口仍按 9.8 记录为未完成）
 ```
 
 ### 9.1 A 节（架构与运行时）
@@ -340,6 +340,9 @@ Next executable task: D14（F05/F07 与 E13 UI 入口仍按 9.7/9.8 记录为未
 | `pnpm exec vitest run tests/native`                                                          | 0    | 46 passed（新增 http-shutdown：SIGKILL 未知结果 + SIGTERM 优雅关闭）     |
 | `pnpm native:verify`                                                                         | 0    | .app 12.6 MiB / CLI 4.16 MiB，系统链接，无 JS runtime（≤30/≤20 MiB 预算）|
 | `pnpm native:bench`                                                                          | 0    | ready 52ms · first status 44–49ms · history 144–154ms · idle RSS ~4.5MB · 工作后 4592 kB（`docs/evidence/native-runtime.json`） |
+| **D12 补齐轮追加：**                                                                          |      |                                                                          |
+| `cargo test -p refyard-http`                                                                 | 0    | 22 unit + 10 gate + 2 two-boundaries passed                              |
+| `pnpm exec vitest run tests/native`                                                          | 0    | 49 passed（新增 http-events：线上 SSE 3 例）                              |
 
 ### 9.4 未测行及原因
 
@@ -382,15 +385,14 @@ commit」，随后用服务器/本机自己的 `git` 读回。完整过程、arg
 | F02 | PASS    | Host/Origin 精确匹配；`attacker.example`/外源 Origin/`null` 均 403 且先于鉴权；无通配 CORS；线上由 `node:http` 设 Host 验证        |
 | F03 | PASS    | 票据单次（二次 401，Rust+线上）、60s TTL、超量/过期清理（Rust 单测）、常量时间比较、绑定 origin+instance（错配即焚）                |
 | F04 | PASS    | 未知 `/api` 路径：先鉴权后 JSON 404，绝不回退 SPA（Rust+线上）；缺失 asset 同为 JSON 404；shell 仅给 route 形路径                  |
-| F05 | PARTIAL | 事件路由已实现，帧格式/`since` 重放/_gap_ 单元测试通过；**尚无用例在真实 socket 上订阅 SSE**，不标 PASS                            |
+| F05 | PASS    | 线上 SSE：真实 socket 订阅 release binary，写入时帧序列 `id`/`event`/`data` 单调且过 `eventEnvelopeSchema`，`retry: 3000` 在重放后、首 tick keep-alive 注释帧被忽略；`?since=0` 重放游标之后全部事件、游标处无重放（`tests/native/http-events.test.ts` 3 passed） |
 | F06 | PASS    | 仓库级授权：第二会话读第一会话的仓库 403（Rust）；线上未授权 id 403；target 级由 host 拒绝（`createTarget` 无 HTTP 路由，默认关）   |
-| F07 | PARTIAL | 两边界调用同一 Rust service（桌面 24 用例 + HTTP 34 用例各自契约验证），但还没有一个用例对同一 fixture 并排比较两边界答案           |
+| F07 | PASS    | 并排比较（`crates/refyard-http/tests/two_boundaries.rs`）：同一 fixture 六个读取（capabilities/repositories/status/history/refs/diff）HTTP JSON 与 service 直答完全一致（仅差每次调用自带的 `readAt`/`snapshotId`）；线上提交的 operation 在 service journal 视图中逐字段相同；direct 边界接受同一请求类型 |
 | F08 | PASS    | SSH host 列表无 HTTP 路由（默认关；D13 决定继续不加路由，见 9.9 末行）；网页不接触本机密钥；票据仅 loopback                        |
 
 ### 9.7 D12 未完成项（不得当作已实现）
 
-- **F05 的线上 SSE 用例**（订阅 → 触发一次写 → 断言帧序列）未写。
-- **F07 的并排比较用例**未写；现在靠"同一 service + 各自契约套件"的组合证据。
+- F05/F07 已于 2026-09-18 补齐并标 PASS（见 9.6）；此节余下两条仍成立：
 - **hosted 形式**按构造拒绝（`pairing_url` 拒绝非 loopback origin），不是实现。
 - **`/mcp`、`/openapi.json`、`/scalar`** 未实现，由静态 404 兜底；不得称为支持。
 

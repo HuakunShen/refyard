@@ -1,6 +1,6 @@
 # Deliverable E — artifacts, budgets, and shutdown (D13)
 
-D12 built the native HTTP entry. This task proves the *release artifacts* are what they
+D12 built the native HTTP entry. This task proves the _release artifacts_ are what they
 claim: no JavaScript runtime anywhere in the bundle, system links only, within the size
 budgets, fast enough to feel instant, and honest about what a killed or gracefully
 stopped process leaves behind.
@@ -11,7 +11,7 @@ stopped process leaves behind.
 files are found by magic (not by extension), linked libraries are read with `otool -L`,
 and the embedded frontend is scanned for engine markers (`V8_Fatal`, `Bun.build`,
 `deno_core`, …). Svelte frontend JS inside the executable is expected — the scanner
-looks for a *runtime*, not for scripts.
+looks for a _runtime_, not for scripts.
 
 Measured 2026-09-18, this worktree:
 
@@ -48,7 +48,7 @@ app:   registered 66ms after spawn
 
 `after work` = RSS after dirtying the worktree and running status + unstaged diff. The
 CLI has no WebView, so there is no shared-page double counting to caveat; the desktop
-app's RSS is *not* claimed here.
+app's RSS is _not_ claimed here.
 
 ## 3. Killed mid-write (SIGKILL, the worst case)
 
@@ -71,7 +71,7 @@ counter now seeds itself from the journal (`next_operation_seed` reads the large
 
 ## 4. Stopped gracefully (SIGTERM)
 
-The second case in the same file: a stage that *finishes*, then a polite stop.
+The second case in the same file: a stage that _finishes_, then a polite stop.
 
 - the process exits `0`;
 - while stopped, the port answers nothing — a fetch to the old URL is refused, a stopped
@@ -81,7 +81,7 @@ The second case in the same file: a stage that *finishes*, then a polite stop.
   acknowledgement ceremony.
 
 Not exercised in this round, named rather than glossed: owned SSH child processes during
-shutdown (the shutdown fixture is local-only), and in-flight *read* cancellation on
+shutdown (the shutdown fixture is local-only), and in-flight _read_ cancellation on
 close (the graceful drain answers fast enough that no read was observable mid-flight).
 
 ## 5. Missing tools are diagnostics, not white screens
@@ -89,10 +89,10 @@ close (the graceful drain answers fast enough that no read was observable mid-fl
 Probed against the release binary with an environment containing nothing but `HOME`,
 `TMPDIR` and a `PATH`:
 
-| environment | command | result |
-| --- | --- | --- |
-| no git, no ssh | `refyard-native doctor` | exit 2; prints `git: not usable`, `ssh: not found; remote repositories are unavailable`, notes naming both |
-| no git, no ssh | `refyard-native serve` | exit 2; `refyard: git was not found on PATH` |
+| environment       | command                 | result                                                                                                                                            |
+| ----------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| no git, no ssh    | `refyard-native doctor` | exit 2; prints `git: not usable`, `ssh: not found; remote repositories are unavailable`, notes naming both                                        |
+| no git, no ssh    | `refyard-native serve`  | exit 2; `refyard: git was not found on PATH`                                                                                                      |
 | git only (no ssh) | `refyard-native doctor` | exit 0; git 2.50.1 usable, baseline met, all seven reads and all three operations listed, ssh refused by note — **missing ssh only disables ssh** |
 
 Offline (machine disconnected from the network) was **not** exercised this round: it

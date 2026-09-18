@@ -74,11 +74,26 @@ pair → `capabilities` → `repositories` → `status` → edit `a.txt` → `st
 index shows `M` → submit `commit` → poll `succeeded` → `git log -1 --format=%s` in the
 fixture reads `committed from the contract suite`.
 
-## 4. What this deliverable does not cover
+## 4. The two gaps D12 shipped with, closed 2026-09-18
 
-- **SSE over the socket.** The events route is implemented and its framing, replay and
-  gap behaviour are unit-tested in Rust, but no test subscribes over the wire yet —
-  F05 is marked accordingly.
+- **SSE over the socket** (`tests/native/http-events.test.ts`, 3 cases): a real
+  subscription to the release binary receives a write's lifecycle as frames whose `id`
+  is the monotonic sequence, whose `event` names the payload kind, and whose `data`
+  validates against the contract's `eventEnvelopeSchema`; `retry: 3000` follows the
+  replay (and the heartbeat's first tick puts a `: keep-alive` comment right after it,
+  which readers ignore); `?since=0` replays everything past the cursor, oldest first,
+  and a cursor at the newest sequence replays nothing while still receiving later live
+  events. F05 is PASS in acceptance §9.6.
+- **Two boundaries, side by side** (`crates/refyard-http/tests/two_boundaries.rs`,
+  2 cases): one fixture, the HTTP route and the `ApplicationService` method called for
+  the same read — capabilities, repositories, status, history, refs, unstaged diff —
+  and the JSON must be identical, modulo the fields that name the *call itself*
+  (`readAt`, and status's per-call `snapshotId`). An operation submitted on the wire
+  appears field-for-field unchanged in the service's own journal view, and the direct
+  boundary accepts the same request type the wire deserialized into. F07 is PASS.
+
+## 5. What this deliverable still does not cover
+
 - **The hosted form** (external origins, passwords) — refused by construction, above.
 - **`/mcp`, `/openapi.json`, `/scalar`** — the reference host's tooling routes; absent
   here, answered by the static 404. Not claimed anywhere.
