@@ -16,7 +16,7 @@
     "test": "vitest run",
     "test:unit": "vitest run tests/unit tests/contract tests/core tests/graph tests/web-host tests/workflow",
     "test:web-host": "vitest run tests/web-host",
-    "test:integration": "vitest run tests/node tests/integration tests/security",
+    "test:integration": "vitest run tests/node tests/integration tests/security tests/native",
     "test:pack": "vitest run tests/pack",
     "test:portable": "bun scripts/check-portable.ts && vitest run tests/portable",
     "test:e2e": "pnpm build && bun scripts/bundle-cli.ts && playwright test",

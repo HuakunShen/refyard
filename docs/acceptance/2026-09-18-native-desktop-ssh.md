@@ -266,21 +266,24 @@ Implementation commit: 73a1ff0 (feat(workbench): open local and ssh repositories
                        88832cb (fix(native): run the ssh fixture's child processes through node)
                        93ee1e0 (feat(native): enforce preview freshness and durable mutation state)
                        D11 (feat(native): support safe local and ssh staging and commits)
+                       D12 (feat(cli): expose the native service without a desktop runtime)
 Test platform / Git / SSH: macOS 26.6 arm64 · git 2.50.1 · OpenSSH 10.3p1 → Alpine 3.20 sshd 9.7p1
 A Local desktop: PASS
 B Agentless SSH reads: PARTIAL（本地 App 真实读取通过；凭据生态 D14、远端浏览 P01 未做）
 C Local + SSH writes: PARTIAL（真实 App 两种 provider 完成 stage/unstage/commit 并被服务器 Git 验证；E06 hook 失败、E11 断线、E12 crash/restart、E14 取消 尚未在 App 内实测；E13 目前只有命令层入口，UI 入口待补）
-D Native CLI / HTTP: NOT RUN（D12 未实现）
+D Native CLI / HTTP: PARTIAL（refyard-native doctor/serve/open 已实现并被真实套件验证：票据→bearer、Host/Origin 精确校验、JSON 404、授权仓库、幂等重放；SSE 仅单元级；hosted 形式按构造拒绝；MCP/OpenAPI/Scalar 未实现）
 Artifact .app absolute path + SHA-256 + installed bytes:
   /Volumes/Portable2TB/ExtDev/refyard-native-desktop-ssh/apps/desktop/src-tauri/target/release/bundle/macos/Refyard.app
   df903851b7143f68867e4165407ccf9ce15e7fe274f9bcce7b7cd707ec614860 · 12869856 bytes executable · 12.6 MiB installed · 未签名
-Artifact CLI absolute path + SHA-256 + bytes: 不存在（D12）
-No-Node proof: 见 A02/A04 与 B 记录；App 以 PATH=/usr/bin:/bin 启动并完成读取与写入，进程树无 JS runtime 子进程
+Artifact CLI absolute path + SHA-256 + bytes:
+  /Volumes/Portable2TB/ExtDev/refyard-native-desktop-ssh/target/release/refyard-native
+  21c1a23aae6a82c4c6fc97458d9e9b677a0eedd0691c6e2f8563aec7dcdade03 · 4304496 bytes
+No-Node proof: 见 A02/A04 与 B、D 记录；App 以 PATH=/usr/bin:/bin 启动并完成读取与写入，进程树无 JS runtime 子进程；refyard-native 链接仅 libSystem/libiconv，依赖树无 JS runtime 与 WebView
 Remote no-install proof: 见 D01/D13；容器内无 node/bun/deno/refyard/python3/npx/curl，/ 下唯一 refyard 命名路径是种子仓库目录
 Commands actually run and exit codes: 见下方逐行表与 B、C 记录“本轮跑过的闸门”
 Existing regression failures: 无（494 Rust passed / 0 failed / 20 ignored；418 integration；428 unit；56 e2e chromium）
-Not-run matrix cells: A06；B01–B04、B06–B09；C03–C06、C08、C10、C12–C14；D04、D06–D12、D14；E06、E08、E09、E11、E12、E14、E15；F01–F08；第 5 节全部预算项
-Next executable task: D12
+Not-run matrix cells: A06；B01–B04、B06–B09；C03–C06、C08、C10、C12–C14；D06–D12、D14；E06、E08、E09、E11、E12、E14、E15；F05（线上 SSE 端到端）；第 5 节全部预算项
+Next executable task: D13
 ```
 
 ### 9.1 A 节（架构与运行时）
@@ -327,6 +330,9 @@ Next executable task: D12
 | `pnpm check:boundaries` / `pnpm check:contract`                                              | 0    | 3 portable 包无 host 依赖；500 个 schema `$ref` 全部解析                 |
 | `pnpm exec playwright test --project=chromium`                                               | 0    | 56 passed（首次运行 55 passed / 1 failed 的竞态已定位并修复，见 B 记录） |
 | `pnpm exec playwright test tests/e2e/ssh-repository-launcher.spec.ts`                        | 0    | 15 passed（chromium + firefox + webkit）                                 |
+| `cargo test -p refyard-http`                                                                  | 0    | 22 unit + 10 gate passed（gate 走真实 socket + fixture 仓库）             |
+| `pnpm exec vitest run tests/native`                                                           | 0    | 44 passed（security 10 + contract 24 + helper；release binary 驱动）      |
+| `cargo build -p refyard-native --release`                                                     | 0    | 4304496 bytes（≤20 MiB 预算）                                            |
 | `pnpm desktop:build`                                                                         | 0    | `Refyard.app`，12 MiB installed                                          |
 
 ### 9.4 未测行及原因
@@ -353,12 +359,36 @@ commit」，随后用服务器/本机自己的 `git` 读回。完整过程、arg
 | E05 | PASS    | 远端 `git log` 显示 app 提交的同一 OID（`459b43f9…`），作者/提交者是容器自身身份；本地为 `5314383a…`；commit 不自动 stage                                                          |
 | E07 | PASS    | preview 绑定内容指纹，内容变动即 `StalePreview` 拒绝（D10 用例 + 桌面命令层）                                                                                                    |
 | E10 | PASS    | 同 clientRequestId + 同 payload 返回 `duplicate` 与原记录，不重复写入；桌面用例断言 Git 侧无第二次写入                                                                            |
-| E13 | PARTIAL | 命令层可用且有测试（`acknowledging_an_uncertain_operation_is_reachable_and_refuses_what_it_should`；ack 不改写 `unknown`）；**UI 尚无解除按钮**，见 9.6                                  |
+| E13 | PARTIAL | 命令层可用且有测试（`acknowledging_an_uncertain_operation_is_reachable_and_refuses_what_it_should`；ack 不改写 `unknown`）；**UI 尚无解除按钮**，见 9.8                                  |
 | E16 | PARTIAL | 本地与远端共用同一 planner/effect/队列代码路径，并各自被真实 Git 验证；但 E06/E11/E12/E14 未在两种 provider 上逐一实测，故不标 PASS                                                  |
 
 其余 E 行未测，原因见 9.4。
 
-### 9.6 D11 未完成项（不得当作已实现）
+### 9.6 D12 结果（F 节原生 HTTP 入口，2026-09-18）
+
+`refyard-native serve`（API-only）与 `open`（API + 静态 workbench）已实现，同一
+`ApplicationService` 经 Tauri 与 HTTP 两个边界服务。完整测量与逐条证据见
+`docs/evidence/native-desktop-ssh/d-native-http-entry.md`。
+
+| ID  | 结果    | 证据                                                                                                                               |
+| --- | ------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| F01 | PASS    | 所有读取需 bearer（含 capabilities）：无票据 401，`http_gate.rs` + `http-security.test.ts`                                        |
+| F02 | PASS    | Host/Origin 精确匹配；`attacker.example`/外源 Origin/`null` 均 403 且先于鉴权；无通配 CORS；线上由 `node:http` 设 Host 验证        |
+| F03 | PASS    | 票据单次（二次 401，Rust+线上）、60s TTL、超量/过期清理（Rust 单测）、常量时间比较、绑定 origin+instance（错配即焚）                |
+| F04 | PASS    | 未知 `/api` 路径：先鉴权后 JSON 404，绝不回退 SPA（Rust+线上）；缺失 asset 同为 JSON 404；shell 仅给 route 形路径                  |
+| F05 | PARTIAL | 事件路由已实现，帧格式/`since` 重放/_gap_ 单元测试通过；**尚无用例在真实 socket 上订阅 SSE**，不标 PASS                            |
+| F06 | PASS    | 仓库级授权：第二会话读第一会话的仓库 403（Rust）；线上未授权 id 403；target 级由 host 拒绝（`createTarget` 无 HTTP 路由，默认关）   |
+| F07 | PARTIAL | 两边界调用同一 Rust service（桌面 24 用例 + HTTP 34 用例各自契约验证），但还没有一个用例对同一 fixture 并排比较两边界答案           |
+| F08 | PASS    | SSH host 列表无 HTTP 路由（默认关，CLI 显式开关待 D13 决定）；网页不接触本机密钥；票据仅 loopback                                   |
+
+### 9.7 D12 未完成项（不得当作已实现）
+
+- **F05 的线上 SSE 用例**（订阅 → 触发一次写 → 断言帧序列）未写。
+- **F07 的并排比较用例**未写；现在靠"同一 service + 各自契约套件"的组合证据。
+- **hosted 形式**按构造拒绝（`pairing_url` 拒绝非 loopback origin），不是实现。
+- **`/mcp`、`/openapi.json`、`/scalar`** 未实现，由静态 404 兜底；不得称为支持。
+
+### 9.8 D11 未完成项（不得当作已实现）
 
 - **E13 的 UI 入口**：blocked repository 在窗口里没有「确认并解除」的入口，只有 Tauri 命令
   `acknowledgeUncertainOperation` 与 dispatcher/test 覆盖。真实用户被 block 后目前只能从

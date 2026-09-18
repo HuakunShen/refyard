@@ -9,9 +9,28 @@ it. The measured state of everything already delivered is in
 
 Nothing below has been started. Do not redo what §2 of the status document records as done.
 
-## 1. D12 — the native HTTP entry (next up, largest)
+## 1. D12 — what is left of it
 
-**Goal:** `refyard-native serve` (API only) and `refyard-native open` (API + the static UI),
+Done: the route table, ticket→bearer auth, exact Host/Origin, JSON 404 for unknown `/api`,
+repository grants, strict queries/bodies, idempotent replays, SSE framing/replay, static
+workbench with CSP inline-script hashing, `serve`/`open` with JSON readiness and
+stderr-only pairing URLs.
+
+**Left:**
+
+- **F05's wire-level SSE case**: subscribe over a real socket, trigger a write, assert the
+  frame sequence (`id`/`event`/`data`, `retry: 3000`, gap frames). Framing is unit-tested
+  in `crates/refyard-http/src/events.rs`; nothing subscribes over the wire yet.
+- **F07's side-by-side case**: one fixture, both boundaries (HTTP and Tauri commands)
+  compared answer-for-answer. Today the evidence is "same service + each boundary
+  contract-tested separately".
+- **Hosted form** (`--allowed-origins` + password): refused by construction, not
+  implemented. If it is ever wanted, it needs a second factor and a re-read of the
+  reference `auth.ts`.
+
+The original D12 notes are kept below for the reference file pointers they carry.
+
+**Goal (original):** `refyard-native serve` (API only) and `refyard-native open` (API + the static UI),
 backed by the same `ApplicationService` the desktop window uses. Both commands currently
 exist in `crates/refyard-cli` and **refuse by name**; `crates/refyard-http` does not exist.
 

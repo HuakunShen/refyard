@@ -20,3 +20,6 @@ refyard-host = { path = "../refyard-host" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+
+[dependencies.refyard-http]
+path = "../refyard-http"

@@ -13,7 +13,7 @@ implying it.
 | Worktree | `/Volumes/Portable2TB/ExtDev/refyard-native-desktop-ssh` (branch `feat/native-desktop-ssh`) |
 | Commits | `73a1ff0` → `88832cb` → `004539c` → `761a83c` → `93ee1e0` → `a6a3346` (D11) → `d9f1dd1` (CLI) |
 | Desktop app | `apps/desktop/src-tauri/target/release/bundle/macos/Refyard.app` · executable sha256 `df903851b7143f68867e4165407ccf9ce15e7fe274f9bcce7b7cd707ec614860` · 12869856 bytes · 12.6 MiB installed · unsigned |
-| Native CLI | `target/release/refyard-native` · sha256 `fc27ca52a197d27b7205551ef95f8959660658730c6db40d434eb11f150a29a6` · 1525712 bytes |
+| Native CLI | `target/release/refyard-native` · sha256 `21c1a23aae6a82c4c6fc97458d9e9b677a0eedd0691c6e2f8563aec7dcdade03` · 4304496 bytes (with the HTTP entry; the doctor-only build was 1525712) |
 | SSH fixture | `pnpm native:ssh:fixture -- start\|stop\|status`; state in `target/native-ssh-fixture/state.json`; container `refyard-native-ssh-fixture`, alias `refyard-ssh-fixture` |
 | Evidence | `docs/evidence/native-desktop-ssh/{a-local-app,b-remote-repository,c-local-and-ssh-writes,ssh-config-discovery}.md` |
 | Acceptance | `docs/acceptance/2026-09-18-native-desktop-ssh.md` (§9 is the incremental record) |
@@ -29,7 +29,7 @@ been made**, for the app, the CLI, or the fixture.
 | **A** Local desktop | PASS | Window opens without a terminal or a backend, reads a local repository, no listener, no JS runtime in the process tree. |
 | **B** Agentless SSH reads | PARTIAL | The real App reads a remote repository through the machine's own OpenSSH; credential ecosystem (1Password/agent), remote path browsing and pagination stress are not exercised. |
 | **C** Local + SSH writes | PARTIAL | Stage, unstage and commit run through the window on both providers and are verified by the server's own Git. Hook failure, connection loss, crash/restart and cancel are not exercised in the app; the acknowledgement flow has no UI entry point. |
-| **D** Native CLI / HTTP | PARTIAL | `refyard-native doctor` exists and is measured. The native HTTP entry (`serve`/`open`) is **not implemented**; both commands refuse by name. So the browser-facing half of D is BLOCKED on D12. |
+| **D** Native CLI / HTTP | PARTIAL | `refyard-native doctor`/`serve`/`open` implemented and measured: ticket→bearer pairing, exact Host/Origin, JSON 404 for unknown `/api`, repository grants, idempotent replays, the built workbench served with a hashed-inline-script CSP. SSE over the wire and a side-by-side two-boundary comparison are not exercised (acceptance 9.6/9.7). Evidence: `d-native-http-entry.md`. |
 
 ### What a person can do today with these artifacts
 
@@ -44,7 +44,9 @@ discard, no stash, no worktree management, no HTTP API, no terminal.
 | --- | --- | --- |
 | `cargo test --workspace` | 0 | 494 passed / 0 failed / 20 ignored |
 | `cargo test` in `apps/desktop/src-tauri` | 0 | 24 passed |
-| `cargo test -p refyard-native` | 0 | 7 passed |
+| `cargo test -p refyard-native` | 0 | 9 passed |
+| `cargo test -p refyard-http` | 0 | 22 unit + 10 gate passed |
+| `pnpm exec vitest run tests/native` | 0 | 44 passed (release binary driven) |
 | `cargo clippy --workspace --all-targets -- -D warnings` | 0 | clean |
 | `cargo fmt --all -- --check` | 0 | clean |
 | `cargo test -p refyard-host --test ssh_exec -- --ignored` (fixture up) | 0 | 14 passed |

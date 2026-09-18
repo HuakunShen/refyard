@@ -6,6 +6,7 @@
 
 pub mod args;
 pub mod doctor;
+pub mod serve;
 
 /// What a run produced: the text to write and the status to exit with.
 ///
