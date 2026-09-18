@@ -98,6 +98,10 @@ pub fn build(state: Arc<HttpState>) -> Router {
             get(operations_list).post(operations_submit),
         )
         .route("/api/v1/operations/cancel", post(operations_cancel))
+        .route(
+            "/api/v1/operations/acknowledge",
+            post(operations_acknowledge),
+        )
         .route("/api/v1/events", get(events_stream))
         .route("/api", any(unknown_api))
         .route("/api/{*rest}", any(unknown_api))
@@ -881,6 +885,37 @@ async fn operations_cancel(
         StatusCode::OK,
         &serde_json::json!({ "operation": record }),
     ))
+}
+
+/// The route that ends a block: a person, shown what is known, says the uncertain
+/// operation has been accounted for. A refusal to confirm is refused here too —
+/// acknowledging without meaning it would clear the very block that protects the
+/// repository.
+async fn operations_acknowledge(
+    State(state): State<Arc<HttpState>>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> RouteResult {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct AcknowledgeBody {
+        operation_id: String,
+        confirmed_snapshot_id: String,
+        confirmed: bool,
+    }
+    let session = authorize(&state, &headers)?;
+    require_scope(&session, scope::WRITE)?;
+    let body: AcknowledgeBody = body_of(body, &state.limits).await?;
+    if !body.confirmed {
+        return Err(refused(
+            ProblemCode::InvalidRequest,
+            "acknowledging an uncertain operation requires confirmed: true",
+        ));
+    }
+    let record = state
+        .service
+        .acknowledge_uncertain_operation(&body.operation_id, &body.confirmed_snapshot_id)?;
+    Ok(json_response(StatusCode::OK, &record))
 }
 
 async fn events_stream(

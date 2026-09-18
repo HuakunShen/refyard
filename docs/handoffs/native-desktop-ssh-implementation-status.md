@@ -94,23 +94,17 @@ same fixture answers the same DTOs through the HTTP adapter and through the Taur
 `crates/refyard-host/tests/fixture_driver.rs` already exists for the Node oracle and is the
 pattern to follow.
 
-### 3.2 D13 — packaging, no-Node proof, budgets, shutdown
+### 3.2 D13 — packaging, no-Node proof, budgets, shutdown — DONE (2026-09-18)
 
-- `scripts/verify-native-artifacts.ts`: walk the `.app` and the CLI, fail on a bundled
-  `node`/`bun`/`deno` binary, a JS backend bundle or VM, Electron; the frontend's own JS must
-  not be a false positive.
-- Launch both artifacts with a minimal `PATH` (git and ssh present, no JS runtime) against the
-  fixture; record the process tree.
-- Missing-Git and missing-SSH behaviour: `refyard-native doctor` already answers both with a
-  diagnosis and exit 2 (§4 below has the transcript); the App's own behaviour without Git is
-  still unmeasured.
-- `scripts/measure-native-runtime.ts`: startup → ready, first status, history latency (≥3 runs),
-  idle memory, memory after a large diff. State the WebView's shared processes and do not
-  invent a PSS. Measured so far: installed app 12.6 MiB, CLI 1525712 bytes — nothing else.
-- Shutdown: cancel in-flight reads, queued mutations, running mutation → confirmed or recorded
-  unknown, owned SSH children cleaned up, the user's own terminal connections untouched.
-  A kill-mid-write on the *windowed* app is the specific test that would exercise the durable
-  journal end to end; today only the host-level tests and a SIGTERM startup check exist.
+Both scripts exist and are wired (`pnpm native:verify` / `pnpm native:bench`); the record is
+`docs/evidence/native-desktop-ssh/e-native-artifacts-shutdown.md` + acceptance §9.9, with raw
+runs in `docs/evidence/native-runtime.json`. Scan green (app 12.6 MiB / CLI 4.16 MiB, system
+links only); bench measured (ready 52ms, first status 44–49ms, history 144–154ms, idle RSS
+~4.5MB, after work 4592 kB); missing-git exits 2 with diagnostics; missing-ssh leaves git
+fully usable; SIGKILL-mid-write on the release binary recovers as unknown + blocked + ack
+(and fixed the restart op-id seed bug); graceful SIGTERM keeps finished work finished.
+Unmeasured leftovers: the windowed-app kill, the App with no Git, offline, SSH-child cleanup
+and read cancellation at shutdown — named in the remaining-tasks file §2.
 
 ### 3.3 The D11 tail
 

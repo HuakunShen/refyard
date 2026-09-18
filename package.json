@@ -25,6 +25,8 @@
     "build:web": "pnpm --dir apps/web build",
     "desktop:build": "bun scripts/build-desktop.ts",
     "native:ssh:fixture": "bun scripts/native-ssh-fixture.ts",
+    "native:verify": "bun scripts/verify-native-artifacts.ts",
+    "native:bench": "bun scripts/measure-native-runtime.ts",
     "deploy": "pnpm build:web && pnpm --dir apps/web exec wrangler deploy --config ../../wrangler.jsonc",
     "deploy:web": "pnpm --dir apps/web deploy",
     "deploy:web:dry-run": "pnpm --dir apps/web deploy:dry-run"

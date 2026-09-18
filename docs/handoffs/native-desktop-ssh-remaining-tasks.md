@@ -106,27 +106,28 @@ and never the SPA; a repository on a target the session was not granted is refus
 
 **Verification:** `cargo build -p refyard-cli --release && pnpm exec vitest run tests/native/http-contract.test.ts tests/native/http-security.test.ts`, plus the gates in §"Gates" of the status document.
 
-## 2. D13 — packaging, no-Node proof, budgets, shutdown
+## 2. D13 — packaging, no-Node proof, budgets, shutdown — DONE (2026-09-18, commit follows this file's update)
 
-Create `scripts/verify-native-artifacts.ts` and `scripts/measure-native-runtime.ts` (wire as
-`pnpm native:verify` / `pnpm native:bench`), modify `scripts/build-desktop.ts` if needed.
+`scripts/verify-native-artifacts.ts` and `scripts/measure-native-runtime.ts` exist, wired as
+`pnpm native:verify` / `pnpm native:bench`. Evidence:
+`docs/evidence/native-desktop-ssh/e-native-artifacts-shutdown.md` and acceptance §9.9.
 
-- Artifact scan: fail on any bundled `node`/`bun`/`deno` binary, JS backend bundle/VM, or
-  Electron; the frontend's own JS in the `.app` must not be a false positive.
-- Launch the real release executables with a minimal `PATH` (git + ssh present, no JS runtime)
-  against the fixture; record the process tree.
-- Degraded machines: `refyard-native doctor` already diagnoses missing git/ssh with exit 2;
-  the **App's** behaviour with no Git, and "no local git but SSH targets still work", and
-  "no ssh disables only SSH" are unmeasured. Also "offline, local repo still works".
-- Measure: installed `.app` bytes (12.6 MiB now, budget ≤30 MiB), CLI bytes (1525712 now,
-  budget ≤20 MiB), startup→ready, first status, history latency (≥3 runs each), idle memory,
-  memory after a large diff. Name the WebView's shared processes; do not invent PSS numbers.
-- Shutdown: cancel in-flight reads, drain queued mutations, a running mutation ends confirmed
-  or recorded `unknown`, owned SSH children cleaned up, user's own terminal connections
-  untouched. The specific missing test: **kill the windowed app mid-write** and prove the next
-  start blocks on the durable journal (the journal now lives under the platform state
-  directory; host-level tests cover the mechanics, the app-level kill does not exist).
-- Commit: `test(native): verify runtime independence and release artifacts`.
+Delivered: artifact scan green (app 12.6 MiB ≤ 30 MiB, CLI 4.16 MiB ≤ 20 MiB, Mach-O by
+magic, `otool -L` system-only, engine markers, no Svelte false positive); minimal-PATH bench
+(ready 52ms, first status 44–49ms, history 144–154ms, idle RSS ~4.5MB, after status+diff
+4592 kB, app registered 66ms; `docs/evidence/native-runtime.json`); missing-git diagnostics
+(`doctor` and `serve` exit 2 with notes); missing-ssh-only (git fully usable, exit 0);
+SIGKILL-mid-write on the release binary — unknown + blocked write + the three-act
+acknowledgement + `202` after (exposed and fixed the restart operation-id seed bug,
+`next_operation_seed` in `crates/refyard-host/src/jobs/mod.rs`); graceful SIGTERM — exit 0,
+port answers nothing while stopped, finished work stays `succeeded` after restart.
+
+**Still open from this task's checklist (do not mark done):**
+
+- the **windowed app** killed mid-write (the CLI/HTTP proof is done; the app-level kill is not);
+- the App's own behaviour with no Git on PATH;
+- offline (network cut) local-repo operation — not exercised;
+- owned SSH child cleanup at shutdown; in-flight read cancellation at shutdown.
 
 ## 3. D11 tail — the acknowledgement entry point
 

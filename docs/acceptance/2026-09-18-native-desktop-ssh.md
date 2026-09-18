@@ -277,13 +277,13 @@ Artifact .app absolute path + SHA-256 + installed bytes:
   df903851b7143f68867e4165407ccf9ce15e7fe274f9bcce7b7cd707ec614860 · 12869856 bytes executable · 12.6 MiB installed · 未签名
 Artifact CLI absolute path + SHA-256 + bytes:
   /Volumes/Portable2TB/ExtDev/refyard-native-desktop-ssh/target/release/refyard-native
-  21c1a23aae6a82c4c6fc97458d9e9b677a0eedd0691c6e2f8563aec7dcdade03 · 4304496 bytes
-No-Node proof: 见 A02/A04 与 B、D 记录；App 以 PATH=/usr/bin:/bin 启动并完成读取与写入，进程树无 JS runtime 子进程；refyard-native 链接仅 libSystem/libiconv，依赖树无 JS runtime 与 WebView
+  27b5a6b6c462ea7bc498f9f5e5aba08738af5865a347b76aba20588b9d811fc1 · 4360464 bytes（D13 重建：journal 种子修复；哈希随代码变化，见 9.9）
+No-Node proof: 见 A02/A04 与 B、D 记录；App 以 PATH=/usr/bin:/bin 启动并完成读取与写入，进程树无 JS runtime 子进程；refyard-native 链接仅 libSystem/libiconv，依赖树无 JS runtime 与 WebView；`pnpm native:verify` 对 .app 与 CLI 全量扫描（9.9）
 Remote no-install proof: 见 D01/D13；容器内无 node/bun/deno/refyard/python3/npx/curl，/ 下唯一 refyard 命名路径是种子仓库目录
 Commands actually run and exit codes: 见下方逐行表与 B、C 记录“本轮跑过的闸门”
-Existing regression failures: 无（494 Rust passed / 0 failed / 20 ignored；418 integration；428 unit；56 e2e chromium）
-Not-run matrix cells: A06；B01–B04、B06–B09；C03–C06、C08、C10、C12–C14；D06–D12、D14；E06、E08、E09、E11、E12、E14、E15；F05（线上 SSE 端到端）；第 5 节全部预算项
-Next executable task: D13
+Existing regression failures: 无（root workspace Rust 537 passed / 0 failed / 20 ignored；desktop 25 / 0 / 1；418 integration；428 unit；56 e2e chromium；native vitest 46）
+Not-run matrix cells: A06；B01–B04、B06–B09；C03–C06、C08、C10、C12–C14；D06–D12、D14；E06、E08、E09、E11、E12（App 内）、E14、E15；F05（线上 SSE 端到端）；断网场景；第 5 节除 app/CLI 字节、延迟与 RSS 外的预算项
+Next executable task: D14（F05/F07 与 E13 UI 入口仍按 9.7/9.8 记录为未完成）
 ```
 
 ### 9.1 A 节（架构与运行时）
@@ -334,6 +334,12 @@ Next executable task: D13
 | `pnpm exec vitest run tests/native`                                                           | 0    | 44 passed（security 10 + contract 24 + helper；release binary 驱动）      |
 | `cargo build -p refyard-native --release`                                                     | 0    | 4304496 bytes（≤20 MiB 预算）                                            |
 | `pnpm desktop:build`                                                                         | 0    | `Refyard.app`，12 MiB installed                                          |
+| **D13 轮追加：**                                                                              |      |                                                                          |
+| `cargo test --workspace`（D13 后重跑）                                                       | 0    | 537 passed / 0 failed / 20 ignored（含 journal 种子新用例）              |
+| `cargo test`（`apps/desktop/src-tauri`）                                                     | 0    | 25 passed / 0 failed / 1 ignored                                         |
+| `pnpm exec vitest run tests/native`                                                          | 0    | 46 passed（新增 http-shutdown：SIGKILL 未知结果 + SIGTERM 优雅关闭）     |
+| `pnpm native:verify`                                                                         | 0    | .app 12.6 MiB / CLI 4.16 MiB，系统链接，无 JS runtime（≤30/≤20 MiB 预算）|
+| `pnpm native:bench`                                                                          | 0    | ready 52ms · first status 44–49ms · history 144–154ms · idle RSS ~4.5MB · 工作后 4592 kB（`docs/evidence/native-runtime.json`） |
 
 ### 9.4 未测行及原因
 
@@ -379,7 +385,7 @@ commit」，随后用服务器/本机自己的 `git` 读回。完整过程、arg
 | F05 | PARTIAL | 事件路由已实现，帧格式/`since` 重放/_gap_ 单元测试通过；**尚无用例在真实 socket 上订阅 SSE**，不标 PASS                            |
 | F06 | PASS    | 仓库级授权：第二会话读第一会话的仓库 403（Rust）；线上未授权 id 403；target 级由 host 拒绝（`createTarget` 无 HTTP 路由，默认关）   |
 | F07 | PARTIAL | 两边界调用同一 Rust service（桌面 24 用例 + HTTP 34 用例各自契约验证），但还没有一个用例对同一 fixture 并排比较两边界答案           |
-| F08 | PASS    | SSH host 列表无 HTTP 路由（默认关，CLI 显式开关待 D13 决定）；网页不接触本机密钥；票据仅 loopback                                   |
+| F08 | PASS    | SSH host 列表无 HTTP 路由（默认关；D13 决定继续不加路由，见 9.9 末行）；网页不接触本机密钥；票据仅 loopback                        |
 
 ### 9.7 D12 未完成项（不得当作已实现）
 
@@ -399,7 +405,30 @@ commit」，随后用服务器/本机自己的 `git` 读回。完整过程、arg
 - **E06**：hook 失败的保留只由 host 层用例覆盖（无 `--no-verify`，失败即失败），未在真实 App
   里用 fixture hook 演示。
 - **E11/E12/E14**：断线、crash/restart、取消未在真实 App 内制造。命令行层的对应行为由
-  `uncertain.rs`、`journal.rs`、`recovery.rs` 用例覆盖；App 内实测留给 D13（shutdown/kill 场景）。
+  `uncertain.rs`、`journal.rs`、`recovery.rs` 用例覆盖；D13 又在 CLI/HTTP 层实测了 kill/restart
+  与优雅关闭（9.9）。App 内实测仍缺，见 9.8 末条。
 - **App 的 journal 位置**（本轮修复）：窗口进程此前把 journal 放在内存里，退出即忘；现已改为
   平台每用户目录（`REFYARD_STATE_DIR` 可覆盖），并有 `state_root.rs` 单测、桌面用例与两次真实
   启动实测（`…/Library/Application Support/refyard/journal/records` 在写入前即存在）。
+- **E12 的 App 内实测**仍缺：D13 已在 CLI/HTTP 层用 release binary 实测 kill/restart（9.9），
+  但桌面窗口内的 crash/restart 演示没有做。
+
+### 9.9 D13 结果（打包、无 Node 证明、预算与退出，2026-09-18）
+
+完整测量与逐条证据见 `docs/evidence/native-desktop-ssh/e-native-artifacts-shutdown.md`；
+原始运行数据在 `docs/evidence/native-runtime.json`。
+
+| 项 | 结果 | 证据 |
+| --- | --- | --- |
+| 打包扫描 | PASS | `pnpm native:verify`：.app 12.6 MiB（≤30 MiB）、CLI 4.16 MiB（≤20 MiB），Mach-O 按 magic 识别、`otool -L` 仅系统库、内嵌前端按引擎 marker 扫描且不误报 Svelte 产物 |
+| 压缩体积 | PASS | `ditto -c -k` zip 3,585,815 bytes（非签名分发产物，仅作对比数字） |
+| minimal PATH 启动 | PASS | bench 以仅含 git/ssh 的 PATH 三次启动 release CLI；无任何 JS runtime 可达 |
+| 缺 git | PASS | `doctor` 退出 2 并打印诊断；`serve` 退出 2 `git was not found on PATH`——诊断而非白屏 |
+| 缺 ssh（有 git） | PASS | `doctor` 退出 0：七个读取与三个操作全部列出，仅 ssh 目标被拒——缺 ssh 只禁用 ssh |
+| 断网 | NOT RUN | 需要切断本机网络接口，本轮未做；127.0.0.1 绑定与本地仓库不经过网络是构造性说明，不是测量 |
+| 启动/读取延迟与内存 | PASS | ready 52ms、first status 44–49ms、history 144–154ms、idle RSS ~4.5MB、status+diff 后 4592 kB；App 注册 66ms（window-ready 未脚本化）；无 PSS/总量虚构，CLI 无 WebView 故无共享页重复计数 |
+| SIGKILL 中途写 | PASS | release binary 被杀后重启：操作 `unknown`、仓库写被拒、三步 ack（400/404/200 且不改写 unknown）、此后写 202；暴露并修复重启后 `op_1` 撞号的种子 bug（`next_operation_seed` + 单测） |
+| SIGTERM 优雅关闭 | PASS | 退出码 0；停机期间端口拒绝连接；重启后已完成操作仍 `succeeded`（优雅关闭绝不把完成改写为 unknown）、无需 ack 即可继续写 |
+| SSH 子进程清理（关机时） | NOT RUN | 关闭用例为本地仓库，无 SSH 子进程可清理；不标 PASS |
+| 读取消除（关机时） | NOT RUN | 优雅排水内没有可观测的进行中读；不标 PASS |
+| SSH host 列表 HTTP 路由 | 决定：保持关闭 | D13 未添加任何 host 列表路由；F08 的「待 D13 决定」以维持默认关告终 |

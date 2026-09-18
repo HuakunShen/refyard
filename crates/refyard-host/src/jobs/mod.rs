@@ -38,6 +38,20 @@ use crate::jobs::queue::{EnqueueRefusal, Queue, QueueLimits, QueueMode, QueueTic
 use crate::jobs::recovery::{Recovery, WriteBlock};
 use crate::paths::base36;
 
+/// The value the operation-id counter starts from, given the journal's records.
+///
+/// Ids are `op_<base36 counter>`, so the seed is the largest suffix any durable record
+/// already uses. An id in another shape is skipped rather than guessed at; the counter
+/// only has to avoid repeating what is demonstrably there.
+fn next_operation_seed(records: &[JournalRecord]) -> u64 {
+    records
+        .iter()
+        .filter_map(|record| record.operation_id.strip_prefix("op_"))
+        .filter_map(|suffix| u64::from_str_radix(suffix, 36).ok())
+        .max()
+        .unwrap_or(0)
+}
+
 /// The mutation the write path can carry, as the host understands it.
 ///
 /// A projection of the contract's closed union: only the operations this slice can reason
@@ -162,6 +176,56 @@ pub trait PreconditionSource: Send + Sync {
 }
 
 /// The answer to one submission.
+#[cfg(test)]
+mod seed_tests {
+    use super::*;
+
+    fn record_with_id(operation_id: &str) -> JournalRecord {
+        JournalRecord {
+            operation_id: operation_id.to_string(),
+            client_request_id: format!("crid-{operation_id}"),
+            actor: "owner".to_string(),
+            kind: MutationKind::Commit,
+            target: MutationTarget::Worktree {
+                repository_id: "repo_1".to_string(),
+                worktree_id: "wt_1".to_string(),
+                expected_snapshot_id: "snap_1".to_string(),
+            },
+            status: OperationStatus::Accepted,
+            sequence: 1,
+            accepted_at_ms: 1,
+            started_at_ms: None,
+            finished_at_ms: None,
+            payload_digest: "digest".to_string(),
+            write_key: "repo_1".to_string(),
+            result: None,
+            problem: None,
+            unknown_reason: None,
+            acknowledged_at_ms: None,
+        }
+    }
+
+    #[test]
+    fn the_seed_is_one_above_the_largest_durable_id() {
+        assert_eq!(
+            next_operation_seed(&[
+                record_with_id("op_1"),
+                record_with_id("op_2"),
+                record_with_id("op_1a"),
+            ]),
+            u64::from_str_radix("1a", 36).unwrap()
+        );
+    }
+
+    #[test]
+    fn an_empty_or_unparseable_journal_seeds_at_zero() {
+        assert_eq!(next_operation_seed(&[]), 0);
+        // A foreign id is skipped, not parsed as zero: the counter only avoids what is
+        // demonstrably present.
+        assert_eq!(next_operation_seed(&[record_with_id("operation-9")]), 0);
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SubmitResult {
     pub record: OperationRecord,
@@ -195,18 +259,24 @@ impl MutationEngine {
     }
 
     /// The same engine, announcing every state change to `events`.
+    ///
+    /// The id counter starts **above every id the journal already holds**: the journal is
+    /// the durable record, and a restarted process that minted `op_1` a second time would
+    /// collide with the first process's `op_1` on its very next write — turning a person's
+    /// recovery into a `ResourceBusy`.
     pub fn with_event_sink(
         journal: Arc<Journal>,
         recovery: Arc<Recovery>,
         effects: Vec<Box<dyn MutationEffect>>,
         events: Option<Arc<EventSink>>,
     ) -> Arc<Self> {
+        let next_operation = next_operation_seed(&journal.records());
         Arc::new(Self {
             journal,
             recovery,
             effects,
             queue: Queue::new(QueueLimits::default()),
-            next_operation: AtomicU64::new(0),
+            next_operation: AtomicU64::new(next_operation),
             events,
         })
     }

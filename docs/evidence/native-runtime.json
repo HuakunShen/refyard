@@ -1,0 +1,39 @@
+{
+  "measuredAt": "2026-09-18T15:40:56.975Z",
+  "platform": "darwin arm64",
+  "binary": "/Volumes/Portable2TB/ExtDev/refyard-native-desktop-ssh/target/release/refyard-native",
+  "runs": [
+    {
+      "readyMs": 52,
+      "firstStatusMs": 44,
+      "historyMs": 144,
+      "rssKb": 4496,
+      "rssAfterWorkKb": 4592
+    },
+    {
+      "readyMs": 52,
+      "firstStatusMs": 49,
+      "historyMs": 154,
+      "rssKb": 4512,
+      "rssAfterWorkKb": 4592
+    },
+    {
+      "readyMs": 52,
+      "firstStatusMs": 49,
+      "historyMs": 152,
+      "rssKb": 4464,
+      "rssAfterWorkKb": 4592
+    }
+  ],
+  "app": {
+    "registeredMs": 66,
+    "note": "launch-to-registered-application only; window-ready latency needs UI automation and is not scripted"
+  },
+  "method": {
+    "ready": "spawn → first JSON readiness line on stdout",
+    "firstStatus": "paired → repositories → status",
+    "history": "paired → history page 1",
+    "rss": "serve process RSS after 5s idle; the CLI has no WebView, so no shared-page double counting applies",
+    "rssAfterWork": "serve process RSS after dirtying the worktree and running status + unstaged diff"
+  }
+}
