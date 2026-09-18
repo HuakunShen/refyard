@@ -29,6 +29,9 @@ pub struct ServeRequest {
     pub port_explicit: bool,
     pub ticket_ttl_seconds: u64,
     pub json: bool,
+    /// Bind the pairing ticket to the empty origin: a supervisor spends it over a plain
+    /// fetch with no Origin header, and no browser can spend it at all.
+    pub machine: bool,
     pub open_browser: bool,
     pub web_root: Option<String>,
     pub paths: Vec<String>,
@@ -52,6 +55,7 @@ const SERVE_FLAGS: &[(&str, Flag)] = &[
     ("--ticket-ttl", Flag::Value),
     ("--web-root", Flag::Value),
     ("--json", Flag::Switch),
+    ("--machine", Flag::Switch),
     ("--no-open", Flag::Switch),
     ("--open", Flag::Switch),
 ];
@@ -101,6 +105,7 @@ fn parse_serve(with_ui: bool, rest: &[String]) -> Parsed {
         port_explicit: false,
         ticket_ttl_seconds: 60,
         json: false,
+        machine: false,
         open_browser: with_ui,
         web_root: if with_ui {
             Some(default_web_root())
@@ -125,6 +130,7 @@ fn parse_serve(with_ui: bool, rest: &[String]) -> Parsed {
         match kind {
             Flag::Switch => match *name {
                 "--json" => request.json = true,
+                "--machine" => request.machine = true,
                 "--no-open" => request.open_browser = false,
                 "--open" => request.open_browser = true,
                 _ => unreachable!("the flag table only lists these"),
@@ -159,6 +165,13 @@ fn parse_serve(with_ui: bool, rest: &[String]) -> Parsed {
                 }
             }
         }
+    }
+    if request.machine && request.open_browser {
+        // A machine ticket is bound to no origin, and a browser always sends one: the
+        // URL this run would print could never be spent by the browser it opened.
+        return Parsed::Usage(format!(
+            "--machine pairs a supervisor, which cannot open a browser; drop --open\n{USAGE}"
+        ));
     }
     Parsed::Invocation(Invocation::Serve(request))
 }

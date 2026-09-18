@@ -156,7 +156,10 @@ impl AuthStore {
         grants: Grants,
         now_ms: i64,
     ) -> Result<BootstrapTicket, Problem> {
-        if !is_loopback_origin(origin) {
+        // The empty origin is the machine binding: the ticket may only be spent by a
+        // client that sends no Origin header at all, which no browser ever does. Anything
+        // non-empty still has to be a loopback origin this machine owns.
+        if !origin.is_empty() && !is_loopback_origin(origin) {
             return Err(Problem::new(
                 ProblemCode::Forbidden,
                 "the native service pairs loopback origins only; the hosted form is a different service",
@@ -496,6 +499,26 @@ mod tests {
                 "srvc_test",
                 1_000 + DEFAULT_TICKET_TTL_SECONDS as i64 * 1000 + 2
             )
+            .is_err());
+    }
+
+    // Prevents: a supervisor's machine ticket being spendable by a browser (any browser
+    // always sends an Origin, which never equals the empty binding), or a browser ticket
+    // being spendable by a headerless client.
+    #[test]
+    fn a_machine_ticket_spends_only_against_the_empty_origin() {
+        let mut store = store();
+        let ticket = store
+            .mint_ticket("", "cli", grants(), 1_000)
+            .expect("the machine binding mints without an origin");
+        let session = store
+            .exchange(&ticket.ticket, "", "srvc_test", 2_000)
+            .expect("the headerless supervisor spends it");
+        assert_eq!(session.actor, "cli");
+        // A mismatched origin is refused (and consumes the ticket either way), so the
+        // browser form of the exchange can never spend what the machine was minted.
+        assert!(store
+            .exchange(&ticket.ticket, "http://127.0.0.1:9595", "srvc_test", 2_001)
             .is_err());
     }
 

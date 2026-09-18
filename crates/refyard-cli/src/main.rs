@@ -25,6 +25,7 @@ async fn main() {
                 port_explicit: request.port_explicit,
                 ticket_ttl_seconds: request.ticket_ttl_seconds,
                 json: request.json,
+                machine: request.machine,
                 open_browser: request.open_browser,
                 web_root: request.web_root.map(std::path::PathBuf::from),
                 paths: request.paths,

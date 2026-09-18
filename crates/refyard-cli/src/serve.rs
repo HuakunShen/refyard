@@ -35,6 +35,9 @@ pub struct ServeOptions {
     pub ticket_ttl_seconds: u64,
     /// Machine output: one JSON object on stdout, the pairing URL on stderr.
     pub json: bool,
+    /// Bind the pairing ticket to the empty origin: a supervisor spends it over a plain
+    /// fetch with no Origin header, and no browser can spend it at all.
+    pub machine: bool,
     /// Open the pairing URL in this machine's browser once the listener is up.
     pub open_browser: bool,
     /// The built workbench to serve from `/`; `None` makes this API-only.
@@ -173,7 +176,14 @@ pub async fn run(options: ServeOptions) -> i32 {
     };
 
     let origin = host.base_url.clone();
-    let pairing_url = match host.pairing_url(&origin) {
+    // A machine run binds its one ticket to the empty origin: the supervisor spending it
+    // sends no Origin header at all, and no browser can spend it, ever.
+    let minted = if options.machine {
+        host.machine_pairing_url()
+    } else {
+        host.pairing_url(&origin)
+    };
+    let pairing_url = match minted {
         Ok(url) => url,
         Err(problem) => {
             stderr(&format!(

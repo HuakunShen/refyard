@@ -90,6 +90,22 @@ impl HttpHost {
         Ok(format!("{origin}/?pair={}", ticket.ticket))
     }
 
+    /// A supervisor pairing URL whose ticket is bound to the empty origin.
+    ///
+    /// The exchange compares a ticket's origin with the request's, and a machine client
+    /// sends no Origin header at all — empty matches empty. A browser can never spend
+    /// this ticket: it always sends an Origin, which never equals the empty binding, so
+    /// the URL is inert in any browser that reaches it.
+    pub fn machine_pairing_url(&self) -> Result<String, refyard_contract::problem::Problem> {
+        let ticket = self.auth.lock().expect("auth lock").mint_ticket(
+            "",
+            "cli",
+            self.grants.clone(),
+            refyard_host::clock::now_millis(),
+        )?;
+        Ok(format!("{}/?pair={}", self.base_url, ticket.ticket))
+    }
+
     /// Stops accepting connections and lets what is running finish.
     ///
     /// A mutation that has been accepted is a write in progress, and cutting its
