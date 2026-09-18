@@ -41,15 +41,19 @@ export function mutationAvailabilityFor(
 
 export function writeRefusalMessage(input: {
   readonly browserOnline: boolean;
-  readonly hasToken: boolean;
+  /**
+   * A live backend session exists. Named for the capability rather than a credential:
+   * a native session has no bearer at all, so a rule keyed on one would refuse every
+   * write in the desktop App.
+   */
+  readonly sessionReady?: boolean;
+  /** The pre-adapter spelling of `sessionReady`, kept for callers written before the split. */
+  readonly hasToken?: boolean;
   readonly negotiation: Negotiation;
   readonly action: "write" | "repositoryAccess";
 }): string | null {
-  if (
-    input.browserOnline &&
-    input.hasToken &&
-    input.negotiation.kind === "ok"
-  ) {
+  const sessionReady = input.sessionReady ?? input.hasToken ?? false;
+  if (input.browserOnline && sessionReady && input.negotiation.kind === "ok") {
     return null;
   }
   if (!input.browserOnline) {

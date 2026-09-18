@@ -2,15 +2,22 @@
  * Mutation application layer for the workbench.
  *
  * Panels emit semantic intent. This controller turns that intent into the closed Refyard mutation
- * contract, re-reads fresh snapshots, follows accepted operations to terminal state, and refreshes
- * the read model. It deliberately owns no layout and no session credential invalidation.
+ * contract, re-reads fresh snapshots, follows accepted operations to terminal state through the
+ * injected `MutationService`, and refreshes the read model. It deliberately owns no layout, no
+ * credential lifecycle, and no transport: whether the write travels over HTTP or native IPC is
+ * decided by the adapter behind these interfaces.
  */
-import { createMutationClient, type GitClient } from "@refyard/git-client";
+import {
+  BackendError,
+  type GitReadService,
+  type MutationService,
+} from "@refyard/git-service";
 import type { ParsedMutationRequest } from "@refyard/git-contract";
 import type { QueryClient } from "@tanstack/svelte-query";
 import { followOperation } from "../operation-follow.js";
 import type { Negotiation } from "../session-negotiation.js";
-import { describeClientProblem } from "./session.js";
+import { cacheKeyFor } from "./query-state.js";
+import { describeBackendProblem } from "./session.js";
 import {
   clearRepositoryIfSelected,
   selectRepository,
@@ -26,15 +33,16 @@ import {
 } from "./mutation-model.js";
 
 export interface WorkbenchMutationInputs {
-  readonly client: () => GitClient;
-  readonly baseUrl: () => string;
-  readonly token: () => string | null;
+  /** The session's read side: snapshots and previews are reads, not writes. */
+  readonly reads: () => GitReadService | null;
+  readonly mutations: () => MutationService | null;
+  /** Part of every invalidation key; never a credential. */
+  readonly cacheNamespace: () => string;
   readonly browserOnline: () => boolean;
   readonly negotiation: () => Negotiation;
   readonly selection: WorkbenchSelectionState;
   readonly queries: ReturnType<typeof createWorkbenchQueries>;
   readonly queryClient: QueryClient;
-  readonly fetch: typeof fetch;
   /** Called only after a commit/amend operation is confirmed terminal-successful. */
   readonly onCommitSucceeded?: (
     repositoryId: string,
@@ -87,14 +95,44 @@ function sameMutationContext(
   );
 }
 
+/**
+ * A refusal is a policy answer, not a crash, and it must reach the user verbatim.
+ * Wrapping it in a `BackendError` keeps the display honest: the panel renders problem
+ * codes and messages, never a raw `Error.message`.
+ */
+function refusalError(message: string): BackendError {
+  return new BackendError({
+    code: "Unavailable",
+    message,
+    retryable: false,
+  });
+}
+
 export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
-  const mutationClient = $derived(
-    createMutationClient({
-      baseUrl: input.baseUrl(),
-      fetch: input.fetch,
-      token: input.token,
-    }),
-  );
+  /** A write may only be attempted behind its gate, so the session is present. */
+  function requireMutations(): MutationService {
+    const service = input.mutations();
+    if (service === null) {
+      throw new BackendError({
+        code: "InvalidRequest",
+        message: "no backend session is connected",
+        retryable: false,
+      });
+    }
+    return service;
+  }
+
+  function requireReads(): GitReadService {
+    const service = input.reads();
+    if (service === null) {
+      throw new BackendError({
+        code: "InvalidRequest",
+        message: "no backend session is connected",
+        retryable: false,
+      });
+    }
+    return service;
+  }
 
   let busy = $state(false);
   let repositoryMessage = $state<string | null>(null);
@@ -115,7 +153,7 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
   const writesAllowed = $derived(
     writeRefusalMessage({
       browserOnline: input.browserOnline(),
-      hasToken: input.token() !== null,
+      sessionReady: input.mutations() !== null,
       negotiation: input.negotiation(),
       action: "write",
     }) === null,
@@ -158,7 +196,7 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
       "diff-patch",
     ] as const) {
       await input.queryClient.invalidateQueries({
-        queryKey: [prefix, input.baseUrl(), input.token(), repositoryId],
+        queryKey: cacheKeyFor(input.cacheNamespace(), prefix, repositoryId),
       });
     }
   }
@@ -203,24 +241,28 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     try {
       const refusal = writeRefusalMessage({
         browserOnline: input.browserOnline(),
-        hasToken: input.token() !== null,
+        sessionReady: input.mutations() !== null,
         negotiation: input.negotiation(),
         action: "write",
       });
       if (refusal !== null) {
-        throw new Error(refusal);
+        throw refusalError(refusal);
       }
       // Capture the target before any preview/status await. A user can switch worktrees while a
       // request is in flight; the operation must finish against the target the user confirmed.
       const targetContext = context;
       if (targetContext === null) {
-        throw new Error("no repository selected");
+        throw new BackendError({
+          code: "InvalidRequest",
+          message: "no repository selected",
+          retryable: false,
+        });
       }
       const operation = await buildOperation(targetContext);
       const target =
         targetKind === "worktree"
           ? await (async () => {
-              const snapshot = await input.client().status({
+              const snapshot = await requireReads().status({
                 repositoryId: targetContext.repositoryId,
                 worktreeId: targetContext.worktreeId,
               });
@@ -232,7 +274,7 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
               };
             })()
           : await (async () => {
-              const snapshot = await input.client().refs({
+              const snapshot = await requireReads().refs({
                 repositoryId: targetContext.repositoryId,
               });
               return {
@@ -241,22 +283,23 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
                 expectedSnapshotId: snapshot.snapshotId,
               };
             })();
-      const submitted = await mutationClient.submit({
+      const mutations = requireMutations();
+      const submitted = await mutations.submit({
         clientRequestId: `${label}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
         target,
         operation,
       });
       const operationId = operationIdFromSubmission(submitted);
-      reportForContext(await followOperation(mutationClient, operationId));
+      reportForContext(await followOperation(mutations, operationId));
       if (onSucceeded !== undefined) {
-        const finalRecord = await mutationClient.get(operationId);
+        const finalRecord = await mutations.get(operationId);
         if (finalRecord.status === "succeeded") {
           onSucceeded(targetContext);
         }
       }
       await invalidateRepositoryReads(targetContext.repositoryId);
     } catch (error) {
-      reportForContext(describeClientProblem(error));
+      reportForContext(describeBackendProblem(error));
     } finally {
       busy = false;
     }
@@ -273,20 +316,20 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     try {
       const refusal = writeRefusalMessage({
         browserOnline: input.browserOnline(),
-        hasToken: input.token() !== null,
+        sessionReady: input.mutations() !== null,
         negotiation: input.negotiation(),
         action: "write",
       });
       if (refusal !== null) {
-        throw new Error(refusal);
+        throw refusalError(refusal);
       }
-      const submitted = await mutationClient.submit({
+      const submitted = await requireMutations().submit({
         clientRequestId: `${label}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
         target: { kind: "workspace", allowedRootId, relativeDestination },
         operation,
       });
       repositoryMessage = await followOperation(
-        mutationClient,
+        requireMutations(),
         operationIdFromSubmission(submitted),
       );
 
@@ -296,11 +339,15 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
       );
       if (created !== undefined) {
         selectRepository(input.selection, created.repositoryId);
-        await input.queryClient.invalidateQueries({ queryKey: ["status"] });
-        await input.queryClient.invalidateQueries({ queryKey: ["refs"] });
+        await input.queryClient.invalidateQueries({
+          queryKey: cacheKeyFor(input.cacheNamespace(), "status"),
+        });
+        await input.queryClient.invalidateQueries({
+          queryKey: cacheKeyFor(input.cacheNamespace(), "refs"),
+        });
       }
     } catch (error) {
-      repositoryMessage = describeClientProblem(error);
+      repositoryMessage = describeBackendProblem(error);
     } finally {
       busy = false;
     }
@@ -335,15 +382,15 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     try {
       const refusal = writeRefusalMessage({
         browserOnline: input.browserOnline(),
-        hasToken: input.token() !== null,
+        sessionReady: input.mutations() !== null,
         negotiation: input.negotiation(),
         action: "repositoryAccess",
       });
       if (refusal !== null) {
-        throw new Error(refusal);
+        throw refusalError(refusal);
       }
       // Resolve home shorthand and symlinks using the host, which owns filesystem paths.
-      const directory = await input.client().filesystemEntries({ path });
+      const directory = await requireReads().filesystemEntries({ path });
       const current = await input.queries.repositories.refetch();
       const existing = current.data?.repositories.find(
         (entry) => entry.displayPath === directory.path,
@@ -352,7 +399,7 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
         selectRepository(input.selection, existing.repositoryId);
         return true;
       }
-      const result = await input.client().registerRepository(directory.path);
+      const result = await requireReads().registerRepository(directory.path);
       repositoryAccessMessage = `approved ${path}`;
       await input.queries.repositories.refetch();
       const added = result.repositories.find(
@@ -363,7 +410,7 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
       }
       return added !== undefined;
     } catch (error) {
-      repositoryAccessMessage = describeClientProblem(error);
+      repositoryAccessMessage = describeBackendProblem(error);
       return false;
     } finally {
       busy = false;
@@ -376,19 +423,19 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     try {
       const refusal = writeRefusalMessage({
         browserOnline: input.browserOnline(),
-        hasToken: input.token() !== null,
+        sessionReady: input.mutations() !== null,
         negotiation: input.negotiation(),
         action: "repositoryAccess",
       });
       if (refusal !== null) {
-        throw new Error(refusal);
+        throw refusalError(refusal);
       }
-      await input.client().revokeRepository(repositoryId);
+      await requireReads().revokeRepository(repositoryId);
       repositoryAccessMessage = `revoked ${repositoryId}`;
       clearRepositoryIfSelected(input.selection, repositoryId);
       await input.queries.repositories.refetch();
     } catch (error) {
-      repositoryAccessMessage = describeClientProblem(error);
+      repositoryAccessMessage = describeBackendProblem(error);
     } finally {
       busy = false;
     }
@@ -399,7 +446,7 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     worktreeId: string,
     pathIds: readonly string[],
   ): Promise<readonly string[]> {
-    const previews = await input.client().previews({
+    const previews = await requireReads().previews({
       repositoryId,
       worktreeId,
       pathIds: [...pathIds],
@@ -410,7 +457,11 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     return pathIds.map((pathId) => {
       const previewToken = byPath.get(pathId);
       if (previewToken === undefined) {
-        throw new Error("the host issued no preview token for a selected path");
+        throw new BackendError({
+          code: "InternalError",
+          message: "the host issued no preview token for a selected path",
+          retryable: false,
+        });
       }
       return previewToken;
     });
@@ -794,15 +845,18 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     if (reference.kind === "existingBranch") {
       return { kind: "existingBranch", branchName: reference.branchName ?? "" };
     }
-    const snapshot = await input.client().status({
+    const snapshot = await requireReads().status({
       repositoryId,
       worktreeId,
     });
     const head = snapshot.head;
     if (head.kind !== "born" || head.oid === null) {
-      throw new Error(
-        "this repository has no commit yet, so a new worktree has nothing to start from",
-      );
+      throw new BackendError({
+        code: "InvalidOperationPayload",
+        message:
+          "this repository has no commit yet, so a new worktree has nothing to start from",
+        retryable: false,
+      });
     }
     return {
       kind: "newBranch",

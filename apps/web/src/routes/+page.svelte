@@ -8,12 +8,14 @@
    * components can be reused by another host, and it means the app has no business logic
    * about Git in it — only reads, selection, and the states around them.
    *
-   * Reads, explicit approvals and submitted operations are composed here. The page does
-   * not build Git commands: it sends closed contract intentions through the injected
-   * clients, and capabilities decide which controls are visible.
+   * This page does not choose a transport, hold a bearer, or build a Git command. It asks
+   * `createWorkbenchRuntime` for a session — HTTP in a browser, native IPC in the desktop
+   * WebView — and passes the session's read/mutation/event services into the controllers.
    */
   import { browser } from "$app/environment";
-  import { createGitClient } from "@refyard/git-client";
+  import { onDestroy, onMount } from "svelte";
+  import type { BackendSession, ConnectionState } from "@refyard/git-service";
+  import { BackendError } from "@refyard/git-service";
   import type { CommitSummary } from "@refyard/git-contract";
   import {
     AppearanceSettings,
@@ -37,19 +39,16 @@
   import { FileDiff, FolderGit2, GitBranch, RefreshCw } from "@lucide/svelte";
   import { useQueryClient } from "@tanstack/svelte-query";
   import {
-    clearWorkbenchCredentials,
-    consumeInitialPairingUrl,
     createWorkbenchSessionState,
-    describeClientProblem,
+    describeBackendProblem,
     isDefaultSessionBaseUrl,
-    pairWorkbenchSession,
-    type WorkbenchSessionPorts,
   } from "$lib/workbench/session.js";
   import {
     createWorkbenchConnectivityState,
     observeBrowserConnectivity,
-    startWorkbenchEventStream,
+    startSessionEventStream,
   } from "$lib/workbench/connectivity.js";
+  import { createWorkbenchRuntime } from "$lib/runtime/bootstrap.js";
   import {
     clearInspectableSelection,
     createWorkbenchSelectionState,
@@ -104,12 +103,18 @@
   import {
     blocksWrites,
     negotiateSession,
+    rememberedSessionFor,
     type Negotiation,
   } from "$lib/session-negotiation.js";
 
   /* ------------------------------------------------------- runtime connection */
 
-  const session = $state(
+  /**
+   * The HTTP pairing form's state: address, ticket, hosted password, and the phase the
+   * ConnectionPanel displays. It is not the session — the session arrives from the
+   * runtime below, and whether one exists is what the page renders against.
+   */
+  const pairing = $state(
     createWorkbenchSessionState({
       href: browser ? window.location.href : "http://127.0.0.1:47831/",
       storedBaseUrl: browser ? readStoredBaseUrl() : null,
@@ -117,9 +122,12 @@
       storedInstance: browser ? readStoredInstance() : null,
     }),
   );
-  const baseUrl = $derived(session.baseUrl);
-  const token = $derived(session.token);
-  const pairedInstance = $derived(session.pairedInstance);
+
+  let backendSession = $state<BackendSession | null>(null);
+  let connectionState = $state<ConnectionState>({
+    phase: "connecting",
+    problem: null,
+  });
   const connectivity = $state(createWorkbenchConnectivityState(true));
   const streamState = $derived(connectivity.streamState);
   const browserOnline = $derived(connectivity.browserOnline);
@@ -144,49 +152,48 @@
 
   const queryClient = useQueryClient();
 
-  // Rebuilt when the address changes: the client holds the base URL, and a stale one would
-  // send every later request to the previous service.
-  const client = $derived(
-    createGitClient({
-      baseUrl,
-      fetch: (input, init) => fetch(input, init),
-      token: () => token,
-    }),
-  );
-
-  const sessionPorts: WorkbenchSessionPorts = {
-    exchangeTicket: (value, password) => client.exchangeTicket(value, password),
-    health: () => client.health(),
-    storeToken,
-    storeInstance,
-    storeBaseUrl,
-    clearStoredSession,
+  /**
+   * The runtime owns adapter selection and the connection lifecycle. It mutates the
+   * pairing form in place and reports the session/connection through these callbacks,
+   * so all reactivity stays in this component.
+   */
+  const runtime = createWorkbenchRuntime({
+    form: pairing,
+    fetch: (input, init) => fetch(input, init),
+    storage: { storeToken, storeInstance, storeBaseUrl, clearStoredSession },
     currentHref: () =>
-      browser ? window.location.href : `${session.initialBaseUrl}/`,
+      browser ? window.location.href : `${pairing.initialBaseUrl}/`,
     replaceHref: (href) => {
       if (browser) {
         window.history.replaceState({}, "", href);
       }
     },
-  };
+    onSession: (session) => {
+      backendSession = session;
+    },
+    onConnectionState: (state) => {
+      connectionState = state;
+    },
+  });
+
+  onMount(() => {
+    // A pairing URL is meant to work by being opened; a remembered session is reconnected
+    // behind its own probe. Both paths live in the runtime, not in the template.
+    void runtime.start();
+    return () => {
+      void runtime.dispose();
+    };
+  });
 
   async function pair(): Promise<void> {
-    await pairWorkbenchSession(session, sessionPorts);
+    await runtime.pair();
   }
 
-  function disconnect(): void {
-    clearWorkbenchCredentials(session, sessionPorts);
+  async function disconnect(): Promise<void> {
+    await runtime.disconnect();
     clearInspectableSelection(selection);
     queryClient.clear();
   }
-
-  // A pairing URL is meant to work by being opened. The controller handles both the
-  // current query spelling and legacy fragments, including immediate URL scrubbing.
-  $effect(() => {
-    if (browser) {
-      void consumeInitialPairingUrl(session, sessionPorts);
-    }
-  });
 
   /* ------------------------------------------------------------------- reads */
 
@@ -246,9 +253,10 @@
   }
 
   const queries = createWorkbenchQueries({
-    client: () => client,
-    baseUrl: () => baseUrl,
-    token: () => token,
+    service: () => backendSession?.git ?? null,
+    cacheNamespace: () =>
+      backendSession?.metadata.cacheNamespace ?? "unconnected",
+    phase: () => connectionState.phase,
     selection,
     visible: pageVisible,
     historyFilters: () =>
@@ -273,7 +281,9 @@
   const selectedCommit = $derived(queries.selectedCommit);
   const detail = $derived(queries.detail);
   const diffRequest = $derived(queries.diffRequest);
-  const sessionExpired = $derived(queries.sessionExpired);
+  const sessionExpired = $derived(
+    backendSession !== null && connectionState.phase === "failed",
+  );
   const activeWorktreeId = $derived(queries.activeWorktreeId);
   const mainDiffOpen = $derived(
     selectedPath !== null || selectedDiffPathId !== null,
@@ -492,7 +502,7 @@
   }
 
   async function browseRepositoryPath(path: string) {
-    return client.filesystemEntries({ path });
+    return queries.filesystemEntries(path);
   }
 
   function handleRecentRepository(entry: RecentRepository): void {
@@ -595,7 +605,10 @@
     }
     const onVisibility = (): void => {
       if (document.visibilityState === "visible") {
-        invalidateWorkbenchBackgroundQueries(queryClient);
+        invalidateWorkbenchBackgroundQueries(
+          queryClient,
+          backendSession?.metadata.cacheNamespace ?? "unconnected",
+        );
       }
     };
     document.addEventListener("visibilitychange", onVisibility);
@@ -613,14 +626,11 @@
   const negotiation: Negotiation = $derived(
     identity.data === undefined
       ? { kind: "ok" }
-      : negotiateSession(
-          { instanceId: pairedInstance, hasToken: token !== null },
-          {
-            serviceInstanceId: identity.data.serviceInstanceId,
-            apiMajor: identity.data.apiMajor,
-            contractVersion: capabilities.data?.contractVersion ?? "unknown",
-          },
-        ),
+      : negotiateSession(rememberedSessionFor(backendSession), {
+          serviceInstanceId: identity.data.serviceInstanceId,
+          apiMajor: identity.data.apiMajor,
+          contractVersion: capabilities.data?.contractVersion ?? "unknown",
+        }),
   );
 
   $effect(() => {
@@ -628,9 +638,8 @@
     if (verdict.kind === "ok") {
       return;
     }
-    if (verdict.kind === "differentInstance" && token !== null) {
-      clearWorkbenchCredentials(session, sessionPorts);
-      queryClient.clear();
+    if (verdict.kind === "differentInstance" && backendSession !== null) {
+      void disconnect();
       return;
     }
     if (verdict.kind === "incompatible") {
@@ -639,15 +648,15 @@
   });
 
   const writeController = createWorkbenchMutations({
-    client: () => client,
-    baseUrl: () => baseUrl,
-    token: () => token,
+    reads: () => backendSession?.git ?? null,
+    mutations: () => backendSession?.mutations ?? null,
+    cacheNamespace: () =>
+      backendSession?.metadata.cacheNamespace ?? "unconnected",
     browserOnline: () => browserOnline,
     negotiation: () => negotiation,
     selection,
     queries,
     queryClient,
-    fetch: (input, init) => fetch(input, init),
     onCommitSucceeded: (repositoryId, worktreeId) => {
       commitDrafts[`${repositoryId}:${worktreeId}`] = "";
     },
@@ -682,8 +691,8 @@
   }
   /* ------------------------------------------------------- connection and hints */
 
-  // Browser reachability and SSE are separate signals: navigator.onLine gates writes,
-  // while the event stream only reports whether live invalidation hints are arriving.
+  // Browser reachability and live updates are separate signals: navigator.onLine gates
+  // writes, while the event stream only reports whether invalidation hints are arriving.
   $effect(() => {
     if (!browser) {
       return;
@@ -697,15 +706,17 @@
     });
   });
 
+  // Live updates arrive through the session's EventService, so this page never builds an
+  // SSE URL, reads a bearer, or calls EventSource itself.
   $effect(() => {
-    if (!browser) {
+    const session = backendSession;
+    if (!browser || session === null) {
       connectivity.streamState = "offline";
       return;
     }
-    return startWorkbenchEventStream(connectivity, {
-      baseUrl,
-      token: () => token,
-      fetch: (input, init) => fetch(input, init),
+    return startSessionEventStream(connectivity, {
+      events: session.events,
+      cacheNamespace: session.metadata.cacheNamespace,
       invalidate: (queryKey) => {
         if (queryKey === undefined) {
           void queryClient.invalidateQueries();
@@ -731,7 +742,14 @@
   /* --------------------------------------------------------------- helpers */
 
   /** True while the chosen address is still this page's own origin. */
-  const baseUrlIsDefault = $derived(isDefaultSessionBaseUrl(session));
+  const baseUrlIsDefault = $derived(isDefaultSessionBaseUrl(pairing));
+
+  /** The address the pairing form edits; shown only on the HTTP connection panel. */
+  const pairingBaseUrl = $derived(pairing.baseUrl);
+
+  const backendLabel = $derived(
+    backendSession?.metadata.backendLabel ?? "no backend session",
+  );
 </script>
 
 <svelte:window
@@ -782,7 +800,7 @@
       {/if}
     </div>
 
-    {#if token !== null}
+    {#if backendSession !== null}
       <div class="order-last basis-full min-w-0 border-t border-border/60 pt-1">
         <RepositoryTabs
           tabs={repositoryTabs.tabs.map((tab) => {
@@ -857,7 +875,7 @@
 
     <span class="flex-1"></span>
 
-    {#if token !== null}
+    {#if backendSession !== null}
       <Badge
         tone={!browserOnline || negotiation.kind !== "ok"
           ? "warn"
@@ -897,7 +915,7 @@
       </Badge>
       <span
         class="hidden font-mono text-xs text-ink-faint 2xl:inline"
-        title="service address">{baseUrl}</span
+        title="backend">{backendLabel}</span
       >
       <AppearanceSettings
         {accent}
@@ -908,7 +926,11 @@
         onGlassChange={(val) => (glass = val)}
       />
       <ModeToggle />
-      <Button size="sm" variant="ghost" onclick={disconnect}>Disconnect</Button>
+      {#if runtime.kind === "http"}
+        <Button size="sm" variant="ghost" onclick={disconnect}
+          >Disconnect</Button
+        >
+      {/if}
     {/if}
   </header>
 
@@ -917,7 +939,8 @@
       <StateBanner
         state="disconnected"
         title="The session is no longer valid"
-        detail="The service was restarted or the session expired. Pair again with a fresh ticket."
+        detail={connectionState.problem?.message ??
+          "The service was restarted or the session expired. Pair again with a fresh ticket."}
       >
         {#snippet action()}
           <Button size="sm" variant="outline" onclick={disconnect}
@@ -928,27 +951,48 @@
     </div>
   {/if}
 
-  {#if token === null}
+  {#if backendSession === null}
     <main class="flex-1 overflow-auto p-6">
-      <ConnectionPanel
-        {baseUrl}
-        ticket={session.ticket}
-        hosted={!baseUrlIsDefault}
-        password={session.hostedPassword}
-        phase={session.pairPhase}
-        message={session.pairMessage}
-        {baseUrlIsDefault}
-        onBaseUrl={(value) => {
-          session.baseUrl = value;
-        }}
-        onTicket={(value) => {
-          session.ticket = value;
-        }}
-        onPassword={(value) => {
-          session.hostedPassword = value;
-        }}
-        onConnect={() => void pair()}
-      />
+      {#if runtime.kind === "tauri"}
+        <StateBanner
+          state={pairing.pairPhase === "failed" ? "error" : "loading"}
+          title={pairing.pairPhase === "failed"
+            ? "The local service is unavailable"
+            : "Starting the local service…"}
+          detail={pairing.pairPhase === "failed"
+            ? (pairing.pairMessage ??
+              "The native host did not accept a session for this window.")
+            : undefined}
+        >
+          {#snippet action()}
+            <Button
+              size="sm"
+              variant="outline"
+              onclick={() => void runtime.start()}>Retry</Button
+            >
+          {/snippet}
+        </StateBanner>
+      {:else}
+        <ConnectionPanel
+          baseUrl={pairingBaseUrl}
+          ticket={pairing.ticket}
+          hosted={!baseUrlIsDefault}
+          password={pairing.hostedPassword}
+          phase={pairing.pairPhase}
+          message={pairing.pairMessage}
+          {baseUrlIsDefault}
+          onBaseUrl={(value) => {
+            pairing.baseUrl = value;
+          }}
+          onTicket={(value) => {
+            pairing.ticket = value;
+          }}
+          onPassword={(value) => {
+            pairing.hostedPassword = value;
+          }}
+          onConnect={() => void pair()}
+        />
+      {/if}
     </main>
   {:else}
     <main
@@ -969,7 +1013,7 @@
               <StateBanner
                 state="error"
                 title="Could not list repositories"
-                detail={describeClientProblem(queries.repositories.error)}
+                detail={describeBackendProblem(queries.repositories.error)}
               />
             </div>
           {/if}
@@ -1009,8 +1053,8 @@
               {queries}
               mutations={writeController}
               {selection}
-              {token}
-              describeProblem={describeClientProblem}
+              sessionReady={backendSession !== null}
+              describeProblem={describeBackendProblem}
               onRepositorySelect={selectRegisteredRepository}
               onOpenWorktree={(id) => openWorktree(id)}
               onOpenWorktreeInTab={(id) => openWorktree(id, true)}
@@ -1086,7 +1130,7 @@
             <StateBanner
               state="error"
               title="Could not read history"
-              detail={describeClientProblem(history.error)}
+              detail={describeBackendProblem(history.error)}
             >
               {#snippet action()}
                 <Button
@@ -1173,7 +1217,7 @@
                 <StateBanner
                   state="error"
                   title="Could not read diff"
-                  detail={describeClientProblem(diff.error ?? diffPatch.error)}
+                  detail={describeBackendProblem(diff.error ?? diffPatch.error)}
                 />
               </div>
             {:else}
@@ -1226,7 +1270,7 @@
                 <StateBanner
                   state="error"
                   title="Could not read working copy"
-                  detail={describeClientProblem(status.error)}
+                  detail={describeBackendProblem(status.error)}
                 />
               </div>
             {/if}

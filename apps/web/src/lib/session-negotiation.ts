@@ -18,6 +18,7 @@
  * this module free of both `window` and the cache client.
  */
 import { API_MAJOR, CONTRACT_VERSION } from "@refyard/git-contract";
+import type { BackendSession } from "@refyard/git-service";
 
 /** What this build speaks. The major is the negotiate-or-stop number. */
 export const UI_API_MAJOR = API_MAJOR;
@@ -27,6 +28,22 @@ export interface RememberedSession {
   /** Service instance the stored token was minted by, when it was recorded. */
   readonly instanceId: string | null;
   readonly hasToken: boolean;
+}
+
+/**
+ * What the page remembers about the session it holds, in the shape the rules below take.
+ *
+ * `hasToken` in this type is the historical name for "there is a session worth keeping";
+ * the value is derived from the adapter session's existence, never from a credential the
+ * UI read. A native session has no bearer and still counts as kept.
+ */
+export function rememberedSessionFor(
+  session: BackendSession | null,
+): RememberedSession {
+  return {
+    instanceId: session?.metadata.serviceInstanceId ?? null,
+    hasToken: session !== null,
+  };
 }
 
 export interface ServiceIdentity {

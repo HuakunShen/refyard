@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "dev.refyard.desktop",
   "build": {
-    "frontendDist": "../../web/build"
+    "frontendDist": "../../web/build-desktop"
   },
   "app": {
     "windows": [

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
+    "build:desktop": "bun ../../scripts/build-desktop.ts --web-only",
     "preview": "vite preview",
     "deploy": "pnpm build && wrangler deploy",
     "deploy:dry-run": "pnpm build && wrangler deploy --dry-run",
@@ -17,7 +18,8 @@
     "@refyard/git-client": "workspace:*",
     "@refyard/git-contract": "workspace:*",
     "@refyard/git-graph": "workspace:*",
-    "@refyard/git-ui": "workspace:*"
+    "@refyard/git-ui": "workspace:*",
+    "@tauri-apps/api": "^2.11.1"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "catalog:",

@@ -1,13 +1,26 @@
 /**
  * TanStack read composition for the workbench.
  *
- * This module owns how authenticated GitService reads are keyed, polled, paged and reduced into
- * presentation models. It owns no browser DOM lifecycle and no mutations; the page remains the
- * composition root and supplies reactive getters plus the shared selection state.
+ * This module owns how transport-neutral GitService reads are keyed, gated, polled, paged and
+ * reduced into presentation models. It owns no browser DOM lifecycle and no mutations; the page
+ * remains the composition root and supplies the injected read service, the session's cache
+ * namespace, the connection phase, and the shared selection state.
+ *
+ * Two rules live here rather than in each panel:
+ *
+ * - **`queryState` decides whether a read may run and poll.** A ready session, a read the
+ *   service reports as implemented, and a valid selection — the token the old page checked
+ *   does not exist for a native session, and a service that omits a read must not be asked
+ *   for it on a timer.
+ * - **Cache keys are `cacheNamespace + query identity`.** The namespace changes with the
+ *   session and the authorization round, so results from a previous session cannot be read
+ *   as this one's, and no credential is ever part of a key.
  */
-import { GitClientError, type GitClient } from "@refyard/git-client";
+import type { GitReadService } from "@refyard/git-service";
+import { BackendError, type ConnectionPhase } from "@refyard/git-service";
 import type {
   DiffResponse,
+  ReadKind,
   StatusSnapshot,
   StashesResponse,
   WorktreeSummary,
@@ -23,6 +36,7 @@ import {
   createReadTimer,
   timedRead,
 } from "../background-poll.js";
+import { cacheKeyFor, queryState, type QueryState } from "./query-state.js";
 import {
   reconcileRepositorySelection,
   type WorkbenchSelectionState,
@@ -33,7 +47,7 @@ import {
   historyNoticesFor,
   workspaceRootsFor,
 } from "./query-model.js";
-
+import { describeBackendProblem } from "./session.js";
 import {
   historyPageQuery,
   historyTopologyFor,
@@ -54,9 +68,11 @@ const BACKGROUND_PREFIXES = [
 ] as const;
 
 export interface WorkbenchQueryInputs {
-  readonly client: () => GitClient;
-  readonly baseUrl: () => string;
-  readonly token: () => string | null;
+  /** The session's read service; null until an adapter session exists. */
+  readonly service: () => GitReadService | null;
+  /** Changes with the session and authorization round; never a credential. */
+  readonly cacheNamespace: () => string;
+  readonly phase: () => ConnectionPhase;
   readonly selection: WorkbenchSelectionState;
   readonly visible: () => boolean;
   readonly historyFilters: () => AppliedHistoryFilters;
@@ -101,35 +117,82 @@ async function mapBounded<T, R>(
 
 export function invalidateWorkbenchBackgroundQueries(
   queryClient: QueryClient,
+  cacheNamespace: string,
 ): void {
   for (const prefix of BACKGROUND_PREFIXES) {
-    void queryClient.invalidateQueries({ queryKey: [prefix] });
+    void queryClient.invalidateQueries({
+      queryKey: cacheKeyFor(cacheNamespace, prefix),
+    });
   }
 }
 
 export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
-  const enabled = $derived(input.token() !== null);
   const readTimer = createReadTimer();
   const polled = (key: readonly unknown[]) =>
     backgroundRead({ key, timer: readTimer, visible: input.visible });
 
-  const capabilities = createQuery(() => ({
-    queryKey: ["capabilities", input.baseUrl(), input.token()],
-    queryFn: () => input.client().capabilities(),
-    enabled,
-  }));
+  /** A query function may only run behind its gate, so the service is present. */
+  function requireService(): GitReadService {
+    const service = input.service();
+    if (service === null) {
+      throw new BackendError({
+        code: "InternalError",
+        message: "no backend session is connected",
+        retryable: false,
+      });
+    }
+    return service;
+  }
+
+  const capabilities = createQuery(() => {
+    const gate = queryState({
+      phase: input.phase(),
+      supportsRead: true,
+      hasSelection: true,
+    });
+    return {
+      queryKey: cacheKeyFor(input.cacheNamespace(), "capabilities"),
+      queryFn: () => requireService().capabilities(),
+      enabled: gate.enabled,
+    };
+  });
+
+  /**
+   * Whether the service implements a read. Unknown until capabilities arrive, and an
+   * unknown answer must not hold back the first reads: the alternative would serialize
+   * the workbench behind one query, and a failed capabilities read would leave every
+   * panel empty instead of showing its own error.
+   */
+  function supportsRead(kind: ReadKind): boolean {
+    const reported = capabilities.data?.reads;
+    return reported === undefined || reported.includes(kind);
+  }
+
+  function gate(supports: boolean, hasSelection: boolean): QueryState {
+    return queryState({
+      phase: input.phase(),
+      supportsRead: supports,
+      hasSelection,
+    });
+  }
+
+  /** The polling options a query carries only while its gate allows a refetch. */
+  function cadence(key: readonly unknown[], state: QueryState) {
+    return state.poll ? polled(key) : {};
+  }
 
   const repositories = createQuery(() => {
-    const key = ["repositories", input.baseUrl(), input.token()];
+    const key = cacheKeyFor(input.cacheNamespace(), "repositories");
+    const state = gate(supportsRead("repositories"), true);
     return {
       queryKey: key,
       queryFn: timedRead({
         key,
         timer: readTimer,
-        run: () => input.client().repositories(),
+        run: () => requireService().repositories(),
       }),
-      enabled,
-      ...polled(key),
+      enabled: state.enabled,
+      ...cadence(key, state),
     };
   });
 
@@ -160,62 +223,73 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
   });
 
   const status = createQuery(() => {
-    const key = [
+    const key = cacheKeyFor(
+      input.cacheNamespace(),
       "status",
-      input.baseUrl(),
-      input.token(),
       selectedRepositoryId,
       activeWorktreeId,
-    ];
+    );
+    const state = gate(
+      supportsRead("status"),
+      selectedRepositoryId !== null && activeWorktreeId !== null,
+    );
     return {
       queryKey: key,
       queryFn: timedRead({
         key,
         timer: readTimer,
         run: () =>
-          input.client().status({
+          requireService().status({
             repositoryId: selectedRepositoryId ?? "",
             worktreeId: activeWorktreeId ?? "",
           }),
       }),
-      enabled:
-        enabled && selectedRepositoryId !== null && activeWorktreeId !== null,
-      ...polled(key),
+      enabled: state.enabled,
+      ...cadence(key, state),
     };
   });
 
   const refs = createQuery(() => {
-    const key = ["refs", input.baseUrl(), input.token(), selectedRepositoryId];
+    const key = cacheKeyFor(
+      input.cacheNamespace(),
+      "refs",
+      selectedRepositoryId,
+    );
+    const state = gate(supportsRead("refs"), selectedRepositoryId !== null);
     return {
       queryKey: key,
       queryFn: timedRead({
         key,
         timer: readTimer,
         run: () =>
-          input.client().refs({ repositoryId: selectedRepositoryId ?? "" }),
+          requireService().refs({
+            repositoryId: selectedRepositoryId ?? "",
+          }),
       }),
-      enabled: enabled && selectedRepositoryId !== null,
-      ...polled(key),
+      enabled: state.enabled,
+      ...cadence(key, state),
     };
   });
 
   const stashes = createQuery(() => {
-    const key = [
+    const key = cacheKeyFor(
+      input.cacheNamespace(),
       "stashes",
-      input.baseUrl(),
-      input.token(),
       selectedRepositoryId,
-    ];
+    );
+    const state = gate(supportsRead("stashes"), selectedRepositoryId !== null);
     return {
       queryKey: key,
       queryFn: timedRead({
         key,
         timer: readTimer,
         run: () =>
-          input.client().stashes({ repositoryId: selectedRepositoryId ?? "" }),
+          requireService().stashes({
+            repositoryId: selectedRepositoryId ?? "",
+          }),
       }),
-      enabled: enabled && selectedRepositoryId !== null,
-      ...polled(key),
+      enabled: state.enabled,
+      ...cadence(key, state),
     };
   });
 
@@ -241,24 +315,27 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
   );
 
   const worktrees = createQuery(() => {
-    const key = [
+    const key = cacheKeyFor(
+      input.cacheNamespace(),
       "worktrees",
-      input.baseUrl(),
-      input.token(),
       selectedRepositoryId,
-    ];
+    );
+    const state = gate(
+      supportsRead("worktrees"),
+      selectedRepositoryId !== null,
+    );
     return {
       queryKey: key,
       queryFn: timedRead({
         key,
         timer: readTimer,
         run: () =>
-          input
-            .client()
-            .worktrees({ repositoryId: selectedRepositoryId ?? "" }),
+          requireService().worktrees({
+            repositoryId: selectedRepositoryId ?? "",
+          }),
       }),
-      enabled: enabled && selectedRepositoryId !== null,
-      ...polled(key),
+      enabled: state.enabled,
+      ...cadence(key, state),
     };
   });
 
@@ -287,16 +364,20 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
 
   const worktreeStatusesQuery = createQuery(() => {
     const worktreeIds = worktreeList.map((entry) => entry.worktreeId);
-    const key = [
+    const key = cacheKeyFor(
+      input.cacheNamespace(),
       "worktree-statuses",
-      input.baseUrl(),
-      input.token(),
       selectedRepositoryId,
       worktreeIds,
-    ];
+    );
+    const state = gate(
+      supportsRead("status"),
+      selectedRepositoryId !== null && worktreeIds.length > 0,
+    );
     return {
       queryKey: key,
       queryFn: async (): Promise<WorktreeStatusSummary[]> => {
+        const service = requireService();
         const repositoryId = selectedRepositoryId;
         if (repositoryId === null) {
           return [];
@@ -313,6 +394,8 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
               return { worktreeId, status: status.data, error: null };
             }
             try {
+              // The read-duration key for one worktree extends the query key; the timer
+              // only compares keys, so extending the array is all it needs.
               const worktreeKey = [...key, worktreeId];
               return {
                 worktreeId,
@@ -320,7 +403,7 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
                   key: worktreeKey,
                   timer: readTimer,
                   run: () =>
-                    input.client().status({
+                    service.status({
                       repositoryId,
                       worktreeId,
                     }),
@@ -331,16 +414,15 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
               return {
                 worktreeId,
                 status: null,
-                error: error instanceof Error ? error.message : String(error),
+                error: describeBackendProblem(error),
               };
             }
           },
         );
         return results;
       },
-      enabled:
-        enabled && selectedRepositoryId !== null && worktreeIds.length > 0,
-      ...polled(key),
+      enabled: state.enabled,
+      ...cadence(key, state),
     };
   });
 
@@ -351,10 +433,7 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
           return {
             worktreeId: entry.worktreeId,
             status: null,
-            error:
-              status.error instanceof Error
-                ? status.error.message
-                : String(status.error),
+            error: describeBackendProblem(status.error),
           };
         }
         if (status.data?.worktreeId === entry.worktreeId) {
@@ -384,64 +463,68 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
 
   const submodules = createQuery(() => {
     const worktreeId = activeWorktreeId;
-    const key = [
+    const key = cacheKeyFor(
+      input.cacheNamespace(),
       "submodules",
-      input.baseUrl(),
-      input.token(),
       selectedRepositoryId,
       worktreeId,
-    ];
+    );
+    const state = gate(
+      supportsRead("submodules"),
+      selectedRepositoryId !== null && worktreeId !== null,
+    );
     return {
       queryKey: key,
       queryFn: timedRead({
         key,
         timer: readTimer,
         run: () =>
-          input.client().submodules({
+          requireService().submodules({
             repositoryId: selectedRepositoryId ?? "",
             worktreeId: worktreeId ?? "",
           }),
       }),
-      enabled: enabled && selectedRepositoryId !== null && worktreeId !== null,
-      ...polled(key),
+      enabled: state.enabled,
+      ...cadence(key, state),
     };
   });
 
   const history = createInfiniteQuery(() => {
     const filters = input.historyFilters();
-    const key = [
+    const key = cacheKeyFor(
+      input.cacheNamespace(),
       "history",
-      input.baseUrl(),
-      input.token(),
       selectedRepositoryId,
       activeWorktreeId,
       filters,
       input.historyRevision(),
-    ];
+    );
+    const state = gate(
+      supportsRead("history"),
+      selectedRepositoryId !== null && activeWorktreeId !== null,
+    );
     return {
       queryKey: key,
       queryFn: ({ pageParam }) =>
         timedRead({
+          // One page of history has its own read duration; the timer only compares keys.
           key: [...key, pageParam],
           timer: readTimer,
           run: () =>
-            input
-              .client()
-              .history(
-                historyPageQuery(
-                  selectedRepositoryId ?? "",
-                  activeWorktreeId,
-                  filters,
-                  pageParam,
-                  HISTORY_PAGE_SIZE,
-                ),
+            requireService().history(
+              historyPageQuery(
+                selectedRepositoryId ?? "",
+                activeWorktreeId,
+                filters,
+                pageParam,
+                HISTORY_PAGE_SIZE,
               ),
+            ),
         })(),
       initialPageParam: null as string | null,
       getNextPageParam: (lastPage) => lastPage.nextCursor,
-      enabled:
-        enabled && selectedRepositoryId !== null && activeWorktreeId !== null,
-      ...polled(key),
+      enabled: state.enabled,
+      ...cadence(key, state),
     };
   });
 
@@ -460,28 +543,31 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
     commits.find((commit) => commit.oid === selectedOid) ?? null,
   );
 
-  const commitDetail = createQuery(() => ({
-    queryKey: [
-      "commit",
-      input.baseUrl(),
-      input.token(),
-      selectedRepositoryId,
-      activeWorktreeId,
-      selectedOid,
-    ],
-    queryFn: () =>
-      input.client().history({
-        repositoryId: selectedRepositoryId ?? "",
-        worktreeId: activeWorktreeId ?? "",
-        detailOid: selectedOid ?? "",
-        limit: 1,
-      }),
-    enabled:
-      enabled &&
+  const commitDetail = createQuery(() => {
+    const state = gate(
+      supportsRead("history"),
       selectedRepositoryId !== null &&
-      activeWorktreeId !== null &&
-      selectedOid !== null,
-  }));
+        activeWorktreeId !== null &&
+        selectedOid !== null,
+    );
+    return {
+      queryKey: cacheKeyFor(
+        input.cacheNamespace(),
+        "commit",
+        selectedRepositoryId,
+        activeWorktreeId,
+        selectedOid,
+      ),
+      queryFn: () =>
+        requireService().history({
+          repositoryId: selectedRepositoryId ?? "",
+          worktreeId: activeWorktreeId ?? "",
+          detailOid: selectedOid ?? "",
+          limit: 1,
+        }),
+      enabled: state.enabled,
+    };
+  });
   const detail = $derived(commitDetail.data?.detail ?? null);
 
   const diffRequest = $derived(
@@ -490,64 +576,66 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
 
   const diff = createQuery(() => {
     const request = diffRequest;
+    const state = gate(
+      supportsRead("diff"),
+      selectedRepositoryId !== null &&
+        activeWorktreeId !== null &&
+        request !== null,
+    );
     return {
-      queryKey: [
+      queryKey: cacheKeyFor(
+        input.cacheNamespace(),
         "diff",
-        input.baseUrl(),
-        input.token(),
         selectedRepositoryId,
         activeWorktreeId,
         request,
-      ],
+      ),
       queryFn: async (): Promise<DiffResponse> => {
         if (request === null) {
           throw new Error("no diff selected");
         }
-        return input.client().diff({
+        return requireService().diff({
           repositoryId: selectedRepositoryId ?? "",
           worktreeId: activeWorktreeId ?? "",
           ...request,
         });
       },
-      enabled:
-        enabled &&
-        selectedRepositoryId !== null &&
-        activeWorktreeId !== null &&
-        request !== null,
+      enabled: state.enabled,
     };
   });
 
   const diffPatch = createQuery(() => {
     const request = diffRequest;
     const pathId = selectedDiffPathId;
+    const state = gate(
+      supportsRead("diff"),
+      selectedRepositoryId !== null &&
+        activeWorktreeId !== null &&
+        request !== null &&
+        pathId !== null &&
+        request.kind !== "untracked",
+    );
     return {
-      queryKey: [
+      queryKey: cacheKeyFor(
+        input.cacheNamespace(),
         "diff-patch",
-        input.baseUrl(),
-        input.token(),
         selectedRepositoryId,
         activeWorktreeId,
         request,
         pathId,
-      ],
+      ),
       queryFn: async (): Promise<DiffResponse> => {
         if (request === null || pathId === null) {
           throw new Error("no path selected");
         }
-        return input.client().diff({
+        return requireService().diff({
           repositoryId: selectedRepositoryId ?? "",
           worktreeId: activeWorktreeId ?? "",
           ...request,
           pathId,
         });
       },
-      enabled:
-        enabled &&
-        selectedRepositoryId !== null &&
-        activeWorktreeId !== null &&
-        request !== null &&
-        pathId !== null &&
-        request.kind !== "untracked",
+      enabled: state.enabled,
     };
   });
 
@@ -571,24 +659,20 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
     }
   });
 
-  const identity = createQuery(() => ({
-    queryKey: ["identity", input.baseUrl()],
-    queryFn: () => input.client().health(),
-    enabled,
-  }));
+  const identity = createQuery(() => {
+    const state = gate(true, true);
+    return {
+      queryKey: cacheKeyFor(input.cacheNamespace(), "identity"),
+      queryFn: () => requireService().health(),
+      enabled: state.enabled,
+    };
+  });
 
-  const sessionExpired = $derived(
-    [
-      repositories.error,
-      capabilities.error,
-      status.error,
-      refs.error,
-      history.error,
-    ].some(
-      (error) =>
-        error instanceof GitClientError && error.code === "Unauthenticated",
-    ),
-  );
+  /** A directory browse is a read, but not a cached one: the user asked for this path now. */
+  async function filesystemEntries(path: string) {
+    return requireService().filesystemEntries({ path });
+  }
+
   return {
     capabilities,
     repositories,
@@ -603,9 +687,7 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
     diff,
     diffPatch,
     identity,
-    get enabled() {
-      return enabled;
-    },
+    filesystemEntries,
     get repositoryList() {
       return repositoryList;
     },
@@ -641,9 +723,6 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
     },
     get diffRequest() {
       return diffRequest;
-    },
-    get sessionExpired() {
-      return sessionExpired;
     },
     get primaryWorktreeId() {
       return primaryWorktreeId;

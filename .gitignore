@@ -26,6 +26,10 @@ coverage
 out/
 build
 dist
+# The desktop flavour of the same SPA, and the working directory that keeps the two
+# builds from sharing SvelteKit's intermediate output (see apps/web/svelte.config.js).
+build-desktop
+.svelte-kit-desktop
 
 # SvelteKit's generated types and route manifest (`svelte-kit sync`, run by `pnpm build`).
 .svelte-kit

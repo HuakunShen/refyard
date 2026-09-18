@@ -2,6 +2,12 @@
 
 export interface RepositoryTab {
   readonly repositoryId: string;
+  /**
+   * The execution target this repository was opened on. A local checkout and the same
+   * path on an SSH host are different repositories to the user, so the identity below
+   * carries the target when one is known.
+   */
+  readonly targetId?: string;
   readonly worktreeId?: string;
   readonly displayName: string;
   readonly displayPath: string;
@@ -88,7 +94,11 @@ function uniqueTabs(tabs: readonly RepositoryTab[]): RepositoryTab[] {
 
 /** Default repository tabs and linked worktree tabs have distinct session identities. */
 export function repositoryTabKey(tab: RepositoryTab): string {
-  return tab.worktreeId === undefined
-    ? tab.repositoryId
-    : `${tab.repositoryId}:${tab.worktreeId}`;
+  const repositoryIdentity =
+    tab.worktreeId === undefined
+      ? tab.repositoryId
+      : `${tab.repositoryId}:${tab.worktreeId}`;
+  return tab.targetId === undefined
+    ? repositoryIdentity
+    : `${tab.targetId}/${repositoryIdentity}`;
 }

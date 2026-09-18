@@ -18,6 +18,7 @@
  * is easy to break by accident and impossible to see on screen.
  */
 import type { OperationRecord } from "@refyard/git-contract";
+import type { MutationService } from "@refyard/git-service";
 
 /** Every status a record can rest at; anything else is still running. */
 export const OPERATION_TERMINAL: ReadonlySet<string> = new Set([
@@ -28,10 +29,12 @@ export const OPERATION_TERMINAL: ReadonlySet<string> = new Set([
   "cancelled",
 ]);
 
-/** The read side of the mutation client: all this module needs, and all it may use. */
-export interface OperationReader {
-  get(operationId: string): Promise<OperationRecord>;
-}
+/**
+ * The read side of the injected mutation service: all this module needs, and all it
+ * may use. Binding it to the service interface rather than a local shape is what keeps
+ * the follower transport-blind — it cannot grow a fetch, a URL, or a resubmit.
+ */
+export type OperationReader = Pick<MutationService, "get">;
 
 export interface FollowOptions {
   /** Total polls before giving up, each followed by `intervalMs` of waiting. */

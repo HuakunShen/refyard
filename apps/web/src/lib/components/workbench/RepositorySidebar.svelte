@@ -45,7 +45,8 @@
     queries: WorkbenchQueries;
     mutations: WorkbenchMutations;
     selection: WorkbenchSelectionState;
-    token: string | null;
+    /** A live backend session exists; repository management is not credential-shaped. */
+    sessionReady: boolean;
     describeProblem: (error: unknown) => string;
     onRepositorySelect: (id: string) => void;
     onOpenWorktree: (id: string) => void;
@@ -57,7 +58,7 @@
     queries,
     mutations,
     selection,
-    token,
+    sessionReady,
     describeProblem,
     onRepositorySelect,
     onOpenWorktree,
@@ -262,7 +263,7 @@
             }}
           />
         {/if}
-        {#if token !== null}
+        {#if sessionReady}
           <Separator />
           <RepositoryPanel
             roots={workspaceRoots}
