@@ -1,7 +1,7 @@
 # Refyard
 
-**A local-first Git workbench for people who want a beautiful graph without giving a hosted
-service their repository.**
+**A local-first Git workbench: the whole history of your repository in a beautiful graph,
+without giving a hosted service your repository.**
 
 [![npm version](https://img.shields.io/npm/v/refyard?logo=npm&label=npm)](https://www.npmjs.com/package/refyard)
 [![npm downloads](https://img.shields.io/npm/dm/refyard?logo=npm&label=downloads)](https://www.npmjs.com/package/refyard)
@@ -9,45 +9,69 @@ service their repository.**
 [![License](https://img.shields.io/github/license/HuakunShen/refyard)](LICENSE)
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/HuakunShen/refyard)
 
-![The Refyard workbench running against its own repository](docs/assets/desktop-workbench.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/desktop-workbench-dark.png" />
+  <img src="docs/assets/desktop-workbench.png" alt="The Refyard desktop workbench: a braided commit history graph, the working copy, and the repository panel rail" />
+</picture>
 
-_Refyard reading this repository itself: one tab strip along the top, the signed history with
-its branch lane, the working copy with staged and unstaged files, and the commit box — a real
-local session, nothing mocked. The desktop app embeds this exact UI without a web server._
+_A real local session reading a large open-source repository: the signed, braided history with
+its parallel branch lanes, the working copy, and the panel rail — nothing mocked._
 
-## The idea
+Refyard drives **your machine's own `git`** and never asks for a hosted copy of your code. Git
+runs as you — with your hooks, filters, credential helpers, and SSH configuration — and the UI
+receives a closed JSON contract plus authenticated SSE updates. One repository ships two
+runtimes with the same UI and the same safety rules:
 
-Refyard keeps the privileged part on the machine that owns the repository. Git runs as you, with
-your hooks, filters, credential helpers, and SSH configuration; the browser receives a closed JSON
-contract and authenticated SSE updates.
+- **Native desktop app and CLI (Rust/Tauri 2)** — the headline form. A native macOS, Windows,
+  and Linux application whose Git engine is Rust (`crates/`); the UI is compiled in and talks to
+  the host over Tauri IPC, with no JavaScript runtime bundled (`pnpm native:verify` fails the
+  build if one ever shows up). It opens local repositories and remote repositories over SSH, with
+  hosts chosen from the machine's own `~/.ssh/config` — nothing is installed on the remote.
+- **Node CLI (`refyard open|serve|doctor`)** — serves an authenticated loopback HTTP API and the
+  static SvelteKit workbench from one local origin; the same UI is also deployable as a static
+  PWA to Cloudflare (below).
 
-```text
-your repository + your git + your Node host
-                    │ authenticated JSON/SSE
-                    ▼
-       bundled local UI / hosted Cloudflare UI
+Both runtimes speak one closed contract, rendered by one Svelte component library
+([`packages/git-ui`](packages/git-ui)) — which is also what the VS Code extension embeds.
+
+## What the workbench does
+
+- **History** — commit graph with colored lanes, signed-commit badges, branch/remote/tag ref
+  decorations, and commit search with filters.
+- **Working copy** — stage and unstage files, commit, amend the last commit, with per-file diffs.
+- **Panels** — Branches, Remotes, Stashes, Tags, Worktrees (add and lock linked worktrees), and
+  Submodules.
+- **Themes and settings** — dark, light, and system theme, plus accent and appearance options,
+  in a Settings dialog.
+- **Live updates** over SSE: the graph, status, and panels track the repository as it changes.
+
+## Get it
+
+Installers are published on [GitHub Releases](https://github.com/HuakunShen/refyard/releases/latest)
+by the tag-triggered desktop pipeline:
+
+| Platform              | Artifacts                       |
+| --------------------- | ------------------------------- |
+| macOS (Apple Silicon) | `Refyard_<version>_aarch64.dmg` |
+| macOS (Intel)         | `Refyard_<version>_x64.dmg`     |
+| Linux x64 and arm64   | `.deb` and `.AppImage`          |
+| Windows x64           | NSIS installer (`.exe`)         |
+
+Every artifact is minisign-signed, and each release carries a `latest.json` for the updater
+(see [Updates](#updates)).
+
+Homebrew (macOS), once the first release is published. The cask is versioned off the release
+DMG URLs, declares `auto_updates true` so the app's own updater stays in charge, and has a
+livecheck watching the releases:
+
+```sh
+brew install --cask HuakunShen/tap/refyard
 ```
 
-By default the npm package serves the same static Svelte UI from the loopback Git service, so
-`refyard open` is a one-command local workbench. The Cloudflare Worker is an optional asset-only
-remote UI host: it has no Git binding, repository path, shell, credential store, bearer token, or
-API proxy, and it never receives Git contents.
+The cask's source of truth lives in
+[`packaging/homebrew/Casks/refyard.rb`](packaging/homebrew/Casks/refyard.rb).
 
-## What ships
-
-| Surface               | Where it runs                             | What it owns                                                       |
-| --------------------- | ----------------------------------------- | ------------------------------------------------------------------ |
-| `refyard` npm package | Your Node machine                         | Git service plus bundled local workbench                           |
-| Native desktop app    | Your machine — release download or source | The same workbench over Tauri IPC; no JS runtime, no localhost hop |
-| `refyard-native` CLI  | Your machine, built from source           | Native `doctor`/`serve`/`open` with the same closed contract       |
-| Refyard PWA           | Local loopback or your Cloudflare account | UI, session negotiation, presentation                              |
-| Git Core              | Trusted TypeScript runtime                | Git intentions, parsers, planners, safety rules                    |
-| Cloudflare Worker     | Cloudflare edge                           | Static assets and secure response headers only                     |
-
-The current release line is `0.1.x`. The next package release prepared in this repository is
-`0.1.2`; it is published only by the tag-triggered `publish.yml` workflow after its gates pass.
-
-## Run it locally
+### Build from source
 
 Development uses Node 26.x and pnpm 11:
 
@@ -58,23 +82,32 @@ pnpm test
 pnpm build
 ```
 
-Start the complete local workbench for one explicitly chosen repository. It serves the bundled UI
-and opens the pairing URL in your browser:
+Native desktop app and CLI (macOS arm64 is what the test suites cover):
 
 ```sh
-pnpm cli open /absolute/path/to/repository
+pnpm desktop:build                        # Refyard.app under apps/desktop/src-tauri/target/release/bundle/macos
+cargo build --release -p refyard-native   # native CLI at target/release/refyard-native
 ```
 
-For a machine-readable supervisor, Xross/Kunkun integration, or separately hosted UI, use the
-explicit API-only command:
+The native CLI mirrors the Node commands:
 
 ```sh
-pnpm cli serve --repo /absolute/path/to/repository --no-open --json
+refyard-native doctor [--json]                 # what this machine can do; exit 2 when unusable
+refyard-native open <path>...                  # the service plus the built workbench
+refyard-native serve <path>... --json --no-open # API-only; readiness JSON on stdout, pairing URL on stderr
 ```
 
-The terminal prints a single-use pairing URL. Reads are authenticated too; the token stays in the
-browser session and is never placed in `localStorage`. Multiple repositories require repeated,
-explicit `--repo` arguments—Refyard never scans a parent directory.
+`--port` (default 9595; an explicitly requested busy port is refused), `--ticket-ttl`, `--json`,
+and `--no-open` behave as in the Node CLI. `--machine` is the native pairing mode for
+supervisors — readiness JSON on stdout, a single-use pairing URL on stderr — and is what the
+VS Code extension drives.
+
+Node CLI, from a checkout:
+
+```sh
+pnpm build:release    # bundles the CLI plus local SPA and stages packages/npm-dist
+pnpm pack:smoke       # packs it, installs it into a temporary HOME, and uses it
+```
 
 After the npm release, the installed form is:
 
@@ -84,71 +117,56 @@ npx refyard /absolute/path/to/repository
 refyard open /absolute/path/to/repository
 ```
 
-For local development, run `pnpm dev` to start an empty authenticated launcher. Open a local
-repository from the UI, use Browse to choose a folder through the local coordinator, reopen
-explicit Recent entries, or use New Tab to switch between multiple approved repositories. Clone
-and Create are available under an approved workspace root.
+## VS Code extension
 
-## The native desktop app and CLI
+[`apps/refyard-vscode`](apps/refyard-vscode) (publisher `HuakunShen`) brings the same workbench
+into VS Code for the repository you have open. It reuses the `@refyard/git-ui` Svelte components
+inside a webview to show the working-copy status, the history graph, and diffs — read-only for
+now; staging and commits land later.
 
-Alongside the Node runtime, this repository carries a **native** desktop app and a native CLI
-(`crates/`, Rust): the same application service and the same closed JSON contract, with the UI
-compiled into the app and every Git call driven by the machine's own `git` and OpenSSH. The app
-carries no JavaScript runtime, no backend bundle, and no localhost detour — the workbench talks
-to the host process over Tauri's IPC, and `pnpm native:verify` fails the build if a JavaScript
-engine ever shows up in the bundle. SSH targets are chosen from the machine's own SSH config and
-run the system `ssh`; nothing is installed on the remote.
-
-Build from source (macOS arm64 is what the tests cover):
+The extension spawns the local `refyard-native` CLI in machine-pairing mode (`--machine`):
+readiness JSON on stdout, a single-use pairing URL on stderr, and the ticket bound to the empty
+origin so no browser can spend it. The webview never sees a token. Configuration is
+`refyard.cliPath` (default `refyard-native` on PATH); commands are **Refyard: Open Workbench**
+(`refyard.openWorkbench`), **Refyard: Refresh** (`refyard.refresh`), and **Refyard: Shutdown
+Service** (`refyard.shutdown`). Build it as a `.vsix`:
 
 ```sh
-pnpm desktop:build      # Refyard.app under apps/desktop/src-tauri/target/release/bundle/macos
-cargo build --release -p refyard-native   # native CLI at target/release/refyard-native
+pnpm --dir apps/refyard-vscode package   # compiles host + webview, then emits refyard-0.1.0.vsix
 ```
 
-The native CLI mirrors the Node commands and the supervisor contract:
+![The Refyard history graph inside a VS Code webview](docs/assets/vscode-history.png)
 
-```sh
-refyard-native doctor                          # what this machine can do, exit 2 when unusable
-refyard-native serve <path> --json --no-open   # API-only; readiness JSON on stdout, pairing URL on stderr
-refyard-native open <path>                     # the same plus the static workbench from apps/web/build
-```
+## Updates
 
-`--port` (an explicitly requested busy port is refused), `--no-open`, `--json` and
-`--ticket-ttl` behave as in the Node CLI. A killed process records its in-flight operation as
-`unknown` in the journal (under the platform state directory) and the repository's next write
-stays blocked until a person confirms the state in the app. Runtime measurements and budgets
-live in `pnpm native:bench` and [`docs/evidence/native-runtime.json`](docs/evidence/native-runtime.json).
+The desktop app checks
+`https://github.com/HuakunShen/refyard/releases/latest/download/latest.json` — only when you
+ask it to. **Settings → Updates** has a manual **Check for updates** (it shows the available
+version; **Install and restart** applies it), and an automatic check at startup that is
+opt-in and defaults to **off**. Nothing is downloaded on its own.
 
-### What the native form adds
+Update packages are verified against the project's minisign public key, which ships inside the
+app, so an unsigned feed is refused. The same feed backs the Homebrew cask's `auto_updates`
+behaviour, so `brew upgrade` and the in-app updater never fight.
 
-- **One strip, browser-style.** The repository tabs are the window's topmost layer under an
-  overlay title bar; appearance — light/dark, accent, background, glass — lives in the in-app
-  Settings sheet instead of spending header space.
-- **Native open flows.** A folder opens through the system folder picker or a drag-and-drop
-  from Finder; the browser keeps its in-app path picker.
-- **SSH without installing anything remotely.** Hosts come from the machine's own SSH
-  configuration (parsed, never executed); Git runs through the system `ssh`, and reads work
-  against a remote repository with nothing on the far side but OpenSSH and Git.
-- **Offline by construction.** Local repositories keep working with the network gone — the app
-  holds no network sockets at all, measured under a process-scoped no-network sandbox
-  ([acceptance §9.15](docs/acceptance/2026-09-18-native-desktop-ssh.md)).
-- **Crash honesty.** A process killed mid-write records that operation as `unknown`, blocks the
-  repository's next write, and lifts the block only after an explicit acknowledgement in the UI.
+## The Node runtime and its loopback security model
 
-### Releases and install
+`refyard open <path>` starts the complete local workbench for explicitly chosen repositories
+and prints a single-use pairing URL in the terminal. `refyard serve --repo <path> --no-open
+--json` is the API-only form for supervisors, integrations, and separately hosted UI;
+`refyard doctor` reports what the machine can do.
 
-Pushing an `app-v<version>` tag runs [`release.yml`](.github/workflows/release.yml): the test
-contract gates first, then five runners build the app — macOS for Apple Silicon and Intel (DMG),
-Linux x86_64 and arm64 (deb, AppImage), Windows x64 (NSIS installer) — and publish the artifacts
-to a GitHub release automatically. A Homebrew cask tracks those DMGs
-([`packaging/homebrew/Casks/refyard.rb`](packaging/homebrew/Casks/refyard.rb)); once the first
-release is published, filling in its sha256 and pushing the cask to
-[`HuakunShen/homebrew-tap`](https://github.com/HuakunShen/homebrew-tap) makes it:
-
-```sh
-brew install --cask HuakunShen/refyard/refyard
-```
+- Loopback only. Default port 9595; if that is busy another free port is taken and named, an
+  explicitly requested busy `--port` is refused, and `--port 0` asks the OS for one.
+- Every HTTP call is authenticated — reads included. The terminal prints a single-use bootstrap
+  ticket; the browser exchanges it for an in-memory bearer that is never placed in
+  `localStorage`.
+- Exact `Origin`/`Host` checks, no CORS wildcard, JSON 404 for unknown `/api` paths, no
+  fallthrough to the SPA. Live updates arrive over authenticated SSE.
+- Multiple repositories require repeated, explicit `--repo` arguments — Refyard never scans a
+  parent directory.
+- The browser sends Git _intentions_; only trusted core turns intentions into Git arguments. No
+  raw `runGit(args, cwd)`, shell, `cwd`, or `env` crosses the HTTP or browser boundary.
 
 ## Deploy the UI to your own Cloudflare account
 
@@ -162,31 +180,38 @@ flow is available from a checkout:
 pnpm deploy
 ```
 
-The initial `PUBLIC_API_ORIGINS` value is empty by design. If you connect the UI to a remote
-machine, expose that machine's loopback API through your own HTTPS tunnel, configure that exact
-origin in the Worker, and start the CLI with matching `--allow-origin`, `--ui-origin`, and
-`--api-origin` values plus the environment-only `REFYARD_HOSTED_PASSWORD`. There is no central
-Refyard relay.
+The Worker is an asset-only remote UI host: it has no Git binding, repository path, shell,
+credential store, bearer token, or API proxy, and it never receives Git contents. The initial
+`PUBLIC_API_ORIGINS` value is empty by design, so the browser cannot call an arbitrary backend
+until the owner configures one. If you connect the UI to a remote machine, expose that
+machine's loopback API through your own HTTPS tunnel, configure that exact origin in the
+Worker, and start the CLI with matching `--allow-origin`, `--ui-origin`, and `--api-origin`
+values plus the environment-only `REFYARD_HOSTED_PASSWORD`. There is no central Refyard relay.
 
 ## Release and trust
 
-`ci.yml` is the test workflow. `publish.yml` is the only npm publisher and runs on `v*` tags after
-the package build and smoke tests; `release.yml` is the only desktop publisher and runs on
-`app-v*` tags after the same gate, so the two release lines can never be confused. It uses npm Trusted Publishing through GitHub OIDC with
-`environment: publish`; no `NPM_TOKEN` or `NODE_AUTH_TOKEN` is needed.
+`ci.yml` is the test workflow. `publish.yml` is the only npm publisher and runs on `v*` tags
+after the package build and smoke tests, using npm Trusted Publishing through GitHub OIDC with
+`environment: publish` — no `NPM_TOKEN` or `NODE_AUTH_TOKEN` is needed. `release.yml` is the
+only desktop publisher and runs on `app-v*` tags: the test contract gates first, then a
+five-runner matrix (macOS Apple Silicon and Intel, Ubuntu x64 and arm64, Windows x64) builds,
+signs, and publishes the artifacts and the updater's `latest.json` automatically. The two
+release lines can never be confused.
 
-The package and repository are licensed under the [GNU Affero General Public License v3.0 only](LICENSE).
-If you run a modified Refyard service for users over a network, AGPLv3's corresponding-source
-requirements apply to that deployment.
+The package and repository are licensed under the [GNU Affero General Public License v3.0
+only](LICENSE) (AGPL-3.0-only). If you run a modified Refyard service for users over a network,
+AGPLv3's corresponding-source requirements apply to that deployment.
 
 ## Safety boundary
 
 - Repository roots are approved explicitly and kept separate.
 - Destructive actions require confirmation, a backup where possible, and a verified precondition.
+- A killed process records its in-flight operation as `unknown`; the repository's next write
+  stays blocked until a person confirms the state in the app.
 - Unknown Git outcomes are reported as unknown and are never retried automatically.
 - The browser sends Git intentions; only trusted core creates Git arguments.
-- No raw `runGit(args, cwd)`, shell, `cwd`, or `env` crosses the HTTP or browser boundary.
-- The complete operation set is the one reported by `GET /api/v1/capabilities`.
+- The complete operation set is the one reported by `GET /api/v1/capabilities` — anything
+  unimplemented is simply absent, never faked.
 
 ## Repository map
 
@@ -194,11 +219,12 @@ requirements apply to that deployment.
 | ----------------------- | ------------------------------------------------------------------------ |
 | `apps/web`              | SvelteKit shell, static adapter, PWA, asset-only Worker                  |
 | `apps/cli`              | CLI grammar, `doctor`, `open`/`serve` lifecycle                          |
+| `apps/desktop`          | Tauri desktop shell over the same service; no JS runtime in the bundle   |
+| `apps/refyard-vscode`   | VS Code extension: the same UI in a webview, driven by `refyard-native`  |
 | `crates/refyard-core`   | Host-free Git planners, parsers, safety rules (Rust)                     |
 | `crates/refyard-host`   | Service, journal, queue, local and SSH providers (Rust)                  |
 | `crates/refyard-http`   | Native loopback HTTP entry with the same closed contract (Rust)          |
 | `crates/refyard-cli`    | Native CLI: `doctor`, `serve`, `open` (Rust)                             |
-| `apps/desktop`          | Tauri desktop shell over the same service; no JS runtime in the bundle   |
 | `packages/git-contract` | Public Zod schemas and JSON Schema                                       |
 | `packages/git-core`     | Host-free bytes, parsers, planners, workflows (TypeScript)               |
 | `packages/host-node`    | Processes, filesystem, registries, coordinator, HTTP host                |
@@ -208,5 +234,6 @@ requirements apply to that deployment.
 | `tests`                 | Contract, core, integration, security, browser, compatibility, packaging |
 | `docs`                  | Product decisions, plans, goals, evidence, release instructions          |
 
-More detail lives in [`docs/installation.md`](docs/installation.md), [`docs/releasing.md`](docs/releasing.md),
-and [`docs/evidence/release-matrix.md`](docs/evidence/release-matrix.md).
+More detail lives in [`docs/installation.md`](docs/installation.md),
+[`docs/releasing.md`](docs/releasing.md), and
+[`docs/evidence/release-matrix.md`](docs/evidence/release-matrix.md).
