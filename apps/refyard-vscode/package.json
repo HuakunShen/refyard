@@ -1,0 +1,73 @@
+{
+  "name": "refyard-vscode",
+  "displayName": "Refyard",
+  "description": "The Refyard workbench for the repository you have open: status, history, diffs, staging and commits — driven by the local refyard service.",
+  "version": "0.1.0",
+  "publisher": "HuakunShen",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HuakunShen/refyard"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "SCM"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "refyard.openWorkbench",
+        "title": "Open Workbench",
+        "category": "Refyard"
+      },
+      {
+        "command": "refyard.refresh",
+        "title": "Refresh",
+        "category": "Refyard"
+      },
+      {
+        "command": "refyard.shutdown",
+        "title": "Shutdown Service",
+        "category": "Refyard"
+      }
+    ],
+    "configuration": {
+      "title": "Refyard",
+      "properties": {
+        "refyard.cliPath": {
+          "type": "string",
+          "default": "refyard-native",
+          "description": "Path to the refyard-native CLI (or a name on PATH). The extension spawns it as the local service."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "node esbuild.mjs && vite build --config webview/vite.config.ts",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "package": "pnpm compile && npx -y @vscode/vsce package --no-dependencies -o refyard-0.1.0.vsix"
+  },
+  "dependencies": {
+    "@refyard/git-client": "workspace:*",
+    "@refyard/git-contract": "workspace:*",
+    "@refyard/git-graph": "workspace:*",
+    "@refyard/git-service": "workspace:*",
+    "@refyard/git-ui": "workspace:*"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "catalog:",
+    "@tailwindcss/vite": "catalog:",
+    "@types/node": "^22.0.0",
+    "@types/vscode": "^1.90.0",
+    "esbuild": "^0.25.0",
+    "svelte": "catalog:",
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:"
+  }
+}

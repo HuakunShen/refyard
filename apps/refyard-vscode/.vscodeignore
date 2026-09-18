@@ -1,0 +1,7 @@
+src/**
+webview/**
+esbuild.mjs
+**/node_modules/**
+**/*.ts
+**/tsconfig.json
+!dist/**

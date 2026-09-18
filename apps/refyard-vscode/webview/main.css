@@ -1,0 +1,16 @@
+/* The panel's stylesheet: the same Tailwind + component-token stack the web app uses.
+ *
+ * `@source` points Tailwind at the component package's source; the package is linked
+ * into `node_modules`, which Tailwind ignores by default, so without this line every
+ * utility used only inside `@refyard/git-ui` would be missing from the built CSS.
+ */
+@import "tailwindcss";
+@import "@refyard/git-ui/styles.css";
+
+@source "../../../packages/git-ui/src";
+
+html,
+body {
+  background-color: var(--color-canvas);
+  color: var(--color-ink);
+}
