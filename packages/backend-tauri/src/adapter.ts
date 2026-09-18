@@ -41,6 +41,7 @@ import {
   validateReadResponse,
   type GitReadRequest,
   type HostRequest,
+  type DragDropPathsEvent,
   type NativePorts,
   type NativeReadMethod,
 } from "./commands.js";
@@ -357,6 +358,35 @@ export function createTauriBackendAdapter(
             { method: "acknowledgeUncertainOperation", request },
             "acknowledgeUncertainOperation",
           )) as never,
+        ...(options.ports.onDragDropPaths === undefined
+          ? {}
+          : {
+              // A surface of the webview itself, not a host question: the OS tells
+              // this window what is being dragged over it, with the full paths a
+              // browser never sees. Present only when the port exists, so a caller
+              // can gate the affordance on the method's presence.
+              onDragDropPaths: (
+                listener: (event: DragDropPathsEvent) => void,
+              ): (() => void) => {
+                let stopped = false;
+                let unlisten: (() => void) | null = null;
+                void options.ports
+                  .onDragDropPaths?.((event) => {
+                    if (!stopped) listener(event);
+                  })
+                  .then((stop) => {
+                    if (stopped) {
+                      stop();
+                      return;
+                    }
+                    unlisten = stop;
+                  });
+                return () => {
+                  stopped = true;
+                  unlisten?.();
+                };
+              },
+            }),
       };
 
       const rawEvents = createNativeEventService({

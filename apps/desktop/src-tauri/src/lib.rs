@@ -10,9 +10,11 @@
 //! - **no JavaScript runtime and no local listener.** The frontend is embedded in the binary
 //!   as assets and reached over Tauri's IPC; nothing in this dependency tree contains a JS
 //!   engine, an HTTP server or a sidecar.
-//! - **no general-purpose plugin.** There is no shell, filesystem, dialog, http or opener
-//!   plugin in `Cargo.toml`, so there is no command from one to be granted. The window's only
-//!   Tauri capability is `core:event:default`, which is exactly listen and unlisten.
+//! - **one plugin, never granted to the WebView.** The dialog plugin is linked so the host
+//!   can open the OS folder picker when a session asks for it, but the window's only Tauri
+//!   capability is `core:event:default` — no `dialog:*` permission is granted, so the
+//!   WebView has no command of the plugin to call. The picker is reachable only through
+//!   `refyard_host_request`, behind the session registry like everything else.
 //! - **the WebView is untrusted about scope.** It names a session and a repository id; it
 //!   cannot name a path, a program or an argument. Git runs only where the service's planners
 //!   put it, against repositories the host approved.
@@ -105,7 +107,11 @@ impl AppState {
     /// die with it, which is what the product must not ship — a write whose result is unknown
     /// has to block the next one *after* a restart too, and that is only true if the record
     /// was on disk before the process that made it went away.
-    fn build(git: LocalGit, ssh_config: Option<PathBuf>, state_root: Option<PathBuf>) -> Result<Self, String> {
+    fn build(
+        git: LocalGit,
+        ssh_config: Option<PathBuf>,
+        state_root: Option<PathBuf>,
+    ) -> Result<Self, String> {
         let started = millis_since_epoch();
         // The home a person browses from is the home this host runs Git with, so a fixture
         // and the product cannot disagree about which `~` is meant.
@@ -121,7 +127,9 @@ impl AppState {
             service = service.with_ssh_config_file(ssh_config);
         }
         if let Some(root) = state_root {
-            service = service.with_state_root(root).map_err(|problem| problem.to_string())?;
+            service = service
+                .with_state_root(root)
+                .map_err(|problem| problem.to_string())?;
         }
         // Writes are registered here, at the composition root: the service that answers
         // `capabilities` and the service a caller submits to have to be the same one, or the
@@ -191,6 +199,7 @@ pub fn run() {
     };
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(state)
         .setup(|app| {
             // One relay for the process: it reads the service's event stream and hands each

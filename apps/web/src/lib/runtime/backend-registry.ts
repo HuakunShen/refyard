@@ -133,9 +133,10 @@ function createHttpRegistry(options: BackendRegistryOptions): BackendRegistry {
 
 /** The Tauri IPC surface, shaped into the adapter's injected ports. */
 async function loadTauriPorts(): Promise<NativePorts> {
-  const [core, events] = await Promise.all([
+  const [core, events, webview] = await Promise.all([
     import("@tauri-apps/api/core"),
     import("@tauri-apps/api/event"),
+    import("@tauri-apps/api/webview"),
   ]);
   return {
     invoke: (command, args) => core.invoke(command, args),
@@ -148,6 +149,23 @@ async function loadTauriPorts(): Promise<NativePorts> {
       return () => {
         unlisten();
       };
+    },
+    onDragDropPaths: async (handler) => {
+      // The OS drag this webview sees, translated from Tauri's discriminated event.
+      // A dropped folder arrives as a full path — the thing that makes "drop a
+      // repository onto the window" possible on the desktop and impossible in a
+      // browser, which is why this port is optional and browser callers omit it.
+      return webview.getCurrentWebview().onDragDropEvent((event) => {
+        const payload = event.payload;
+        if (payload.type === "leave") {
+          handler({ phase: "leave" });
+          return;
+        }
+        // `over` names only the cursor position; the paths came with `enter` and
+        // come again with `drop`, which is the one that opens.
+        const paths = payload.type === "over" ? [] : payload.paths;
+        handler({ phase: payload.type, paths });
+      });
     },
   };
 }

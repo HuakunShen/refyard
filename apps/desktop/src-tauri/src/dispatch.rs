@@ -11,6 +11,9 @@
 //! capabilities never asks, and one that asks anyway is told the truth instead of receiving
 //! an empty panel that looks like a repository with nothing in it.
 
+use tauri::Manager;
+use tauri_plugin_dialog::DialogExt;
+
 use refyard_contract::diff::DiffQuery;
 use refyard_contract::history::HistoryQuery;
 use refyard_contract::host::{ExecutionTargetKind, HostCapabilities};
@@ -271,9 +274,42 @@ pub async fn dispatch_read(
 /// side, and it answers with the target whether or not the probe succeeded — a host that
 /// cannot be reached is a target the caller must be able to see the failure next to, not an
 /// error that leaves the session with nothing.
+/// The one window-bound thing the host request surface can do: open the OS folder
+/// picker and return the chosen full path (`None` when the person cancelled).
+///
+/// A trait so tests can drive `dispatch_host` without a window — a stub answers like a
+/// cancelled dialog, or hands back a canned path to exercise the answer's shape. The real
+/// implementation opens the plugin's dialog from the host process; the WebView holds no
+/// `dialog:*` permission, so this host-side road is the only one to the picker.
+pub trait FolderDialog {
+    fn pick_folder_path(&self) -> Option<String>;
+}
+
+impl FolderDialog for tauri::WebviewWindow {
+    fn pick_folder_path(&self) -> Option<String> {
+        self.app_handle()
+            .dialog()
+            .file()
+            .blocking_pick_folder()
+            .and_then(|file| file.into_path().ok())
+            .map(|path| path.display().to_string())
+    }
+}
+
+/// Answers every picker request like a person who cancelled: the shape tests and
+/// windowless callers need when there is no dialog to open.
+pub struct CancelledDialog;
+
+impl FolderDialog for CancelledDialog {
+    fn pick_folder_path(&self) -> Option<String> {
+        None
+    }
+}
+
 pub async fn dispatch_host(
     service: &ApplicationService,
     request: HostRequest,
+    dialogs: &impl FolderDialog,
 ) -> Result<Value, ProblemResponse> {
     match request {
         HostRequest::Capabilities => to_value(host_capabilities()),
@@ -281,6 +317,14 @@ pub async fn dispatch_host(
         HostRequest::SshHosts => {
             let hosts = service.ssh_hosts().await.map_err(failed)?;
             to_value(hosts)
+        }
+        HostRequest::PickLocalDirectory => {
+            // The OS folder picker, opened here in the host process. The answer is the
+            // one full path the person chose — the thing a browser cannot have — or
+            // `null` for a cancelled dialog, which the adapter treats as an answer and
+            // not a failure. The webview holds no dialog permission, so this is the
+            // only road to the picker.
+            to_value(dialogs.pick_folder_path())
         }
         HostRequest::CreateTarget { request } => {
             let request = decode_create_target(request)?;
@@ -302,7 +346,6 @@ pub async fn dispatch_host(
                 .map_err(failed)?;
             to_value(record)
         }
-        unimplemented => Err(not_implemented(unimplemented.method())),
     }
 }
 
@@ -396,8 +439,9 @@ fn decode<T: serde::de::DeserializeOwned>(
 /// advertised this while refusing every mutation would be promising an entry point nobody can
 /// arrive at.
 ///
-/// The fourth is a property of this process: a folder dialog needs a plugin this build does
-/// not link, so the picker is the service's own rather than the OS's.
+/// The fourth is a property of this process: the dialog plugin is linked and the picker is
+/// the OS's own, opened by the host when a session asks. The WebView holds no `dialog:*`
+/// permission, so the flag's promise and the reachable road are the same thing.
 ///
 /// `targetKinds` names both because both can be created: `createTarget` builds an SSH target
 /// from a listed candidate, probes it, and reports `unavailable` with the reason when the
@@ -405,7 +449,7 @@ fn decode<T: serde::de::DeserializeOwned>(
 fn host_capabilities() -> HostCapabilities {
     HostCapabilities {
         ssh_config: true,
-        local_folder_picker: false,
+        local_folder_picker: true,
         uncertain_operation_acknowledgement: true,
         target_kinds: vec![ExecutionTargetKind::Local, ExecutionTargetKind::SshConfig],
     }

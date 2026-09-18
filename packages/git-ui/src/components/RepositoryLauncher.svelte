@@ -82,6 +82,15 @@
     targetProgress?: string | null;
     /** The host's own words when a step of the remote open failed. */
     targetError?: string | null;
+    /**
+     * Opens the OS folder picker and answers the one full path chosen, or `null`
+     * for a cancelled dialog. The button that calls it is offered only when the
+     * host's own capabilities say the picker exists — the flag, not the presence of
+     * this callback, is what gates the affordance.
+     */
+    onPickLocalFolder?: () => Promise<string | null>;
+    /** True while an OS drag with real paths is over the window: show the overlay. */
+    dropPathsActive?: boolean;
   }
 
   let {
@@ -102,6 +111,8 @@
     selectedTargetSummary = null,
     targetProgress = null,
     targetError = null,
+    onPickLocalFolder = undefined,
+    dropPathsActive = false,
   }: Props = $props();
 
   let mode = $state<"open" | "create">("open");
@@ -113,6 +124,8 @@
   let pickerBusy = $state(false);
   let pickerError = $state<string | null>(null);
   let targetPickerOpen = $state(false);
+  let nativePickerBusy = $state(false);
+  let nativePickerError = $state<string | null>(null);
   let targetLoad = $state<TargetOptionsLoad | null>(null);
   let localTargetChoice = $state<ExecutionTargetSelection | null>(null);
 
@@ -248,12 +261,54 @@
     path = repositoryPath;
     pickerOpen = false;
   }
+
+  /**
+   * The host's own answer about the OS picker decides whether the button exists; a
+   * remote target hides it regardless, because the dialog lists this machine.
+   */
+  const localFolderPickerAvailable = $derived(
+    onPickLocalFolder !== undefined &&
+      !remoteTargetChosen &&
+      targetLoad !== null &&
+      targetLoad.capabilities !== null &&
+      targetLoad.capabilities.localFolderPicker === true,
+  );
+
+  async function pickLocalFolder(): Promise<void> {
+    if (onPickLocalFolder === undefined || nativePickerBusy) return;
+    nativePickerBusy = true;
+    nativePickerError = null;
+    try {
+      const chosen = await onPickLocalFolder();
+      // A cancelled dialog answers null and opens nothing: an answer, not an error.
+      if (chosen !== null && chosen.trim().length > 0) onOpen(chosen.trim());
+    } catch (error) {
+      // A host that cannot open a dialog (any browser build) refuses the click; the
+      // refusal is shown next to the form instead of the click doing nothing.
+      nativePickerError =
+        error instanceof Error
+          ? error.message
+          : "Could not open the folder picker";
+    } finally {
+      nativePickerBusy = false;
+    }
+  }
 </script>
 
 <section
   class="mx-auto flex w-full max-w-5xl flex-col gap-5 p-6"
   data-testid="repository-launcher"
 >
+  {#if dropPathsActive}
+    <div
+      class="pointer-events-none fixed inset-0 z-50 flex items-center justify-center border-4 border-dashed border-primary/60 bg-background/70"
+      data-testid="launcher-drop-overlay"
+    >
+      <p class="rounded-md bg-background px-4 py-2 text-sm font-medium">
+        Drop the folder to open it as a repository
+      </p>
+    </div>
+  {/if}
   <div>
     <p
       class="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground"
@@ -342,6 +397,26 @@
         if (path.trim().length > 0 && !openPending) onOpen(path.trim());
       }}
     >
+      {#if localFolderPickerAvailable}
+        <Button
+          type="button"
+          variant="outline"
+          onclick={pickLocalFolder}
+          disabled={disabled || nativePickerBusy}
+          data-testid="launcher-native-picker"
+          ><FolderOpen data-icon="inline-start" />{nativePickerBusy
+            ? "Choosing…"
+            : "Choose folder…"}</Button
+        >
+      {/if}
+      {#if nativePickerError !== null}
+        <p
+          class="basis-full text-xs text-danger"
+          data-testid="launcher-native-picker-error"
+        >
+          {nativePickerError}
+        </p>
+      {/if}
       <label class="min-w-64 flex-1 text-xs font-medium" for="launcher-path"
         >{pathFieldLabel}
         <Input

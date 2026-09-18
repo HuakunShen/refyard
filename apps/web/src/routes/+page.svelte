@@ -224,6 +224,11 @@
    */
   let executionTarget = $state<ExecutionTargetSelection | null>(null);
   /**
+   * True while an OS drag with real paths is over the window — the desktop's
+   * "drop a folder here" affordance, which a browser build never sees.
+   */
+  let dropPathsActive = $state(false);
+  /**
    * The target the host most recently minted for that choice, once one exists. It is
    * what the launcher disables Browse with, and it is dropped the moment the choice
    * changes so one host's answer is never shown for another.
@@ -586,6 +591,49 @@
       openRepositoryTab(repositoryTabs, tab);
       handleRepositoryTab(repositoryTabKey(tab));
     });
+  }
+
+  /**
+   * The desktop's second way in: a folder dropped onto the window arrives with the
+   * one thing the OS can give and a browser cannot — its full path. It opens on this
+   * machine even when an SSH target is selected, because the folder was dragged from
+   * this machine's Finder; opening it "on" the remote would answer a different
+   * question than the gesture asked.
+   */
+  function handleDroppedPaths(paths: readonly string[]): void {
+    const first = paths[0];
+    if (first === undefined || first.trim().length === 0) return;
+    const restore = executionTarget;
+    executionTarget = null;
+    try {
+      handleOpenRepository(first.trim());
+    } finally {
+      executionTarget = restore;
+    }
+  }
+
+  /**
+   * Registers the drag listener only when the adapter's host can see OS drags with
+   * real paths (the desktop adapter); the unlistener is the effect's cleanup, so a
+   * session change re-subscribes and a disposed session stops listening.
+   */
+  $effect(() => {
+    const host = backendSession?.host;
+    if (host?.onDragDropPaths === undefined) return;
+    return host.onDragDropPaths((event) => {
+      if (event.phase === "drop") {
+        dropPathsActive = false;
+        handleDroppedPaths(event.paths);
+        return;
+      }
+      dropPathsActive = event.phase !== "leave";
+    });
+  });
+
+  async function pickLocalFolderViaHost(): Promise<string | null> {
+    const host = backendSession?.host;
+    if (host === undefined || host === null) return null;
+    return host.pickLocalDirectory();
   }
 
   async function browseRepositoryPath(path: string) {
@@ -1172,6 +1220,8 @@
             message={writeController.repositoryAccessMessage ??
               writeController.repositoryMessage}
             onOpen={handleOpenRepository}
+            onPickLocalFolder={pickLocalFolderViaHost}
+            {dropPathsActive}
             onBrowse={browseRepositoryPath}
             onRecent={handleRecentRepository}
             onInit={writeController.onRepositoryInit}

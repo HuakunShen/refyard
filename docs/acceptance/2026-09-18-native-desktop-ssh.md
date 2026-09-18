@@ -274,7 +274,7 @@ C Local + SSH writes: PARTIAL（真实 App 两种 provider 完成 stage/unstage/
 D Native CLI / HTTP: PARTIAL（refyard-native doctor/serve/open 已实现并被真实套件验证：票据→bearer、Host/Origin 精确校验、JSON 404、授权仓库、幂等重放；SSE 已有线上的帧序列与 since 重放用例，两边界并排比较一致（F01–F08 全 PASS）；hosted 形式按构造拒绝；MCP/OpenAPI/Scalar 未实现）
 Artifact .app absolute path + SHA-256 + installed bytes:
   /Volumes/Portable2TB/ExtDev/refyard-native-desktop-ssh/apps/desktop/src-tauri/target/release/bundle/macos/Refyard.app
-  b3eb30a2104bc079ed2381dc5c6dfbdc62b171bd22407b7af2eaae696d986b99 · 12870336 bytes executable · 12.6 MiB installed · 未签名（含 E13 解除面板重建）
+  254a2ac122578c9cb0f7fa157173267b31d13bb5a769c42b144c9aaf8e55c53c · 13535328 bytes executable · 13.3 MiB installed · 未签名（含 E13 解除面板与原生文件夹选择器/拖拽，见 9.11）
 Artifact CLI absolute path + SHA-256 + bytes:
   /Volumes/Portable2TB/ExtDev/refyard-native-desktop-ssh/target/release/refyard-native
   27b5a6b6c462ea7bc498f9f5e5aba08738af5865a347b76aba20588b9d811fc1 · 4360464 bytes（D13 重建：journal 种子修复；哈希随代码变化，见 9.9）
@@ -331,6 +331,11 @@ Next executable task: D 轨收官；后续为 P01（完整只读 parity 与远�
 | `pnpm check:boundaries` / `pnpm check:contract`                                              | 0    | 3 portable 包无 host 依赖；500 个 schema `$ref` 全部解析                                                                                                             |
 | `pnpm exec playwright test --project=chromium`                                               | 0    | 56 passed（首次运行 55 passed / 1 failed 的竞态已定位并修复，见 B 记录）                                                                                             |
 | `pnpm exec playwright test tests/e2e/ssh-repository-launcher.spec.ts`                        | 0    | 15 passed（chromium + firefox + webkit）                                                                                                                             |
+| **D14 后追加轮（原生文件夹选择器 + 拖拽，2026-09-19）：**                                    |      |                                                                                                                                                                      |
+| `cargo test`（apps/desktop，独立 workspace）                                                 | 0    | 26 passed / 0 failed（新增 picker 形状用例）                                                                                                                         |
+| `cargo clippy --all-targets`（apps/desktop）                                                 | 0    | 无警告                                                                                                                                                               |
+| `pnpm exec playwright test tests/e2e/native-folder-picker.spec.ts`                           | 0    | chromium+firefox 各 2 passed；webkit 2 skipped（注明原因）                                                                                                           |
+| `pnpm desktop:build`（含选择器/拖拽重建）                                                    | 0    | `Refyard.app` 254a2ac1…，13.3 MiB（dialog 插件 +0.7 MiB）；`native:verify` 仍绿                                                                                      |
 | `cargo test -p refyard-http`                                                                 | 0    | 22 unit + 10 gate passed（gate 走真实 socket + fixture 仓库）                                                                                                        |
 | `pnpm exec vitest run tests/native`                                                          | 0    | 44 passed（security 10 + contract 24 + helper；release binary 驱动）                                                                                                 |
 | `cargo build -p refyard-native --release`                                                    | 0    | 4304496 bytes（≤20 MiB 预算）                                                                                                                                        |
@@ -463,3 +468,24 @@ e2e（`tests/e2e/uncertain-outcome.spec.ts`，chromium+firefox 各 2 例）：�
 Node 服务，仅拦截两条需要“杀进程才能产生”的回答（阻塞拒绝与 ack 应答）；断言面板出现、
 原因与操作 id 可见、未勾选时按钮禁用、ack 请求体为契约形状（新快照 + `confirmed: true`）、
 解除后面板消失且同一 stage 对真实服务成功。webkit 因拦截不可靠跳过并注明。
+
+### 9.11 原生文件夹选择器与拖拽打开（用户指示，2026-09-19）
+
+桌面 App 的 open repo 流程改为桌面原生的方式，Web 的目录浏览保留为后备：
+
+- **原生 folder picker**：desktop 链接 `tauri-plugin-dialog`（仅 Rust 侧调用；WebView 不授予
+  任何 `dialog:*` 权限），`pickLocalDirectory` 经 `refyard_host_request` → `FolderDialog`
+  trait 打开系统面板，回答完整路径或 `null`（取消是回答不是错误）。`hostCapabilities`
+  的 `localFolderPicker` 相应翻为 `true`，launcher 以该 flag 决定是否提供
+  「Choose folder…」按钮；Web（HTTP 适配器无法打开对话框）保持 flag=false、无按钮，
+  且点击被拒时在表单旁显示服务原话。
+- **拖拽文件夹**：`HostService` 增加可选 `onDragDropPaths`（phase: enter/over/leave/drop +
+  完整路径）；Tauri 组合根用官方 `getCurrentWebview().onDragDropEvent` 实现该端口，页面监听
+  后全窗口高亮、drop 即在本机 target 打开（Finder 拖入的是本机路径，即使当前选中 SSH
+  target 也按本机开）。浏览器适配器不含该方法，UI 相应不提供该可供性。
+- **真机验证**：AX 实测——按钮出现 → 点击弹出系统 open panel → Cmd+Shift+G 定位 fixture
+  仓库 → Open → App 直接进入该仓库工作台（历史/变更面板渲染正常）。拖拽的手势本身无法
+  自动化合成，链路（端口→适配器→页面→打开）为类型化代码，真机可用性待用户拖一次确认。
+- **测试**：`native-folder-picker.spec.ts`（chromium+firefox，webkit 因拦截不可靠跳过）钉住
+  flag 两个方向的门控与拒绝显示；`session_owner.rs` 新增 picker 形状用例（选择→路径、
+  取消→null）。bundle 增至 13.3 MiB（dialog 插件），`native:verify` 仍绿（预算 ≤30 MiB）。

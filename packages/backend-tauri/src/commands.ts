@@ -154,12 +154,26 @@ const READ_METHODS = new Set<GitReadRequest["method"]>([
   "previews",
 ]);
 
+/** The webview's drag phases, translated to one shape. `paths` is what a browser can
+ * never have: the full path of everything under the cursor while the OS drag is live. */
+export type DragDropPathsEvent =
+  | { readonly phase: "enter" | "over"; readonly paths: readonly string[] }
+  | { readonly phase: "leave" }
+  | { readonly phase: "drop"; readonly paths: readonly string[] };
+
 /** The port the adapter needs. In production these are Tauri's own functions. */
 export interface NativePorts {
   invoke<T>(command: NativeCommand, args?: Record<string, unknown>): Promise<T>;
   listen(
     event: string,
     handler: (event: { readonly payload: unknown }) => void,
+  ): Promise<() => void>;
+  /**
+   * Present only when the webview reports OS drag-and-drop with real paths. Optional
+   * so test ports and other hosts omit it and the adapter omits the surface with it.
+   */
+  onDragDropPaths?(
+    handler: (event: DragDropPathsEvent) => void,
   ): Promise<() => void>;
 }
 

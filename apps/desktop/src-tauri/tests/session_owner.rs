@@ -871,7 +871,10 @@ async fn a_write_through_the_window_leaves_a_record_the_next_process_can_read() 
     fixture.write("README.md", "staged from the window\n");
 
     let status = status_of(&state, &session_id, &repository_id).await;
-    let worktree_id = status["worktreeId"].as_str().expect("worktreeId").to_owned();
+    let worktree_id = status["worktreeId"]
+        .as_str()
+        .expect("worktreeId")
+        .to_owned();
     let entry = status["entries"]
         .as_array()
         .expect("entries")
@@ -1119,7 +1122,11 @@ async fn the_host_reports_only_the_targets_and_abilities_it_has() {
         json!(true),
         "this host reads SSH configuration, which is a different claim from connecting to it"
     );
-    assert_eq!(capabilities["localFolderPicker"], json!(false));
+    assert_eq!(
+        capabilities["localFolderPicker"],
+        json!(true),
+        "the host opens the OS folder picker for a session that asks; the browser build,          whose answer could only ever be a fake path, reports false instead"
+    );
     assert_eq!(
         capabilities["uncertainOperationAcknowledgement"],
         json!(true),
@@ -1363,4 +1370,47 @@ async fn the_ssh_list_comes_from_the_home_this_host_runs_git_with() {
         .starts_with("source_"));
     assert_eq!(first["discoveryIncomplete"], json!(false));
     assert_eq!(hosts["warnings"], json!([]));
+}
+
+/* ------------------------------------------------------------ the folder picker */
+
+/// The picker's answer crosses the IPC as `string | null`: the full path the person
+/// chose, or `null` for a cancelled dialog. A stub dialog hands the dispatch a canned
+/// path so the answer's shape is pinned without clicking a real OS panel; the
+/// windowless `host_request` entry answers through the cancelled stub, which is the
+/// shape a cancel must produce.
+#[tokio::test]
+async fn a_picked_folder_answers_as_a_path_and_a_cancel_answers_null() {
+    let fixture = Fixture::new();
+    let state = fixture.state();
+    let (session_id, _) = fixture.open(&state).await;
+
+    struct PickedFolder(&'static str);
+    impl refyard_desktop::dispatch::FolderDialog for PickedFolder {
+        fn pick_folder_path(&self) -> Option<String> {
+            Some(self.0.to_string())
+        }
+    }
+    let picked = refyard_desktop::dispatch::dispatch_host(
+        &state.service,
+        refyard_desktop::dispatch::HostRequest::PickLocalDirectory,
+        &PickedFolder("/Users/someone/Dev/their-repo"),
+    )
+    .await
+    .expect("the picked folder is the answer");
+    assert_eq!(picked, json!("/Users/someone/Dev/their-repo"));
+
+    let cancelled = commands::host_request(
+        &state,
+        MAIN,
+        &session_id,
+        json!({ "method": "pickLocalDirectory" }),
+    )
+    .await
+    .expect("a cancelled dialog is an answer, not a failure");
+    assert_eq!(
+        cancelled,
+        json!(null),
+        "the windowless entry carries the cancelled-dialog stub, and null is what a          cancel looks like on the wire"
+    );
 }

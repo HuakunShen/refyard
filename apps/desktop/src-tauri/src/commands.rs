@@ -59,6 +59,28 @@ pub async fn git_read(
 }
 
 /// `refyard_host_request` — one host question through the session the caller owns.
+///
+/// The asking window rides along because one answer — the OS folder picker — is drawn by
+/// *this process* on behalf of that window's session, and the session registry still decides
+/// whether the question is answered at all.
+pub async fn host_request_for_window(
+    state: &AppState,
+    window: &tauri::WebviewWindow,
+    caller_label: &str,
+    session_id: &str,
+    request: Value,
+) -> Result<Value, ProblemResponse> {
+    let service = state
+        .sessions
+        .service_for(session_id, caller_label)
+        .map_err(failed)?;
+    let request: HostRequest = decode(request)?;
+    dispatch::dispatch_host(&service, request, window).await
+}
+
+/// The same surface without a window, which is what the integration tests drive: every
+/// host question is answered except the OS folder picker, whose dialog nobody can click in
+/// a test — there it answers like a person who cancelled.
 pub async fn host_request(
     state: &AppState,
     caller_label: &str,
@@ -70,7 +92,7 @@ pub async fn host_request(
         .service_for(session_id, caller_label)
         .map_err(failed)?;
     let request: HostRequest = decode(request)?;
-    dispatch::dispatch_host(&service, request).await
+    dispatch::dispatch_host(&service, request, &dispatch::CancelledDialog).await
 }
 
 /// `refyard_disconnect` — ends the session. Idempotent for its owner.
@@ -300,7 +322,7 @@ pub async fn refyard_host_request(
     session_id: String,
     request: Value,
 ) -> Result<Value, ProblemResponse> {
-    host_request(&state, window.label(), &session_id, request).await
+    host_request_for_window(&state, &window, window.label(), &session_id, request).await
 }
 
 #[tauri::command]

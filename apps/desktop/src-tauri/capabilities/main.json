@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "The workbench window. Its only granted capability is Tauri's event IPC, which is exactly listen and unlisten — the pair the backend adapter subscribes a listener with. No shell, filesystem, dialog, http or opener plugin is a dependency of this crate, so there is no command from one to grant; the window's own commands are reached over the IPC and gated by the session registry in src/session.rs.",
+  "description": "The workbench window. Its only granted capability is Tauri's event IPC, which is exactly listen and unlisten — the pair the backend adapter subscribes a listener with. The dialog plugin is linked so the HOST can open the OS folder picker from dispatch, but no dialog:* permission is granted to this window, so the WebView has no plugin command to call; every host answer is reached over the IPC and gated by the session registry in src/session.rs.",
   "windows": ["main"],
   "permissions": ["core:event:default"]
 }

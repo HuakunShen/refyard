@@ -32,4 +32,22 @@ export interface HostService {
   acknowledgeUncertainOperation(
     request: AcknowledgeUncertainOperationRequest,
   ): Promise<OperationRecord>;
+  /**
+   * Folders (or files) dragged onto the window, with the phase of the drag — the
+   * shape a desktop webview reports and a browser cannot: a dropped folder arrives as
+   * a full path, which is exactly what opening a repository needs. Present only on
+   * adapters whose host can see the drop; a caller offers the affordance only when the
+   * method exists.
+   */
+  onDragDropPaths?(
+    listener: (
+      event:
+        | {
+            readonly phase: "enter" | "over";
+            readonly paths: readonly string[];
+          }
+        | { readonly phase: "leave" }
+        | { readonly phase: "drop"; readonly paths: readonly string[] },
+    ) => void,
+  ): () => void;
 }
