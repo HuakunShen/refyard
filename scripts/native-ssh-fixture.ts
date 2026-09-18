@@ -27,9 +27,11 @@
  * directory; the ignored tests in `crates/refyard-host/tests/ssh_exec.rs` read
  * `state.json` from the same place.
  */
+import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -69,27 +71,37 @@ async function run(
     stream?: boolean;
   } = {},
 ): Promise<RunResult> {
-  if (options.stream === true) {
-    const child = Bun.spawn(argv, {
-      stdin: options.input === undefined ? "ignore" : new Blob([options.input]),
-      stdout: "inherit",
-      stderr: "inherit",
-      env: options.env ?? (process.env as Record<string, string>),
-    });
-    return { code: await child.exited, stdout: "", stderr: "" };
+  const [program, ...args] = argv;
+  if (program === undefined) {
+    throw new Error("run needs a program to run");
   }
-  const child = Bun.spawn(argv, {
-    stdin: options.input === undefined ? "ignore" : new Blob([options.input]),
-    stdout: "pipe",
-    stderr: "pipe",
-    env: options.env ?? (process.env as Record<string, string>),
+  const capture = options.stream !== true;
+  const child = spawn(program, args, {
+    // stdin is a pipe only when there is something to write. Otherwise it is closed, so a
+    // program that reads it sees end-of-file rather than waiting for a dead terminal.
+    stdio: [
+      options.input === undefined ? "ignore" : "pipe",
+      capture ? "pipe" : "inherit",
+      capture ? "pipe" : "inherit",
+    ],
+    env: options.env ?? process.env,
   });
-  const [stdout, stderr] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ]);
-  const code = await child.exited;
-  return { code, stdout, stderr };
+  if (options.input !== undefined) {
+    child.stdin?.end(options.input);
+  }
+  const stdoutChunks: Buffer[] = [];
+  const stderrChunks: Buffer[] = [];
+  child.stdout?.on("data", (chunk: Buffer) => stdoutChunks.push(chunk));
+  child.stderr?.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
+  // `close` rather than `exit`: the pipes are drained by then, so captured output is whole.
+  const code = await new Promise<number>((resolve) => {
+    child.once("close", (closed) => resolve(closed ?? -1));
+  });
+  return {
+    code,
+    stdout: Buffer.concat(stdoutChunks).toString("utf8"),
+    stderr: Buffer.concat(stderrChunks).toString("utf8"),
+  };
 }
 
 /** The same, refusing to continue when the program fails. */
@@ -260,7 +272,7 @@ async function waitForSshd(
     );
     if (result.code === 0) return;
     last = result.stderr.trim().split("\n")[0] ?? "";
-    await Bun.sleep(250);
+    await delay(250);
   }
   throw new Error(
     `the fixture sshd did not answer within ${timeoutMs} ms: ${last}`,
@@ -594,7 +606,7 @@ async function status(): Promise<void> {
   );
 }
 
-const command = Bun.argv[2] ?? "";
+const command = process.argv[2] ?? "";
 try {
   if (command === "start") {
     await start();
