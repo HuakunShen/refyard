@@ -1,0 +1,9 @@
+# Staged with @PROOF@ replaced by a path in the test's temporary directory. Every keyword
+# here would run a program if the listing evaluated the configuration instead of reading
+# it: ProxyCommand runs when OpenSSH opens a connection, and Match exec runs whenever
+# OpenSSH tests that match.
+Host exec-probe
+    ProxyCommand touch @PROOF@
+
+Match exec "touch @PROOF@"
+    User root

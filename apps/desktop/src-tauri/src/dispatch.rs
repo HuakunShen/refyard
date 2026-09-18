@@ -13,6 +13,9 @@
 
 use refyard_contract::diff::DiffQuery;
 use refyard_contract::history::HistoryQuery;
+use refyard_contract::host::{
+    ExecutionTargetKind, ExecutionTargetState, ExecutionTargetSummary, HostCapabilities,
+};
 use refyard_contract::problem::{Problem, ProblemCode, ProblemResponse};
 use refyard_host::service::{ApplicationService, StatusQuery, API_MAJOR};
 use serde::{Deserialize, Serialize};
@@ -251,9 +254,12 @@ pub async fn dispatch_read(
     }
 }
 
-/// Runs one host request. Target creation and SSH discovery are not part of this build, and
-/// `capabilities` says so, so a UI that asks for them is refused rather than answered with an
-/// empty list that looks like "this machine has no SSH hosts".
+/// Runs one host request.
+///
+/// SSH discovery answers now, and answers by reading files: it never connects, never runs
+/// `ssh -G` and never evaluates a `Match`, so a list can be offered before any host is
+/// trusted. Target creation is still absent, and `capabilities` says so, so a UI that asks
+/// for it is refused rather than answered with an empty list that looks like an answer.
 pub async fn dispatch_host(
     service: &ApplicationService,
     request: HostRequest,
@@ -261,62 +267,45 @@ pub async fn dispatch_host(
     match request {
         HostRequest::Capabilities => to_value(host_capabilities()),
         HostRequest::Targets => to_value(vec![target_summary(service)]),
+        HostRequest::SshHosts => {
+            let hosts = service.ssh_hosts().await.map_err(failed)?;
+            to_value(hosts)
+        }
         unimplemented => Err(not_implemented(unimplemented.method())),
     }
 }
 
-/// A target kind, as `executionTargetKindSchema` publishes the two values.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum TargetKind {
-    Local,
-    SshConfig,
-}
-
 /// One target a session can run Git against.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ExecutionTargetSummary {
-    pub target_id: String,
-    pub kind: TargetKind,
-    pub label: String,
-    /// `ready` because this answer came from the service that runs the target's Git.
-    pub state: &'static str,
-    /// False for this machine: there is no remote path to browse.
-    pub remote_path_browse: bool,
-    pub generation: String,
-}
-
-/// What this build can do about targets and machines.
-///
-/// `targetKinds` lists only the local target because that is the only provider this build
-/// has. A false here removes a control from the UI; a true would add one that fails.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HostCapabilities {
-    pub ssh_config: bool,
-    pub local_folder_picker: bool,
-    pub uncertain_operation_acknowledgement: bool,
-    pub target_kinds: Vec<TargetKind>,
-}
-
-fn host_capabilities() -> HostCapabilities {
-    HostCapabilities {
-        ssh_config: false,
-        local_folder_picker: false,
-        uncertain_operation_acknowledgement: false,
-        target_kinds: vec![TargetKind::Local],
-    }
-}
-
 fn target_summary(service: &ApplicationService) -> ExecutionTargetSummary {
     ExecutionTargetSummary {
         target_id: service.target_id().to_owned(),
-        kind: TargetKind::Local,
+        kind: ExecutionTargetKind::Local,
         label: "This machine".to_owned(),
-        state: "ready",
+        // `ready` because this answer came from the service that runs the target's Git.
+        state: ExecutionTargetState::Ready,
+        // False for this machine: there is no remote path to browse.
         remote_path_browse: false,
         generation: service.target_generation().to_owned(),
+    }
+}
+
+/// What this process can do about targets and machines.
+///
+/// Two of these are properties of the *service* — whether it reads this machine's SSH
+/// configuration, and which targets it can create — and two are properties of this process:
+/// a folder dialog needs a plugin this build does not link, and no mutation is wired yet, so
+/// nothing can be acknowledged.
+///
+/// `sshConfig` is true because the service enumerates the configuration files. It says
+/// nothing about reaching those hosts: creation and connection arrive with the provider, and
+/// until then `targetKinds` names only the local target, which is what keeps a UI from
+/// offering a control that cannot work.
+fn host_capabilities() -> HostCapabilities {
+    HostCapabilities {
+        ssh_config: true,
+        local_folder_picker: false,
+        uncertain_operation_acknowledgement: false,
+        target_kinds: vec![ExecutionTargetKind::Local],
     }
 }
 

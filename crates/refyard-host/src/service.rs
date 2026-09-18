@@ -26,6 +26,7 @@ use std::sync::Mutex;
 
 use refyard_contract::diff::{DiffQuery, DiffResponse};
 use refyard_contract::history::{HistoryPage, HistoryQuery};
+use refyard_contract::host::SshHostList;
 use refyard_contract::problem::{DetailValue, Problem, ProblemCode};
 use refyard_contract::reads::{
     AllowedRootSummary, CapabilitiesResponse, FilesystemEntriesResponse, GitCapabilities, GitInfo,
@@ -44,6 +45,7 @@ use crate::registry::{
     open_repository, OpenOutcome, OpenRequest, RepositoryRecord, RepositoryRegistry,
 };
 use crate::snapshots::SnapshotStore;
+use crate::ssh::ConfigCatalogue;
 
 /// The contract revision this build serves. It matches `CONTRACT_VERSION` in
 /// `packages/git-contract/src/version.ts`; a mismatch is a bug rather than a feature.
@@ -371,6 +373,19 @@ impl ApplicationService {
         path: Option<&str>,
     ) -> Result<FilesystemEntriesResponse, Problem> {
         reads::filesystem::read_filesystem_entries(path, &self.home).await
+    }
+
+    /// The concrete SSH aliases this machine's own configuration declares.
+    ///
+    /// A read of files and nothing else: no connection, no `ssh -G`, no `Match`
+    /// evaluation, no key, no credential. What comes back is a set of candidates — an
+    /// alias is not a verified machine, and a list marked incomplete is not a claim that
+    /// these are all of them.
+    pub async fn ssh_hosts(&self) -> Result<SshHostList, Problem> {
+        let ssh_directory = self.home.join(".ssh");
+        ConfigCatalogue::new(ssh_directory.join("config"), ssh_directory)
+            .list()
+            .await
     }
 
     /// Working-tree and index state.

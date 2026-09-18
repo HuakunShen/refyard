@@ -5,6 +5,7 @@
     FolderOpen,
     GitBranchPlus,
     ChevronLeft,
+    MonitorSmartphone,
     Search,
     UploadCloud,
   } from "@lucide/svelte";
@@ -18,7 +19,16 @@
     type InitRequest,
     type WorkspaceRoot,
   } from "./RepositoryPanel.svelte";
+  import ExecutionTargetPicker from "./ExecutionTargetPicker.svelte";
   import { cn } from "../lib/utils.js";
+  import {
+    loadTargetOptions,
+    supportsSshTargets,
+    targetSelectionLabel,
+    type ExecutionTargetSelection,
+    type TargetDiscoveryPort,
+    type TargetOptionsLoad,
+  } from "../lib/execution-targets.js";
 
   export interface RecentRepository {
     readonly repositoryId: string;
@@ -41,6 +51,16 @@
     onRecent: (entry: RecentRepository) => void;
     onInit: (request: InitRequest) => void;
     onClone: (request: CloneRequest) => void;
+    /**
+     * The app's injected host service — only its two discovery reads are used, so a
+     * caller without execution-target support simply omits it and the launcher keeps
+     * the local-only shape it had. Passing it does not let the launcher connect to
+     * anything: it can only read capabilities and the SSH host list.
+     */
+    hostService?: TargetDiscoveryPort | null;
+    /** Controlled selection; omit to let the launcher keep the choice itself. */
+    selectedTarget?: ExecutionTargetSelection | null;
+    onSelectTarget?: (target: ExecutionTargetSelection) => void;
   }
 
   let {
@@ -55,6 +75,9 @@
     onRecent,
     onInit,
     onClone,
+    hostService = null,
+    selectedTarget = undefined,
+    onSelectTarget = undefined,
   }: Props = $props();
 
   let mode = $state<"open" | "create">("open");
@@ -65,6 +88,67 @@
   let pickerData = $state<FilesystemEntriesResponse | null>(null);
   let pickerBusy = $state(false);
   let pickerError = $state<string | null>(null);
+  let targetPickerOpen = $state(false);
+  let targetLoad = $state<TargetOptionsLoad | null>(null);
+  let localTargetChoice = $state<ExecutionTargetSelection | null>(null);
+
+  const chosenTarget = $derived(
+    selectedTarget === undefined ? localTargetChoice : selectedTarget,
+  );
+  const chosenTargetLabel = $derived(targetSelectionLabel(chosenTarget));
+  const localTargetChosen = $derived(
+    chosenTarget === null || chosenTarget.kind === "local",
+  );
+  /**
+   * The capability answer decides whether the location control exists at all; a read
+   * that failed hides it rather than offering a control that cannot work. The picker
+   * re-reads this when it opens, so the answer stays the host's, not a cached claim.
+   */
+  const targetControlAvailable = $derived(
+    targetLoad !== null &&
+      targetLoad.capabilities !== null &&
+      supportsSshTargets(targetLoad.capabilities),
+  );
+
+  $effect(() => {
+    const host = hostService;
+    if (host === null) {
+      targetLoad = null;
+      return;
+    }
+    let cancelled = false;
+    void loadTargetOptions(host).then((load) => {
+      if (!cancelled) targetLoad = load;
+    });
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  /**
+   * The picker's own read, performed when it opens: capabilities and the SSH host
+   * list, nothing else. It is the same function the control's gate uses, so the two
+   * cannot drift apart.
+   */
+  async function refreshTargetOptions(): Promise<TargetOptionsLoad> {
+    const host = hostService;
+    if (host === null) {
+      return {
+        kind: "unavailable",
+        capabilities: null,
+        message: "this launcher has no host connection",
+      };
+    }
+    const load = await loadTargetOptions(host);
+    targetLoad = load;
+    return load;
+  }
+
+  function selectTarget(target: ExecutionTargetSelection): void {
+    localTargetChoice = target;
+    onSelectTarget?.(target);
+  }
+
   const filteredRecent = $derived(
     recent.filter((entry) => {
       const needle = query.trim().toLocaleLowerCase();
@@ -144,6 +228,33 @@
   </div>
 
   {#if mode === "open"}
+    {#if targetControlAvailable}
+      <div
+        class="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-panel px-4 py-3"
+        data-testid="execution-target-control"
+      >
+        <span
+          class="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground"
+          >Location</span
+        >
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onclick={() => (targetPickerOpen = true)}
+          {disabled}
+          data-testid="execution-target-open"
+        >
+          <MonitorSmartphone data-icon="inline-start" />{chosenTargetLabel}
+        </Button>
+        {#if !localTargetChosen}
+          <span class="min-w-0 flex-1 text-xs text-muted-foreground">
+            Selected, not connected. This build reads repositories on this
+            machine only.
+          </span>
+        {/if}
+      </div>
+    {/if}
     <form
       class="flex flex-wrap items-end gap-2 rounded-lg border border-border bg-panel p-4"
       onsubmit={(event) => {
@@ -161,10 +272,16 @@
           {disabled}
         />
       </label>
-      <Button type="button" variant="outline" onclick={openPicker} {disabled}
+      <Button
+        type="button"
+        variant="outline"
+        onclick={openPicker}
+        disabled={disabled || !localTargetChosen}
         ><FolderOpen data-icon="inline-start" />Browse</Button
       >
-      <Button type="submit" disabled={disabled || path.trim().length === 0}
+      <Button
+        type="submit"
+        disabled={disabled || path.trim().length === 0 || !localTargetChosen}
         ><FolderOpen data-icon="inline-start" />Open repository</Button
       >
     </form>
@@ -346,3 +463,11 @@
     </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>
+
+{#if hostService !== null}
+  <ExecutionTargetPicker
+    bind:open={targetPickerOpen}
+    loadOptions={refreshTargetOptions}
+    onSelectTarget={selectTarget}
+  />
+{/if}

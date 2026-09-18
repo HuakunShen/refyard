@@ -138,6 +138,7 @@ export {
 } from "./components/RepositoryAccessPanel.svelte";
 export { default as RepositoryPanel } from "./components/RepositoryPanel.svelte";
 export { default as RepositoryLauncher } from "./components/RepositoryLauncher.svelte";
+export { default as ExecutionTargetPicker } from "./components/ExecutionTargetPicker.svelte";
 export { default as RepositoryTabs } from "./components/RepositoryTabs.svelte";
 export type {
   CloneRequest as RepositoryCloneRequest,
@@ -159,6 +160,7 @@ export type { WorkbenchNavItem } from "./components/WorkbenchNav.svelte";
 
 export * from "./lib/format.js";
 export * from "./lib/geometry.js";
+export * from "./lib/execution-targets.js";
 export { cn } from "./lib/utils.js";
 
 export * from "./lib/context-actions.js";

@@ -7,6 +7,7 @@
 
 pub mod diff;
 pub mod history;
+pub mod host;
 pub mod problem;
 pub mod reads;
 pub mod refs;

@@ -546,8 +546,16 @@ async fn the_host_reports_only_the_targets_and_abilities_it_has() {
     )
     .await
     .expect("host capabilities");
-    assert_eq!(capabilities["targetKinds"], json!(["local"]));
-    assert_eq!(capabilities["sshConfig"], json!(false));
+    assert_eq!(
+        capabilities["targetKinds"],
+        json!(["local"]),
+        "no SSH target can be created yet, so the UI must not offer one"
+    );
+    assert_eq!(
+        capabilities["sshConfig"],
+        json!(true),
+        "this host reads SSH configuration, which is a different claim from connecting to it"
+    );
     assert_eq!(capabilities["localFolderPicker"], json!(false));
     assert_eq!(
         capabilities["uncertainOperationAcknowledgement"],
@@ -569,11 +577,19 @@ async fn the_host_reports_only_the_targets_and_abilities_it_has() {
         "a target without a generation would invalidate nothing when it is rebuilt"
     );
 
-    // SSH discovery is not part of this build. An empty list would read as "you have no SSH
-    // hosts", which is a claim about the machine's configuration that this build cannot make.
+    // SSH discovery is a file read, so it answers rather than being refused. The fixture's
+    // home has no `.ssh` directory, and the honest answer to that is an empty list with a
+    // revision — an empty list is not the same claim as "this machine has no SSH hosts".
     let hosts =
-        commands::host_request(&state, MAIN, &session_id, json!({ "method": "sshHosts" })).await;
-    assert_eq!(refusal_code(&hosts), ProblemCode::UnsupportedOperation);
+        commands::host_request(&state, MAIN, &session_id, json!({ "method": "sshHosts" }))
+            .await
+            .expect("lists SSH hosts");
+    assert_eq!(hosts["hosts"], json!([]));
+    assert_eq!(hosts["warnings"], json!([]));
+    assert!(
+        hosts["revision"].as_str().is_some_and(|value| !value.is_empty()),
+        "a list without a revision cannot be told from the next read of the same files"
+    );
 }
 
 #[tokio::test]
@@ -626,4 +642,59 @@ async fn the_local_picker_lists_a_directory_through_the_session() {
     )
     .await;
     assert_eq!(refusal_code(&elsewhere), ProblemCode::UnsupportedOperation);
+}
+
+/// Where the host looks for SSH configuration, taken from the fixture's own environment.
+fn ssh_config_path(fixture: &Fixture) -> PathBuf {
+    let home = fixture
+        .env
+        .iter()
+        .find(|(name, _)| name == "HOME")
+        .map(|(_, value)| value.clone())
+        .expect("the fixture sets HOME");
+    PathBuf::from(home).join(".ssh").join("config")
+}
+
+#[tokio::test]
+async fn the_ssh_list_comes_from_the_home_this_host_runs_git_with() {
+    let fixture = Fixture::new();
+    let state = fixture.state();
+    let (session_id, _) = fixture.open(&state).await;
+
+    let config = ssh_config_path(&fixture);
+    std::fs::create_dir_all(config.parent().expect("the .ssh directory")).expect("create .ssh");
+    std::fs::write(
+        &config,
+        "Host staging\n  HostName staging.invalid\n\nHost *.corp\nHost prod\n",
+    )
+    .expect("write the fixture ssh config");
+
+    let hosts = commands::host_request(&state, MAIN, &session_id, json!({ "method": "sshHosts" }))
+        .await
+        .expect("lists SSH hosts");
+
+    let listed = hosts["hosts"].as_array().expect("hosts");
+    let aliases: Vec<&str> = listed
+        .iter()
+        .map(|host| host["alias"].as_str().expect("alias"))
+        .collect();
+    assert_eq!(
+        aliases,
+        vec!["staging", "prod"],
+        "a wildcard pattern is a rule, not a candidate"
+    );
+    let first = &listed[0];
+    assert!(
+        first["hostId"]
+            .as_str()
+            .expect("hostId")
+            .starts_with("host_"),
+        "an alias is addressed by an id the host minted: {first:?}"
+    );
+    assert!(first["sourceId"]
+        .as_str()
+        .expect("sourceId")
+        .starts_with("source_"));
+    assert_eq!(first["discoveryIncomplete"], json!(false));
+    assert_eq!(hosts["warnings"], json!([]));
 }

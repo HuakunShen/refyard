@@ -35,6 +35,7 @@
     StateBanner,
     cn,
     shortOid,
+    type ExecutionTargetSelection,
   } from "@refyard/git-ui";
   import { FileDiff, FolderGit2, GitBranch, RefreshCw } from "@lucide/svelte";
   import { useQueryClient } from "@tanstack/svelte-query";
@@ -202,6 +203,12 @@
   const repositoryTabs = $state(createRepositoryTabs());
   let launcherOpen = $state(true);
   let recentRepositories = $state<RecentRepository[]>([]);
+  /**
+   * Where the next repository open runs. The page only holds the choice the launcher
+   * reported and passes it back: creating and connecting the target belongs to the
+   * host service, which a later milestone calls with this selection.
+   */
+  let executionTarget = $state<ExecutionTargetSelection | null>(null);
   let recentLoaded = $state(false);
   let launcherRequested = $state(false);
   let knownRepositoryIds = $state<string[]>([]);
@@ -479,6 +486,7 @@
         displayPath: entry.displayPath,
         lastOpenedAt: new Date().toISOString(),
         available: true,
+        ...(executionTarget === null ? {} : { target: executionTarget }),
       });
     }
   });
@@ -506,6 +514,9 @@
   }
 
   function handleRecentRepository(entry: RecentRepository): void {
+    // The entry's own target is what restores a host; the launcher's default stays
+    // Local, so a repository is only ever reopened on the machine it was opened with.
+    executionTarget = entry.target ?? null;
     const existing = repositoryList.find(
       (item) => item.displayPath === entry.displayPath,
     );
@@ -526,6 +537,9 @@
     if (writeController.busy) return;
     launcherRequested = true;
     launcherOpen = true;
+    // Opening the launcher starts on This machine: a host chosen in an earlier visit
+    // is never preselected, and only a recent entry restores its own target.
+    executionTarget = null;
     selectRepository(selection, null);
   }
 
@@ -1040,6 +1054,9 @@
             onRecent={handleRecentRepository}
             onInit={writeController.onRepositoryInit}
             onClone={writeController.onRepositoryClone}
+            hostService={backendSession?.host ?? null}
+            selectedTarget={executionTarget}
+            onSelectTarget={(target) => (executionTarget = target)}
           />
         </section>
       {:else}
