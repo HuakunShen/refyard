@@ -9,7 +9,10 @@
     Search,
     UploadCloud,
   } from "@lucide/svelte";
-  import type { FilesystemEntriesResponse } from "@refyard/git-contract";
+  import type {
+    ExecutionTargetSummary,
+    FilesystemEntriesResponse,
+  } from "@refyard/git-contract";
   import { Badge } from "./ui/badge/index.js";
   import { Button } from "./ui/button/index.js";
   import { Input } from "./ui/input/index.js";
@@ -22,6 +25,7 @@
   import ExecutionTargetPicker from "./ExecutionTargetPicker.svelte";
   import { cn } from "../lib/utils.js";
   import {
+    executionLocationKey,
     loadTargetOptions,
     supportsSshTargets,
     targetSelectionLabel,
@@ -36,6 +40,12 @@
     readonly displayPath: string;
     readonly lastOpenedAt: string;
     readonly available: boolean;
+    /**
+     * The target this entry was opened on, when one was chosen. It is what tells the
+     * same path on two machines apart, and it is part of the list key: two entries that
+     * share a repository id must still be two rows.
+     */
+    readonly target?: ExecutionTargetSelection | null;
   }
 
   interface Props {
@@ -61,6 +71,17 @@
     /** Controlled selection; omit to let the launcher keep the choice itself. */
     selectedTarget?: ExecutionTargetSelection | null;
     onSelectTarget?: (target: ExecutionTargetSelection) => void;
+    /**
+     * What the host reports about the chosen target, once one exists. Its
+     * `remotePathBrowse` is the host's own answer about listing directories on that
+     * machine, which is what the Browse control is disabled with — never replaced by a
+     * listing of this machine's filesystem.
+     */
+    selectedTargetSummary?: ExecutionTargetSummary | null;
+    /** Which step of creating/opening is running, as a sentence for the user. */
+    targetProgress?: string | null;
+    /** The host's own words when a step of the remote open failed. */
+    targetError?: string | null;
   }
 
   let {
@@ -78,6 +99,9 @@
     hostService = null,
     selectedTarget = undefined,
     onSelectTarget = undefined,
+    selectedTargetSummary = null,
+    targetProgress = null,
+    targetError = null,
   }: Props = $props();
 
   let mode = $state<"open" | "create">("open");
@@ -99,6 +123,36 @@
   const localTargetChosen = $derived(
     chosenTarget === null || chosenTarget.kind === "local",
   );
+  /**
+   * The path field means different things per target, and the difference is not
+   * cosmetic: this machine's path is resolved and browsed by the host here, a remote
+   * path belongs to a machine this one cannot list. The two never share a Browse.
+   */
+  const remoteTargetChosen = $derived(!localTargetChosen);
+  const pathFieldLabel = $derived(
+    remoteTargetChosen ? "Remote repository path" : "Local repository path",
+  );
+  const pathFieldPlaceholder = $derived(
+    remoteTargetChosen
+      ? "/absolute/path/on/that/machine"
+      : "/absolute/path/to/repository",
+  );
+  /**
+   * Why Browse cannot be used for this target. The host's own answer is quoted when it
+   * has one; otherwise the limit is this build's, and it says so instead of implying
+   * the host refused.
+   */
+  const remoteBrowseReason = $derived.by(() => {
+    if (!remoteTargetChosen) return null;
+    if (
+      selectedTargetSummary !== null &&
+      !selectedTargetSummary.remotePathBrowse
+    ) {
+      return `The host reports it cannot list directories on ${chosenTargetLabel}, so there is nothing to browse; type the path to open there.`;
+    }
+    return `This build does not browse directories on ${chosenTargetLabel}; type the path to open there.`;
+  });
+  const openPending = $derived(remoteTargetChosen && targetProgress !== null);
   /**
    * The capability answer decides whether the location control exists at all; a read
    * that failed hides it rather than offering a control that cannot work. The picker
@@ -145,6 +199,10 @@
   }
 
   function selectTarget(target: ExecutionTargetSelection): void {
+    // A path typed for one machine means nothing on the other; carrying it over would
+    // offer to open a path the user never chose there.
+    const crossesMachines = !localTargetChosen !== (target.kind !== "local");
+    if (crossesMachines) path = "";
     localTargetChoice = target;
     onSelectTarget?.(target);
   }
@@ -179,6 +237,9 @@
   }
 
   function openPicker(): void {
+    // The dialog lists the host's own machine. For a remote target it must never open,
+    // however it was reached: a directory listing here is not a listing there.
+    if (remoteTargetChosen) return;
     pickerOpen = true;
     void browse(path.trim().length > 0 ? path.trim() : "~");
   }
@@ -247,27 +308,46 @@
         >
           <MonitorSmartphone data-icon="inline-start" />{chosenTargetLabel}
         </Button>
-        {#if !localTargetChosen}
-          <span class="min-w-0 flex-1 text-xs text-muted-foreground">
-            Selected, not connected. This build reads repositories on this
-            machine only.
+        {#if remoteTargetChosen}
+          <span
+            class="min-w-0 flex-1 text-xs text-muted-foreground"
+            data-testid="execution-target-note"
+          >
+            Repositories open on {chosenTargetLabel}; that machine resolves the
+            path, so nothing is checked against this machine's filesystem.
           </span>
         {/if}
       </div>
+    {/if}
+    {#if targetError !== null}
+      <p
+        class="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger"
+        data-testid="launcher-target-error"
+      >
+        {targetError}
+      </p>
+    {/if}
+    {#if targetProgress !== null}
+      <p
+        class="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground"
+        data-testid="launcher-target-progress"
+      >
+        {targetProgress}…
+      </p>
     {/if}
     <form
       class="flex flex-wrap items-end gap-2 rounded-lg border border-border bg-panel p-4"
       onsubmit={(event) => {
         event.preventDefault();
-        if (path.trim().length > 0) onOpen(path.trim());
+        if (path.trim().length > 0 && !openPending) onOpen(path.trim());
       }}
     >
       <label class="min-w-64 flex-1 text-xs font-medium" for="launcher-path"
-        >Local repository path
+        >{pathFieldLabel}
         <Input
           id="launcher-path"
           class="mt-1"
-          placeholder="/absolute/path/to/repository"
+          placeholder={pathFieldPlaceholder}
           bind:value={path}
           {disabled}
         />
@@ -276,14 +356,25 @@
         type="button"
         variant="outline"
         onclick={openPicker}
-        disabled={disabled || !localTargetChosen}
+        disabled={disabled || remoteTargetChosen}
+        title={remoteBrowseReason ?? undefined}
+        data-testid="launcher-browse"
         ><FolderOpen data-icon="inline-start" />Browse</Button
       >
       <Button
         type="submit"
-        disabled={disabled || path.trim().length === 0 || !localTargetChosen}
+        disabled={disabled || path.trim().length === 0 || openPending}
+        data-testid="launcher-open"
         ><FolderOpen data-icon="inline-start" />Open repository</Button
       >
+      {#if remoteBrowseReason !== null}
+        <p
+          class="basis-full text-xs text-muted-foreground"
+          data-testid="launcher-remote-browse-note"
+        >
+          {remoteBrowseReason}
+        </p>
+      {/if}
     </form>
   {:else if roots.length > 0}
     <div class="rounded-lg border border-border bg-panel p-4">
@@ -330,7 +421,7 @@
       </p>
     {:else}
       <div class="grid gap-1">
-        {#each filteredRecent as entry (entry.repositoryId)}
+        {#each filteredRecent as entry (executionLocationKey(entry.target, entry.displayPath))}
           <button
             type="button"
             class={cn(

@@ -26,6 +26,10 @@
 
 use std::path::{Path, PathBuf};
 
+use refyard_contract::diff::{DiffKind, DiffQuery};
+use refyard_contract::history::HistoryQuery;
+use refyard_contract::host::{ExecutionTargetKind, ExecutionTargetState};
+use refyard_contract::problem::ProblemCode;
 use refyard_core::parse::cat_file::{CatFileDecoder, CatFileEntry, CatFileObjectType};
 use refyard_core::parse::meta::parse_rev_list_topology;
 use refyard_core::parse::status::{parse_status, StatusRecordKind};
@@ -35,7 +39,9 @@ use refyard_core::plan::status::{plan_head_oid, plan_status, StatusOptions};
 use refyard_host::process::RunOutcome;
 use refyard_host::providers::local::LocalGit;
 use refyard_host::providers::ssh::SshGit;
+use refyard_host::service::{ApplicationService, ApplicationServiceConfig, StatusQuery};
 use refyard_host::ssh::openssh;
+use refyard_host::targets::CreateTargetRequest;
 
 /// The file whose name carries an apostrophe and spaces: the quoting layer's end-to-end case.
 const PUNCTUATED_PATH: &str = "weird 'quoted' name.txt";
@@ -51,15 +57,22 @@ struct Fixture {
 }
 
 impl Fixture {
-    /// Reads the state file the fixture wrote, or explains how to produce one.
-    fn load() -> Self {
+    /// Reads the state file the fixture wrote, or skips the case with a clear message.
+    ///
+    /// A fixture that is absent or stopped is an environment a case cannot run in, not a
+    /// product failure: failing here would report the absence of a container as a broken
+    /// transport. The state file survives `stop` on purpose (its keys and local copy are
+    /// reused), so liveness is checked by connecting to the address the fixture published —
+    /// a refusal or a timeout means nothing is listening, and the case skips.
+    fn load_or_skip() -> Option<Self> {
         let path = state_path();
-        let text = std::fs::read_to_string(&path).unwrap_or_else(|error| {
-            panic!(
-                "no SSH fixture state at {}: {error}\nstart it with `pnpm native:ssh:fixture -- start`",
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            eprintln!(
+                "skipping: no SSH fixture state at {}; start it with `pnpm native:ssh:fixture -- start`",
                 path.display()
-            )
-        });
+            );
+            return None;
+        };
         let state: serde_json::Value =
             serde_json::from_str(&text).expect("the fixture state is JSON");
         let field = |name: &str| -> String {
@@ -69,15 +82,43 @@ impl Fixture {
                 .unwrap_or_else(|| panic!("the fixture state has no {name}"))
                 .to_string()
         };
-        Self {
+        let fixture = Self {
             alias: field("alias"),
             config_file: PathBuf::from(field("config_file")),
             home: PathBuf::from(field("home")),
             repo_path: field("repo_path"),
             local_repo_path: PathBuf::from(field("local_repo_path")),
             known_hosts: PathBuf::from(field("known_hosts")),
+        };
+        let host = field("host");
+        let port = state.get("port").and_then(serde_json::Value::as_u64);
+        if !fixture_is_listening(&host, port) {
+            eprintln!(
+                "skipping: nothing is listening at {host}:{} (fixture state exists but the container is stopped); start it with `pnpm native:ssh:fixture -- start`",
+                port.map(|value| value.to_string()).unwrap_or_else(|| "?".to_string())
+            );
+            return None;
         }
+        Some(fixture)
     }
+}
+
+/// Whether the fixture's published port accepts a connection.
+///
+/// A TCP check rather than an SSH one: it needs no key, no configuration and no host key,
+/// and it answers exactly the question "is the container still running".
+fn fixture_is_listening(host: &str, port: Option<u64>) -> bool {
+    let Ok(address) = host.parse::<std::net::IpAddr>() else {
+        return false;
+    };
+    let Some(port) = port.and_then(|value| u16::try_from(value).ok()) else {
+        return false;
+    };
+    std::net::TcpStream::connect_timeout(
+        &std::net::SocketAddr::new(address, port),
+        std::time::Duration::from_millis(500),
+    )
+    .is_ok()
 }
 
 /// The state file, from `REFYARD_SSH_FIXTURE_STATE` or the workspace's own `target/`.
@@ -189,7 +230,9 @@ async fn remote_head(provider: &SshGit, fixture: &Fixture) -> String {
 #[tokio::test]
 #[ignore = "requires the docker fixture: pnpm native:ssh:fixture -- start"]
 async fn the_remote_repository_opens_and_probes_with_the_same_parsers_as_a_local_one() {
-    let fixture = Fixture::load();
+    let Some(fixture) = Fixture::load_or_skip() else {
+        return;
+    };
     let provider = remote_provider(&fixture);
 
     let facts = provider
@@ -224,7 +267,9 @@ async fn the_remote_repository_opens_and_probes_with_the_same_parsers_as_a_local
 #[tokio::test]
 #[ignore = "requires the docker fixture: pnpm native:ssh:fixture -- start"]
 async fn status_over_ssh_is_byte_identical_to_the_local_run_on_the_same_repository() {
-    let fixture = Fixture::load();
+    let Some(fixture) = Fixture::load_or_skip() else {
+        return;
+    };
     let provider = remote_provider(&fixture);
     let home = local_home();
     let plan = plan_status(StatusOptions::default());
@@ -263,7 +308,9 @@ async fn status_over_ssh_is_byte_identical_to_the_local_run_on_the_same_reposito
 #[tokio::test]
 #[ignore = "requires the docker fixture: pnpm native:ssh:fixture -- start"]
 async fn history_over_ssh_is_byte_identical_to_the_local_run_on_the_same_repository() {
-    let fixture = Fixture::load();
+    let Some(fixture) = Fixture::load_or_skip() else {
+        return;
+    };
     let provider = remote_provider(&fixture);
     let home = local_home();
     let tip = remote_head(&provider, &fixture).await;
@@ -295,7 +342,9 @@ async fn history_over_ssh_is_byte_identical_to_the_local_run_on_the_same_reposit
 #[tokio::test]
 #[ignore = "requires the docker fixture: pnpm native:ssh:fixture -- start"]
 async fn diffs_over_ssh_are_byte_identical_to_the_local_run_including_a_quoted_path_argument() {
-    let fixture = Fixture::load();
+    let Some(fixture) = Fixture::load_or_skip() else {
+        return;
+    };
     let provider = remote_provider(&fixture);
     let home = local_home();
     let local = local_git(home.path());
@@ -330,7 +379,9 @@ async fn diffs_over_ssh_are_byte_identical_to_the_local_run_including_a_quoted_p
 #[tokio::test]
 #[ignore = "requires the docker fixture: pnpm native:ssh:fixture -- start"]
 async fn cat_file_batch_over_ssh_frames_the_objects_its_stdin_named() {
-    let fixture = Fixture::load();
+    let Some(fixture) = Fixture::load_or_skip() else {
+        return;
+    };
     let provider = remote_provider(&fixture);
     let home = local_home();
     let tip = remote_head(&provider, &fixture).await;
@@ -380,7 +431,9 @@ async fn a_cancelled_attempt_stops_the_local_ssh_and_reports_cancelled() {
     use refyard_host::process::cancellation;
     use refyard_host::process::{ExecutionState, TerminationReason};
 
-    let fixture = Fixture::load();
+    let Some(fixture) = Fixture::load_or_skip() else {
+        return;
+    };
     let provider = remote_provider(&fixture);
     let (handle, signal) = cancellation();
     // Cancelled before the attempt starts: the deadline branch of the runner resolves on
@@ -402,7 +455,9 @@ async fn an_expired_attempt_deadline_kills_the_local_ssh_rather_than_waiting_for
     use refyard_host::ssh::connection::SshConnection;
     use refyard_host::ssh::quote::remote_git_command;
 
-    let fixture = Fixture::load();
+    let Some(fixture) = Fixture::load_or_skip() else {
+        return;
+    };
     let connection = SshConnection::with_config_file(
         openssh::discover().expect("ssh is installed on this machine"),
         fixture_environment(&fixture.home),
@@ -436,7 +491,9 @@ async fn an_expired_attempt_deadline_kills_the_local_ssh_rather_than_waiting_for
 #[tokio::test]
 #[ignore = "requires the docker fixture: pnpm native:ssh:fixture -- start"]
 async fn a_host_key_that_does_not_match_what_the_client_knows_is_refused() {
-    let fixture = Fixture::load();
+    let Some(fixture) = Fixture::load_or_skip() else {
+        return;
+    };
     let scratch = tempfile::tempdir().expect("a temporary directory");
     let ssh_dir = scratch.path().join(".ssh");
     std::fs::create_dir_all(&ssh_dir).expect("create the scratch .ssh");
@@ -519,7 +576,9 @@ async fn the_machines_openssh_accepts_the_fixed_option_set() {
 #[test]
 #[ignore = "requires the docker fixture: pnpm native:ssh:fixture -- start"]
 fn the_fixture_client_files_exist_and_the_key_is_private() {
-    let fixture = Fixture::load();
+    let Some(fixture) = Fixture::load_or_skip() else {
+        return;
+    };
     assert!(fixture.config_file.is_file(), "{:?}", fixture.config_file);
     assert!(fixture.known_hosts.is_file(), "{:?}", fixture.known_hosts);
     assert!(fixture.home.is_dir(), "{:?}", fixture.home);
@@ -539,4 +598,420 @@ fn the_fixture_client_files_exist_and_the_key_is_private() {
             "the fixture's private key is readable by other users"
         );
     }
+}
+
+/// A service whose local target is this machine's Git under the fixture's scratch home,
+/// and whose SSH execution reads the fixture's configuration source with the fixture's own
+/// environment: no agent, its own home, its own known_hosts.
+///
+/// The environment has to be stated rather than inherited: the process's own `HOME` and
+/// `SSH_AUTH_SOCK` would make these cases depend on the developer's setup.
+fn fixture_service(fixture: &Fixture) -> ApplicationService {
+    ApplicationService::new(ApplicationServiceConfig {
+        git: local_git(&fixture.home),
+        service_instance_id: "srvc_ssh_fixture".to_string(),
+        target_id: "tgt_local".to_string(),
+        target_generation: "gen_1".to_string(),
+        home: fixture.home.clone(),
+    })
+    .with_ssh_config_file(fixture.config_file.clone())
+    .with_ssh_environment(fixture_environment(&fixture.home))
+}
+
+/// Replaces the values a service mints — repositories, snapshots, cursors, path ids and the
+/// read timestamp — with one placeholder, recursively.
+///
+/// Two repositories are two identities even when their bytes are the same, so these values
+/// cannot be equal across the two answers; everything else can and must be. The raw
+/// transport bytes are compared directly in the other cases in this file; this helper is for
+/// comparing the answers a client would receive.
+fn mask_service_ids(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, entry) in map.iter_mut() {
+                match key.as_str() {
+                    "repositoryId" | "snapshotId" | "readAt" | "pathId" | "oldPathId"
+                    | "nextCursor" => {
+                        *entry = serde_json::Value::String("<minted>".to_string());
+                    }
+                    _ => mask_service_ids(entry),
+                }
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                mask_service_ids(item);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Both answers as masked JSON values, ready to compare.
+fn masked<T: serde::Serialize>(value: &T) -> serde_json::Value {
+    let mut json = serde_json::to_value(value).expect("a contract DTO serializes");
+    mask_service_ids(&mut json);
+    json
+}
+
+#[tokio::test]
+#[ignore = "requires the docker fixture: pnpm native:ssh:fixture -- start"]
+async fn an_ssh_target_is_created_from_the_catalogue_and_probes_ready() {
+    let Some(fixture) = Fixture::load_or_skip() else {
+        return;
+    };
+    let service = fixture_service(&fixture);
+
+    // The alias the fixture's configuration declares is what the picker offers; the target
+    // is created from that candidate, never from a name supplied by the caller of this test.
+    let hosts = service
+        .ssh_hosts()
+        .await
+        .expect("the fixture config listing");
+    let candidate = hosts
+        .hosts
+        .iter()
+        .find(|candidate| candidate.alias == fixture.alias)
+        .expect("the fixture alias is in its own config");
+    assert!(
+        !candidate.discovery_incomplete,
+        "the fixture config is fully enumerable"
+    );
+
+    let created = service
+        .create_target(CreateTargetRequest::SshConfig {
+            host_id: candidate.host_id.clone(),
+        })
+        .await
+        .expect("creating the target is not an error, even when the probe fails");
+    assert_eq!(created.state, ExecutionTargetState::Ready);
+    assert_eq!(created.kind, ExecutionTargetKind::SshConfig);
+    assert_eq!(created.label, fixture.alias);
+    assert!(
+        !created.remote_path_browse,
+        "this build browses no remote path"
+    );
+    assert_eq!(
+        created.target_id,
+        refyard_host::targets::ssh_target_id(&candidate.source_id, &fixture.alias),
+        "the id is a function of the source and the alias, not of the moment"
+    );
+
+    // Asking again re-probes the same host; nothing changed, so it is the same build and
+    // the same generation, and a client's snapshots are not invalidated for no reason.
+    let again = service
+        .create_target(CreateTargetRequest::SshConfig {
+            host_id: candidate.host_id.clone(),
+        })
+        .await
+        .expect("re-created");
+    assert_eq!(created, again);
+    assert!(service.target_problem(&created.target_id).is_none());
+
+    // The target the service lists carries the same row.
+    let listed = service
+        .targets()
+        .into_iter()
+        .find(|summary| summary.target_id == created.target_id)
+        .expect("the created target is listed");
+    assert_eq!(listed, created);
+}
+
+#[tokio::test]
+#[ignore = "requires the docker fixture: pnpm native:ssh:fixture -- start"]
+async fn a_remote_repository_reads_through_the_service_as_the_local_copy_does() {
+    let Some(fixture) = Fixture::load_or_skip() else {
+        return;
+    };
+    let service = fixture_service(&fixture);
+    let hosts = service
+        .ssh_hosts()
+        .await
+        .expect("the fixture config listing");
+    let candidate = hosts
+        .hosts
+        .iter()
+        .find(|candidate| candidate.alias == fixture.alias)
+        .expect("the fixture alias");
+    let target = service
+        .create_target(CreateTargetRequest::SshConfig {
+            host_id: candidate.host_id.clone(),
+        })
+        .await
+        .expect("target created");
+    assert_eq!(
+        target.state,
+        ExecutionTargetState::Ready,
+        "the fixture host must probe ready for this comparison to mean anything"
+    );
+
+    // The remote repository is opened on the SSH target, and the byte-for-byte local copy
+    // of the same repository on the local target. One service, one set of parsers.
+    let remote = service
+        .register_repository_on(&fixture.repo_path, Some(&target.target_id))
+        .await
+        .expect("the remote repository opens");
+    let remote_id = remote
+        .repositories
+        .iter()
+        .find(|summary| summary.target_id.as_deref() == Some(target.target_id.as_str()))
+        .expect("the remote repository row")
+        .repository_id
+        .clone();
+    let local_path = fixture.local_repo_path.to_str().expect("a UTF-8 path");
+    let local = service
+        .register_repository(local_path)
+        .await
+        .expect("the local copy opens");
+    let local_id = local
+        .repositories
+        .iter()
+        .find(|summary| summary.repository_id != remote_id)
+        .expect("the local repository row")
+        .repository_id
+        .clone();
+
+    // Status: the same entries from both transports, with only the minted ids masked.
+    let remote_status = service
+        .status(&StatusQuery::new(&remote_id))
+        .await
+        .expect("status over ssh");
+    let local_status = service
+        .status(&StatusQuery::new(&local_id))
+        .await
+        .expect("status locally");
+    assert_eq!(
+        masked(&remote_status),
+        masked(&local_status),
+        "the transport changed the status a client sees"
+    );
+    assert_eq!(
+        remote_status.entries.len(),
+        3,
+        "two modified, one untracked"
+    );
+
+    // History: the same page of the same two commits.
+    let query = |repository_id: &str| HistoryQuery {
+        repository_id: repository_id.to_string(),
+        worktree_id: None,
+        cursor: None,
+        limit: None,
+        detail_oid: None,
+        first_parent_only: None,
+        message: None,
+        author: None,
+        oid_prefix: None,
+        ref_full_name: None,
+        committed_after: None,
+        committed_before: None,
+        path_id: None,
+    };
+    let remote_history = service
+        .history(&query(&remote_id))
+        .await
+        .expect("history over ssh");
+    let local_history = service
+        .history(&query(&local_id))
+        .await
+        .expect("history locally");
+    assert_eq!(
+        masked(&remote_history),
+        masked(&local_history),
+        "the transport changed the history a client sees"
+    );
+    assert_eq!(remote_history.commits.len(), 2);
+    assert!(
+        remote_history.commits[0]
+            .subject
+            .contains("fixture: second content"),
+        "the remote commit body did not survive the transport"
+    );
+
+    // Diff: the same changed files, with the same counts.
+    let diff_query = |repository_id: &str| DiffQuery {
+        repository_id: repository_id.to_string(),
+        worktree_id: None,
+        kind: DiffKind::Unstaged,
+        oid: None,
+        from: None,
+        to: None,
+        path_id: None,
+        max_bytes: None,
+    };
+    let remote_diff = service
+        .diff(&diff_query(&remote_id))
+        .await
+        .expect("diff over ssh");
+    let local_diff = service
+        .diff(&diff_query(&local_id))
+        .await
+        .expect("diff locally");
+    assert_eq!(
+        masked(&remote_diff),
+        masked(&local_diff),
+        "the transport changed the diff a client sees"
+    );
+    assert_eq!(remote_diff.stats.files_changed, 2);
+    assert!(remote_diff
+        .files
+        .iter()
+        .any(|file| file.display_path == PUNCTUATED_PATH));
+
+    // A path id minted by the remote read resolves, and is what a patch request names: the
+    // two-step flow a client performs, over the target seam.
+    let punctuated = remote_diff
+        .files
+        .iter()
+        .find(|file| file.display_path == PUNCTUATED_PATH)
+        .expect("the punctuated path is in the change set");
+    let patch = service
+        .diff(&DiffQuery {
+            path_id: Some(punctuated.path_id.clone()),
+            ..diff_query(&remote_id)
+        })
+        .await
+        .expect("a patch for the remote path id");
+    assert!(
+        patch
+            .files
+            .iter()
+            .any(|file| file.display_path == PUNCTUATED_PATH),
+        "the path id resolved to the file it was minted for"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires the docker fixture: pnpm native:ssh:fixture -- start"]
+async fn disconnecting_the_ssh_target_leaves_the_local_target_reading() {
+    let Some(fixture) = Fixture::load_or_skip() else {
+        return;
+    };
+    let service = fixture_service(&fixture);
+    let hosts = service
+        .ssh_hosts()
+        .await
+        .expect("the fixture config listing");
+    let candidate = hosts
+        .hosts
+        .iter()
+        .find(|candidate| candidate.alias == fixture.alias)
+        .expect("the fixture alias");
+    let target = service
+        .create_target(CreateTargetRequest::SshConfig {
+            host_id: candidate.host_id.clone(),
+        })
+        .await
+        .expect("target created");
+    let remote = service
+        .register_repository_on(&fixture.repo_path, Some(&target.target_id))
+        .await
+        .expect("the remote repository opens");
+    let remote_id = remote
+        .repositories
+        .iter()
+        .find(|summary| summary.target_id.as_deref() == Some(target.target_id.as_str()))
+        .expect("the remote row")
+        .repository_id
+        .clone();
+    let local = service
+        .register_repository(fixture.local_repo_path.to_str().expect("a UTF-8 path"))
+        .await
+        .expect("the local copy opens");
+    let local_id = local
+        .repositories
+        .iter()
+        .find(|summary| summary.repository_id != remote_id)
+        .expect("the local row")
+        .repository_id
+        .clone();
+
+    service
+        .disconnect_target(&target.target_id)
+        .expect("the SSH target is dropped");
+    assert!(service
+        .targets()
+        .iter()
+        .all(|summary| summary.target_id != target.target_id));
+    let problem = service
+        .status(&StatusQuery::new(&remote_id))
+        .await
+        .expect_err("the remote repository went with its target");
+    assert_eq!(problem.code, ProblemCode::NotFound);
+    service
+        .status(&StatusQuery::new(&local_id))
+        .await
+        .expect("the local repository is untouched");
+}
+
+#[tokio::test]
+#[ignore = "requires this machine's own OpenSSH; no fixture container is needed"]
+async fn a_target_whose_probe_fails_is_answered_unavailable_with_its_reason() {
+    let Some(ssh) = openssh::discover().ok() else {
+        eprintln!("skipping: this machine has no ssh");
+        return;
+    };
+    let _ = ssh;
+
+    // A configuration source that names a port nothing listens on: the probe cannot
+    // connect, which is exactly the state a client must be shown next to the target rather
+    // than as an error that loses it.
+    let scratch = tempfile::tempdir().expect("a temporary directory");
+    let ssh_dir = scratch.path().join(".ssh");
+    std::fs::create_dir_all(&ssh_dir).expect("create the scratch .ssh");
+    std::fs::write(
+        ssh_dir.join("config"),
+        "Host probe-fails\n  HostName 127.0.0.1\n  Port 1\n  User nobody\n",
+    )
+    .expect("write the scratch config");
+
+    let service = ApplicationService::new(ApplicationServiceConfig {
+        git: LocalGit::discover().expect("git is installed on this machine"),
+        service_instance_id: "srvc_ssh_probe".to_string(),
+        target_id: "tgt_local".to_string(),
+        target_generation: "gen_1".to_string(),
+        home: scratch.path().to_path_buf(),
+    });
+    let hosts = service
+        .ssh_hosts()
+        .await
+        .expect("the scratch config listing");
+    let candidate = hosts
+        .hosts
+        .iter()
+        .find(|candidate| candidate.alias == "probe-fails")
+        .expect("the scratch alias");
+
+    let created = service
+        .create_target(CreateTargetRequest::SshConfig {
+            host_id: candidate.host_id.clone(),
+        })
+        .await
+        .expect("an unreachable host is an unavailable target, not an error");
+    assert_eq!(created.state, ExecutionTargetState::Unavailable);
+    let problem = service
+        .target_problem(&created.target_id)
+        .expect("the failure is kept beside the target");
+    assert_eq!(problem.code, ProblemCode::Unavailable);
+    assert!(
+        !problem.message.is_empty(),
+        "the failure must be able to explain itself"
+    );
+
+    // The same probe answer gives the same generation; a different answer would not.
+    let again = service
+        .create_target(CreateTargetRequest::SshConfig {
+            host_id: candidate.host_id.clone(),
+        })
+        .await
+        .expect("re-created");
+    assert_eq!(created, again);
+
+    // Registering a repository on an unavailable target is refused with the reason.
+    let refused = service
+        .register_repository_on("/srv/whatever", Some(&created.target_id))
+        .await
+        .expect_err("an unavailable target cannot be opened");
+    assert_eq!(refused.code, ProblemCode::Unavailable);
+    assert!(refused.message.contains("probe-fails"));
 }

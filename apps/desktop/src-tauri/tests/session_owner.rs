@@ -548,8 +548,9 @@ async fn the_host_reports_only_the_targets_and_abilities_it_has() {
     .expect("host capabilities");
     assert_eq!(
         capabilities["targetKinds"],
-        json!(["local"]),
-        "no SSH target can be created yet, so the UI must not offer one"
+        json!(["local", "ssh-config"]),
+        "both kinds can be created, and a UI that offers an SSH target gets an answer \
+         either way: a probe that fails is a target reported `unavailable`, not an error"
     );
     assert_eq!(
         capabilities["sshConfig"],
@@ -580,15 +581,114 @@ async fn the_host_reports_only_the_targets_and_abilities_it_has() {
     // SSH discovery is a file read, so it answers rather than being refused. The fixture's
     // home has no `.ssh` directory, and the honest answer to that is an empty list with a
     // revision — an empty list is not the same claim as "this machine has no SSH hosts".
-    let hosts =
-        commands::host_request(&state, MAIN, &session_id, json!({ "method": "sshHosts" }))
-            .await
-            .expect("lists SSH hosts");
+    let hosts = commands::host_request(&state, MAIN, &session_id, json!({ "method": "sshHosts" }))
+        .await
+        .expect("lists SSH hosts");
     assert_eq!(hosts["hosts"], json!([]));
     assert_eq!(hosts["warnings"], json!([]));
     assert!(
-        hosts["revision"].as_str().is_some_and(|value| !value.is_empty()),
+        hosts["revision"]
+            .as_str()
+            .is_some_and(|value| !value.is_empty()),
         "a list without a revision cannot be told from the next read of the same files"
+    );
+}
+
+#[tokio::test]
+async fn creating_and_dropping_targets_goes_through_the_host_and_refuses_what_it_cannot_do() {
+    let fixture = Fixture::new();
+    let state = fixture.state();
+    let (session_id, _) = fixture.open(&state).await;
+
+    // The local target is the service's own machine: asking for it answers with it, and the
+    // answer is the same one `targets` lists.
+    let local = commands::host_request(
+        &state,
+        MAIN,
+        &session_id,
+        json!({ "method": "createTarget", "request": { "kind": "local" } }),
+    )
+    .await
+    .expect("creates the local target");
+    assert_eq!(local["kind"], json!("local"));
+    assert_eq!(local["state"], json!("ready"));
+    assert_eq!(
+        local["targetId"],
+        json!(state.service.target_id()),
+        "the local target is the one every read in this service runs against"
+    );
+
+    // The local target is not a connection, so there is nothing to release.
+    let disconnect_local = commands::host_request(
+        &state,
+        MAIN,
+        &session_id,
+        json!({ "method": "disconnectTarget", "targetId": state.service.target_id() }),
+    )
+    .await;
+    assert_eq!(
+        refusal_code(&disconnect_local),
+        ProblemCode::UnsupportedOperation
+    );
+
+    let disconnect_unknown = commands::host_request(
+        &state,
+        MAIN,
+        &session_id,
+        json!({ "method": "disconnectTarget", "targetId": "tgt_none" }),
+    )
+    .await;
+    assert_eq!(refusal_code(&disconnect_unknown), ProblemCode::NotFound);
+
+    // The fixture's home has no SSH configuration yet, so a host id it did not list is a
+    // not-found: a target is never created from an id the caller made up.
+    let unknown_host = commands::host_request(
+        &state,
+        MAIN,
+        &session_id,
+        json!({
+            "method": "createTarget",
+            "request": { "kind": "ssh-config", "hostId": "host_none" }
+        }),
+    )
+    .await;
+    assert_eq!(refusal_code(&unknown_host), ProblemCode::NotFound);
+
+    // The contract allows an alias typed by hand; this host refuses it by name, because it
+    // cannot tell which configuration source that alias belongs to.
+    let typed_by_hand = commands::host_request(
+        &state,
+        MAIN,
+        &session_id,
+        json!({
+            "method": "createTarget",
+            "request": { "kind": "ssh-config", "sourceId": "source_1", "manualAlias": "prod" }
+        }),
+    )
+    .await;
+    assert_eq!(
+        refusal_code(&typed_by_hand),
+        ProblemCode::UnsupportedOperation
+    );
+
+    // A request whose shape the contract does not publish is an invalid request, not a
+    // target: the two refusals are different claims.
+    let malformed = commands::host_request(
+        &state,
+        MAIN,
+        &session_id,
+        json!({ "method": "createTarget", "request": { "kind": "ssh-config" } }),
+    )
+    .await;
+    assert_eq!(refusal_code(&malformed), ProblemCode::InvalidRequest);
+
+    let targets = commands::host_request(&state, MAIN, &session_id, json!({ "method": "targets" }))
+        .await
+        .expect("targets");
+    assert_eq!(
+        targets.as_array().expect("targets is a list").len(),
+        1,
+        "none of the refusals above may leave a target behind"
     );
 }
 
@@ -621,7 +721,9 @@ async fn the_local_picker_lists_a_directory_through_the_session() {
     assert_eq!(listed["truncated"], json!(false));
     let entries = listed["entries"].as_array().expect("entries");
     assert!(
-        entries.iter().any(|entry| entry["kind"] == json!("repository")),
+        entries
+            .iter()
+            .any(|entry| entry["kind"] == json!("repository")),
         "the fixture repository is offered as a repository: {entries:?}"
     );
     assert!(

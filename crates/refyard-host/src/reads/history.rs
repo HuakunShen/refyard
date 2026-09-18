@@ -50,7 +50,7 @@ use refyard_core::plan::refs::plan_cat_file_exists;
 
 use crate::clock::format_iso8601_millis;
 use crate::paths::decode_text;
-use crate::providers::local::LocalGit;
+use crate::providers::GitExecutor;
 use crate::reads::refs::{object_format_of, read_ref_facts};
 use crate::reads::{parse_error, read_head_state, require_worktree, run_required, ReadError};
 use crate::registry::RepositoryRecord;
@@ -83,24 +83,35 @@ const HISTORY_FILTERS: [&str; 7] = [
 
 /// Reads one page of history.
 pub async fn read_history(
-    git: &LocalGit,
+    runs: &GitExecutor,
     record: &RepositoryRecord,
     snapshots: &SnapshotStore,
     query: &HistoryQuery,
+    // The build of the target this call runs against. A cursor minted for another build
+    // is refused rather than continued.
+    target_generation: &str,
     read_at: &str,
 ) -> Result<HistoryPage, ReadError> {
     let worktree_id = require_worktree(record, query.worktree_id.as_deref())?;
     let (limit, snapshot, skip) = match &query.cursor {
-        Some(cursor) => resolve_continuation(snapshots, query, record, &worktree_id, cursor)?,
+        Some(cursor) => resolve_continuation(
+            snapshots,
+            query,
+            record,
+            &worktree_id,
+            cursor,
+            target_generation,
+        )?,
         None => {
             validate_new_query(query)?;
-            let facts = read_ref_facts(git, record).await?;
-            let head = read_head_state(git, record).await?;
+            let facts = read_ref_facts(runs, record).await?;
+            let head = read_head_state(runs, record).await?;
             let tips = collect_tips(&head, &facts.refs);
             let snapshot = snapshots.mint(SnapshotRequest {
                 kind: SnapshotKind::History,
                 repository_id: &record.repository_id,
                 worktree_id: Some(&worktree_id),
+                target_generation,
                 tips,
                 head_oid: head.oid.clone(),
                 observed_refs_fingerprint: Some(observed_refs_fingerprint(&head, &facts.refs)),
@@ -128,13 +139,13 @@ pub async fn read_history(
 
     // The refs are read again for decoration and for the moved-tip check, exactly as the
     // reference does: decoration must come from the state this page was served from.
-    let facts = read_ref_facts(git, record).await?;
-    let head = read_head_state(git, record).await?;
+    let facts = read_ref_facts(runs, record).await?;
+    let head = read_head_state(runs, record).await?;
     let observed = observed_refs_fingerprint(&head, &facts.refs);
     let tips_moved = snapshot.observed_refs_fingerprint.as_deref() != Some(observed.as_str());
 
     let detail = match &query.detail_oid {
-        Some(oid) => Some(read_commit_detail(git, record, oid).await?),
+        Some(oid) => Some(read_commit_detail(runs, record, oid).await?),
         None => None,
     };
 
@@ -145,7 +156,7 @@ pub async fn read_history(
         (Vec::new(), Vec::new(), 0usize)
     } else {
         read_page(
-            git,
+            runs,
             record,
             &snapshot.tips,
             limit + 1,
@@ -230,14 +241,16 @@ fn filter_requested(query: &HistoryQuery, filter: &str) -> bool {
 /// Resolves a cursor into the snapshot, page size and offset it continues.
 ///
 /// The cursor is the only thing a client holds, so every question about the page it
-/// continues is answered here: whose page it is, whether it is still alive, and whether
-/// this request is trying to redefine the walk.
+/// continues is answered here: whose page it is, whether it is still alive, whether it
+/// was minted for the same build of the target, and whether this request is trying to
+/// redefine the walk.
 fn resolve_continuation(
     snapshots: &SnapshotStore,
     query: &HistoryQuery,
     record: &RepositoryRecord,
     worktree_id: &str,
     cursor: &str,
+    target_generation: &str,
 ) -> Result<(usize, SnapshotRecord, usize), ReadError> {
     let (snapshot_id, skip, limit) = match snapshots.resolve_cursor(cursor) {
         CursorResult::Resolved {
@@ -304,6 +317,18 @@ fn resolve_continuation(
             ProblemCode::StaleSnapshot,
             "that page's snapshot has expired; reload history",
         )));
+    }
+    // A rebuilt target is a different place: the same remote path may now be a different
+    // machine's repository, so a continuation minted for the old build is refused rather
+    // than walked.
+    if snapshot.target_generation != target_generation {
+        return Err(ReadError::problem(
+            Problem::new(
+                ProblemCode::StaleSnapshot,
+                "that cursor was minted for an earlier build of this execution target; reload history",
+            )
+            .with_detail("targetGeneration", DetailValue::Text(target_generation.to_string())),
+        ));
     }
     let limit_mismatch = query
         .limit
@@ -399,7 +424,7 @@ pub fn decoration_map(refs: &[RefRecord]) -> HashMap<String, Vec<String>> {
 
 /// Reads the topology walk, its bodies, its decoration and its boundary facts.
 async fn read_page(
-    git: &LocalGit,
+    runs: &GitExecutor,
     record: &RepositoryRecord,
     tips: &[String],
     max_count: usize,
@@ -407,14 +432,14 @@ async fn read_page(
     first_parent_only: bool,
     decoration: &HashMap<String, Vec<String>>,
 ) -> Result<(Vec<CommitSummary>, Vec<String>, usize), ReadError> {
-    let directory = std::path::Path::new(record.location.canonical_worktree.as_str());
+    let directory = record.location.canonical_worktree.as_str();
     let tip_refs: Vec<&str> = tips.iter().map(String::as_str).collect();
     let options = RevListOptions {
         first_parent_only,
         ..RevListOptions::new(&tip_refs, max_count as i64, skip as i64)
     };
     let plan = plan_rev_list(options).map_err(|error| parse_error(REV_LIST_COMMAND, error))?;
-    let topology_bytes = run_required(git, directory, &plan, REV_LIST_COMMAND).await?;
+    let topology_bytes = run_required(runs, directory, &plan, REV_LIST_COMMAND).await?;
     let rows = parse_rev_list_topology(&topology_bytes)
         .map_err(|error| parse_error(REV_LIST_COMMAND, error))?;
     if rows.is_empty() {
@@ -424,7 +449,7 @@ async fn read_page(
     let row_oids: Vec<&str> = rows.iter().map(|row| row.oid.as_str()).collect();
     let batch =
         plan_cat_file_batch(&row_oids).map_err(|error| parse_error(CAT_FILE_COMMAND, error))?;
-    let batch_bytes = run_required(git, directory, &batch, CAT_FILE_COMMAND).await?;
+    let batch_bytes = run_required(runs, directory, &batch, CAT_FILE_COMMAND).await?;
     let mut decoder = CatFileDecoder::new();
     let entries = decoder
         .push(&batch_bytes)
@@ -473,7 +498,7 @@ async fn read_page(
             }
         }
     }
-    let absent = find_missing_objects(git, record, &outside).await?;
+    let absent = find_missing_objects(runs, record, &outside).await?;
 
     let mut commits = Vec::with_capacity(rows.len());
     for row in &rows {
@@ -515,7 +540,7 @@ async fn read_page(
 /// A name Git did not answer for at all counts as missing: reporting it as present would
 /// hide a boundary, and this read exists precisely to avoid that.
 async fn find_missing_objects(
-    git: &LocalGit,
+    runs: &GitExecutor,
     record: &RepositoryRecord,
     oids: &[String],
 ) -> Result<HashSet<String>, ReadError> {
@@ -527,10 +552,10 @@ async fn find_missing_objects(
         .map(String::as_str)
         .take(REF_LIST_MAX_ENTRIES)
         .collect();
-    let directory = std::path::Path::new(record.location.canonical_worktree.as_str());
+    let directory = record.location.canonical_worktree.as_str();
     let plan = plan_cat_file_exists(&bounded)
         .map_err(|error| parse_error(CAT_FILE_CHECK_COMMAND, error))?;
-    let bytes = run_required(git, directory, &plan, CAT_FILE_CHECK_COMMAND).await?;
+    let bytes = run_required(runs, directory, &plan, CAT_FILE_CHECK_COMMAND).await?;
     let presence = parse_object_presence(&bytes, &bounded)
         .map_err(|error| parse_error(CAT_FILE_CHECK_COMMAND, error))?;
     let answered: HashSet<&str> = presence
@@ -549,13 +574,13 @@ async fn find_missing_objects(
 
 /// One commit's full metadata and message.
 async fn read_commit_detail(
-    git: &LocalGit,
+    runs: &GitExecutor,
     record: &RepositoryRecord,
     oid: &str,
 ) -> Result<CommitDetail, ReadError> {
-    let directory = std::path::Path::new(record.location.canonical_worktree.as_str());
+    let directory = record.location.canonical_worktree.as_str();
     let plan = plan_cat_file_batch(&[oid]).map_err(|error| parse_error(CAT_FILE_COMMAND, error))?;
-    let bytes = run_required(git, directory, &plan, CAT_FILE_COMMAND).await?;
+    let bytes = run_required(runs, directory, &plan, CAT_FILE_COMMAND).await?;
     let mut decoder = CatFileDecoder::new();
     let entries = decoder
         .push(&bytes)
@@ -703,6 +728,7 @@ mod tests {
             kind: SnapshotKind::History,
             repository_id,
             worktree_id: Some("wt_1"),
+            target_generation: "gen_1",
             tips: vec!["tip1".to_string()],
             head_oid: Some("tip1".to_string()),
             observed_refs_fingerprint: None,
@@ -835,7 +861,7 @@ mod tests {
         let mut request = query();
         request.cursor = Some(cursor.clone());
         request.author = Some("Someone".to_string());
-        let error = resolve_continuation(&store, &request, &record(), "wt_1", &cursor)
+        let error = resolve_continuation(&store, &request, &record(), "wt_1", &cursor, "gen_1")
             .expect_err("refused");
         assert_eq!(error.to_problem().code, ProblemCode::InvalidRequest);
     }
@@ -849,7 +875,7 @@ mod tests {
         request.cursor = Some(cursor.clone());
         request.limit = Some(50);
         assert_eq!(
-            resolve_continuation(&store, &request, &record(), "wt_1", &cursor)
+            resolve_continuation(&store, &request, &record(), "wt_1", &cursor, "gen_1")
                 .expect_err("refused")
                 .to_problem()
                 .code,
@@ -858,7 +884,7 @@ mod tests {
         request.limit = None;
         request.first_parent_only = Some(false);
         assert_eq!(
-            resolve_continuation(&store, &request, &record(), "wt_1", &cursor)
+            resolve_continuation(&store, &request, &record(), "wt_1", &cursor, "gen_1")
                 .expect_err("refused")
                 .to_problem()
                 .code,
@@ -870,7 +896,8 @@ mod tests {
         matching.limit = Some(25);
         matching.first_parent_only = Some(true);
         let (limit, _, skip) =
-            resolve_continuation(&store, &matching, &record(), "wt_1", &cursor).expect("resolved");
+            resolve_continuation(&store, &matching, &record(), "wt_1", &cursor, "gen_1")
+                .expect("resolved");
         assert_eq!(limit, 25);
         assert_eq!(skip, 50);
     }
@@ -885,7 +912,7 @@ mod tests {
         let mut request = query();
         request.cursor = Some(cursor.clone());
         assert_eq!(
-            resolve_continuation(&store, &request, &record(), "wt_1", &cursor)
+            resolve_continuation(&store, &request, &record(), "wt_1", &cursor, "gen_1")
                 .expect_err("refused")
                 .to_problem()
                 .code,
@@ -899,7 +926,7 @@ mod tests {
         let mut request = query();
         request.cursor = Some("cur_unknown".to_string());
         assert_eq!(
-            resolve_continuation(&store, &request, &record(), "wt_1", "cur_unknown")
+            resolve_continuation(&store, &request, &record(), "wt_1", "cur_unknown", "gen_1")
                 .expect_err("refused")
                 .to_problem()
                 .code,
@@ -915,11 +942,34 @@ mod tests {
         let mut request = query();
         request.cursor = Some("not-a-cursor".to_string());
         assert_eq!(
-            resolve_continuation(&store, &request, &record(), "wt_1", "not-a-cursor")
+            resolve_continuation(&store, &request, &record(), "wt_1", "not-a-cursor", "gen_1")
                 .expect_err("refused")
                 .to_problem()
                 .code,
             ProblemCode::InvalidRequest
+        );
+    }
+
+    #[test]
+    fn a_cursor_from_an_earlier_build_of_the_target_is_refused() {
+        // A rebuilt target is a different place: continuing a walk pinned to the old
+        // build's tips would mix two machines' histories into one page.
+        let store = SnapshotStore::default();
+        let snapshot = history_snapshot(&store, "repo_1", false);
+        let cursor = store.mint_cursor(&snapshot, 0, 25);
+        let mut request = query();
+        request.cursor = Some(cursor.clone());
+        // The cursor was minted on gen_1 and the target now reports gen_2.
+        assert_eq!(
+            resolve_continuation(&store, &request, &record(), "wt_1", &cursor, "gen_2")
+                .expect_err("refused")
+                .to_problem()
+                .code,
+            ProblemCode::StaleSnapshot
+        );
+        // On the build it was minted for, the same cursor still resolves.
+        assert!(
+            resolve_continuation(&store, &request, &record(), "wt_1", &cursor, "gen_1").is_ok()
         );
     }
 
@@ -932,7 +982,7 @@ mod tests {
         let mut request = query();
         request.cursor = Some(cursor.clone());
         assert_eq!(
-            resolve_continuation(&store, &request, &record(), "wt_1", &cursor)
+            resolve_continuation(&store, &request, &record(), "wt_1", &cursor, "gen_1")
                 .expect_err("refused")
                 .to_problem()
                 .code,

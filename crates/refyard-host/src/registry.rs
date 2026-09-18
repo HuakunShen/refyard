@@ -15,10 +15,12 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+use refyard_contract::problem::Problem;
 use refyard_core::CoreError;
 
 use crate::paths::{base36, to_display_path};
 use crate::process::{run, ExecutionState, RunOutcome};
+use crate::providers::ssh::SshGit;
 
 /// Where a repository lives, in the terms the contract uses.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,11 +99,83 @@ pub fn parse_repository_layout(
     })
 }
 
-/// How a repository finished being opened.
+/// How a repository finished being opened locally.
 #[derive(Debug)]
 pub enum OpenOutcome {
     Opened(Box<RepositoryRecord>),
     Failed(RunOutcome),
+}
+
+/// Builds the record for one repository from the layout that was read for it.
+///
+/// One builder for both transports: the layout query and the parser are the same on
+/// either side of the wire, so the only thing a caller supplies is where it came from.
+#[allow(clippy::too_many_arguments)]
+pub fn build_record(
+    layout: RepositoryLayout,
+    directory: &str,
+    repository_id: String,
+    allowed_root_id: &str,
+    root_path: &Path,
+    relative_path: &str,
+    target_id: &str,
+    target_generation: &str,
+) -> RepositoryRecord {
+    let canonical_worktree = layout
+        .top_level
+        .clone()
+        .unwrap_or_else(|| directory.to_string());
+    let display = to_display_path(canonical_worktree.as_bytes());
+    let display_name = Path::new(&canonical_worktree)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| canonical_worktree.clone());
+    RepositoryRecord {
+        repository_id,
+        allowed_root_id: allowed_root_id.to_string(),
+        worktree_id: "wt_1".to_string(),
+        display_name,
+        display_path: display.text,
+        root_path: root_path.to_path_buf(),
+        relative_path: relative_path.to_string(),
+        layout,
+        location: RepositoryLocation {
+            target_id: target_id.to_string(),
+            target_generation: target_generation.to_string(),
+            canonical_worktree,
+            canonical_common_dir: String::new(),
+        },
+    }
+}
+
+/// Opens one directory as a repository on a remote host.
+///
+/// The layout query is the same planner the local open runs, and the answer is parsed by
+/// the same parser, so a remote repository becomes the same record a local one does. The
+/// difference is that nothing here touches this machine's filesystem: the directory is a
+/// remote path and the probe is a remote command, and a path this host cannot encode is
+/// refused as the typed problem it is rather than as a failed local open.
+pub async fn open_remote_repository(
+    ssh: &SshGit,
+    directory: &str,
+    allowed_root_id: &str,
+    root_path: &Path,
+    target_id: &str,
+    target_generation: &str,
+    next_repository_id: &mut (dyn FnMut() -> String + Send),
+) -> Result<Box<RepositoryRecord>, Problem> {
+    let layout = ssh.open(directory).await?;
+    Ok(Box::new(build_record(
+        layout,
+        directory,
+        next_repository_id(),
+        allowed_root_id,
+        root_path,
+        "",
+        target_id,
+        target_generation,
+    )))
 }
 
 /// Runs the layout query for one directory and builds the record.
@@ -155,32 +229,16 @@ pub async fn open_repository(
     };
 
     let mut build = |layout: RepositoryLayout| -> RepositoryRecord {
-        let canonical_worktree = layout
-            .top_level
-            .clone()
-            .unwrap_or_else(|| directory.to_string_lossy().into_owned());
-        let display = to_display_path(canonical_worktree.as_bytes());
-        let display_name = Path::new(&canonical_worktree)
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .filter(|name| !name.is_empty())
-            .unwrap_or_else(|| canonical_worktree.clone());
-        RepositoryRecord {
-            repository_id: next_repository_id(),
-            allowed_root_id: allowed_root_id.to_string(),
-            worktree_id: "wt_1".to_string(),
-            display_name,
-            display_path: display.text,
-            root_path: root_path.to_path_buf(),
-            relative_path: relative_path.to_string(),
+        build_record(
             layout,
-            location: RepositoryLocation {
-                target_id: target_id.to_string(),
-                target_generation: target_generation.to_string(),
-                canonical_worktree,
-                canonical_common_dir: String::new(),
-            },
-        }
+            &directory.to_string_lossy(),
+            next_repository_id(),
+            allowed_root_id,
+            root_path,
+            relative_path,
+            target_id,
+            target_generation,
+        )
     };
 
     let full = run(spec(false), None).await;
@@ -219,7 +277,21 @@ struct RegistryState {
     next: u64,
     order: Vec<String>,
     by_id: HashMap<String, RepositoryRecord>,
-    id_by_common_dir: HashMap<String, String>,
+    id_by_location: HashMap<String, String>,
+}
+
+/// The identity key of a repository: one common directory **on one target**.
+///
+/// The target is part of the key because `/srv/app` on a remote host and `/srv/app` on
+/// this machine are two repositories, and one of them must never be answered with the
+/// other's state.
+fn location_key(target_id: &str, common_dir: &str) -> String {
+    let mut key = String::with_capacity(target_id.len() + common_dir.len() + 1);
+    key.push_str(target_id);
+    // A separator neither input can contain: target ids come from a closed alphabet.
+    key.push('\u{0}');
+    key.push_str(common_dir);
+    key
 }
 
 impl RepositoryRegistry {
@@ -234,21 +306,29 @@ impl RepositoryRegistry {
         format!("repo_{}", base36(state.next))
     }
 
-    /// Registers a record, returning the existing id when the common directory is
-    /// already known — re-registering the same repository is not an error and must not
-    /// mint a second identity.
+    /// Registers a record, returning the existing id when this repository on this build of
+    /// the target is already known — re-registering it is not an error and must not mint a
+    /// second identity.
+    ///
+    /// A record for the same location on a *different* target, or for a previous build of
+    /// the same target, is a different repository: it is replaced, so reads and the path
+    /// ids minted for the old build cannot be answered from the new one.
     pub fn register(&self, mut record: RepositoryRecord) -> RepositoryRecord {
         let mut state = self.inner.lock().expect("registry lock");
         let common = record.layout.common_dir.clone();
-        if let Some(existing) = state.id_by_common_dir.get(&common) {
-            if let Some(known) = state.by_id.get(existing) {
-                return known.clone();
+        let key = location_key(&record.location.target_id, &common);
+        if let Some(existing) = state.id_by_location.get(&key).cloned() {
+            if let Some(known) = state.by_id.get(&existing) {
+                if known.location.target_generation == record.location.target_generation {
+                    return known.clone();
+                }
             }
+            revoke_locked(&mut state, &existing);
         }
-        record.location.canonical_common_dir = common.clone();
+        record.location.canonical_common_dir = common;
         state
-            .id_by_common_dir
-            .insert(common, record.repository_id.clone());
+            .id_by_location
+            .insert(key, record.repository_id.clone());
         state.order.push(record.repository_id.clone());
         state
             .by_id
@@ -270,15 +350,52 @@ impl RepositoryRegistry {
             .collect()
     }
 
+    /// Removes one repository, or removes every repository on one target and returns how
+    /// many were removed.
     pub fn revoke(&self, repository_id: &str) -> bool {
         let mut state = self.inner.lock().expect("registry lock");
-        let Some(record) = state.by_id.remove(repository_id) else {
+        if !state.by_id.contains_key(repository_id) {
             return false;
-        };
-        state.id_by_common_dir.remove(&record.layout.common_dir);
-        state.order.retain(|id| id != repository_id);
+        }
+        revoke_locked(&mut state, repository_id);
         true
     }
+
+    /// Removes every repository registered on `target_id`, returning their ids.
+    ///
+    /// Used when a target is disconnected: a repository on a closed target is not a
+    /// repository this session can address any more, and keeping the record would let a
+    /// later read answer from an executor that no longer exists.
+    pub fn revoke_target(&self, target_id: &str) -> Vec<String> {
+        let mut state = self.inner.lock().expect("registry lock");
+        let doomed: Vec<String> = state
+            .order
+            .iter()
+            .filter(|id| {
+                state
+                    .by_id
+                    .get(*id)
+                    .is_some_and(|record| record.location.target_id == target_id)
+            })
+            .cloned()
+            .collect();
+        for repository_id in &doomed {
+            revoke_locked(&mut state, repository_id);
+        }
+        doomed
+    }
+}
+
+/// Removes one repository and its location binding. The caller holds the lock.
+fn revoke_locked(state: &mut RegistryState, repository_id: &str) {
+    let Some(record) = state.by_id.remove(repository_id) else {
+        return;
+    };
+    state.id_by_location.remove(&location_key(
+        &record.location.target_id,
+        &record.layout.common_dir,
+    ));
+    state.order.retain(|id| id != repository_id);
 }
 
 /// True when a run produced no usable answer at all.
@@ -334,6 +451,67 @@ mod tests {
     }
 
     #[test]
+    fn the_same_path_on_two_targets_is_two_repositories() {
+        // "/srv/app" on a remote host and "/srv/app" here are different repositories;
+        // one must never be answered with the other's state.
+        let registry = RepositoryRegistry::new();
+        let local = registry.register(fixture_record("repo_1", "/srv/app/.git"));
+        let mut remote = fixture_record("repo_2", "/srv/app/.git");
+        remote.location.target_id = "tgt_ssh_1".to_string();
+        let remote = registry.register(remote);
+        assert_ne!(remote.repository_id, local.repository_id);
+        assert_eq!(registry.list().len(), 2);
+        assert_eq!(
+            registry
+                .get(&local.repository_id)
+                .expect("local")
+                .location
+                .target_id,
+            "tgt_local"
+        );
+        assert_eq!(
+            registry
+                .get(&remote.repository_id)
+                .expect("remote")
+                .location
+                .target_id,
+            "tgt_ssh_1"
+        );
+    }
+
+    #[test]
+    fn a_rebuilt_target_replaces_its_repository_identity() {
+        // The rebuilt target is a different build: the old record must not stay
+        // addressable, or a cursor minted for the old build would be answered by it.
+        let registry = RepositoryRegistry::new();
+        let before = registry.register(fixture_record("repo_1", "/repo/.git"));
+        let mut rebuilt = fixture_record("repo_2", "/repo/.git");
+        rebuilt.location.target_generation = "gen_2".to_string();
+        let after = registry.register(rebuilt);
+        assert_ne!(after.repository_id, before.repository_id);
+        assert!(registry.get(&before.repository_id).is_none());
+        assert_eq!(registry.list().len(), 1);
+        assert_eq!(
+            registry.list()[0].location.target_generation,
+            "gen_2",
+            "the surviving record is bound to the new build"
+        );
+    }
+
+    #[test]
+    fn disconnecting_a_target_revokes_its_repositories_and_no_others() {
+        let registry = RepositoryRegistry::new();
+        let local = registry.register(fixture_record("repo_1", "/a/.git"));
+        let mut remote = fixture_record("repo_2", "/srv/b/.git");
+        remote.location.target_id = "tgt_ssh_1".to_string();
+        let remote = registry.register(remote);
+        let removed = registry.revoke_target("tgt_ssh_1");
+        assert_eq!(removed, vec![remote.repository_id.clone()]);
+        assert!(registry.get(&remote.repository_id).is_none());
+        assert!(registry.get(&local.repository_id).is_some());
+    }
+
+    #[test]
     fn revoking_removes_the_repository_and_its_common_dir_binding() {
         let registry = RepositoryRegistry::new();
         let registered = registry.register(fixture_record("repo_1", "/repo/.git"));
@@ -343,6 +521,44 @@ mod tests {
         // after the root is re-approved.
         let again = registry.register(fixture_record("repo_2", "/repo/.git"));
         assert_eq!(again.repository_id, "repo_2");
+    }
+
+    #[test]
+    fn builds_the_same_record_from_the_same_layout_for_either_transport() {
+        let layout =
+            parse_repository_layout(b"/repo/.git\n/repo/.git\n/repo\nfalse\nsha1\nfalse\n", true)
+                .expect("parses");
+        let record = build_record(
+            layout,
+            "/repo",
+            "repo_1".to_string(),
+            "root_1",
+            Path::new("/repo"),
+            "",
+            "tgt_local",
+            "gen_1",
+        );
+        assert_eq!(record.display_name, "repo");
+        assert_eq!(record.location.canonical_worktree, "/repo");
+        assert_eq!(record.worktree_id, "wt_1");
+    }
+
+    #[test]
+    fn a_bare_layout_keeps_the_directory_it_was_opened_at() {
+        let layout = parse_repository_layout(b"/repo.git\n/repo.git\ntrue\nsha1\nfalse\n", false)
+            .expect("parses");
+        let record = build_record(
+            layout,
+            "/repo.git",
+            "repo_1".to_string(),
+            "root_1",
+            Path::new("/repo.git"),
+            "",
+            "tgt_ssh_1",
+            "gen_1",
+        );
+        assert_eq!(record.location.canonical_worktree, "/repo.git");
+        assert_eq!(record.display_name, "repo.git");
     }
 
     fn fixture_record(id: &str, common_dir: &str) -> RepositoryRecord {

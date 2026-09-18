@@ -16,7 +16,10 @@
   import { onDestroy, onMount } from "svelte";
   import type { BackendSession, ConnectionState } from "@refyard/git-service";
   import { BackendError } from "@refyard/git-service";
-  import type { CommitSummary } from "@refyard/git-contract";
+  import type {
+    CommitSummary,
+    ExecutionTargetSummary,
+  } from "@refyard/git-contract";
   import {
     AppearanceSettings,
     Badge,
@@ -37,7 +40,13 @@
     shortOid,
     type ExecutionTargetSelection,
   } from "@refyard/git-ui";
-  import { FileDiff, FolderGit2, GitBranch, RefreshCw } from "@lucide/svelte";
+  import {
+    FileDiff,
+    FolderGit2,
+    GitBranch,
+    RefreshCw,
+    Server,
+  } from "@lucide/svelte";
   import { useQueryClient } from "@tanstack/svelte-query";
   import {
     createWorkbenchSessionState,
@@ -70,8 +79,12 @@
     selectRepositoryTab,
     openRepositoryTab,
     repositoryTabKey,
+    type RepositoryTab,
   } from "$lib/workbench/repository-tabs.js";
-  import type { RecentRepository } from "$lib/workbench/repository-launcher.js";
+  import {
+    recentRepositoryKey,
+    type RecentRepository,
+  } from "$lib/workbench/repository-launcher.js";
   import {
     applyHistoryFilters,
     clearHistoryFilters,
@@ -204,11 +217,17 @@
   let launcherOpen = $state(true);
   let recentRepositories = $state<RecentRepository[]>([]);
   /**
-   * Where the next repository open runs. The page only holds the choice the launcher
-   * reported and passes it back: creating and connecting the target belongs to the
-   * host service, which a later milestone calls with this selection.
+   * Where the next repository open runs. The page holds the choice the launcher
+   * reported and passes it back; creating and connecting the target belongs to the
+   * host service, which `registerRemoteRepository` calls with this selection.
    */
   let executionTarget = $state<ExecutionTargetSelection | null>(null);
+  /**
+   * The target the host most recently minted for that choice, once one exists. It is
+   * what the launcher disables Browse with, and it is dropped the moment the choice
+   * changes so one host's answer is never shown for another.
+   */
+  let launcherTargetSummary = $state<ExecutionTargetSummary | null>(null);
   let recentLoaded = $state(false);
   let launcherRequested = $state(false);
   let knownRepositoryIds = $state<string[]>([]);
@@ -261,6 +280,7 @@
 
   const queries = createWorkbenchQueries({
     service: () => backendSession?.git ?? null,
+    host: () => backendSession?.host ?? null,
     cacheNamespace: () =>
       backendSession?.metadata.cacheNamespace ?? "unconnected",
     phase: () => connectionState.phase,
@@ -282,6 +302,10 @@
 
   const repository = $derived(queries.repository);
   const repositoryList = $derived(queries.repositoryList);
+  /** The host's name for the machine the shown repository lives on, when it is not this one. */
+  const selectedTargetLabel = $derived(
+    queries.targetLabelFor(repository?.targetId ?? null),
+  );
   const commits = $derived(queries.commits);
   const graph = $derived(queries.graph);
   const historyNotices = $derived(queries.historyNotices);
@@ -316,6 +340,9 @@
     if (inNewTab) {
       openRepositoryTab(repositoryTabs, {
         repositoryId: repository.repositoryId,
+        ...(repository.targetId === undefined
+          ? {}
+          : { targetId: repository.targetId }),
         worktreeId,
         displayName: `${repository.displayName} · ${worktree.head.branchName ?? "detached"}`,
         displayPath: worktree.displayPath,
@@ -392,21 +419,33 @@
         recentRepositories = [];
       }
     }
-    const unseen = repositoryList
-      .filter((entry) => !knownRepositoryIds.includes(entry.repositoryId))
-      .map((entry) => ({
-        repositoryId: entry.repositoryId,
-        displayName: entry.displayName,
-        displayPath: entry.displayPath,
-      }));
+    // A repository may already have a tab when it reaches this effect: an open the user
+    // just triggered adds its own tab first, and a list read that arrives afterwards
+    // must not add a second one with the same identity. Svelte's keyed tab list cannot
+    // render two equal keys, and the failure is a broken render, not a visible duplicate.
+    const knownTabKeys = new Set(
+      repositoryTabs.tabs.map((tab) => repositoryTabKey(tab)),
+    );
+    const candidates = repositoryList.filter(
+      (entry) => !knownRepositoryIds.includes(entry.repositoryId),
+    );
+    // The machine is part of the tab's identity: a repository the host places on an
+    // SSH target must not be adopted as if it were this machine's.
+    const unseen = candidates
+      .map((entry) => tabForRepository(entry))
+      .filter((tab) => !knownTabKeys.has(repositoryTabKey(tab)));
     if (unseen.length > 0) {
+      repositoryTabs.tabs = [...repositoryTabs.tabs, ...unseen];
+      const first = unseen[0];
+      repositoryTabs.activeRepositoryId ??=
+        first === undefined ? null : repositoryTabKey(first);
+      repositoryTabs.revision += 1;
+    }
+    if (candidates.length > 0) {
       knownRepositoryIds = [
         ...knownRepositoryIds,
-        ...unseen.map((entry) => entry.repositoryId),
+        ...candidates.map((entry) => entry.repositoryId),
       ];
-      repositoryTabs.tabs = [...repositoryTabs.tabs, ...unseen];
-      repositoryTabs.activeRepositoryId ??= unseen[0]?.repositoryId ?? null;
-      repositoryTabs.revision += 1;
     }
     if (
       !launcherRequested &&
@@ -433,32 +472,45 @@
       (tab) => repositoryTabKey(tab) === repositoryTabs.activeRepositoryId,
     );
     if (entry !== undefined && active?.repositoryId !== entry.repositoryId) {
-      openRepositoryTab(repositoryTabs, {
-        repositoryId: entry.repositoryId,
-        displayName: entry.displayName,
-        displayPath: entry.displayPath,
-      });
+      openRepositoryTab(repositoryTabs, tabForRepository(entry));
     }
   });
+
+  /**
+   * The tab one repository entry opens. The target is carried into the tab, so the
+   * same path on two machines is two tabs, each keyed by the machine it runs on.
+   */
+  function tabForRepository(entry: {
+    readonly repositoryId: string;
+    readonly targetId?: string;
+    readonly displayName: string;
+    readonly displayPath: string;
+  }): RepositoryTab {
+    return {
+      repositoryId: entry.repositoryId,
+      ...(entry.targetId === undefined ? {} : { targetId: entry.targetId }),
+      displayName: entry.displayName,
+      displayPath: entry.displayPath,
+    };
+  }
 
   function selectRegisteredRepository(repositoryId: string): void {
     const entry = repositoryList.find(
       (item) => item.repositoryId === repositoryId,
     );
     if (entry === undefined || writeController.busy) return;
-    openRepositoryTab(repositoryTabs, {
-      repositoryId,
-      displayName: entry.displayName,
-      displayPath: entry.displayPath,
-    });
-    handleRepositoryTab(repositoryId);
+    const tab = tabForRepository(entry);
+    openRepositoryTab(repositoryTabs, tab);
+    // The tab is identified by its key, which carries the target; the raw repository
+    // id would find no tab for a repository on another machine.
+    handleRepositoryTab(repositoryTabKey(tab));
   }
 
   function rememberRecent(entry: RecentRepository): void {
     const next = [
       entry,
       ...recentRepositories.filter(
-        (item) => item.displayPath !== entry.displayPath,
+        (item) => recentRepositoryKey(item) !== recentRepositoryKey(entry),
       ),
     ].slice(0, 30);
     recentRepositories = next;
@@ -474,38 +526,64 @@
     const entry = repositoryList.find(
       (candidate) => candidate.repositoryId === selection.repositoryId,
     );
+    if (entry === undefined) return;
+    // The pending launcher choice describes where the *next* open runs, not where an
+    // already selected repository lives: a local repository stays local even while a
+    // host is chosen in the launcher, which is open over it. So the choice only counts
+    // for a repository the host actually places on a target.
+    const remoteChoice =
+      executionTarget !== null && executionTarget.kind !== "local"
+        ? executionTarget
+        : null;
+    // A recent entry is what reopens a repository, and it restores a machine with the
+    // path. A repository the host places on a target, opened without a selection that
+    // names that machine, would reopen on this one — the wrong repository at the same
+    // path — so it is not remembered as a recent rather than remembered wrongly.
+    if (entry.targetId !== undefined && remoteChoice === null) return;
+    const target = entry.targetId === undefined ? null : remoteChoice;
+    const remembered: RecentRepository = {
+      repositoryId: entry.repositoryId,
+      ...(entry.targetId === undefined ? {} : { targetId: entry.targetId }),
+      displayName: entry.displayName,
+      displayPath: entry.displayPath,
+      lastOpenedAt: new Date().toISOString(),
+      available: true,
+      ...(target === null ? {} : { target }),
+    };
     if (
-      entry !== undefined &&
       !recentRepositories.some(
-        (item) => item.displayPath === entry.displayPath && item.available,
+        (item) =>
+          item.available &&
+          recentRepositoryKey(item) === recentRepositoryKey(remembered),
       )
     ) {
-      rememberRecent({
-        repositoryId: entry.repositoryId,
-        displayName: entry.displayName,
-        displayPath: entry.displayPath,
-        lastOpenedAt: new Date().toISOString(),
-        available: true,
-        ...(executionTarget === null ? {} : { target: executionTarget }),
-      });
+      rememberRecent(remembered);
     }
   });
 
+  /**
+   * Opens a path in the place the launcher selected. A local path goes through the
+   * host's own resolver; a path on an execution target goes through the target
+   * sequence, because this machine's filesystem must never answer for that path.
+   */
   function handleOpenRepository(path: string): void {
-    void writeController.registerRepository(path).then((opened) => {
-      if (opened) {
-        const entry = repositoryList.find(
-          (item) => item.repositoryId === selection.repositoryId,
-        );
-        if (entry !== undefined) {
-          openRepositoryTab(repositoryTabs, {
-            repositoryId: entry.repositoryId,
-            displayName: entry.displayName,
-            displayPath: entry.displayPath,
-          });
-          handleRepositoryTab(entry.repositoryId);
-        }
-      }
+    const target = executionTarget;
+    const remote = target !== null && target.kind !== "local";
+    const opening =
+      target !== null && target.kind !== "local"
+        ? writeController.registerRemoteRepository(path, target)
+        : writeController.registerRepository(path);
+    void opening.then((entry) => {
+      launcherTargetSummary = remote ? writeController.lastCreatedTarget : null;
+      // The host may have minted a target (or changed one's state); the reads' gate
+      // must learn that before the new repository's panels are asked for anything.
+      if (remote) void queries.refreshTargets();
+      if (entry === null) return;
+      // The tab is built from the registration's own answer, not from the repository
+      // list: the list is a derived value this callback may read before it caught up.
+      const tab = tabForRepository(entry);
+      openRepositoryTab(repositoryTabs, tab);
+      handleRepositoryTab(repositoryTabKey(tab));
     });
   }
 
@@ -517,19 +595,25 @@
     // The entry's own target is what restores a host; the launcher's default stays
     // Local, so a repository is only ever reopened on the machine it was opened with.
     executionTarget = entry.target ?? null;
-    const existing = repositoryList.find(
-      (item) => item.displayPath === entry.displayPath,
-    );
-    if (existing !== undefined) {
-      launcherRequested = false;
-      openRepositoryTab(repositoryTabs, {
-        repositoryId: existing.repositoryId,
-        displayName: existing.displayName,
-        displayPath: existing.displayPath,
-      });
-      handleRepositoryTab(existing.repositoryId);
-      return;
+    launcherTargetSummary = null;
+    writeController.clearTargetStatus();
+    const remote = executionTarget !== null && executionTarget.kind !== "local";
+    if (!remote) {
+      const existing = repositoryList.find(
+        (item) =>
+          item.displayPath === entry.displayPath && item.targetId === undefined,
+      );
+      if (existing !== undefined) {
+        const tab = tabForRepository(existing);
+        launcherRequested = false;
+        openRepositoryTab(repositoryTabs, tab);
+        handleRepositoryTab(repositoryTabKey(tab));
+        return;
+      }
     }
+    // A remote entry re-runs the whole sequence: the host decides whether the target
+    // and the registration already exist, and this machine is never asked about the
+    // path. Reusing a local registration for the same path would open the wrong machine.
     handleOpenRepository(entry.displayPath);
   }
 
@@ -540,6 +624,8 @@
     // Opening the launcher starts on This machine: a host chosen in an earlier visit
     // is never preselected, and only a recent entry restores its own target.
     executionTarget = null;
+    launcherTargetSummary = null;
+    writeController.clearTargetStatus();
     selectRepository(selection, null);
   }
 
@@ -560,9 +646,24 @@
 
   function closeRepository(repositoryId: string): void {
     if (writeController.busy) return;
+    const closing = repositoryTabs.tabs.find(
+      (tab) => repositoryTabKey(tab) === repositoryId,
+    );
     const wasActive = repositoryTabs.activeRepositoryId === repositoryId;
     closeRepositoryTab(repositoryTabs, repositoryId);
     delete tabWorktrees[repositoryId];
+    // The last tab on a machine ends this session's interest in it. Only that target's
+    // cached reads are dropped — this machine's and another host's are keyed separately,
+    // so they are neither refetched nor cleared by the disconnect.
+    const targetId = closing?.targetId;
+    if (
+      targetId !== undefined &&
+      !repositoryTabs.tabs.some((tab) => tab.targetId === targetId)
+    ) {
+      void writeController
+        .disconnectTarget(targetId)
+        .then(() => queries.refreshTargets());
+    }
     if (wasActive) {
       const nextTab = repositoryTabs.tabs.find(
         (entry) =>
@@ -664,6 +765,7 @@
   const writeController = createWorkbenchMutations({
     reads: () => backendSession?.git ?? null,
     mutations: () => backendSession?.mutations ?? null,
+    host: () => backendSession?.host ?? null,
     cacheNamespace: () =>
       backendSession?.metadata.cacheNamespace ?? "unconnected",
     browserOnline: () => browserOnline,
@@ -827,6 +929,9 @@
                   ? tab.displayName
                   : `${tab.displayName} · ${selected.label}`,
               displayPath: selected?.path ?? tab.displayPath,
+              // Only a repository on another machine carries one, so two tabs for the
+              // same path are told apart by the machine, not by reading the tooltip.
+              targetLabel: queries.targetLabelFor(tab.targetId),
             };
           })}
           activeRepositoryId={repositoryTabs.activeRepositoryId}
@@ -857,6 +962,22 @@
             <GitBranch class="size-3 text-primary/70" />
             <span class="font-medium text-foreground"
               >{status.data.head.branchName}</span
+            >
+          </div>
+        {/if}
+        {#if selectedTargetLabel !== null}
+          <!-- The machine is in the header for the same reason it is in the tab: the
+               repository name alone cannot tell two machines apart. -->
+          <span class="text-ink-faint">·</span>
+          <div
+            class="flex items-center gap-1 text-[11px] text-muted-foreground"
+            data-testid="repository-target-label"
+          >
+            <Server class="size-3 text-primary/70" />
+            <span
+              class="max-w-40 truncate font-medium text-foreground"
+              title={`Git runs on ${selectedTargetLabel}`}
+              >{selectedTargetLabel}</span
             >
           </div>
         {/if}
@@ -1056,7 +1177,14 @@
             onClone={writeController.onRepositoryClone}
             hostService={backendSession?.host ?? null}
             selectedTarget={executionTarget}
-            onSelectTarget={(target) => (executionTarget = target)}
+            selectedTargetSummary={launcherTargetSummary}
+            targetProgress={writeController.targetProgress}
+            targetError={writeController.targetMessage}
+            onSelectTarget={(target) => {
+              executionTarget = target;
+              launcherTargetSummary = null;
+              writeController.clearTargetStatus();
+            }}
           />
         </section>
       {:else}

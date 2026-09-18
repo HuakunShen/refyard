@@ -7,6 +7,12 @@
     readonly repositoryId: string;
     readonly displayName: string;
     readonly displayPath: string;
+    /**
+     * The machine this tab's Git runs on, when it is not this one. Without it two tabs
+     * for the same path on different machines would look identical, which is exactly
+     * the confusion the tab bar must not create.
+     */
+    readonly targetLabel?: string | null;
   }
 
   interface Props {
@@ -54,6 +60,20 @@
       >
         {tab.displayName}
       </button>
+      {#if tab.targetLabel !== undefined && tab.targetLabel !== null}
+        <!--
+          The machine, next to the name rather than only in a tooltip: the point is to
+          tell two tabs apart at a glance, and a tooltip tells nobody anything until
+          they already suspect the difference.
+        -->
+        <span
+          class="max-w-20 shrink-0 truncate rounded bg-background/70 px-1 py-px text-[10px] font-normal text-muted-foreground"
+          title={`Git runs on ${tab.targetLabel}`}
+          data-testid={`repository-target-${tab.repositoryId}`}
+        >
+          {tab.targetLabel}
+        </span>
+      {/if}
       <button
         type="button"
         {disabled}

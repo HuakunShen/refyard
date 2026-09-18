@@ -5,6 +5,10 @@
 //! gets to hold. Two things live here rather than in the parser because they need the
 //! host: the operation-in-progress markers (files in the Git directory) and the path
 //! id registry (which binds raw bytes to an opaque id).
+//!
+//! The operation markers are read from this machine's filesystem, so they are only
+//! consulted for a local repository: a remote Git directory is a path this process cannot
+//! stat, and reporting "nothing in progress" for it would be a guess dressed as an answer.
 
 use std::path::Path;
 
@@ -18,7 +22,7 @@ use refyard_core::parse::status::{
 };
 
 use crate::paths::{to_display_path, PathRegistry};
-use crate::providers::local::LocalGit;
+use crate::providers::GitExecutor;
 use crate::reads::{parse_error, run_required, ReadError};
 use crate::registry::RepositoryRecord;
 use crate::snapshots::{
@@ -53,7 +57,7 @@ pub fn operation_in_progress(git_dir: &Path) -> Option<OperationInProgress> {
 
 /// Reads status and records a snapshot for it.
 pub async fn read_status(
-    git: &LocalGit,
+    runs: &GitExecutor,
     record: &RepositoryRecord,
     paths: &PathRegistry,
     snapshots: &SnapshotStore,
@@ -65,8 +69,8 @@ pub async fn read_status(
         show_stash: false,
     });
     let stdout = run_required(
-        git,
-        Path::new(record.location.canonical_worktree.as_str()),
+        runs,
+        record.location.canonical_worktree.as_str(),
         &plan,
         STATUS_COMMAND,
     )
@@ -76,11 +80,12 @@ pub async fn read_status(
         .map_err(|error| parse_error(STATUS_COMMAND, error))?;
     let head = head_state(&parsed);
     let worktree_id = record.worktree_id.clone();
+    let target_generation = record.location.target_generation.as_str();
 
     let mut entries: Vec<StatusEntry> = Vec::with_capacity(parsed.records.len());
     let mut fingerprint_rows: Vec<IndexFingerprintEntry> = Vec::with_capacity(parsed.records.len());
     for item in &parsed.records {
-        entries.push(status_entry(item, &worktree_id, paths));
+        entries.push(status_entry(item, &worktree_id, target_generation, paths));
         fingerprint_rows.push(fingerprint_entry(item));
     }
 
@@ -89,6 +94,7 @@ pub async fn read_status(
         kind: SnapshotKind::Status,
         repository_id: &record.repository_id,
         worktree_id: Some(&worktree_id),
+        target_generation,
         tips: Vec::new(),
         head_oid: head.oid.clone(),
         observed_refs_fingerprint: None,
@@ -114,7 +120,14 @@ pub async fn read_status(
         read_at: read_at.to_string(),
         head,
         upstream,
-        operation_in_progress: operation_in_progress(Path::new(&record.layout.git_dir)),
+        // The markers are files in this machine's Git directory. For a remote repository
+        // the directory is a path on another machine, so the question cannot be asked
+        // here at all; a remote operation-state read is where it gets an answer.
+        operation_in_progress: if runs.is_remote() {
+            None
+        } else {
+            operation_in_progress(Path::new(&record.layout.git_dir))
+        },
         entry_count: entries.len() as u64,
         entries,
         truncated: false,
@@ -148,13 +161,18 @@ pub fn head_state(parsed: &StatusParseResult) -> HeadState {
     }
 }
 
-fn status_entry(record: &StatusRecord, worktree_id: &str, paths: &PathRegistry) -> StatusEntry {
+fn status_entry(
+    record: &StatusRecord,
+    worktree_id: &str,
+    target_generation: &str,
+    paths: &PathRegistry,
+) -> StatusEntry {
     let display = to_display_path(&record.path);
-    let path_id = paths.bind(worktree_id, &record.path);
+    let path_id = paths.bind(worktree_id, target_generation, &record.path);
     let original = record.original_path.as_ref().map(|bytes| {
         let original_display = to_display_path(bytes);
         (
-            paths.bind(worktree_id, bytes),
+            paths.bind(worktree_id, target_generation, bytes),
             original_display.text,
             original_display.representable,
         )

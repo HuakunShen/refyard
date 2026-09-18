@@ -10,13 +10,19 @@
 import {
   BackendError,
   type GitReadService,
+  type HostService,
   type MutationService,
 } from "@refyard/git-service";
-import type { ParsedMutationRequest } from "@refyard/git-contract";
+import type {
+  ExecutionTargetSummary,
+  ParsedMutationRequest,
+  RepositorySummary,
+} from "@refyard/git-contract";
 import type { QueryClient } from "@tanstack/svelte-query";
+import type { ExecutionTargetSelection } from "@refyard/git-ui/lib/execution-targets";
 import { followOperation } from "../operation-follow.js";
 import type { Negotiation } from "../session-negotiation.js";
-import { cacheKeyFor } from "./query-state.js";
+import { createTargetRequestFor } from "./repository-launcher.js";
 import { describeBackendProblem } from "./session.js";
 import {
   clearRepositoryIfSelected,
@@ -32,10 +38,20 @@ import {
   writeRefusalMessage,
 } from "./mutation-model.js";
 
+/** How long a created target may take to become ready before the open is reported failed. */
+const TARGET_READY_TIMEOUT_MS = 15_000;
+const TARGET_READY_POLL_MS = 200;
+
 export interface WorkbenchMutationInputs {
   /** The session's read side: snapshots and previews are reads, not writes. */
   readonly reads: () => GitReadService | null;
   readonly mutations: () => MutationService | null;
+  /**
+   * The session's host service: creating, waiting for and releasing execution targets.
+   * Null when the adapter has no host surface, which is what makes every target
+   * affordance fail closed rather than falling back to this machine.
+   */
+  readonly host: () => HostService | null;
   /** Part of every invalidation key; never a credential. */
   readonly cacheNamespace: () => string;
   readonly browserOnline: () => boolean;
@@ -137,6 +153,15 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
   let busy = $state(false);
   let repositoryMessage = $state<string | null>(null);
   let repositoryAccessMessage = $state<string | null>(null);
+  /**
+   * The remote-open state: which step is running (progress) and, when a step failed,
+   * the failure in the host's own words. They are separate so a failure is never shown
+   * as if it were still progress.
+   */
+  let targetProgress = $state<string | null>(null);
+  let targetMessage = $state<string | null>(null);
+  /** The target the host minted for the most recent open attempt, if one was minted. */
+  let lastCreatedTarget = $state<ExecutionTargetSummary | null>(null);
   let stagingMessage = $state<ScopedMessage | null>(null);
   let commitResult = $state<ScopedMessage | null>(null);
   let branchMessage = $state<string | null>(null);
@@ -181,24 +206,24 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
       : null;
   }
 
+  /**
+   * Every read of one repository, by the key it was cached under. The key names the
+   * machine as well as the repository, so a write on a host cannot mark this machine's
+   * data stale (or the reverse).
+   *
+   * Status is refreshed first, and on its own: it is what the workbench's controls are
+   * enabled against and what the user is looking at while the write lands, and a batch
+   * that starts every read at once lets the one read the user needs finish behind the
+   * others. The rest follow as one invalidation, by the same prefix.
+   */
   async function invalidateRepositoryReads(
     repositoryId: string,
   ): Promise<void> {
-    for (const prefix of [
-      "status",
-      "refs",
-      "stashes",
-      "history",
-      "worktrees",
-      "worktree-statuses",
-      "submodules",
-      "diff",
-      "diff-patch",
-    ] as const) {
-      await input.queryClient.invalidateQueries({
-        queryKey: cacheKeyFor(input.cacheNamespace(), prefix, repositoryId),
-      });
-    }
+    const prefix = input.queries.repositoryCachePrefixFor(repositoryId);
+    await input.queryClient.invalidateQueries({
+      queryKey: [...prefix, "status"],
+    });
+    await input.queryClient.invalidateQueries({ queryKey: prefix });
   }
 
   async function performWrite(
@@ -339,12 +364,7 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
       );
       if (created !== undefined) {
         selectRepository(input.selection, created.repositoryId);
-        await input.queryClient.invalidateQueries({
-          queryKey: cacheKeyFor(input.cacheNamespace(), "status"),
-        });
-        await input.queryClient.invalidateQueries({
-          queryKey: cacheKeyFor(input.cacheNamespace(), "refs"),
-        });
+        await invalidateRepositoryReads(created.repositoryId);
       }
     } catch (error) {
       repositoryMessage = describeBackendProblem(error);
@@ -376,7 +396,14 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     );
   }
 
-  async function registerRepository(path: string): Promise<boolean> {
+  /**
+   * Approves and selects a path on this machine, returning the repository that was
+   * registered so the caller opens a tab from the answer it just received rather than
+   * from a list that may not have propagated yet. Null means nothing was registered.
+   */
+  async function registerRepository(
+    path: string,
+  ): Promise<RepositorySummary | null> {
     busy = true;
     repositoryAccessMessage = null;
     try {
@@ -397,7 +424,7 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
       );
       if (existing !== undefined) {
         selectRepository(input.selection, existing.repositoryId);
-        return true;
+        return existing;
       }
       const result = await requireReads().registerRepository(directory.path);
       repositoryAccessMessage = `approved ${path}`;
@@ -408,13 +435,135 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
       if (added !== undefined) {
         selectRepository(input.selection, added.repositoryId);
       }
-      return added !== undefined;
+      return added ?? null;
     } catch (error) {
       repositoryAccessMessage = describeBackendProblem(error);
-      return false;
+      return null;
     } finally {
       busy = false;
     }
+  }
+
+  /**
+   * Opens a repository on an execution target, in the order the host publishes:
+   * create the target, wait until the host reports it ready, then register the typed
+   * path on it. There is no fallback: if any step fails, nothing is registered — in
+   * particular never on this machine, whose filesystem was never asked about the path.
+   *
+   * A path on another machine is not browsable, so the read that resolves a local
+   * shorthand (`filesystemEntries`) is deliberately absent here: sending the remote
+   * path to it would ask this machine about a path it does not own.
+   */
+  async function registerRemoteRepository(
+    path: string,
+    target: ExecutionTargetSelection,
+  ): Promise<RepositorySummary | null> {
+    busy = true;
+    targetMessage = null;
+    targetProgress = `connecting to ${target.label}`;
+    try {
+      const refusal = writeRefusalMessage({
+        browserOnline: input.browserOnline(),
+        sessionReady: input.mutations() !== null,
+        negotiation: input.negotiation(),
+        action: "repositoryAccess",
+      });
+      if (refusal !== null) {
+        throw refusalError(refusal);
+      }
+      const host = input.host();
+      if (host === null) {
+        // Fail closed: without a host there is no way to create a target, and
+        // registering the path locally would silently open the wrong machine.
+        throw refusalError(
+          "this session has no host connection, so a remote target cannot be created",
+        );
+      }
+      const plan = createTargetRequestFor(target);
+      if (plan.kind === "refused") {
+        throw refusalError(plan.message);
+      }
+      let summary = await host.createTarget(plan.request);
+      lastCreatedTarget = summary;
+      const deadline = Date.now() + TARGET_READY_TIMEOUT_MS;
+      while (summary.state !== "ready") {
+        if (summary.state === "unavailable") {
+          throw refusalError(
+            `the host reports the target for ${target.label} is unavailable`,
+          );
+        }
+        if (Date.now() > deadline) {
+          throw refusalError(
+            `the target for ${target.label} did not become ready within ${Math.round(
+              TARGET_READY_TIMEOUT_MS / 1000,
+            )} seconds`,
+          );
+        }
+        await new Promise((resolve) =>
+          setTimeout(resolve, TARGET_READY_POLL_MS),
+        );
+        // The host owns readiness; it is asked again rather than assumed from the
+        // create answer, which describes the moment the target was minted.
+        const listed = await host.targets();
+        const current = listed.find(
+          (entry) => entry.targetId === summary.targetId,
+        );
+        if (current !== undefined) summary = current;
+      }
+      // The reads' gate must know the machine is ready before the repository that
+      // lives on it becomes selected, or its first panels are asked while disabled.
+      await input.queries.refreshTargets();
+      targetProgress = `opening ${path} on ${target.label}`;
+      const result = await requireReads().registerRepository(path, {
+        targetId: summary.targetId,
+      });
+      targetProgress = null;
+      // The registered repository may already have been listed (the host did not need
+      // to mint a new one), so the refetched list is preferred and the register
+      // response is the fallback.
+      const refreshed = await input.queries.repositories.refetch();
+      const added = (refreshed.data?.repositories ?? result.repositories).find(
+        (entry) =>
+          entry.displayPath === path && entry.targetId === summary.targetId,
+      );
+      if (added !== undefined) {
+        selectRepository(input.selection, added.repositoryId);
+      }
+      return added ?? null;
+    } catch (error) {
+      targetProgress = null;
+      targetMessage = describeBackendProblem(error);
+      return null;
+    } finally {
+      busy = false;
+    }
+  }
+
+  /**
+   * Releases one target this session owns, and drops only that target's cached reads.
+   * Another target's data, and this machine's, are untouched: the invalidation key is
+   * namespaced by the target, so a disconnect cannot clear a different machine's view.
+   */
+  async function disconnectTarget(targetId: string): Promise<void> {
+    const host = input.host();
+    if (host === null) return;
+    try {
+      await host.disconnectTarget(targetId);
+    } catch (error) {
+      targetMessage = describeBackendProblem(error);
+    } finally {
+      await input.queries.refreshTargets();
+      await input.queryClient.invalidateQueries({
+        queryKey: input.queries.targetCachePrefixFor(targetId),
+      });
+    }
+  }
+
+  /** Forgets the previous choice's target state, so a new choice starts clean. */
+  function clearTargetStatus(): void {
+    targetProgress = null;
+    targetMessage = null;
+    lastCreatedTarget = null;
   }
 
   async function revokeRepository(repositoryId: string): Promise<void> {
@@ -999,6 +1148,15 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     get repositoryAccessMessage() {
       return repositoryAccessMessage;
     },
+    get targetProgress() {
+      return targetProgress;
+    },
+    get targetMessage() {
+      return targetMessage;
+    },
+    get lastCreatedTarget() {
+      return lastCreatedTarget;
+    },
     get stagingMessage() {
       return visibleMessage(stagingMessage);
     },
@@ -1029,6 +1187,9 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     onRepositoryInit,
     onRepositoryClone,
     registerRepository,
+    registerRemoteRepository,
+    disconnectTarget,
+    clearTargetStatus,
     revokeRepository,
     onStage,
     onUnstage,

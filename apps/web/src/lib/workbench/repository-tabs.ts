@@ -1,4 +1,13 @@
-/** Pure session state for the repositories currently open in workbench tabs. */
+/**
+ * Pure session state for the repositories currently open in workbench tabs, and the
+ * identity one repository is cached under.
+ *
+ * A path is not an identity. The same absolute path is a different repository on this
+ * machine and on a host the user's SSH configuration names, so every repository-scoped
+ * key carries the target it was opened on; the query cache is keyed by that array, and
+ * the tab is identified by the string form below. Both come from the same two facts —
+ * which machine, which repository — so a tab and its cached reads cannot disagree.
+ */
 
 export interface RepositoryTab {
   readonly repositoryId: string;
@@ -101,4 +110,25 @@ export function repositoryTabKey(tab: RepositoryTab): string {
   return tab.targetId === undefined
     ? repositoryIdentity
     : `${tab.targetId}/${repositoryIdentity}`;
+}
+
+/**
+ * The key every repository-scoped query is cached under, from the session namespace
+ * (so a previous session's answers are never read as this one's), the execution target
+ * and the repository's path.
+ *
+ * It returns an array because that is what the query cache is keyed by: the parts stay
+ * separate values, so a target id and a path whose characters could run together
+ * (`tgt_a` + `b_c/x` against `tgt_a-b_c` + `/x`) cannot produce one key, and the
+ * `[namespace, targetId]` prefix lets one target's cached reads be invalidated without
+ * touching another target's or this machine's. An absent target stays in the key as
+ * `null`, so callers that name no target share one local identity rather than forming a
+ * third one.
+ */
+export function repositoryCacheKey(
+  sessionNamespace: string,
+  targetId: string | null | undefined,
+  path: string,
+): readonly unknown[] {
+  return [sessionNamespace, targetId ?? null, path];
 }

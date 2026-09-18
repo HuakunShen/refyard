@@ -12,14 +12,24 @@
  *   service reports as implemented, and a valid selection — the token the old page checked
  *   does not exist for a native session, and a service that omits a read must not be asked
  *   for it on a timer.
+ * - **A repository on a machine that is not ready is not read.** Repositories the host
+ *   places on an execution target are read only once that target reports `ready`; a
+ *   target that is connecting, unavailable, or not yet listed leaves its reads disabled
+ *   instead of issued, so an answer that cannot be this repository's is never cached as
+ *   it. Repositories without a target are this machine's, ready whenever the session is,
+ *   which is what keeps a service that has never heard of targets unchanged.
  * - **Cache keys are `cacheNamespace + query identity`.** The namespace changes with the
  *   session and the authorization round, so results from a previous session cannot be read
- *   as this one's, and no credential is ever part of a key.
+ *   as this one's, and no credential is ever part of a key. Repository-scoped keys are
+ *   `[namespace, targetId|null, path, read, …]`: the target stays a separate element, so
+ *   the same path on two machines cannot share cached reads, and `[namespace, targetId]`
+ *   can be invalidated for one target without touching another machine's data or this one's.
  */
-import type { GitReadService } from "@refyard/git-service";
+import type { GitReadService, HostService } from "@refyard/git-service";
 import { BackendError, type ConnectionPhase } from "@refyard/git-service";
 import type {
   DiffResponse,
+  ExecutionTargetSummary,
   ReadKind,
   StatusSnapshot,
   StashesResponse,
@@ -37,6 +47,7 @@ import {
   timedRead,
 } from "../background-poll.js";
 import { cacheKeyFor, queryState, type QueryState } from "./query-state.js";
+import { repositoryCacheKey } from "./repository-tabs.js";
 import {
   reconcileRepositorySelection,
   type WorkbenchSelectionState,
@@ -56,20 +67,16 @@ import {
 
 const HISTORY_PAGE_SIZE = 100;
 const WORKTREE_STATUS_CONCURRENCY = 3;
-const BACKGROUND_PREFIXES = [
-  "repositories",
-  "status",
-  "refs",
-  "stashes",
-  "worktrees",
-  "worktree-statuses",
-  "submodules",
-  "history",
-] as const;
 
 export interface WorkbenchQueryInputs {
   /** The session's read service; null until an adapter session exists. */
   readonly service: () => GitReadService | null;
+  /**
+   * The session's host service, used for the one read this controller does not own:
+   * which execution targets exist and whether they are ready. A session without one
+   * simply has no targeted repositories to gate.
+   */
+  readonly host: () => HostService | null;
   /** Changes with the session and authorization round; never a credential. */
   readonly cacheNamespace: () => string;
   readonly phase: () => ConnectionPhase;
@@ -115,15 +122,21 @@ async function mapBounded<T, R>(
   });
 }
 
+/**
+ * Refreshes every read this session has cached, after the page was hidden long enough
+ * that its data may be stale.
+ *
+ * The namespace is the only prefix that covers all of them: a repository-scoped key
+ * starts with the namespace and then its target and path, so no fixed read-kind prefix
+ * would reach every repository. Session-level reads (capabilities, the repository list,
+ * identity) are refetched with them, which is what a returning tab wants anyway; nothing
+ * outside this session's namespace is touched.
+ */
 export function invalidateWorkbenchBackgroundQueries(
   queryClient: QueryClient,
   cacheNamespace: string,
 ): void {
-  for (const prefix of BACKGROUND_PREFIXES) {
-    void queryClient.invalidateQueries({
-      queryKey: cacheKeyFor(cacheNamespace, prefix),
-    });
-  }
+  void queryClient.invalidateQueries({ queryKey: [cacheNamespace] });
 }
 
 export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
@@ -211,6 +224,115 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
     ) ?? null,
   );
 
+  /**
+   * Which machines this session can run Git on, and whether they are ready.
+   *
+   * Held as plain state rather than a cache entry: the host's own list is the session's
+   * fact, not a repository read, and it is never stale in the sense a cached answer is —
+   * a target that lost its connection must gate its repositories off immediately, not
+   * after a cache expires.
+   *
+   * The read itself happens only when the repository list places a repository elsewhere
+   * than this machine. A service that has never heard of execution targets lists none, so
+   * it is never asked for a target list it would refuse, and its reads behave exactly as
+   * before. On failure the list stays empty, which fails closed: no target is known ready,
+   * so none of its repositories is read.
+   */
+  let targets = $state<readonly ExecutionTargetSummary[]>([]);
+  let targetsReadFor = "";
+
+  async function refreshTargets(): Promise<void> {
+    const host = input.host();
+    if (host === null) {
+      targets = [];
+      return;
+    }
+    try {
+      targets = [...(await host.targets())];
+    } catch {
+      targets = [];
+    }
+  }
+
+  $effect(() => {
+    const host = input.host();
+    const firstTarget = repositoryList.find(
+      (entry) => entry.targetId !== undefined,
+    )?.targetId;
+    if (host === null || firstTarget === undefined) {
+      targetsReadFor = "";
+      return;
+    }
+    const key = `${input.cacheNamespace()}/${firstTarget}`;
+    if (targetsReadFor === key) return;
+    targetsReadFor = key;
+    void refreshTargets();
+  });
+
+  function repositoryEntry(repositoryId: string | null) {
+    if (repositoryId === null) return null;
+    return (
+      repositoryList.find((entry) => entry.repositoryId === repositoryId) ??
+      null
+    );
+  }
+
+  /**
+   * Whether the machine a repository lives on may be read from.
+   *
+   * A repository the list does not place on a target is this machine's and is ready
+   * whenever the session is — that is what keeps a service without execution targets
+   * unchanged. A targeted repository is readable only while its target reports `ready`:
+   * connecting, unavailable, and not-yet-listed all leave the read disabled, because an
+   * answer taken before the machine is ready is not this repository's answer.
+   */
+  function targetReadyFor(repositoryId: string | null): boolean {
+    const entry = repositoryEntry(repositoryId);
+    if (entry === null || entry.targetId === undefined) return true;
+    return (
+      targets.find((summary) => summary.targetId === entry.targetId)?.state ===
+      "ready"
+    );
+  }
+
+  /** The host's label for a target, or null when the list does not name it. */
+  function targetLabelFor(targetId: string | null | undefined): string | null {
+    if (targetId === null || targetId === undefined) return null;
+    return (
+      targets.find((summary) => summary.targetId === targetId)?.label ?? null
+    );
+  }
+
+  /**
+   * The prefix every read of one repository is cached under, from the target it lives on
+   * and its path. A repository the list no longer contains maps to the repository id in
+   * the path slot, which cannot equal a real path: a late invalidation for a revoked
+   * repository must not match a live one's keys.
+   */
+  function repositoryCachePrefixFor(
+    repositoryId: string | null,
+  ): readonly unknown[] {
+    const entry = repositoryEntry(repositoryId);
+    return repositoryCacheKey(
+      input.cacheNamespace(),
+      entry?.targetId,
+      entry?.displayPath ?? repositoryId ?? "",
+    );
+  }
+
+  function repositoryQueryKey(
+    kind: string,
+    repositoryId: string | null,
+    ...tail: readonly unknown[]
+  ): readonly unknown[] {
+    return [...repositoryCachePrefixFor(repositoryId), kind, ...tail];
+  }
+
+  /** The prefix that covers one target's reads and nothing on another machine. */
+  function targetCachePrefixFor(targetId: string): readonly unknown[] {
+    return [input.cacheNamespace(), targetId];
+  }
+
   /** The explicit selection wins; null means the repository's actual primary worktree. */
   const primaryWorktreeId = $derived(repository?.primaryWorktreeId ?? null);
   const activeWorktreeId = $derived(selectedWorktreeId ?? primaryWorktreeId);
@@ -223,15 +345,16 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
   });
 
   const status = createQuery(() => {
-    const key = cacheKeyFor(
-      input.cacheNamespace(),
+    const key = repositoryQueryKey(
       "status",
       selectedRepositoryId,
       activeWorktreeId,
     );
     const state = gate(
       supportsRead("status"),
-      selectedRepositoryId !== null && activeWorktreeId !== null,
+      selectedRepositoryId !== null &&
+        activeWorktreeId !== null &&
+        targetReadyFor(selectedRepositoryId),
     );
     return {
       queryKey: key,
@@ -250,12 +373,11 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
   });
 
   const refs = createQuery(() => {
-    const key = cacheKeyFor(
-      input.cacheNamespace(),
-      "refs",
-      selectedRepositoryId,
+    const key = repositoryQueryKey("refs", selectedRepositoryId);
+    const state = gate(
+      supportsRead("refs"),
+      selectedRepositoryId !== null && targetReadyFor(selectedRepositoryId),
     );
-    const state = gate(supportsRead("refs"), selectedRepositoryId !== null);
     return {
       queryKey: key,
       queryFn: timedRead({
@@ -272,12 +394,11 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
   });
 
   const stashes = createQuery(() => {
-    const key = cacheKeyFor(
-      input.cacheNamespace(),
-      "stashes",
-      selectedRepositoryId,
+    const key = repositoryQueryKey("stashes", selectedRepositoryId);
+    const state = gate(
+      supportsRead("stashes"),
+      selectedRepositoryId !== null && targetReadyFor(selectedRepositoryId),
     );
-    const state = gate(supportsRead("stashes"), selectedRepositoryId !== null);
     return {
       queryKey: key,
       queryFn: timedRead({
@@ -315,14 +436,10 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
   );
 
   const worktrees = createQuery(() => {
-    const key = cacheKeyFor(
-      input.cacheNamespace(),
-      "worktrees",
-      selectedRepositoryId,
-    );
+    const key = repositoryQueryKey("worktrees", selectedRepositoryId);
     const state = gate(
       supportsRead("worktrees"),
-      selectedRepositoryId !== null,
+      selectedRepositoryId !== null && targetReadyFor(selectedRepositoryId),
     );
     return {
       queryKey: key,
@@ -364,15 +481,16 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
 
   const worktreeStatusesQuery = createQuery(() => {
     const worktreeIds = worktreeList.map((entry) => entry.worktreeId);
-    const key = cacheKeyFor(
-      input.cacheNamespace(),
+    const key = repositoryQueryKey(
       "worktree-statuses",
       selectedRepositoryId,
       worktreeIds,
     );
     const state = gate(
       supportsRead("status"),
-      selectedRepositoryId !== null && worktreeIds.length > 0,
+      selectedRepositoryId !== null &&
+        worktreeIds.length > 0 &&
+        targetReadyFor(selectedRepositoryId),
     );
     return {
       queryKey: key,
@@ -463,15 +581,16 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
 
   const submodules = createQuery(() => {
     const worktreeId = activeWorktreeId;
-    const key = cacheKeyFor(
-      input.cacheNamespace(),
+    const key = repositoryQueryKey(
       "submodules",
       selectedRepositoryId,
       worktreeId,
     );
     const state = gate(
       supportsRead("submodules"),
-      selectedRepositoryId !== null && worktreeId !== null,
+      selectedRepositoryId !== null &&
+        worktreeId !== null &&
+        targetReadyFor(selectedRepositoryId),
     );
     return {
       queryKey: key,
@@ -491,8 +610,7 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
 
   const history = createInfiniteQuery(() => {
     const filters = input.historyFilters();
-    const key = cacheKeyFor(
-      input.cacheNamespace(),
+    const key = repositoryQueryKey(
       "history",
       selectedRepositoryId,
       activeWorktreeId,
@@ -501,7 +619,9 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
     );
     const state = gate(
       supportsRead("history"),
-      selectedRepositoryId !== null && activeWorktreeId !== null,
+      selectedRepositoryId !== null &&
+        activeWorktreeId !== null &&
+        targetReadyFor(selectedRepositoryId),
     );
     return {
       queryKey: key,
@@ -548,11 +668,11 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
       supportsRead("history"),
       selectedRepositoryId !== null &&
         activeWorktreeId !== null &&
-        selectedOid !== null,
+        selectedOid !== null &&
+        targetReadyFor(selectedRepositoryId),
     );
     return {
-      queryKey: cacheKeyFor(
-        input.cacheNamespace(),
+      queryKey: repositoryQueryKey(
         "commit",
         selectedRepositoryId,
         activeWorktreeId,
@@ -580,11 +700,11 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
       supportsRead("diff"),
       selectedRepositoryId !== null &&
         activeWorktreeId !== null &&
-        request !== null,
+        request !== null &&
+        targetReadyFor(selectedRepositoryId),
     );
     return {
-      queryKey: cacheKeyFor(
-        input.cacheNamespace(),
+      queryKey: repositoryQueryKey(
         "diff",
         selectedRepositoryId,
         activeWorktreeId,
@@ -613,11 +733,11 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
         activeWorktreeId !== null &&
         request !== null &&
         pathId !== null &&
-        request.kind !== "untracked",
+        request.kind !== "untracked" &&
+        targetReadyFor(selectedRepositoryId),
     );
     return {
-      queryKey: cacheKeyFor(
-        input.cacheNamespace(),
+      queryKey: repositoryQueryKey(
         "diff-patch",
         selectedRepositoryId,
         activeWorktreeId,
@@ -688,6 +808,18 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
     diffPatch,
     identity,
     filesystemEntries,
+    /** The key prefix one repository's reads are cached under, for invalidation. */
+    repositoryCachePrefixFor,
+    /** The key prefix one execution target's reads are cached under, for invalidation. */
+    targetCachePrefixFor,
+    targetLabelFor,
+    /** Whether a repository's machine may currently be read from. */
+    targetReadyFor,
+    /** Re-reads the target list; the page calls it after creating or releasing one. */
+    refreshTargets,
+    get targets() {
+      return targets;
+    },
     get repositoryList() {
       return repositoryList;
     },

@@ -65,6 +65,10 @@ pub struct SnapshotRecord {
     pub kind: SnapshotKind,
     pub repository_id: String,
     pub worktree_id: Option<String>,
+    /// The build of the execution target this read ran against. A target that was rebuilt
+    /// (its configuration re-read, a connection replaced) invalidates every snapshot,
+    /// cursor and path id minted under the previous generation.
+    pub target_generation: String,
     pub created_at_ms: u64,
     /// The object names a history page was walked from. Continuing a walk from a
     /// moved tip would mix two histories into one page.
@@ -124,6 +128,9 @@ pub struct SnapshotRequest<'a> {
     pub kind: SnapshotKind,
     pub repository_id: &'a str,
     pub worktree_id: Option<&'a str>,
+    /// The build of the target this read runs against, recorded so a later continuation
+    /// cannot be honoured for a different one.
+    pub target_generation: &'a str,
     /// The object names a paged read was walked from.
     pub tips: Vec<String>,
     pub head_oid: Option<String>,
@@ -205,6 +212,7 @@ impl SnapshotStore {
             kind: request.kind,
             repository_id: request.repository_id.to_string(),
             worktree_id: request.worktree_id.map(str::to_string),
+            target_generation: request.target_generation.to_string(),
             created_at_ms,
             tips: request.tips,
             head_oid: request.head_oid,
@@ -341,6 +349,7 @@ mod tests {
             kind,
             repository_id,
             worktree_id,
+            target_generation: "gen_1",
             tips: Vec::new(),
             head_oid: None,
             observed_refs_fingerprint: None,
@@ -397,6 +406,20 @@ mod tests {
         let second = store.mint(request(SnapshotKind::Status, "repo_1", Some("wt_1")));
         assert_ne!(first.snapshot_id, second.snapshot_id);
         assert!(store.get(&first.snapshot_id).is_some());
+    }
+
+    #[test]
+    fn a_snapshot_remembers_the_target_generation_it_was_taken_on() {
+        // Without the recorded generation a cursor minted before a target rebuild could
+        // not be told apart from one minted after it.
+        let store = SnapshotStore::default();
+        let snapshot = store.mint(SnapshotRequest {
+            target_generation: "gen_7",
+            ..request(SnapshotKind::History, "repo_1", None)
+        });
+        assert_eq!(snapshot.target_generation, "gen_7");
+        let read_back = store.get(&snapshot.snapshot_id).expect("stored");
+        assert_eq!(read_back.target_generation, "gen_7");
     }
 
     #[test]

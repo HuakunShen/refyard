@@ -7,10 +7,11 @@
 //! - `to_display_path` always produces something printable (invalid sequences become
 //!   `\xNN` escapes) and marks whether the original bytes were valid UTF-8;
 //! - a `pathId` is the only thing an operation may name, and it is bound here to the
-//!   exact bytes it was minted for.
+//!   exact bytes it was minted for, in one worktree and on one build of its target.
 //!
 //! The second rule is what makes "the browser cannot ask to stage a file it was not
-//! shown" checkable: text never travels back in as a path.
+//! shown" checkable: text never travels back in as a path, and an id minted before a
+//! target was rebuilt is refused for the new build.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -135,7 +136,9 @@ fn contains_escape_form(text: &str) -> bool {
 /// Binds opaque ids to the exact path bytes they were minted for.
 ///
 /// The key includes the worktree, so the same bytes in two worktrees are two
-/// different ids: an id from one worktree must never stage a file in another.
+/// different ids: an id from one worktree must never stage a file in another. It also
+/// includes the target **generation**, so an id minted before a target was rebuilt is
+/// refused for the new build instead of naming bytes that only existed in the old one.
 #[derive(Debug, Default)]
 pub struct PathRegistry {
     inner: Mutex<PathRegistryState>,
@@ -146,6 +149,7 @@ struct PathRegistryState {
     next: u64,
     id_by_key: HashMap<Vec<u8>, String>,
     bytes_by_id: HashMap<String, Vec<u8>>,
+    generation_by_id: HashMap<String, String>,
 }
 
 impl PathRegistry {
@@ -153,22 +157,52 @@ impl PathRegistry {
         Self::default()
     }
 
-    /// The id for these bytes in this worktree, minting one on first use.
-    pub fn bind(&self, worktree_id: &str, bytes: &[u8]) -> String {
+    /// The id for these bytes in this worktree on this build of the target, minting one
+    /// on first use.
+    pub fn bind(&self, worktree_id: &str, target_generation: &str, bytes: &[u8]) -> String {
         let key = binding_key(worktree_id, bytes);
         let mut state = self.inner.lock().expect("path registry lock");
         if let Some(existing) = state.id_by_key.get(&key) {
-            return existing.clone();
+            // A binding that survives a rebuild would let an id outlive the build it was
+            // shown on; the new build gets a new id for the same bytes.
+            if state
+                .generation_by_id
+                .get(existing)
+                .is_some_and(|generation| generation == target_generation)
+            {
+                return existing.clone();
+            }
         }
         state.next += 1;
         let id = format!("path_{}", base36(state.next));
         state.id_by_key.insert(key, id.clone());
         state.bytes_by_id.insert(id.clone(), bytes.to_vec());
+        state
+            .generation_by_id
+            .insert(id.clone(), target_generation.to_string());
         id
     }
 
-    /// The bytes an id was bound to, or `None` for an id this registry never minted.
-    pub fn resolve(&self, path_id: &str) -> Option<Vec<u8>> {
+    /// The bytes an id was bound to on this build of the target, or `None` for an id this
+    /// registry never minted or minted for a different build.
+    pub fn resolve(&self, target_generation: &str, path_id: &str) -> Option<Vec<u8>> {
+        let state = self.inner.lock().expect("path registry lock");
+        if !state
+            .generation_by_id
+            .get(path_id)
+            .is_some_and(|generation| generation == target_generation)
+        {
+            return None;
+        }
+        state.bytes_by_id.get(path_id).cloned()
+    }
+
+    /// The bytes an id was bound to, whichever build minted it.
+    ///
+    /// Exposed for the fixture driver, which resolves a display path to an id the way a
+    /// client does. A read that acts on a path uses [`Self::resolve`], which cannot see
+    /// across a rebuild.
+    pub fn resolve_any(&self, path_id: &str) -> Option<Vec<u8>> {
         let state = self.inner.lock().expect("path registry lock");
         state.bytes_by_id.get(path_id).cloned()
     }
@@ -247,19 +281,37 @@ mod tests {
     fn binds_the_same_bytes_in_two_worktrees_to_two_ids() {
         // An id from one worktree must never address a file in another.
         let registry = PathRegistry::new();
-        let first = registry.bind("wt_1", b"a.txt");
-        let second = registry.bind("wt_2", b"a.txt");
+        let first = registry.bind("wt_1", "gen_1", b"a.txt");
+        let second = registry.bind("wt_2", "gen_1", b"a.txt");
         assert_ne!(first, second);
-        assert_eq!(registry.resolve(&first).as_deref(), Some(&b"a.txt"[..]));
+        assert_eq!(
+            registry.resolve("gen_1", &first).as_deref(),
+            Some(&b"a.txt"[..])
+        );
     }
 
     #[test]
     fn keeps_an_id_stable_for_the_same_bytes() {
         let registry = PathRegistry::new();
         assert_eq!(
-            registry.bind("wt_1", b"a.txt"),
-            registry.bind("wt_1", b"a.txt")
+            registry.bind("wt_1", "gen_1", b"a.txt"),
+            registry.bind("wt_1", "gen_1", b"a.txt")
         );
+    }
+
+    #[test]
+    fn refuses_an_id_that_was_minted_on_another_build_of_the_target() {
+        // A path id is an authorisation to act on bytes that were shown: after the target
+        // was rebuilt, the same bytes may belong to a different repository.
+        let registry = PathRegistry::new();
+        let before = registry.bind("wt_1", "gen_1", b"a.txt");
+        let after = registry.bind("wt_1", "gen_2", b"a.txt");
+        assert_ne!(before, after, "a rebuild mints a new id for the same bytes");
+        assert_eq!(registry.resolve("gen_2", &before), None);
+        assert_eq!(registry.resolve("gen_1", &before), Some(b"a.txt".to_vec()));
+        assert_eq!(registry.resolve("gen_2", &after), Some(b"a.txt".to_vec()));
+        // The fixture driver's own lookup is the only reader that ignores a generation.
+        assert_eq!(registry.resolve_any(&before), Some(b"a.txt".to_vec()));
     }
 
     #[test]
@@ -277,8 +329,8 @@ mod tests {
     #[test]
     fn mints_ids_in_the_same_spelling_as_the_reference_implementation() {
         let registry = PathRegistry::new();
-        assert_eq!(registry.bind("wt_1", b"a"), "path_1");
-        assert_eq!(registry.bind("wt_1", b"b"), "path_2");
+        assert_eq!(registry.bind("wt_1", "gen_1", b"a"), "path_1");
+        assert_eq!(registry.bind("wt_1", "gen_1", b"b"), "path_2");
         assert_eq!(base36(35), "z");
         assert_eq!(base36(36), "10");
     }

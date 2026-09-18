@@ -43,7 +43,7 @@ use refyard_core::plan::diff::{
 use refyard_core::plan::status::{plan_status, StatusOptions};
 
 use crate::paths::{to_display_path, PathRegistry};
-use crate::providers::local::LocalGit;
+use crate::providers::GitExecutor;
 use crate::reads::{parse_error, path_key, require_worktree, run_required, ReadError};
 use crate::registry::RepositoryRecord;
 use crate::snapshots::{SnapshotKind, SnapshotRequest, SnapshotStore};
@@ -58,7 +58,7 @@ pub const DIFF_MAX_FILES: usize = 200;
 
 /// Reads one diff.
 pub async fn read_diff(
-    git: &LocalGit,
+    runs: &GitExecutor,
     record: &RepositoryRecord,
     paths: &PathRegistry,
     snapshots: &SnapshotStore,
@@ -77,10 +77,12 @@ pub async fn read_diff(
             ));
         }
     }
+    let target_generation = record.location.target_generation.as_str();
     let snapshot = snapshots.mint(SnapshotRequest {
         kind: SnapshotKind::Diff,
         repository_id: &record.repository_id,
         worktree_id: Some(&worktree_id),
+        target_generation,
         tips: Vec::new(),
         head_oid: None,
         observed_refs_fingerprint: None,
@@ -92,11 +94,11 @@ pub async fn read_diff(
     let requested: Option<Vec<u8>> = match &query.path_id {
         None => None,
         Some(path_id) => {
-            let bytes = paths.resolve(path_id).ok_or_else(|| {
+            let bytes = paths.resolve(target_generation, path_id).ok_or_else(|| {
                 ReadError::problem(
                     Problem::new(
                         ProblemCode::NotFound,
-                        "that path id is unknown, or it belongs to a different worktree",
+                        "that path id is unknown, or it belongs to a different worktree or an earlier build of its target",
                     )
                     .with_detail("pathId", DetailValue::Text(path_id.clone())),
                 )
@@ -123,7 +125,7 @@ pub async fn read_diff(
 
     if query.kind == DiffKind::Untracked {
         return untracked_diff(
-            git,
+            runs,
             record,
             paths,
             query,
@@ -137,9 +139,9 @@ pub async fn read_diff(
     }
 
     let args = diff_arguments(query)?;
-    let directory = std::path::Path::new(record.location.canonical_worktree.as_str());
+    let directory = record.location.canonical_worktree.as_str();
     let name_status_bytes = run_required(
-        git,
+        runs,
         directory,
         &plan_diff_name_status(args.options()),
         NAME_STATUS_COMMAND,
@@ -148,7 +150,7 @@ pub async fn read_diff(
     let changes = parse_name_status(&name_status_bytes, Default::default())
         .map_err(|error| parse_error(NAME_STATUS_COMMAND, error))?;
     let numstat_bytes = run_required(
-        git,
+        runs,
         directory,
         &plan_diff_numstat(args.options()),
         NUMSTAT_COMMAND,
@@ -171,7 +173,7 @@ pub async fn read_diff(
         None => None,
         Some(path_text) => {
             let bytes = run_required(
-                git,
+                runs,
                 directory,
                 &plan_diff_patch_for_path(path_text, args.options()),
                 PATCH_COMMAND,
@@ -223,12 +225,12 @@ pub async fn read_diff(
             new: file.new_mode.clone(),
         });
         files.push(DiffFile {
-            path_id: paths.bind(&worktree_id, &change.path),
+            path_id: paths.bind(&worktree_id, target_generation, &change.path),
             display_path: to_display_path(&change.path).text,
             old_path_id: change
                 .original_path
                 .as_ref()
-                .map(|bytes| paths.bind(&worktree_id, bytes)),
+                .map(|bytes| paths.bind(&worktree_id, target_generation, bytes)),
             old_display_path: change
                 .original_path
                 .as_ref()
@@ -266,7 +268,7 @@ pub async fn read_diff(
 /// Untracked files: no Git diff exists, so the content comes from the working tree.
 #[allow(clippy::too_many_arguments)]
 async fn untracked_diff(
-    git: &LocalGit,
+    runs: &GitExecutor,
     record: &RepositoryRecord,
     paths: &PathRegistry,
     query: &DiffQuery,
@@ -276,9 +278,9 @@ async fn untracked_diff(
     requested: Option<&[u8]>,
     read_at: &str,
 ) -> Result<DiffResponse, ReadError> {
-    let directory = std::path::Path::new(record.location.canonical_worktree.as_str());
+    let directory = record.location.canonical_worktree.as_str();
     let status_bytes = run_required(
-        git,
+        runs,
         directory,
         &plan_status(StatusOptions {
             include_ignored: false,
@@ -326,7 +328,7 @@ async fn untracked_diff(
             _ => Vec::new(),
         };
         files.push(DiffFile {
-            path_id: paths.bind(worktree_id, &entry.path),
+            path_id: paths.bind(worktree_id, &record.location.target_generation, &entry.path),
             display_path: display.text,
             old_path_id: None,
             old_display_path: None,

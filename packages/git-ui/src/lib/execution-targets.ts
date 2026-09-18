@@ -189,6 +189,30 @@ export function targetSelectionLabel(
   return selection === null ? LOCAL_LABEL : selection.label;
 }
 
+/** The machine a selection names, as a value two selections can be compared by. */
+function selectionIdentity(
+  selection: ExecutionTargetSelection | null | undefined,
+): string {
+  if (selection === null || selection === undefined) return "local";
+  if (selection.kind === "local") return "local";
+  return selection.kind === "ssh-config"
+    ? `ssh-config:${selection.hostId}`
+    : `ssh-config-manual:${selection.manualAlias}`;
+}
+
+/**
+ * One place a repository can live: a machine and a path on it, serialized as a single
+ * identity. The same path on this machine and on a host are two different places, and a
+ * list keyed by repository id alone would treat them as one — or, for two entries that
+ * share an id, refuse to render at all.
+ */
+export function executionLocationKey(
+  target: ExecutionTargetSelection | null | undefined,
+  path: string,
+): string {
+  return JSON.stringify([selectionIdentity(target), path]);
+}
+
 /**
  * Whether the picker should offer the manual alias entry: when the host admitted its
  * list is incomplete, or when it supports SSH targets but the list read failed.

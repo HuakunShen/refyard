@@ -18,6 +18,7 @@ use refyard_contract::history::{HistoryQuery, Topology};
 use refyard_contract::problem::ProblemCode;
 use refyard_host::paths::PathRegistry;
 use refyard_host::providers::local::LocalGit;
+use refyard_host::providers::GitExecutor;
 use refyard_host::reads::{history::read_history, refs::read_refs, status::read_status};
 use refyard_host::registry::{open_repository, OpenOutcome, OpenRequest, RepositoryRecord};
 use refyard_host::service::{ApplicationService, ApplicationServiceConfig, StatusQuery};
@@ -186,8 +187,10 @@ async fn record_for(fixture: &Fixture, directory: &Path) -> RepositoryRecord {
     }
 }
 
-fn git_provider(fixture: &Fixture) -> LocalGit {
-    LocalGit::at(git_program(), fixture.env.clone())
+fn git_provider(fixture: &Fixture) -> GitExecutor {
+    // The reads run through the same executor seam the service uses; for these fixtures it
+    // is the local arm, which is the behaviour every case here was written against.
+    GitExecutor::Local(LocalGit::at(git_program(), fixture.env.clone()))
 }
 
 #[tokio::test]
@@ -355,6 +358,7 @@ async fn a_shallow_clone_marks_its_oldest_row_as_a_boundary_with_its_missing_par
             committed_before: None,
             path_id: None,
         },
+        "gen_1",
         "2026-01-01T00:00:00.000Z",
     )
     .await

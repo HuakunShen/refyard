@@ -139,7 +139,10 @@ export {
 export { default as RepositoryPanel } from "./components/RepositoryPanel.svelte";
 export { default as RepositoryLauncher } from "./components/RepositoryLauncher.svelte";
 export { default as ExecutionTargetPicker } from "./components/ExecutionTargetPicker.svelte";
-export { default as RepositoryTabs } from "./components/RepositoryTabs.svelte";
+export {
+  default as RepositoryTabs,
+  type RepositoryTabItem,
+} from "./components/RepositoryTabs.svelte";
 export type {
   CloneRequest as RepositoryCloneRequest,
   InitRequest as RepositoryInitRequest,

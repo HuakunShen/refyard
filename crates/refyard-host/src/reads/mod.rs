@@ -32,7 +32,7 @@ use refyard_core::plan::status::{plan_head_oid, plan_head_ref};
 use refyard_core::plan::GitPlan;
 use refyard_core::CoreError;
 
-use crate::providers::local::LocalGit;
+use crate::providers::GitExecutor;
 use crate::registry::{RepositoryRecord, RepositoryRegistry};
 
 /// How a Git command stopped answering.
@@ -175,12 +175,15 @@ fn exit_text(exit_code: Option<i32>) -> String {
 
 /// Runs a command whose only acceptable answer is exit 0.
 pub async fn run_required(
-    git: &LocalGit,
-    directory: &Path,
+    runs: &GitExecutor,
+    directory: &str,
     plan: &GitPlan,
     command: &'static str,
 ) -> Result<Vec<u8>, ReadError> {
-    let outcome = git.run(directory, plan, None).await;
+    let outcome = runs
+        .try_run(directory, plan, None)
+        .await
+        .map_err(ReadError::Problem)?;
     required_output(&outcome, command).map_err(ReadError::Git)
 }
 
@@ -190,13 +193,16 @@ pub async fn run_required(
 /// knows what that means for this command. Every other timeout, cancellation, signal or
 /// spawn failure is still an error, and it is never reported as "the answer was no".
 pub async fn run_meaningful_exit(
-    git: &LocalGit,
-    directory: &Path,
+    runs: &GitExecutor,
+    directory: &str,
     plan: &GitPlan,
     command: &'static str,
     meaningful_exit_codes: &[i32],
 ) -> Result<Option<Vec<u8>>, ReadError> {
-    let outcome = git.run(directory, plan, None).await;
+    let outcome = runs
+        .try_run(directory, plan, None)
+        .await
+        .map_err(ReadError::Problem)?;
     if outcome.state == ExecutionState::Completed {
         if let Some(exit_code) = outcome.exit_code {
             if meaningful_exit_codes.contains(&exit_code) {
@@ -304,14 +310,14 @@ pub fn require_worktree(
 /// Read from `symbolic-ref` and `rev-parse` rather than from a status stream, because
 /// the refs and history panels ask this question without reading status at all.
 pub async fn read_head_state(
-    git: &LocalGit,
+    runs: &GitExecutor,
     record: &RepositoryRecord,
 ) -> Result<HeadState, ReadError> {
-    let directory = Path::new(record.location.canonical_worktree.as_str());
+    let directory = record.location.canonical_worktree.as_str();
     let branch_ref =
-        run_meaningful_exit(git, directory, &plan_head_ref(), "symbolic-ref HEAD", &[1]).await?;
+        run_meaningful_exit(runs, directory, &plan_head_ref(), "symbolic-ref HEAD", &[1]).await?;
     let head_oid =
-        run_meaningful_exit(git, directory, &plan_head_oid(), "rev-parse HEAD", &[1]).await?;
+        run_meaningful_exit(runs, directory, &plan_head_oid(), "rev-parse HEAD", &[1]).await?;
     let oid = match head_oid {
         Some(bytes) => Some(ascii_line(&bytes, "rev-parse HEAD")?),
         None => None,

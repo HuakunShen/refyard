@@ -28,7 +28,7 @@ use refyard_core::parse::refs::{parse_for_each_ref, RefRecord};
 use refyard_core::plan::refs::plan_remotes;
 use refyard_core::plan::status::plan_for_each_ref;
 
-use crate::providers::local::LocalGit;
+use crate::providers::GitExecutor;
 use crate::reads::{parse_error, read_head_state, run_required, ReadError};
 use crate::registry::RepositoryRecord;
 use crate::snapshots::{SnapshotKind, SnapshotRequest, SnapshotStore};
@@ -55,16 +55,16 @@ pub struct RefFacts {
 
 /// Reads every ref and every configured remote.
 pub async fn read_ref_facts(
-    git: &LocalGit,
+    runs: &GitExecutor,
     record: &RepositoryRecord,
 ) -> Result<RefFacts, ReadError> {
-    let directory = std::path::Path::new(record.location.canonical_worktree.as_str());
+    let directory = record.location.canonical_worktree.as_str();
     let ref_bytes =
-        run_required(git, directory, &plan_for_each_ref(), FOR_EACH_REF_COMMAND).await?;
+        run_required(runs, directory, &plan_for_each_ref(), FOR_EACH_REF_COMMAND).await?;
     let refs = parse_for_each_ref(&ref_bytes, REF_LIST_MAX_ENTRIES)
         .map_err(|error| parse_error(FOR_EACH_REF_COMMAND, error))?;
 
-    let remote_bytes = run_required(git, directory, &plan_remotes(), REMOTES_COMMAND).await?;
+    let remote_bytes = run_required(runs, directory, &plan_remotes(), REMOTES_COMMAND).await?;
     let remotes =
         parse_remote_list(&remote_bytes).map_err(|error| parse_error(REMOTES_COMMAND, error))?;
     Ok(RefFacts {
@@ -168,17 +168,18 @@ pub fn object_format_of(record: &RepositoryRecord) -> ObjectFormat {
 
 /// Reads refs and records a snapshot for them.
 pub async fn read_refs(
-    git: &LocalGit,
+    runs: &GitExecutor,
     record: &RepositoryRecord,
     snapshots: &SnapshotStore,
     read_at: &str,
 ) -> Result<RefsSnapshot, ReadError> {
-    let facts = read_ref_facts(git, record).await?;
-    let head = read_head_state(git, record).await?;
+    let facts = read_ref_facts(runs, record).await?;
+    let head = read_head_state(runs, record).await?;
     let snapshot = snapshots.mint(SnapshotRequest {
         kind: SnapshotKind::Refs,
         repository_id: &record.repository_id,
         worktree_id: None,
+        target_generation: &record.location.target_generation,
         tips: Vec::new(),
         head_oid: head.oid.clone(),
         observed_refs_fingerprint: None,

@@ -13,11 +13,10 @@
 
 use refyard_contract::diff::DiffQuery;
 use refyard_contract::history::HistoryQuery;
-use refyard_contract::host::{
-    ExecutionTargetKind, ExecutionTargetState, ExecutionTargetSummary, HostCapabilities,
-};
+use refyard_contract::host::{ExecutionTargetKind, HostCapabilities};
 use refyard_contract::problem::{Problem, ProblemCode, ProblemResponse};
 use refyard_host::service::{ApplicationService, StatusQuery, API_MAJOR};
+use refyard_host::targets::CreateTargetRequest;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -201,7 +200,7 @@ pub async fn dispatch_read(
         }),
         GitReadRequest::Capabilities { query } => {
             if let Some(selector) = &query {
-                refuse_foreign_target(service, selector.target_id.as_deref())?;
+                require_target(service, selector.target_id.as_deref())?;
             }
             let capabilities = service.capabilities().await.map_err(failed)?;
             to_value(capabilities)
@@ -212,16 +211,20 @@ pub async fn dispatch_read(
                 Some(query) => (query.path, query.target_id),
                 None => (None, None),
             };
-            refuse_foreign_target(service, target_id.as_deref())?;
+            // The service refuses a target it does not hold and a remote target's
+            // directories, so this stays one call rather than a check here that could drift
+            // from the one the reads already make.
             let entries = service
-                .filesystem_entries(path.as_deref())
+                .filesystem_entries_on(path.as_deref(), target_id.as_deref())
                 .await
                 .map_err(failed)?;
             to_value(entries)
         }
         GitReadRequest::RegisterRepository { path, target_id } => {
-            refuse_foreign_target(service, target_id.as_deref())?;
-            let repositories = service.register_repository(&path).await.map_err(failed)?;
+            let repositories = service
+                .register_repository_on(&path, target_id.as_deref())
+                .await
+                .map_err(failed)?;
             to_value(repositories)
         }
         GitReadRequest::RevokeRepository { repository_id } => {
@@ -258,34 +261,57 @@ pub async fn dispatch_read(
 ///
 /// SSH discovery answers now, and answers by reading files: it never connects, never runs
 /// `ssh -G` and never evaluates a `Match`, so a list can be offered before any host is
-/// trusted. Target creation is still absent, and `capabilities` says so, so a UI that asks
-/// for it is refused rather than answered with an empty list that looks like an answer.
+/// trusted. Creating a target from that list is the one thing here that reaches the far
+/// side, and it answers with the target whether or not the probe succeeded — a host that
+/// cannot be reached is a target the caller must be able to see the failure next to, not an
+/// error that leaves the session with nothing.
 pub async fn dispatch_host(
     service: &ApplicationService,
     request: HostRequest,
 ) -> Result<Value, ProblemResponse> {
     match request {
         HostRequest::Capabilities => to_value(host_capabilities()),
-        HostRequest::Targets => to_value(vec![target_summary(service)]),
+        HostRequest::Targets => to_value(service.targets()),
         HostRequest::SshHosts => {
             let hosts = service.ssh_hosts().await.map_err(failed)?;
             to_value(hosts)
+        }
+        HostRequest::CreateTarget { request } => {
+            let request = decode_create_target(request)?;
+            let target = service.create_target(request).await.map_err(failed)?;
+            to_value(target)
+        }
+        HostRequest::DisconnectTarget { target_id } => {
+            service.disconnect_target(&target_id).map_err(failed)?;
+            // The adapter's `disconnectTarget` answers with no body.
+            Ok(Value::Null)
         }
         unimplemented => Err(not_implemented(unimplemented.method())),
     }
 }
 
-/// One target a session can run Git against.
-fn target_summary(service: &ApplicationService) -> ExecutionTargetSummary {
-    ExecutionTargetSummary {
-        target_id: service.target_id().to_owned(),
-        kind: ExecutionTargetKind::Local,
-        label: "This machine".to_owned(),
-        // `ready` because this answer came from the service that runs the target's Git.
-        state: ExecutionTargetState::Ready,
-        // False for this machine: there is no remote path to browse.
-        remote_path_browse: false,
-        generation: service.target_generation().to_owned(),
+/// Decodes a `createTarget` request, naming the one variant this host does not serve.
+///
+/// The contract allows an alias typed by hand and bound to a source. This host refuses it by
+/// name rather than letting serde report a missing `hostId`: the reason is not the shape of
+/// the request, it is that an alias this host did not read from the source it lists is an
+/// alias it will not hand to `ssh` on a caller's word.
+fn decode_create_target(request: Value) -> Result<CreateTargetRequest, ProblemResponse> {
+    let typed_by_hand = request.as_object().is_some_and(|fields| {
+        fields.contains_key("manualAlias") || fields.contains_key("sourceId")
+    });
+    match serde_json::from_value::<CreateTargetRequest>(request) {
+        Ok(request) => Ok(request),
+        Err(_) if typed_by_hand => Err(failed(Problem::new(
+            ProblemCode::UnsupportedOperation,
+            "this host creates an SSH target only for a candidate it listed in sshHosts; a \
+             manually typed alias is refused, because this host cannot tell which \
+             configuration source it came from and will not connect on an unverified one",
+        ))),
+        Err(error) => Err(failed(Problem::new(
+            ProblemCode::InvalidRequest,
+            format!("the createTarget request is not one this host implements: {error}"),
+        ))),
     }
 }
 
@@ -296,37 +322,44 @@ fn target_summary(service: &ApplicationService) -> ExecutionTargetSummary {
 /// a folder dialog needs a plugin this build does not link, and no mutation is wired yet, so
 /// nothing can be acknowledged.
 ///
-/// `sshConfig` is true because the service enumerates the configuration files. It says
-/// nothing about reaching those hosts: creation and connection arrive with the provider, and
-/// until then `targetKinds` names only the local target, which is what keeps a UI from
-/// offering a control that cannot work.
+/// `targetKinds` names both because both can be created: `createTarget` builds an SSH target
+/// from a listed candidate, probes it, and reports `unavailable` with the reason when the
+/// host cannot be reached, so a UI that offers the control gets an answer either way.
 fn host_capabilities() -> HostCapabilities {
     HostCapabilities {
         ssh_config: true,
         local_folder_picker: false,
         uncertain_operation_acknowledgement: false,
-        target_kinds: vec![ExecutionTargetKind::Local],
+        target_kinds: vec![ExecutionTargetKind::Local, ExecutionTargetKind::SshConfig],
     }
 }
 
-/// Refuses a request that names a target this host is not.
+/// Refuses a request that names a target this session does not hold.
 ///
 /// The alternative — answering about the local machine because that is all there is — is how
-/// a single-target host silently answers the wrong question. The Node host refuses with the
-/// same code and the same words, so a client sees one behaviour whichever transport it uses.
-fn refuse_foreign_target(
+/// a single-target host silently answers the wrong question. Reads that carry their own
+/// target refuse it inside the service, with the same code and the same words, so this is
+/// only for the calls whose answer has no target of its own.
+fn require_target(
     service: &ApplicationService,
     target_id: Option<&str>,
 ) -> Result<(), ProblemResponse> {
     let Some(asked) = target_id else {
         return Ok(());
     };
-    if asked == service.target_id() {
+    if service
+        .targets()
+        .iter()
+        .any(|target| target.target_id == asked)
+    {
         return Ok(());
     }
     Err(failed(Problem::new(
         ProblemCode::UnsupportedOperation,
-        "this service has a single local execution target and cannot address a targetId",
+        format!(
+            "this session has no execution target {asked}; it is not a target this service \
+             created, and answering from another one would misreport where Git runs"
+        ),
     )))
 }
 

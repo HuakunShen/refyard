@@ -15,3 +15,4 @@ pub mod registry;
 pub mod service;
 pub mod snapshots;
 pub mod ssh;
+pub mod targets;

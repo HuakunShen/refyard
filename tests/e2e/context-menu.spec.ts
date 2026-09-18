@@ -175,6 +175,12 @@ test.describe("Git context menus", () => {
           .trim(),
       )
       .toContain("a.txt");
+    // Git has staged the file; the panel has to have caught up before the next menu is
+    // opened, because that menu's Unstage action is enabled from what the panel believes.
+    // Without this the click below races the refresh and lands on a disabled item.
+    await expect(
+      page.locator('[data-testid^="staged-row-"]').filter({ hasText: "a.txt" }),
+    ).toBeVisible();
 
     await expect(pathRow).toBeVisible();
     await pathRow.click({ button: "right" });
@@ -189,6 +195,12 @@ test.describe("Git context menus", () => {
           .trim(),
       )
       .not.toContain("a.txt");
+    // The same, in the other direction: Discard is offered for an unstaged modification.
+    await expect(
+      page
+        .locator('[data-testid^="unstaged-row-"]')
+        .filter({ hasText: "a.txt" }),
+    ).toBeVisible();
 
     await expect(pathRow).toBeVisible();
     await pathRow.click({ button: "right" });

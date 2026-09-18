@@ -209,6 +209,18 @@ impl SshGit {
         probe::probe(&self.connection, directory, None).await
     }
 
+    /// Probes the host-level facts a target needs before any directory is named.
+    ///
+    /// Shell semantics first, because every later command depends on the login shell
+    /// parsing the quoted template, then `git --version`. The repository layout is *not*
+    /// part of this: it belongs to opening a repository, which happens later and names a
+    /// different question (which object format, is this bare) than "can this host carry
+    /// the reads at all".
+    pub async fn probe_host(&self) -> Result<String, Problem> {
+        probe::shell_semantics(&self.connection, None).await?;
+        probe::git_version(&self.connection, PROBE_DIRECTORY, None).await
+    }
+
     /// The exit status a non-answer carries when a remote command could not be run at all.
     ///
     /// `ssh` reports a connection-level failure as 255 and a remote command's own status
