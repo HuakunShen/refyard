@@ -21,8 +21,7 @@ cask "refyard" do
   sha256 arm:   "38da919e2b412bac6480afa3a6bd08cb4c1d07004166ef33c3a1ee4de1a206bf",
          intel: "0b727b3a167c3906322e112db8b754ee5b755cf5afb7b941f41f199b2c4533bb"
 
-  url "https://github.com/HuakunShen/refyard/releases/download/app-v#{version}/Refyard_#{version}_#{arch}.dmg",
-      verified: "github.com/HuakunShen/refyard/"
+  url "https://github.com/HuakunShen/refyard/releases/download/app-v#{version}/Refyard_#{version}_#{arch}.dmg"
   name "Refyard"
   desc "Local-first Git workbench: a beautiful graph without giving up your repository"
   homepage "https://github.com/HuakunShen/refyard"
