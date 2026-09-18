@@ -24,12 +24,8 @@ test.describe("Git context menus", () => {
     await repo.dispose();
   });
 
-  test("creates refs and copies the SHA from a commit context menu", async ({
-    page,
-    context,
-  }) => {
+  test("creates refs from a commit context menu", async ({ page }) => {
     await page.goto(service.pairingUrl);
-    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     const row = page.getByTestId(`commit-row-${historicalOid}`);
     await expect(row).toBeVisible();
 
@@ -77,6 +73,25 @@ test.describe("Git context menus", () => {
         .decode(await repo.git(["rev-parse", "refs/tags/historical-tag^{}"]))
         .trim(),
     ).toBe(historicalOid);
+  });
+
+  // Reading the clipboard back is a Chromium-only capability in Playwright: Firefox
+  // rejects `clipboard-read` as an unknown permission and WebKit gates readText on a
+  // user gesture, so on those engines this side effect is not assertable rather than
+  // broken. The menu item itself is still asserted everywhere, above.
+  test("copies the SHA to the system clipboard from the commit menu", async ({
+    page,
+    context,
+    browserName,
+  }) => {
+    test.skip(
+      browserName !== "chromium",
+      "asserting the clipboard's content requires Chromium's clipboard permissions",
+    );
+    await page.goto(service.pairingUrl);
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    const row = page.getByTestId(`commit-row-${historicalOid}`);
+    await expect(row).toBeVisible();
 
     await row.click({ button: "right" });
     await page.getByTestId(`commit-context-${historicalOid}-copy-sha`).click();
