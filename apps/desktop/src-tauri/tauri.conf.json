@@ -27,7 +27,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app"],
+    "targets": [
+      "app"
+    ],
     "category": "DeveloperTool",
     "shortDescription": "A Git workbench for the repository you already have.",
     "icon": [
@@ -35,6 +37,15 @@
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns"
-    ]
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IENEN0EyMzRDQkNDNDY1NkYKUldSdlpjUzhUQ042elErU3hxNG5ialRIZFR3QzU2REM4WDlRbU16N3VOalJtcTJDakt3YVdmbHQK",
+      "endpoints": [
+        "https://github.com/HuakunShen/refyard/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

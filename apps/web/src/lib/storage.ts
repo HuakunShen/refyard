@@ -59,3 +59,7 @@ export const storeBackground = (background: string | null): void =>
 export const readStoredGlass = (): boolean => storage.readStoredGlass();
 export const storeGlass = (enabled: boolean): void =>
   storage.storeGlass(enabled);
+export const readStoredUpdateCheck = (): boolean =>
+  storage.readStoredUpdateCheck();
+export const storeUpdateCheck = (enabled: boolean): void =>
+  storage.storeUpdateCheck(enabled);

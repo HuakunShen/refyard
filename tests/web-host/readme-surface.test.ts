@@ -40,7 +40,9 @@ describe("public README surface", () => {
     // marketing claim that leaves readers guessing whether Git data goes to a central host.
     const source = await readme();
 
-    expect(source).toContain("docs/assets/vscode-history.png");
+    // The hero moved to the desktop workbench reading this repository itself; the
+    // contract is that a checked-in real-session demo stays the first impression.
+    expect(source).toContain("docs/assets/desktop-workbench.png");
     expect(source).toMatch(/AGPL(?:v3|-3\.0-only)/i);
     expect(source).toMatch(/never (?:upload|sends|receives).*Git/i);
     expect(source).toContain("publish.yml");

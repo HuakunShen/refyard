@@ -14,9 +14,11 @@
 //!   can open the OS folder picker when a session asks for it, but no `dialog:*` permission
 //!   is granted, so the WebView has no command of the plugin to call. The picker is
 //!   reachable only through `refyard_host_request`, behind the session registry like
-//!   everything else. The window's other capability is `core:event:default` (listen and
-//!   unlisten) plus `core:window:allow-start-dragging`, which the overlay title bar needs:
-//!   the page's top strip is the drag region, so there is no native bar to drag.
+//!   everything else. The other capabilities are `core:event:default` (listen and
+//!   unlisten), `core:window:allow-start-dragging` for the overlay title bar's drag
+//!   strip, and the updater pair — `updater:default` plus `process:allow-restart` —
+//!   which exist only so the Settings sheet can check for, install, and relaunch into an
+//!   update the person using the app asked for.
 //! - **the WebView is untrusted about scope.** It names a session and a repository id; it
 //!   cannot name a path, a program or an argument. Git runs only where the service's planners
 //!   put it, against repositories the host approved.
@@ -202,6 +204,8 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(state)
         .setup(|app| {
             // One relay for the process: it reads the service's event stream and hands each

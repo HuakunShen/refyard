@@ -25,6 +25,11 @@
   import { cn } from "../lib/utils.js";
   import AppearanceFields from "./AppearanceFields.svelte";
   import RefyardLogo from "./RefyardLogo.svelte";
+  import {
+    stepUpdates,
+    type UpdatesPhase,
+    type UpdatesProbe,
+  } from "../lib/updates.js";
 
   interface SettingsAbout {
     gitVersion?: string;
@@ -43,6 +48,10 @@
     onGlassChange: (glass: boolean) => void;
     about?: SettingsAbout;
     onDisconnect?: () => void;
+    /** Present only where updates can exist: the desktop runtime. */
+    updates?: UpdatesProbe;
+    autoCheck?: boolean;
+    onAutoCheckChange?: (enabled: boolean) => void;
   }
 
   let {
@@ -54,9 +63,30 @@
     onGlassChange,
     about,
     onDisconnect,
+    updates,
+    autoCheck = false,
+    onAutoCheckChange = undefined,
   }: Props = $props();
 
   let open = $state(false);
+  let updatesPhase = $state<UpdatesPhase>({ state: "idle" });
+
+  // Template-side views of the phase: Svelte's template narrowing does not look through
+  // the discriminated union, so the answers are computed once, here.
+  const availableUpdate = $derived(
+    updatesPhase.state === "available"
+      ? { offer: updatesPhase.offer, version: updatesPhase.version }
+      : null,
+  );
+  const readyOffer = $derived(
+    updatesPhase.state === "ready" ? updatesPhase.offer : null,
+  );
+  const updatesBusy = $derived(
+    updatesPhase.state === "checking" || updatesPhase.state === "installing",
+  );
+  const updatesMessage = $derived(
+    updatesPhase.state === "error" ? updatesPhase.message : "",
+  );
 
   /** `mode.current` is undefined while the choice is the system's own — the answer resetMode gives back. */
   const activeMode = $derived(mode.current ?? "system");
@@ -71,6 +101,11 @@
     { id: "dark", label: "Dark", icon: MoonIcon, pick: () => setMode("dark") },
     { id: "system", label: "System", icon: MonitorIcon, pick: resetMode },
   ] as const;
+
+  async function runUpdatesStep(): Promise<void> {
+    if (updates === undefined) return;
+    updatesPhase = await stepUpdates(updatesPhase, updates);
+  }
 
   const ABOUT_ROWS = $derived(
     [
@@ -164,6 +199,83 @@
           {onGlassChange}
         />
       </section>
+
+      {#if updates !== undefined}
+        <section class="flex flex-col gap-3" data-testid="settings-updates">
+          <h3
+            class="text-xs font-semibold uppercase tracking-wider text-ink-muted"
+          >
+            Updates
+          </h3>
+          <div class="flex items-center gap-2">
+            {#if updatesBusy}
+              <Button
+                size="sm"
+                variant="outline"
+                disabled
+                data-testid="updates-busy"
+              >
+                {updatesPhase.state === "checking"
+                  ? "Checking…"
+                  : "Downloading and installing…"}
+              </Button>
+            {:else if availableUpdate !== null}
+              <Button
+                size="sm"
+                onclick={() => void runUpdatesStep()}
+                data-testid="updates-install"
+              >
+                Download and install
+                {availableUpdate.version === null
+                  ? ""
+                  : `v${availableUpdate.version}`}
+              </Button>
+            {:else if readyOffer !== null}
+              <Button
+                size="sm"
+                onclick={() => void readyOffer.relaunch()}
+                data-testid="updates-restart"
+              >
+                Restart to finish
+              </Button>
+            {:else}
+              <Button
+                size="sm"
+                variant="outline"
+                onclick={() => void runUpdatesStep()}
+                data-testid="updates-check"
+              >
+                Check for updates
+              </Button>
+            {/if}
+            {#if updatesPhase.state === "up-to-date"}
+              <span
+                class="text-xs text-muted-foreground"
+                data-testid="updates-up-to-date"
+              >
+                Refyard is up to date.
+              </span>
+            {/if}
+            {#if updatesMessage.length > 0}
+              <span class="text-xs text-danger" data-testid="updates-error">
+                {updatesMessage}
+              </span>
+            {/if}
+          </div>
+          {#if onAutoCheckChange !== undefined}
+            <label class="flex items-center gap-2 text-xs text-ink-muted">
+              <input
+                type="checkbox"
+                checked={autoCheck}
+                onchange={(event) =>
+                  onAutoCheckChange(event.currentTarget.checked)}
+                data-testid="updates-auto-check"
+              />
+              Check automatically when the app starts
+            </label>
+          {/if}
+        </section>
+      {/if}
 
       {#if ABOUT_ROWS.length > 0 || onDisconnect !== undefined}
         <section class="flex flex-col gap-2" data-testid="settings-about">

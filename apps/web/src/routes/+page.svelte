@@ -111,7 +111,11 @@
     storeGlass,
     storeInstance,
     storeToken,
+    readStoredUpdateCheck,
+    storeUpdateCheck,
   } from "$lib/storage.js";
+  import { createDesktopUpdates } from "$lib/runtime/updates.js";
+  import type { UpdateOffer, UpdatesProbe } from "@refyard/git-ui";
   import {
     blocksWrites,
     negotiateSession,
@@ -144,6 +148,11 @@
   const streamState = $derived(connectivity.streamState);
   const browserOnline = $derived(connectivity.browserOnline);
 
+  let updatesProbe = $state<UpdatesProbe | null>(null);
+  let autoCheck = $state(browser ? readStoredUpdateCheck() : false);
+  let pendingUpdate = $state<UpdateOffer | null>(null);
+  let failureBanner = $state("");
+
   let accent = $state(browser ? readStoredAccent() : "default");
   let background = $state(browser ? readStoredBackground() : "none");
   let glass = $state(browser ? readStoredGlass() : false);
@@ -160,6 +169,28 @@
     storeAccent(accent);
     storeBackground(background);
     storeGlass(glass);
+  });
+
+  // The updater exists only on the desktop runtime, and its code only loads there.
+  $effect(() => {
+    if (!browser || runtime.kind !== "tauri" || updatesProbe !== null) {
+      return;
+    }
+    void createDesktopUpdates().then((probe) => {
+      updatesProbe = probe;
+      // The opt-in startup check: quiet by default, and a check the user asked for
+      // turns into an offer banner, never an automatic download.
+      if (readStoredUpdateCheck()) {
+        void probe
+          .check()
+          .then((offer) => {
+            pendingUpdate = offer;
+          })
+          .catch(() => {
+            // No feed reachable yet is not a defect worth interrupting startup for.
+          });
+      }
+    });
   });
 
   const queryClient = useQueryClient();
@@ -921,6 +952,10 @@
   const desktopChrome = $derived(
     browser && runtime.kind === "tauri" && /Mac/i.test(navigator.platform),
   );
+
+  async function reportInstallFailure(error: unknown): Promise<void> {
+    failureBanner = error instanceof Error ? error.message : String(error);
+  }
 </script>
 
 <svelte:window
@@ -1101,6 +1136,12 @@
         onAccentChange={(val) => (accent = val)}
         onBackgroundChange={(val) => (background = val)}
         onGlassChange={(val) => (glass = val)}
+        updates={updatesProbe ?? undefined}
+        {autoCheck}
+        onAutoCheckChange={(enabled) => {
+          autoCheck = enabled;
+          storeUpdateCheck(enabled);
+        }}
         about={capabilities.data === undefined
           ? undefined
           : {
@@ -1126,6 +1167,48 @@
           <Button size="sm" variant="outline" onclick={disconnect}
             >Pair again</Button
           >
+        {/snippet}
+      </StateBanner>
+    </div>
+  {/if}
+
+  {#if failureBanner.length > 0}
+    <div class="relative z-10 border-b border-border bg-panel px-4 py-2">
+      <StateBanner
+        state="error"
+        title="The update could not be installed"
+        detail={failureBanner}
+      />
+    </div>
+  {/if}
+
+  {#if pendingUpdate !== null}
+    <div class="relative z-10 border-b border-border bg-panel px-4 py-2">
+      <StateBanner
+        state="loading"
+        title={pendingUpdate.version === null
+          ? "An update is available"
+          : `Update to v${pendingUpdate.version} is available`}
+        detail="Download and install, then restart to run it. Nothing is installed until you say so."
+      >
+        {#snippet action()}
+          <Button
+            size="sm"
+            variant="outline"
+            onclick={() => {
+              const offer = pendingUpdate;
+              if (offer === null) return;
+              pendingUpdate = null;
+              void offer
+                .install()
+                .then(() => offer.relaunch())
+                .catch((error: unknown) => {
+                  void reportInstallFailure(error);
+                });
+            }}
+          >
+            Install and restart
+          </Button>
         {/snippet}
       </StateBanner>
     </div>

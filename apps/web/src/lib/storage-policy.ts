@@ -24,6 +24,7 @@ const TOKEN_KEY = "refyard.session.token";
 const INSTANCE_KEY = "refyard.session.instance";
 const BASE_URL_KEY = "refyard.baseUrl";
 const ACCENT_KEY = "refyard.theme.accent";
+const UPDATE_CHECK_KEY = "refyard.updates.checkOnStartup";
 const BG_KEY = "refyard.theme.background";
 const GLASS_KEY = "refyard.theme.glass";
 
@@ -55,6 +56,8 @@ export interface BrowserStorage {
   storeBackground(background: string | null): void;
   readStoredGlass(): boolean;
   storeGlass(enabled: boolean): void;
+  readStoredUpdateCheck(): boolean;
+  storeUpdateCheck(enabled: boolean): void;
 }
 
 export function createBrowserStorage(stores: BrowserStores): BrowserStorage {
@@ -142,6 +145,12 @@ export function createBrowserStorage(stores: BrowserStores): BrowserStorage {
     },
     storeGlass(enabled: boolean): void {
       writeTo(stores.local, GLASS_KEY, enabled ? "true" : "false");
+    },
+    readStoredUpdateCheck(): boolean {
+      return readFrom(stores.local, UPDATE_CHECK_KEY) === "true";
+    },
+    storeUpdateCheck(enabled: boolean): void {
+      writeTo(stores.local, UPDATE_CHECK_KEY, enabled ? "true" : "false");
     },
   };
 }
