@@ -626,3 +626,27 @@ Offline Fixture），journal `op_3` succeeded。
 **结论**：桌面 App 的读取与写入（stage/commit）在进程级断网下完整可用；App 平时即不持有
 任何网络套接字。"离线"从清单上的 not exercised 变为实测 PASS。e2e 的 offline.spec 继续以
 `context.setOffline` 覆盖浏览器表单的断网行为，与本测量互补。全部实测于 macOS arm64。
+
+### 9.16 自动更新（Item 2）实施与实测（2026-09-19）
+
+按 release spec §4（用户确认 endpoint = GitHub Releases 托管 latest.json；交互 = Settings
+手动检查 + 可选启动检查默认关）实施：
+
+- **密钥**：`tauri signer generate --ci` 生成 minisign 密钥对；公钥提交进
+  `tauri.conf.json` 的 `plugins.updater.pubkey`，私钥留在 `~/.tauri/`（不入库），待 owner
+  写入 `TAURI_SIGNING_PRIVATE_KEY`(+`_PASSWORD`) secrets。
+- **配置与能力**：`bundle.createUpdaterArtifacts: true`；endpoint
+  `https://github.com/HuakunShen/refyard/releases/latest/download/latest.json`（强制
+  HTTPS）；WebView 能力新增 `updater:default` 与 `process:allow-restart`——前者只在用户
+  于 Settings 请求检查时使用，后者只用于安装后重启。
+- **前端**：状态机（idle/checking/up-to-date/available/installing/ready/error）在
+  `git-ui`（`lib/updates.ts`，5 个 vitest 钉住：不可重入、三种诚实终态、安装路径）；Tauri
+  壳在 `apps/web/src/lib/runtime/updates.ts`（懒加载插件，浏览器构建不携带更新器代码）；
+  Settings 的 UPDATES 区块 + 可选启动检查开关；启动检查发现的更新以 banner 提供
+  "Install and restart"，绝不自动下载。
+- **实测**：`cargo check`/`desktop:build` 全绿；带私钥构建产出 `Refyard.app.tar.gz` +
+  `.sig`（16.4 MiB 安装后，预算 ≤30 MiB 内）；真机 AX：Settings 出现 UPDATES 区块，点击
+  Check for updates，插件打到真实 GitHub feed（尚无 release）→ UI 如实显示 feed 的
+  "Could not fetch a valid release JSON from the remote"。整条 IPC→插件→endpoint→错误
+  呈现链路成立；剩余一步是 owner 配 secrets 后推 `app-v0.1.0`，届时 latest.json 存在，
+  同一路径应给出 offer（旧版本 App 消费新 release 的完整验证随之可做）。

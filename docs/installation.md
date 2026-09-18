@@ -226,6 +226,16 @@ does not stop the server: a commit in flight is never cancelled by a page going 
 | `doctor` reports a feature as unsupported           | That Git build lacks something refyard needs (a very old Git, or a limited bundled build). Upgrade Git.                                                                                |
 | The service exits immediately under `--json`        | It prints the reason to stderr; stdout is JSON only, so a supervisor should read stderr for diagnostics.                                                                               |
 
+## Automatic updates
+
+The desktop app checks the release feed you point it at
+(`releases/latest/download/latest.json` on this repository, over HTTPS) and only when you
+ask it to: the Settings sheet has **Check for updates**, and an opt-in **check on
+startup** that is off by default. An update is offered with a version, downloaded and
+installed on your click, and finished with a relaunch — never downloaded on its own.
+Installers are signed with the Tauri updater key; the public key ships inside the app, so
+an unsigned feed is refused.
+
 ## Homebrew (macOS desktop app)
 
 After the first `app-v*` release is published, the desktop app installs through the

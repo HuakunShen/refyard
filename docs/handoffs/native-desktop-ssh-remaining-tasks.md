@@ -129,6 +129,12 @@ port answers nothing while stopped, finished work stays `succeeded` after restar
   inside, works outside; the app process holds zero network sockets) and the full loop —
   open, reads, stage, commit — worked, landing `b603b9d` on disk. No network disconnection
   of the machine needed;
+- updater (user item 2) — **implemented 2026-09-19 per release spec §4**: keys generated
+  (public key committed in `tauri.conf.json`), plugins wired, Settings "Check for
+  updates" + opt-in startup check live in the app, end-to-end check against the real
+  GitHub feed measured (honest 404 until the first release exists). Remaining: the owner
+  sets `TAURI_SIGNING_PRIVATE_KEY`(+`_PASSWORD`) secrets and pushes `app-v0.1.0`; the
+  release then produces `latest.json` and a real update can be consumed.
 - ~~owned SSH child cleanup at shutdown; in-flight read cancellation at shutdown~~ —
   **measured 2026-09-19, acceptance §9.13**: in-process kill-and-reap holds (superseded or
   cancelled reads die and are reaped promptly), but **both app exit paths orphan in-flight

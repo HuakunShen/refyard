@@ -21,7 +21,7 @@ Everything here was written against the Tauri v2 documentation (via Context7,
 - The app is `apps/desktop/src-tauri` (crate `refyard-desktop`), `productName: Refyard`,
   version `0.1.0`. It has **no JavaScript runtime** in the bundle; the frontend is the SPA
   built into `apps/web/build-desktop` by `scripts/build-desktop.ts` (`REFYARD_BUILD_TARGET=desktop
-  pnpm --dir apps/web exec vite build`), and the two-step order (web first, then cargo) is
+pnpm --dir apps/web exec vite build`), and the two-step order (web first, then cargo) is
   load-bearing — a stale frontend would be embedded silently.
 - The GitHub remote is `HuakunShen/refyard` (public repo — `ubuntu-22.04-arm` runners are
   available to it).
@@ -38,13 +38,13 @@ Everything here was written against the Tauri v2 documentation (via Context7,
 
 ## 2. Artifacts per platform
 
-| OS      | Arch    | Runner             | Bundle targets    | Notes                                  |
-| ------- | ------- | ------------------ | ----------------- | -------------------------------------- |
-| macOS   | aarch64 | `macos-latest`     | `app`, `dmg`      | `--target aarch64-apple-darwin`        |
-| macOS   | x86_64  | `macos-latest`     | `app`, `dmg`      | `--target x86_64-apple-darwin`         |
-| Linux   | x86_64  | `ubuntu-22.04`     | `deb`, `appimage` | older-glibc runner for compatibility   |
-| Linux   | arm64   | `ubuntu-22.04-arm` | `deb`, `appimage` | public-repo runners only               |
-| Windows | x86_64  | `windows-latest`   | `nsis`            | the modern Tauri Windows installer     |
+| OS      | Arch    | Runner             | Bundle targets    | Notes                                                                                                                                                                               |
+| ------- | ------- | ------------------ | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| macOS   | aarch64 | `macos-latest`     | `app`, `dmg`      | `--target aarch64-apple-darwin`                                                                                                                                                     |
+| macOS   | x86_64  | `macos-latest`     | `app`, `dmg`      | `--target x86_64-apple-darwin`                                                                                                                                                      |
+| Linux   | x86_64  | `ubuntu-22.04`     | `deb`, `appimage` | older-glibc runner for compatibility                                                                                                                                                |
+| Linux   | arm64   | `ubuntu-22.04-arm` | `deb`, `appimage` | public-repo runners only                                                                                                                                                            |
+| Windows | x86_64  | `windows-latest`   | `nsis`            | the modern Tauri Windows installer                                                                                                                                                  |
 | Windows | aarch64 | —                  | `nsis`            | **not shipped**; kept as a commented matrix row. The Tauri docs' own sample omits it; WebView2-on-ARM64 bootstrapping is the flaky part. The row is written and ready to uncomment. |
 
 Bundle targets are set through Tauri's platform-specific config files
@@ -85,16 +85,17 @@ CI; `latest.json` carries each platform's signature inline.
 4.4 **Capabilities:** the window gains `updater:default` and `process:allow-restart` — the
 first new WebView permissions since the dialog decision, each named because the update
 action is a real user affordance in the Settings sheet, not an ambient one.
-4.5 **Owner choices this implementation waits on**:
-   - Endpoint confirmed as GitHub-Releases-hosted `latest.json` (the owner's "one JSON
-     file" recollection matches; no separate release server).
-   - Interaction: a **Check for updates** section in the app's Settings sheet (manual,
-     user-initiated) plus an **opt-in** "check automatically on startup" toggle, default
-     off. Silence is the default; no auto-download.
-4.6 **Honest limits:** v2 updater does not downgrade; version comparisons are SemVer; a
-Gatekeeper-unsigned macOS build still auto-updates (the minisign signature is what the
-plugin verifies), but unsigned builds prompt Finder-right-click-open on first install —
-Apple Developer ID signing/notarization remains an optional owner-provisioned step.
+4.5 **Owner choices — CONFIRMED 2026-09-19 (implemented in this round)**:
+
+- Endpoint confirmed as GitHub-Releases-hosted `latest.json` (the owner's "one JSON
+  file" recollection matches; no separate release server).
+- Interaction: a **Check for updates** section in the app's Settings sheet (manual,
+  user-initiated) plus an **opt-in** "check automatically on startup" toggle, default
+  off. Silence is the default; no auto-download.
+  4.6 **Honest limits:** v2 updater does not downgrade; version comparisons are SemVer; a
+  Gatekeeper-unsigned macOS build still auto-updates (the minisign signature is what the
+  plugin verifies), but unsigned builds prompt Finder-right-click-open on first install —
+  Apple Developer ID signing/notarization remains an optional owner-provisioned step.
 
 ## 5. Homebrew cask (item 4)
 

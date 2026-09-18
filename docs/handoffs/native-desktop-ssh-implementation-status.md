@@ -105,7 +105,29 @@ and read cancellation at shutdown — named in the remaining-tasks file §2.
   documented reasons — the clipboard read-back is Chromium-only, and two specs skip webkit
   where route interception is unreliable). The suite is green on all three engines.
 
-### 3.5 E14 crash/restart demonstrated in the running App — DONE (2026-09-19)
+### 3.5 Automatic updates + release pipeline — DONE in code (2026-09-19)
+
+`release.yml` gates, builds five platforms (mac aarch64/x64, linux x64/arm, windows x64),
+and publishes on `app-v*` tags; tauri-action emits `latest.json` (updater feed) once
+`TAURI_SIGNING_PRIVATE_KEY` secrets are set. The app carries the updater plugin, the
+public key, a Settings "Check for updates" section, and an opt-in startup check
+(measured end-to-end against the real feed in acceptance §9.16). A Homebrew cask for
+`HuakunShen/homebrew-tap` ships in `packaging/homebrew/`. A VS Code extension
+(`apps/refyard-vscode`) reuses the git-ui components over a `--machine` supervisor
+channel — spec and plan in `docs/superpowers/`.
+
+### 3.6 The owner's three steps to the first real release
+
+1. Put the signing key into GitHub secrets — `TAURI_SIGNING_PRIVATE_KEY` is the file
+   `~/.tauri/refyard-updater.key` (generated 2026-09-19, empty password),
+   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` is the empty string.
+2. `git push` the branch, then push the tag `app-v0.1.0`. `release.yml` gates, builds all
+   five platforms, and publishes the release with `latest.json` attached.
+3. Fill the cask's two sha256 values from the DMG artifacts, push
+   `packaging/homebrew/Casks/refyard.rb` to `HuakunShen/homebrew-tap` as `Casks/refyard.rb`,
+   and the installed-app path (updater + cask) is live.
+
+### 3.7 E14 crash/restart demonstrated in the running App — DONE (2026-09-19)
 
 The last host-level-only row is now exercised end to end in the real Tauri window: a commit
 killed with SIGKILL inside its pre-commit hook window, an app restart, a refused write with the
