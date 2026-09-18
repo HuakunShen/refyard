@@ -1,0 +1,31 @@
+# The fixture server's policy: public-key authentication with the key the fixture
+# generated, nothing else.
+#
+# Password and keyboard-interactive authentication are off because the product's supported
+# credential path is the user's existing key or agent, and a fixture that accepted a
+# password would let a real regression in that path look like a pass. Forwarding and
+# tunnels are off because no read uses them; the client disables them as well, and the
+# server refusing them is the second half of that guarantee.
+Port 22
+ListenAddress 0.0.0.0
+
+HostKey /etc/ssh/ssh_host_ed25519_key
+HostKeyAlgorithms ssh-ed25519
+
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+PermitRootLogin no
+PermitEmptyPasswords no
+AllowUsers gituser
+
+AllowAgentForwarding no
+AllowTcpForwarding no
+PermitTunnel no
+X11Forwarding no
+PermitUserEnvironment no
+
+PrintMotd no
+LogLevel VERBOSE
+PidFile /run/sshd.pid
+AcceptEnv LANG LC_*

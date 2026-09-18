@@ -6,3 +6,4 @@
 //! SSH paths one implementation rather than two.
 
 pub mod local;
+pub mod ssh;
