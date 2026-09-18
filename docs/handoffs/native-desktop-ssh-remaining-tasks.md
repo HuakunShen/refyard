@@ -125,7 +125,16 @@ port answers nothing while stopped, finished work stays `succeeded` after restar
 - the **windowed app** killed mid-write (the CLI/HTTP proof is done; the app-level kill is not);
 - the App's own behaviour with no Git on PATH;
 - offline (network cut) local-repo operation — not exercised;
-- owned SSH child cleanup at shutdown; in-flight read cancellation at shutdown.
+- ~~owned SSH child cleanup at shutdown; in-flight read cancellation at shutdown~~ —
+  **measured 2026-09-19, acceptance §9.13**: in-process kill-and-reap holds (superseded or
+  cancelled reads die and are reaped promptly), but **both app exit paths orphan in-flight
+  ssh children** — Cmd+Q leaves them (Tauri exit never drops the Tokio runtime, so
+  `kill_on_drop` never fires) and SIGTERM kills the process with no handler at all. The
+  orphans live bounded lives on their own OpenSSH timers (ConnectTimeout 15s; ServerAlive
+  bounds post-auth at ~30s+) and then exit. Follow-up task: install a SIGTERM/SIGINT
+  handler plus a Tauri exit hook that trips a service-level cancellation wired into the
+  reads' existing `cancel` slot — the kill-and-reap machinery exists; only the exit hop
+  is missing. Not yet done; do not mark clean.
 
 ## 3. D11 tail — the acknowledgement entry point — DONE (2026-09-18)
 

@@ -136,6 +136,10 @@ picker + drag-drop round is §9.11 (commit 47eb4d3).
   not demonstrated in the running App; **E14** (crash/restart) now is — acceptance §9.12 drives
   the real macOS App through kill-9 mid-commit (10s pre-commit hook fixture), restart, blocked
   writes, panel acknowledgement, and a successful post-ack stage.
+- **App exit orphans in-flight SSH children** (measured, acceptance §9.13): Cmd+Q and SIGTERM
+  both leave hung `ssh` processes behind (bounded by their own OpenSSH timers). In-process
+  cancellation is fine; the missing piece is an exit-path cancellation hop. Fix planned, not
+  written.
 
 ## 5. Resuming
 

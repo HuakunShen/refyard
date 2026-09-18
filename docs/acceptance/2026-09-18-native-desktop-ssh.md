@@ -514,7 +514,7 @@ env -i HOME=/tmp/refyard-crash-demo/home TMPDIR=/tmp/refyard-crash-demo \
    对象或引用。
 2. 重新启动 App（journal 载入 op_1…op_5，op_5 停在 running）。经原生 folder picker 重开同一
    仓库，点 Stage README.md：写被拒，`UncertainOutcome: process restarted with the
-   operation in flight`，同时出现 UncertainOutcomePanel（role=alert）："Writes are blocked:
+operation in flight`，同时出现 UncertainOutcomePanel（role=alert）："Writes are blocked:
    an operation's outcome is unknown"，列出 `op_5` 与原因；确认按钮在复选框勾选前禁用。
 3. 勾选复选框 → 点「Confirm and unblock writes」→ 面板消失；再点 Stage README.md 成功
    （"staged 1 path"，Staged Files 1）。
@@ -523,7 +523,7 @@ env -i HOME=/tmp/refyard-crash-demo/home TMPDIR=/tmp/refyard-crash-demo \
 
 - `state/journal/records/op_5.json`：`status: "unknown"`、`result: null`、
   `problem.code: "UncertainOutcome"`、`unknownReason: "process restarted with the operation
-  in flight"`、`acknowledgedAtMs: 1789758750313`——ack 只记录确认，不改写已记录的结果。
+in flight"`、`acknowledgedAtMs: 1789758750313`——ack 只记录确认，不改写已记录的结果。
 - `op_6.json`（解除后的 stage）：`status: "succeeded"`，summary "staged 1 path"。
 - `git -C repo log --oneline` 仅 `5a27097 base`——被杀的提交没有落地；`git status --short`
   为 `M  README.md`（解除后那次 stage）。
@@ -534,3 +534,41 @@ unknown 处理、不得自动重试，两条路都汇入同一个阻塞+确认�
 记录的这一次用后台 watcher 实现确定性（等待 journal 出现 op_5 文件后再 sleep ≈1.5s 杀）。
 E14 的 host 级自动化覆盖不变：`tests/native/http-shutdown.test.ts`（SIGKILL→unknown→阻塞→
 三步 ack；SIGTERM 优雅退出）与本轮 e2e；本节补上"运行中的 App 里可见"这一环。
+
+### 9.13 关机时 owned SSH 子进程清理实测（真实 App + SSH fixture，2026-09-19）
+
+D13 清单遗留项的实测。结论先行：**进程内的 kill-and-reap 是实的（deadline/cancel/被取代的
+读都被杀干净并 reap）；但 App 的两条退出路径都会把在途的 ssh 子进程孤儿化**——这是一个
+named gap（见 remaining-tasks 与 status 文档），不是 PASS。
+
+**设置**：release 版 App，净环境 + `REFYARD_STATE_DIR=/tmp/refyard-ssh-demo/state` +
+`REFYARD_SSH_CONFIG` 指向 fixture 配置；真实 Docker SSH fixture（容器
+`refyard-native-ssh-fixture`，端口 32788）上的远端仓库在 App 内打开（历史 2 提交、工作副本
+3 变更，全部经 SSH）。读进程可精确计数：App 派生的每个 `ssh` 都带
+`-F …/native-ssh-fixture/home/.ssh/config`。停顿手段：`docker pause` 冻结容器——TCP 握手仍
+由内核完成，sshd 不再应答，于是新的 ssh 在 banner exchange 处挂起；OpenSSH 把
+ConnectTimeout（此处固定选项策略里的 15s）同样应用于 banner，所以每个挂起子进程 ~15s 后
+自断。
+
+**进程内行为（不关机，作为对照）**：挂起批次的子进程在读被取代/取消时 ~2s 内消失——与
+runner 文档一致（deadline 或 cancellation 即 kill **and reap**，`process/runner.rs` 的
+`kill_on_drop(true)` + `cleanup.rs` 的 terminate）；未被取代的挂起读则活满 15s 自断。停顿
+期间 UI 的表现也符合设计：读失败如实呈现（"Could not read history — GitCommandFailed:
+for-each-ref exited with status 255" + Retry），全部写按钮禁用（fail-closed）。
+
+**Cmd+Q（优雅退出）**：挂起读在途时 Cmd+Q——App 退出，**至少一个 ssh 子进程被孤儿化**
+（ppid=1，非僵尸、活动睡眠态），存活直到它自己的 15s 客户端超时到期后才消失。Tauri 的
+退出路径没有经过 Tokio runtime 的 drop，`kill_on_drop` 不触发。
+
+**SIGTERM**：无 handler（App 未装任何信号处理），进程即刻死亡，**全部 4 个在途子进程孤儿
+化**（ppid=1，状态 `SN`），各自在 ~15s（按生成时间错开）自断；此后无残留，解冻容器后一切
+正常。换言之：孤儿的寿命由 ssh 自己的固定选项（ConnectTimeout 15s / ServerAlive 15×2）
+兜底，有界但不受我们控制；若连接停在已认证后的通道读上，孤儿可活到 ~30s 以上。
+
+**边界与未测**：native CLI 无法进入本测量——SSH target 是进程内状态（`TargetRegistry`
+纯内存），只能由桌面 App 的 host request 创建，CLI 的 HTTP 边界没有该路由，因此
+"CLI + SSH 子进程" 无法构成；CLI 自身的优雅退出（exit 0、在途写不丢单）已由
+`http-shutdown.test.ts` 覆盖。本节全部实测于 macOS arm64；Windows/Linux 未测。修复方向
+（后续任务，先写失败测试）：装 SIGTERM/SIGINT handler 并在 Tauri 退出钩子里触发一个服务级
+cancellation，接入每次读已预留的 `cancel` 槽位——runner 的杀+reap 逻辑已经存在，缺的只是
+退出时的一跳。
