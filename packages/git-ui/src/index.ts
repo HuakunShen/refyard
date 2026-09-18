@@ -111,7 +111,8 @@ export {
 export { default as ModeToggle } from "./components/ModeToggle.svelte";
 export { default as RefyardLogo } from "./components/RefyardLogo.svelte";
 export { default as SectionCard } from "./components/SectionCard.svelte";
-export { default as AppearanceSettings } from "./components/AppearanceSettings.svelte";
+export { default as SettingsDialog } from "./components/SettingsDialog.svelte";
+export { default as AppearanceFields } from "./components/AppearanceFields.svelte";
 export { default as ContextActionMenu } from "./components/ContextActionMenu.svelte";
 export { default as ConfirmDialog } from "./components/ConfirmDialog.svelte";
 

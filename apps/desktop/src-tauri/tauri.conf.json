@@ -15,7 +15,9 @@
         "height": 900,
         "minWidth": 960,
         "minHeight": 600,
-        "resizable": true
+        "resizable": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "withGlobalTauri": false,

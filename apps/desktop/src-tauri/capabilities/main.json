@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "The workbench window. Its only granted capability is Tauri's event IPC, which is exactly listen and unlisten — the pair the backend adapter subscribes a listener with. The dialog plugin is linked so the HOST can open the OS folder picker from dispatch, but no dialog:* permission is granted to this window, so the WebView has no plugin command to call; every host answer is reached over the IPC and gated by the session registry in src/session.rs.",
+  "description": "The workbench window. Its granted capabilities are Tauri's event IPC — exactly listen and unlisten, the pair the backend adapter subscribes a listener with — and window start-dragging, which the overlay title bar needs because the page's own top strip is the drag region (there is no native bar to drag). The dialog plugin is linked so the HOST can open the OS folder picker from dispatch, but no dialog:* permission is granted to this window, so the WebView has no plugin command to call; every host answer is reached over the IPC and gated by the session registry in src/session.rs.",
   "windows": ["main"],
-  "permissions": ["core:event:default"]
+  "permissions": ["core:event:default", "core:window:allow-start-dragging"]
 }

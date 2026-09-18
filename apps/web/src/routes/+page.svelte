@@ -21,7 +21,7 @@
     ExecutionTargetSummary,
   } from "@refyard/git-contract";
   import {
-    AppearanceSettings,
+    SettingsDialog,
     Badge,
     Button,
     CommitDetailPanel,
@@ -33,12 +33,9 @@
     DiffPanel,
     RepositoryLauncher,
     RepositoryTabs,
-    ModeToggle,
-    RefyardLogo,
     StateBanner,
     UncertainOutcomePanel,
     cn,
-    shortOid,
     type ExecutionTargetSelection,
   } from "@refyard/git-ui";
   import {
@@ -915,6 +912,15 @@
   const backendLabel = $derived(
     backendSession?.metadata.backendLabel ?? "no backend session",
   );
+
+  /**
+   * The desktop shell overlays the native title bar on the page, so the top strip
+   * doubles as window chrome: on macOS the traffic lights sit over the page and the
+   * strip must clear them with a leading inset. The browser keeps its own edge.
+   */
+  const desktopChrome = $derived(
+    browser && runtime.kind === "tauri" && /Mac/i.test(navigator.platform),
+  );
 </script>
 
 <svelte:window
@@ -941,32 +947,21 @@
     ></div>
   {/if}
 
+  <!-- One strip, GitKraken-style: the repository tabs are the topmost layer, and the
+       machine-facing detail lives in the settings gear's sheet. In the desktop shell the
+       native title bar is an overlay, so this strip is the window's entire chrome: the
+       leading inset clears the traffic lights and the strip itself is the drag region. -->
   <header
-    class="relative z-10 flex min-h-12 shrink-0 flex-wrap items-center justify-between gap-2 py-2 sm:flex-wrap sm:py-2 border-b border-border/80 bg-panel/90 px-4 backdrop-blur-md"
+    data-tauri-drag-region
+    class="relative z-10 flex h-10 shrink-0 items-center gap-2 border-b border-border/80 bg-panel/90 pr-2 pl-2 backdrop-blur-md"
+    class:pl-[84px]={desktopChrome}
   >
-    <div class="flex items-center gap-2">
-      <RefyardLogo variant="mark" size={22} />
-      <span class="text-sm font-semibold tracking-tight">refyard</span>
-
-      {#if capabilities.data !== undefined}
-        <span
-          class="hidden items-center gap-1.5 text-xs text-muted-foreground 2xl:flex"
-        >
-          <span class="rounded bg-muted/70 px-1.5 py-0.5 font-mono text-[11px]"
-            >git {capabilities.data.git.version}</span
-          >
-          <span class="text-ink-faint">·</span>
-          <span
-            class="font-mono text-[11px] text-ink-faint"
-            title="service instance"
-            >{shortOid(capabilities.data.serviceInstanceId)}</span
-          >
-        </span>
-      {/if}
-    </div>
-
     {#if backendSession !== null}
-      <div class="order-last basis-full min-w-0 border-t border-border/60 pt-1">
+      <div
+        class="min-w-0 flex-1"
+        data-tauri-drag-region
+        data-testid="workbench-tabstrip"
+      >
         <RepositoryTabs
           tabs={repositoryTabs.tabs.map((tab) => {
             const selected = tabWorktrees[repositoryTabKey(tab)];
@@ -990,11 +985,13 @@
           onNew={handleNewRepositoryTab}
         />
       </div>
+    {:else}
+      <span class="flex-1" data-tauri-drag-region></span>
     {/if}
 
     {#if repository !== null}
       <div
-        class="hidden items-center gap-1.5 rounded-full border border-border/80 bg-background/60 px-3 py-1 text-xs shadow-2xs backdrop-blur-xs md:flex"
+        class="hidden items-center gap-1.5 rounded-full border border-border/80 bg-background/60 px-3 py-1 text-xs shadow-2xs backdrop-blur-xs lg:flex"
       >
         <FolderGit2 class="size-3.5 text-primary" />
         <span
@@ -1097,24 +1094,23 @@
                   ? "connecting…"
                   : "no live updates"}
       </Badge>
-      <span
-        class="hidden font-mono text-xs text-ink-faint 2xl:inline"
-        title="backend">{backendLabel}</span
-      >
-      <AppearanceSettings
+      <SettingsDialog
         {accent}
         {background}
         {glass}
         onAccentChange={(val) => (accent = val)}
         onBackgroundChange={(val) => (background = val)}
         onGlassChange={(val) => (glass = val)}
+        about={capabilities.data === undefined
+          ? undefined
+          : {
+              gitVersion: capabilities.data.git.version,
+              serviceInstanceId: capabilities.data.serviceInstanceId,
+              backendLabel,
+              operations: capabilities.data.operations.length,
+            }}
+        onDisconnect={runtime.kind === "http" ? disconnect : undefined}
       />
-      <ModeToggle />
-      {#if runtime.kind === "http"}
-        <Button size="sm" variant="ghost" onclick={disconnect}
-          >Disconnect</Button
-        >
-      {/if}
     {/if}
   </header>
 
