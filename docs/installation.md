@@ -226,6 +226,27 @@ does not stop the server: a commit in flight is never cancelled by a page going 
 | `doctor` reports a feature as unsupported           | That Git build lacks something refyard needs (a very old Git, or a limited bundled build). Upgrade Git.                                                                                |
 | The service exits immediately under `--json`        | It prints the reason to stderr; stdout is JSON only, so a supervisor should read stderr for diagnostics.                                                                               |
 
+## Homebrew (macOS desktop app)
+
+After the first `app-v*` release is published, the desktop app installs through the
+owner's tap:
+
+```sh
+brew install --cask HuakunShen/refyard/refyard
+```
+
+The cask source of truth is [`packaging/homebrew/Casks/refyard.rb`](../packaging/homebrew/Casks/refyard.rb).
+Each release, the person publishing:
+
+1. fills `version` and the two `sha256` values from the release artifacts
+   (`shasum -a 256 Refyard_<version>_<arch>.dmg`);
+2. copies the file to the tap as `Casks/refyard.rb` and pushes it (this repository
+   itself never pushes);
+3. verifies with `brew audit --cask refyard` and a clean `brew install`.
+
+`auto_updates true` is deliberate: once the app's built-in updater ships, Homebrew
+recognises the newer installed version instead of fighting it.
+
 ## Uninstalling
 
 Remove the package directory (or `npm uninstall refyard`) and delete the state
