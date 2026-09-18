@@ -1,0 +1,138 @@
+# The desktop release pipeline: one tag push, five runners, one published release.
+#
+# The tag namespace is `app-v*` because the npm line (`publish.yml`) owns `v*`: a desktop
+# tag and an npm tag must never be mistaken for each other. `__VERSION__` in the tag and
+# release names is substituted by tauri-action from `tauri.conf.json`.
+#
+# Order inside every build job is the same order `scripts/build-desktop.ts` enforces
+# locally: the SPA is built into `apps/web/build-desktop` BEFORE the Rust host compiles,
+# because Tauri embeds the frontend directory at compile time — a stale frontend would be
+# shipped silently. tauri-action performs the cargo build + bundle + release steps that
+# the script performs locally.
+#
+# Signing: TAURI_SIGNING_PRIVATE_KEY(+_PASSWORD) are the Tauri updater's minisign key.
+# They are harmless until updater artifacts are enabled in `tauri.conf.json`; once they
+# are (the automatic-update feature), tauri-action also emits `latest.json` into the
+# release. Apple Developer ID signing/notarization is optional and owner-provisioned.
+name: release
+
+on:
+  push:
+    tags:
+      - "app-v*"
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  # The headless contract runs before any artifact exists: a red gate never produces a
+  # release. It is the same subset of the root command contract that runs without a
+  # display (the browser e2e line is `ci.yml`'s job on main).
+  gate:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type and boundary checks
+        run: pnpm check
+
+      - name: Unit tests
+        run: pnpm test:unit
+
+      - name: Rust tests
+        run: cargo test --workspace
+
+  build:
+    needs: gate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest # Apple Silicon
+            args: --target aarch64-apple-darwin
+          - platform: macos-latest # Intel
+            args: --target x86_64-apple-darwin
+          - platform: ubuntu-22.04 # x86_64, older glibc for compatibility
+            args: ""
+          - platform: ubuntu-22.04-arm # arm64; public-repo runners only
+            args: ""
+          - platform: windows-latest # x86_64
+            args: ""
+          # Windows ARM64 is deliberately absent: Tauri's own release sample omits it and
+          # the WebView2 ARM64 bootstrapper is the flaky part. To try it, add:
+          #   - platform: windows-latest
+          #     args: --target aarch64-pc-windows-msvc
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: ${{ contains(matrix.platform, 'ubuntu') }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # Cross targets are only used on the macOS runners.
+          targets: ${{ contains(matrix.platform, 'macos') && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the SPA into the desktop dist
+        # The exact first half of `scripts/build-desktop.ts`, before any Rust code runs.
+        run: pnpm --dir apps/web exec vite build
+        env:
+          REFYARD_BUILD_TARGET: desktop
+
+      - uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: apps/desktop
+          tagName: app-v__VERSION__
+          releaseName: Refyard v__VERSION__
+          releaseBody: See the assets to install this version. The desktop app runs its own Git, needs no network for local repositories, and updates itself from this release feed.
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
