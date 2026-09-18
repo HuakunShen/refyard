@@ -104,6 +104,17 @@ and read cancellation at shutdown — named in the remaining-tasks file §2.
   desktop (25), `pnpm test:e2e` (chromium project clean; firefox+webkit carry two pre-existing
   context-menu failures reproduced on the committed tree without this round's changes).
 
+### 3.5 E14 crash/restart demonstrated in the running App — DONE (2026-09-19)
+
+The last host-level-only row is now exercised end to end in the real Tauri window: a commit
+killed with SIGKILL inside its pre-commit hook window, an app restart, a refused write with the
+UncertainOutcomePanel listing `op_5`, checkbox-gated acknowledgement, and a successful stage
+afterwards. Journal on disk shows `op_5` staying `unknown` with `acknowledgedAtMs` recorded
+(ack records confirmation, never rewrites the outcome) and `git log` showing the killed commit
+never landed. Fixture, transcript, and the honest iteration notes (one earlier kill landed
+after the hook — same unknown semantics either way) are in acceptance §9.12. The native folder
+picker + drag-drop round is §9.11 (commit 47eb4d3).
+
 ## 4. Known gaps, named
 
 - **No remote untracked-file diff.** The remote read path shows modified and staged files; an
@@ -121,9 +132,10 @@ and read cancellation at shutdown — named in the remaining-tasks file §2.
 - **Only macOS arm64 has been run**, for every artifact and every gate.
 - **Credential ecosystem** (1Password, ssh-agent, passphrase prompts) is untested: the fixture
   uses a generated key with `BatchMode=yes`.
-- **E06/E11/E12/E14** (hook failure, connection loss, crash/restart, cancel) are covered at the
-  host level but not demonstrated in the running App; **E08/E09/E15** (snapshot staleness,
-  unsupported paths, unimplemented destructive buttons) are covered by tests only.
+- **E06/E11/E12** (hook failure, connection loss, cancel) are covered at the host level but
+  not demonstrated in the running App; **E14** (crash/restart) now is — acceptance §9.12 drives
+  the real macOS App through kill-9 mid-commit (10s pre-commit hook fixture), restart, blocked
+  writes, panel acknowledgement, and a successful post-ack stage.
 
 ## 5. Resuming
 

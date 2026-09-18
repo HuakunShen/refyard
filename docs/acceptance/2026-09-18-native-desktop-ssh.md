@@ -489,3 +489,48 @@ Node 服务，仅拦截两条需要“杀进程才能产生”的回答（阻塞
 - **测试**：`native-folder-picker.spec.ts`（chromium+firefox，webkit 因拦截不可靠跳过）钉住
   flag 两个方向的门控与拒绝显示；`session_owner.rs` 新增 picker 形状用例（选择→路径、
   取消→null）。bundle 增至 13.3 MiB（dialog 插件），`native:verify` 仍绿（预算 ≤30 MiB）。
+
+### 9.12 E14 crash/restart 演示（运行中的 App，2026-09-19）
+
+目标：证明"进程死在写操作中途 → 重启后该仓库写入被阻塞、结果按 unknown 记录 → 经显式
+三步确认解除"这条链在真实 App 里端到端成立（此前只有 host 级测试覆盖）。
+
+**Fixture**（`/tmp/refyard-crash-demo/{repo,home,state}`，全程隔离，不碰任何真实仓库）：
+repo 基线提交 `5a27097`（"base"），README.md 已修改未暂存；`.git/hooks/pre-commit` 为
+`sleep 10`，给杀进程一个确定性窗口；repo 本地 config 写入 user.name/user.email——host 剥离
+`GIT_*` 环境变量，净环境下提交身份只能来自 repo 配置（这也被本演示顺带证实：漏配时提交以
+"Author identity unknown" 快速失败，被拒发生在写入之前）。App 以净环境启动：
+
+```sh
+env -i HOME=/tmp/refyard-crash-demo/home TMPDIR=/tmp/refyard-crash-demo \
+  PATH=/usr/bin:/bin REFYARD_STATE_DIR=/tmp/refyard-crash-demo/state LANG=C \
+  apps/desktop/src-tauri/target/release/bundle/macos/Refyard.app/Contents/MacOS/refyard-desktop
+```
+
+**过程**（AX 驱动真实 macOS App；WKWebView 无 WebDriver，无法用 Playwright）：
+
+1. App 内 stage README.md、填提交信息、点 Commit（journal 记为 `op_5`，状态 running）。
+   提交卡在 pre-commit 的 sleep 期间时对整个 App 进程 `kill -9`——此刻 git 尚未写入任何
+   对象或引用。
+2. 重新启动 App（journal 载入 op_1…op_5，op_5 停在 running）。经原生 folder picker 重开同一
+   仓库，点 Stage README.md：写被拒，`UncertainOutcome: process restarted with the
+   operation in flight`，同时出现 UncertainOutcomePanel（role=alert）："Writes are blocked:
+   an operation's outcome is unknown"，列出 `op_5` 与原因；确认按钮在复选框勾选前禁用。
+3. 勾选复选框 → 点「Confirm and unblock writes」→ 面板消失；再点 Stage README.md 成功
+   （"staged 1 path"，Staged Files 1）。
+
+**磁盘证据**：
+
+- `state/journal/records/op_5.json`：`status: "unknown"`、`result: null`、
+  `problem.code: "UncertainOutcome"`、`unknownReason: "process restarted with the operation
+  in flight"`、`acknowledgedAtMs: 1789758750313`——ack 只记录确认，不改写已记录的结果。
+- `op_6.json`（解除后的 stage）：`status: "succeeded"`，summary "staged 1 path"。
+- `git -C repo log --oneline` 仅 `5a27097 base`——被杀的提交没有落地；`git status --short`
+  为 `M  README.md`（解除后那次 stage）。
+
+**诚实备注**：窗口期内共四次实例迭代。较早一次杀晚了（工具往返超过 hook 的 10s 窗口），
+提交落在了磁盘上——这恰好演示同一语义的另一面：无论提交是否落地，重启后该 op 都必须按
+unknown 处理、不得自动重试，两条路都汇入同一个阻塞+确认流程；该次 fixture 随后重置。最终
+记录的这一次用后台 watcher 实现确定性（等待 journal 出现 op_5 文件后再 sleep ≈1.5s 杀）。
+E14 的 host 级自动化覆盖不变：`tests/native/http-shutdown.test.ts`（SIGKILL→unknown→阻塞→
+三步 ack；SIGTERM 优雅退出）与本轮 e2e；本节补上"运行中的 App 里可见"这一环。
