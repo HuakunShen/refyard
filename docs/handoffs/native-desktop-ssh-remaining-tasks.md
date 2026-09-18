@@ -159,9 +159,12 @@ Acceptance §9 records every deliverable verdict, every gate with exit codes, an
 cell with its reason. `README.md` and `docs/installation.md` document the native app and CLI.
 Full-suite pass: `pnpm check` 0 · `test:unit` 428 · `test:integration` 467 (incl. 49 native)
 · `cargo test --workspace` 539/0/20 · desktop 25/0/1 · `pnpm build` 0 · chromium e2e 58/0 ·
-`pnpm native:verify` green · `pnpm native:bench` measured. The full-engine e2e run carries two
-pre-existing firefox/webkit context-menu failures (reproduced on the committed tree without
-this round's changes).
+`pnpm native:verify` green · `pnpm native:bench` measured. The two firefox/webkit
+context-menu failures named below were fixed 2026-09-19 (2c7dd73): the commit menu test
+died at `grantPermissions` because Firefox rejects `clipboard-read`; ref creation stays
+cross-engine, the clipboard assertion moved to a chromium-only test with the reason in its
+skip. Full-engine e2e is now green: chromium 60/0, firefox+webkit 116 passed / 6 skipped
+(all skips documented in-spec).
 
 ## 5. Known gaps carried (named, unfixed)
 

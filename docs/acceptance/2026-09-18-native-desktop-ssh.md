@@ -572,3 +572,27 @@ for-each-ref exited with status 255" + Retry），全部写按钮禁用（fail-c
 （后续任务，先写失败测试）：装 SIGTERM/SIGINT handler 并在 Tauri 退出钩子里触发一个服务级
 cancellation，接入每次读已预留的 `cancel` 槽位——runner 的杀+reap 逻辑已经存在，缺的只是
 退出时的一跳。
+
+### 9.14 单层顶部条与 Settings sheet；全引擎 e2e 转绿（用户指示，2026-09-19）
+
+**顶部重构**（用户以 GitKraken 为参照：最上面就是 tabs，不要多层）。桌面窗口的标题栏改为
+Overlay（`titleBarStyle: "Overlay"` + `hiddenTitle`，红绿灯叠在页面上），工作台 header 收成
+**一条**：仓库 tabs 领先（不再占第二行），其后是仓库胶囊、诚实徽标（write operations、
+connection-state），尾部一个 gear。原 header 里的 logo/字标、git 版本、服务实例 id、
+backend 标签、Theme 按钮和亮暗下拉全部撤下：appearance（Light/Dark/System、accent、背景、
+毛玻璃）进 `SettingsDialog`（git-ui 新组件，触发器是 gear）的 Appearance 区；机器细节进其
+About & connection 区（Disconnect 随之移入）。顶条即拖拽区（`data-tauri-drag-region`），
+WebView 能力仅新增 `core:window:allow-start-dragging`；macOS 桌面运行时头部让出红绿灯内衬
+（浏览器表单不变）。真机验证：AX + 截图确认单行、红绿灯叠合、拖拽移动窗口成功、
+Settings 打开且亮暗切换生效（aria 状态往返翻转）；`build-badge`/`connection-state` 文本
+原样保留，故既有断言不变。
+
+**context-menu 失败根因与修复**（2c7dd73）：firefox/webkit 失败不在被测功能，而在
+`grantPermissions(["clipboard-read"])`——Firefox 直接拒绝该权限名，测试在第一个断言前就死。
+commit 菜单的建分支/建标签动作留在全员用例；"Copy SHA" 的系统剪贴板副作用拆成
+chromium-only 用例，skip 理由写明（剪贴板读回是 Playwright 里 Chromium 独有的能力）。断言
+没有放松，只是把只能在 Chromium 验证的那条放到 Chromium。
+
+**全引擎结果**：chromium 60/60；firefox+webkit 全量 116 passed / 6 skipped（跳过项全部
+in-spec 注明：剪贴板读回 ×2、uncertain-outcome 与 folder-picker 的 webkit 拦截不可靠
+×4），0 failed。`pnpm check`、`test:unit` 428、desktop crate 25+1 全绿。

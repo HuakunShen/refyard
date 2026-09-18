@@ -101,8 +101,9 @@ and read cancellation at shutdown — named in the remaining-tasks file §2.
   (built from source, macOS arm64 measured; not part of the npm tarball).
 - Full-suite pass recorded in acceptance §9.3: `pnpm check`, `test:unit` (428),
   `test:integration` (467, including the 49 native vitest), `cargo test --workspace` (539),
-  desktop (25), `pnpm test:e2e` (chromium project clean; firefox+webkit carry two pre-existing
-  context-menu failures reproduced on the committed tree without this round's changes).
+  desktop (25), `pnpm test:e2e` (chromium 60/60; firefox+webkit 116 passed, 6 skipped with
+  documented reasons — the clipboard read-back is Chromium-only, and two specs skip webkit
+  where route interception is unreliable). The suite is green on all three engines.
 
 ### 3.5 E14 crash/restart demonstrated in the running App — DONE (2026-09-19)
 
