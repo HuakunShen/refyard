@@ -9,11 +9,13 @@ members = [
   "crates/refyard-contract",
   "crates/refyard-core",
   "crates/refyard-host",
+  "crates/refyard-cli",
 ]
 default-members = [
   "crates/refyard-contract",
   "crates/refyard-core",
   "crates/refyard-host",
+  "crates/refyard-cli",
 ]
 
 [workspace.package]
