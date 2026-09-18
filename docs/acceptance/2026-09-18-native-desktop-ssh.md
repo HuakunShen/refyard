@@ -596,3 +596,33 @@ chromium-only 用例，skip 理由写明（剪贴板读回是 Playwright 里 Chr
 **全引擎结果**：chromium 60/60；firefox+webkit 全量 116 passed / 6 skipped（跳过项全部
 in-spec 注明：剪贴板读回 ×2、uncertain-outcome 与 folder-picker 的 webkit 拦截不可靠
 ×4），0 failed。`pnpm check`、`test:unit` 428、desktop crate 25+1 全绿。
+
+### 9.15 离线（无网络）本地仓库回路实测（2026-09-19）
+
+D13 清单最后一项。"network cut" 不需要拔网线：macOS Seatbelt 沙箱可以把网络禁在**这一个
+App 进程**上，比切断整机网络更干净（变量只落在 App 上，其余一切照常）。会话不中断，用户
+的网络不受影响。
+
+**禁网强制的证明（对照组设计）**：`sandbox-exec -n no-network curl https://example.com` 在
+沙箱内 DNS 直接失败（exit 6），同一台机器不套沙箱的 curl 返回 200——沙箱确实禁网。App 以
+
+```sh
+sandbox-exec -n no-network env -i HOME=<scratch> PATH=/usr/bin:/bin \
+  REFYARD_STATE_DIR=<scratch-state> …/Refyard.app/Contents/MacOS/refyard-desktop
+```
+
+启动。`lsof -a -p <pid> -i` 在启动时与提交后两次采样均为**零网络套接字**（对照组进程可见
+套接字，lsof 语义正常）。
+
+**完整回路（全部在该禁网 App 内完成）**：Recent 打开本地 fixture 仓库 → 历史 3 提交、工作
+副本 3 变更全部正常渲染 → Stage README.md 成功（"staged 1 path"，journal `op_1`
+succeeded）→ 提交。第一次提交被 git 拒绝：该 fixture 仓库没有本地身份，App 的净环境
+（scratch HOME + 剥离 `GIT_*`）正确地隔离了用户全局配置，UI 如实显示
+"failed: git refused the operation: Author identity unknown"，journal `op_2` 记
+`GitCommandFailed`，无半写、无自动重试——失败路径同样是证据。给 fixture 写入 repo 本地身份
+后再次提交：**`b603b9d "commit made with no network at all"` 落盘**（2 文件，本地身份
+Offline Fixture），journal `op_3` succeeded。
+
+**结论**：桌面 App 的读取与写入（stage/commit）在进程级断网下完整可用；App 平时即不持有
+任何网络套接字。"离线"从清单上的 not exercised 变为实测 PASS。e2e 的 offline.spec 继续以
+`context.setOffline` 覆盖浏览器表单的断网行为，与本测量互补。全部实测于 macOS arm64。

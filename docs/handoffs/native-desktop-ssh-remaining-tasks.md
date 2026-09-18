@@ -124,7 +124,11 @@ port answers nothing while stopped, finished work stays `succeeded` after restar
 
 - the **windowed app** killed mid-write (the CLI/HTTP proof is done; the app-level kill is not);
 - the App's own behaviour with no Git on PATH;
-- offline (network cut) local-repo operation — not exercised;
+- offline local-repo operation — **measured 2026-09-19, acceptance §9.15**: the app ran
+  entirely inside a `sandbox-exec -n no-network` sandbox (enforcement proven: DNS fails
+  inside, works outside; the app process holds zero network sockets) and the full loop —
+  open, reads, stage, commit — worked, landing `b603b9d` on disk. No network disconnection
+  of the machine needed;
 - ~~owned SSH child cleanup at shutdown; in-flight read cancellation at shutdown~~ —
   **measured 2026-09-19, acceptance §9.13**: in-process kill-and-reap holds (superseded or
   cancelled reads die and are reaped promptly), but **both app exit paths orphan in-flight
