@@ -17,9 +17,9 @@
 cask "refyard" do
   arch arm: "aarch64", intel: "x64"
 
-  version "0.1.0"
-  sha256 arm:   "38da919e2b412bac6480afa3a6bd08cb4c1d07004166ef33c3a1ee4de1a206bf",
-         intel: "0b727b3a167c3906322e112db8b754ee5b755cf5afb7b941f41f199b2c4533bb"
+  version "0.1.1"
+  sha256 arm:   "7a4003c4c57106b599bff475f98fd3a752d3817c06c6171a8b894925cecf6eb1",
+         intel: "fdb38cb2a28cf550ede40c7102ac115f0266cf383b8097634a76bd4fb2c4e04a"
 
   url "https://github.com/HuakunShen/refyard/releases/download/app-v#{version}/Refyard_#{version}_#{arch}.dmg"
   name "Refyard"
