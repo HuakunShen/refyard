@@ -287,6 +287,11 @@ pub trait FolderDialog {
 
 impl FolderDialog for tauri::WebviewWindow {
     fn pick_folder_path(&self) -> Option<String> {
+        // The panel is window-modal: while it is up this window takes no clicks. If it
+        // opened over a background window the person never sees it and the app reads as
+        // frozen, so the window comes to the front first, every time.
+        let _ = self.show();
+        let _ = self.set_focus();
         let (answer, receiver) = std::sync::mpsc::sync_channel(0);
         self.app_handle()
             .dialog()
