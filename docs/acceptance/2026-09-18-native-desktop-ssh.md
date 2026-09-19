@@ -681,3 +681,22 @@ Offline Fixture），journal `op_3` succeeded。
   owner 执行。
 - **Homebrew**：cask 0.1.1 已推 `HuakunShen/homebrew-tap`（`brew fetch` 校验通过）；
   Homebrew 7 弃用 `depends_on macos: :catalina` 与 `url` 的 `verified:`，均已移除。
+
+### 9.18 文件选择器请求堆积冻结全 App（用户报告，2026-09-19 修复）
+
+**现象**（用户真机）：在启动器连点 Choose folder… 数次后整个 App 冻结——拖拽区、一切交互
+均无响应。用户强退并重启后，冻结进程已被销毁，未能采样到现场；修复前的代码审查给出充分
+的结构性原因：`blocking_pick_folder` 的 unparented 浮动面板不模态到窗口，webview 在面板
+存续期间仍可点击，每次点击把一个新的 main-thread 任务排到队列，并与 `run_on_main_thread`
+的运行模式相互等待；请求与面板随即堆积，App 呈现全局冻结。
+
+**修复**（`ae264ad`）：① 面板 `set_parent` 到发起请求的窗口——成为可见的、window-modal
+的 sheet，面板存续期间 webview 收不到点击，天然不会堆积；② 增加进程级在飞守卫
+（`FOLDER_PICKER_OPEN`），并发第二个请求直接按取消（`null`）作答；③ 不再使用
+`blocking_pick_folder`，改为回调 + channel 接收答案。
+
+**实测**（AX 驱动真实 release 构建，用户处复现路径不可用后以结构验证代替）：点击
+Choose folder… 出现附着于主窗口的 "Open" 面板（`list_windows` 可见、onscreen）；Escape
+取消后面板关闭、主窗口重获焦点、请求按 `null` 作答；连续两次点击只存在一个面板（第二个
+请求被守卫吸收）；在面板中选中目录点 Open，路径经 IPC 回填并作为仓库打开（历史、工作
+副本正常渲染），全程无冻结。测试后关闭该仓库标签恢复原状。
