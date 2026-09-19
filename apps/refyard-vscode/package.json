@@ -2,7 +2,7 @@
   "name": "refyard-vscode",
   "displayName": "Refyard",
   "description": "The Refyard workbench for the repository you have open: status, history, diffs, staging and commits — driven by the local refyard service.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "HuakunShen",
   "license": "AGPL-3.0-only",
   "private": true,
@@ -50,7 +50,7 @@
   "scripts": {
     "compile": "node esbuild.mjs && vite build --config webview/vite.config.ts",
     "check": "tsc --noEmit -p tsconfig.json",
-    "package": "pnpm compile && npx -y @vscode/vsce package --no-dependencies -o refyard-0.1.0.vsix"
+    "package": "pnpm compile && npx -y @vscode/vsce package --no-dependencies -o refyard-$npm_package_version.vsix"
   },
   "dependencies": {
     "@refyard/git-client": "workspace:*",
