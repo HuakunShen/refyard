@@ -35,6 +35,12 @@ const config = {
       precompress: forDesktop ? false : true,
     }),
     outDir: forDesktop ? ".svelte-kit-desktop" : ".svelte-kit",
+    serviceWorker: {
+      // The desktop shell loads over the tauri:// scheme, where the spec forbids
+      // service workers — SvelteKit's auto-register would throw on every launch.
+      // The browser and Cloudflare flavours keep the PWA registration.
+      register: !forDesktop,
+    },
     // No CSRF setting is configured because there is no SvelteKit server surface to
     // protect: the app holds no cookies and never submits a form to a route. `strict:
     // true` above already turns a route that would need a server into a build error.
