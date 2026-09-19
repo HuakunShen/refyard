@@ -12,7 +12,7 @@
 
 [package]
 name = "refyard-desktop"
-version = "0.1.1"
+version = "0.1.2"
 description = "Refyard desktop shell: the native workbench host the WebView talks to."
 edition = "2021"
 rust-version = "1.98"
