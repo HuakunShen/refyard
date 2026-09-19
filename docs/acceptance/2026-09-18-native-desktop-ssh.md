@@ -699,4 +699,12 @@ Offline Fixture），journal `op_3` succeeded。
 Choose folder… 出现附着于主窗口的 "Open" 面板（`list_windows` 可见、onscreen）；Escape
 取消后面板关闭、主窗口重获焦点、请求按 `null` 作答；连续两次点击只存在一个面板（第二个
 请求被守卫吸收）；在面板中选中目录点 Open，路径经 IPC 回填并作为仓库打开（历史、工作
-副本正常渲染），全程无冻结。测试后关闭该仓库标签恢复原状。
+副本正常渲染），全程无冻结。测试后关闭该仓库标签恢复原状。随后的第二轮用户冻结（选文件夹后点 Browse）把根因指向面板的可见性而非请求堆积：
+`set_parent` 后面板是窗口模态的，但当 App 不在前台时它附着于一个背景窗口——用户看不到
+它，面板却吞掉该窗口的一切点击，App 呈现"整体冻结"。最终修复（`8fc906a`）：打开面板前
+先 `show()` + `set_focus()` 把窗口带到前台，面板永远可见。**实测**（AX 驱动）：把 App 压到
+后台（Chrome 前台）后点击 Choose folder…，App 自动带到前台、面板以可见 sheet 呈现
+（截屏确认），Cancel 后窗口恢复正常交互。debug 实例（临时 eprintln 插桩 + 正式 app 壳）
+上全链路验证：请求到达 → 面板可见 → Escape 取消按 null 作答 → 连点只存一个面板（守卫）
+→ 选目录点 Open 路径经 IPC 回填。Browse 空路径在 Rust 侧立即按 InvalidRequest 拒绝
+（`reads/filesystem.rs` 回落主目录），无挂起。插桩已移除。
