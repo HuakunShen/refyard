@@ -48,6 +48,11 @@ use refyard_host::state_root::default_state_root;
 use crate::events::EventRegistry;
 use crate::session::SessionRegistry;
 
+/// How long the hidden window may wait for the page to finish loading before the guard
+/// thread shows it anyway. Long enough that no honest load hits it, short enough that a
+/// broken install still ends in a visible window instead of a process with no surface.
+const SHOW_GUARD: std::time::Duration = std::time::Duration::from_secs(4);
+
 /// Everything a command handler receives.
 pub struct AppState {
     /// The target this process serves. One for now: the machine it runs on. A second target
@@ -192,6 +197,34 @@ fn millis_since_epoch() -> u128 {
         .unwrap_or_default()
 }
 
+/// The document canvas behind the WebView, as RGBA. The values are the exact `--color-canvas`
+/// tokens of the two themes (`oklch(0.145 0 0)` dark, `oklch(0.985 0 0)` light), so a frame
+/// painted before the styles load is indistinguishable from the booted workbench.
+fn canvas_color(dark: bool) -> tauri::window::Color {
+    if dark {
+        tauri::window::Color(0x0a, 0x0a, 0x0a, 0xff)
+    } else {
+        tauri::window::Color(0xfa, 0xfa, 0xfa, 0xff)
+    }
+}
+
+/// Keeps the window's backdrop on the appearance the machine currently offers. The stored
+/// in-app preference is unreachable here — it lives in the WebView's localStorage, which the
+/// host cannot read before the page boots — so the system appearance is the host-side best
+/// guess; the document itself pre-paints preference-then-system in its head, and the window
+/// is not shown until that document has loaded.
+fn follow_system_appearance(window: &tauri::WebviewWindow) {
+    if let Ok(theme) = window.theme() {
+        let _ = window.set_background_color(Some(canvas_color(theme == tauri::Theme::Dark)));
+    }
+    let follower = window.clone();
+    window.on_window_event(move |event| {
+        if let tauri::WindowEvent::ThemeChanged(theme) = event {
+            let _ = follower.set_background_color(Some(canvas_color(*theme == tauri::Theme::Dark)));
+        }
+    });
+}
+
 /// Opens the window and serves commands until it closes.
 pub fn run() {
     let state = match AppState::for_this_machine() {
@@ -207,6 +240,15 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(state)
+        // The window is born hidden and appears only when the document has finished loading,
+        // so nobody ever sees a bare white canvas: the first visible frame already carries the
+        // theme. The host cannot know whether the page will ever finish, so a guard thread
+        // shows the window regardless after a few seconds rather than leaving it invisible.
+        .on_page_load(|webview, payload| {
+            if payload.event() == tauri::webview::PageLoadEvent::Finished {
+                let _ = webview.window().show();
+            }
+        })
         .setup(|app| {
             // One relay for the process: it reads the service's event stream and hands each
             // frame to the windows that subscribed, so a write in one window reaches another
@@ -216,6 +258,14 @@ pub fn run() {
             let service = Arc::clone(&state.service);
             let events = Arc::clone(&state.events);
             tauri::async_runtime::spawn(relay::run(handle, service, events));
+            if let Some(window) = app.get_webview_window("main") {
+                follow_system_appearance(&window);
+                let guard = window.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(SHOW_GUARD);
+                    let _ = guard.show();
+                });
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -237,6 +287,15 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_canvas_backdrop_matches_the_document_theme_tokens() {
+        // The host-side backdrop must be the exact --color-canvas each theme ships (converted
+        // from oklch 0.145 / 0.985); any drift shows as a one-frame recolor when the
+        // stylesheet lands, which is precisely the flash this path exists to prevent.
+        assert_eq!(canvas_color(true), tauri::window::Color(0x0a, 0x0a, 0x0a, 0xff));
+        assert_eq!(canvas_color(false), tauri::window::Color(0xfa, 0xfa, 0xfa, 0xff));
+    }
 
     fn environment(value: &str) -> Vec<(String, String)> {
         vec![(SSH_CONFIG_VARIABLE.to_string(), value.to_string())]
