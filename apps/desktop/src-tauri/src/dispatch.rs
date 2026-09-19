@@ -287,12 +287,22 @@ pub trait FolderDialog {
 
 impl FolderDialog for tauri::WebviewWindow {
     fn pick_folder_path(&self) -> Option<String> {
+        let (answer, receiver) = std::sync::mpsc::sync_channel(0);
         self.app_handle()
             .dialog()
             .file()
-            .blocking_pick_folder()
-            .and_then(|file| file.into_path().ok())
-            .map(|path| path.display().to_string())
+            // Parented to this window the panel is a visible sheet and window-modal:
+            // the webview cannot take clicks while it is up, so requests cannot stack
+            // into a pile of invisible panels that leave the app looking frozen. The
+            // unparented floating panel did exactly that.
+            .set_parent(self)
+            .pick_folder(move |file| {
+                let _ = answer.send(
+                    file.and_then(|file| file.into_path().ok())
+                        .map(|path| path.display().to_string()),
+                );
+            });
+        receiver.recv().ok().flatten()
     }
 }
 
@@ -305,6 +315,11 @@ impl FolderDialog for CancelledDialog {
         None
     }
 }
+
+/// Set while a folder panel is on screen. A second host request for the picker cannot
+/// be served meanwhile — answering it like a cancellation keeps a burst of clicks from
+/// queueing main-thread work behind the open panel.
+static FOLDER_PICKER_OPEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 pub async fn dispatch_host(
     service: &ApplicationService,
@@ -324,7 +339,12 @@ pub async fn dispatch_host(
             // `null` for a cancelled dialog, which the adapter treats as an answer and
             // not a failure. The webview holds no dialog permission, so this is the
             // only road to the picker.
-            to_value(dialogs.pick_folder_path())
+            if FOLDER_PICKER_OPEN.swap(true, std::sync::atomic::Ordering::AcqRel) {
+                return to_value(Option::<String>::None);
+            }
+            let answer = dialogs.pick_folder_path();
+            FOLDER_PICKER_OPEN.store(false, std::sync::atomic::Ordering::Release);
+            to_value(answer)
         }
         HostRequest::CreateTarget { request } => {
             let request = decode_create_target(request)?;
