@@ -34,9 +34,16 @@
   }: Props = $props();
 </script>
 
+<!--
+  Inert in a plain browser; in the desktop shell the strip this fills is the window's
+  drag region, and Tauri only drags when the exact mousedown target carries the
+  attribute — so the row's empty stretches must carry it themselves. The tabs' own
+  buttons stay interactive because the target is then the button.
+-->
 <div
   class="flex w-full min-w-0 items-center gap-1 overflow-x-auto"
   data-testid="repository-tabs"
+  data-tauri-drag-region
 >
   {#each tabs as tab (tab.repositoryId)}
     <div

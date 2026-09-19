@@ -1042,23 +1042,30 @@
     {/if}
 
     {#if repository !== null}
+      <!-- Every non-interactive element in the strip carries the drag attribute, because
+           Tauri starts a drag only when the exact mousedown target has it — an attributed
+           parent behind unattributed children drags nothing. Text keeps its tooltip by
+           carrying the attribute itself; pure decoration opt out of pointer events. -->
       <div
         class="hidden items-center gap-1.5 rounded-full border border-border/80 bg-background/60 px-3 py-1 text-xs shadow-2xs backdrop-blur-xs lg:flex"
+        data-tauri-drag-region
       >
-        <FolderGit2 class="size-3.5 text-primary" />
+        <FolderGit2 class="pointer-events-none size-3.5 text-primary" />
         <span
           class="max-w-44 truncate font-semibold tracking-tight text-ink lg:max-w-64"
           title={worktreePath}
+          data-tauri-drag-region
         >
           {repository.displayName}
         </span>
         {#if status.data?.head?.branchName}
-          <span class="text-ink-faint">·</span>
+          <span class="pointer-events-none text-ink-faint">·</span>
           <div
             class="flex items-center gap-1 text-[11px] text-muted-foreground"
+            data-tauri-drag-region
           >
-            <GitBranch class="size-3 text-primary/70" />
-            <span class="font-medium text-foreground"
+            <GitBranch class="pointer-events-none size-3 text-primary/70" />
+            <span class="font-medium text-foreground" data-tauri-drag-region
               >{status.data.head.branchName}</span
             >
           </div>
@@ -1066,16 +1073,17 @@
         {#if selectedTargetLabel !== null}
           <!-- The machine is in the header for the same reason it is in the tab: the
                repository name alone cannot tell two machines apart. -->
-          <span class="text-ink-faint">·</span>
+          <span class="pointer-events-none text-ink-faint">·</span>
           <div
             class="flex items-center gap-1 text-[11px] text-muted-foreground"
             data-testid="repository-target-label"
+            data-tauri-drag-region
           >
-            <Server class="size-3 text-primary/70" />
+            <Server class="pointer-events-none size-3 text-primary/70" />
             <span
               class="max-w-40 truncate font-medium text-foreground"
               title={`Git runs on ${selectedTargetLabel}`}
-              >{selectedTargetLabel}</span
+              data-tauri-drag-region>{selectedTargetLabel}</span
             >
           </div>
         {/if}
@@ -1083,11 +1091,12 @@
     {/if}
 
     {#if capabilities.data !== undefined}
-      <div class="flex items-center">
+      <div class="flex items-center" data-tauri-drag-region>
         {#if capabilities.data.operations.length === 0}
           <Badge
             tone="muted"
             data-testid="build-badge"
+            data-tauri-drag-region
             title="No write operations: no route, no capability, no button."
           >
             read-only build
@@ -1096,6 +1105,7 @@
           <Badge
             tone="branch"
             data-testid="build-badge"
+            data-tauri-drag-region
             title={`Implemented write operations: ${capabilities.data.operations
               .map((operation) => operation.kind)
               .join(", ")}`}
@@ -1106,7 +1116,7 @@
       </div>
     {/if}
 
-    <span class="flex-1"></span>
+    <span class="flex-1" data-tauri-drag-region></span>
 
     {#if backendSession !== null}
       <Badge
@@ -1116,7 +1126,7 @@
             ? "branch"
             : "muted"}
         data-testid="connection-state"
-        class="gap-1.5 py-0.5"
+        class="pointer-events-none gap-1.5 py-0.5"
       >
         <span class="relative flex size-2">
           <span
