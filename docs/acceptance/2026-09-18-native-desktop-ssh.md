@@ -650,3 +650,34 @@ Offline Fixture），journal `op_3` succeeded。
   "Could not fetch a valid release JSON from the remote"。整条 IPC→插件→endpoint→错误
   呈现链路成立；剩余一步是 owner 配 secrets 后推 `app-v0.1.0`，届时 latest.json 存在，
   同一路径应给出 offer（旧版本 App 消费新 release 的完整验证随之可做）。
+
+### 9.17 0.1.0 → 0.1.1 发布线与更新器完整循环实测（2026-09-19）
+
+- **发布线**：`app-v0.1.0`（run 35405708085）与 `app-v0.1.1`（run 35409845310）两次 release
+  run 均 6/6 全绿（gate + mac aarch64/x64 + ubuntu x64/arm64 + windows NSIS），产物含
+  DMG/deb/AppImage/NSIS 与 `latest.json` + 各自 `.sig`。0.1.0 首跑在 Windows 失败于
+  tauri-build 缺 `icons/icon.ico`（`ccc1e39` 修复后重打 tag 验证）；0.1.0 的 mac x64 失败于
+  `rust-toolchain.toml` 钉死版本号在 cross 目标上的解析（`c94911e` 改 `channel = "stable"`）。
+- **更新器完整循环（真机 AX 驱动，此前 §9.16 的"剩余一步"）**：从 release 资产取
+  `Refyard_0.1.0_aarch64.app.tar.gz` 解包到 `/tmp/refyard-upd-e2e/` 并启动（Info.plist
+  0.1.0）；Settings → Check for updates 从线上 feed 拿到 offer（按钮变为 "Download and
+  install v0.1.1"）；点击后下载、minisign 验签、就地替换 bundle（Info.plist 变 0.1.1），
+  按钮变 "Restart to finish"；点击后旧进程退出、新进程自替换后的 bundle 重启且工作台
+  完整可用。即：**endpoint → 验签 → 安装 → 重启全链路在真实 release 上成立**。测后清理：
+  退出实例、删除 `/tmp/refyard-upd-e2e`。
+- **冷启动白闪消除（用户指示 B+C+A，`500b36c`+`d28cea7`，随 0.1.1 发布）**：
+  (C) `app.html` 内联预绘脚本读 `mode-watcher-mode` ?? 系统外观，在首帧前给 `<html>` 上
+  正确主题类（Playwright 五组合验证：存深/存浅/未存 × 系统深/浅，底色精确
+  `rgb(10,10,10)`/`rgb(250,250,250)`）；(B) 窗口 `visible:false` + Rust 侧
+  `on_page_load(Finished)` 才 `show()`，另有 4s 守卫线程兜底（debug 冷启动实测窗口
+  1165ms 首次可见，此前从创建即白窗可见）；(A) `window.theme()` + `ThemeChanged` 跟随
+  运行时设置窗口底色（`set_background_color`；静态 `backgroundColor` 配置键在
+  tauri-utils 2.9.3 不存在）。用户真机确认首帧即深色画布。
+- **VS Code 扩展随 release 分发**：打包脚本去掉硬编码版本（`-o refyard-$npm_package_version.vsix`，
+  扩展版本 bump 0.1.1）；`release.yml` 新增 `vsix` job（`f81ce16`：从 tag 取版本、打包、
+  等待 release 出现后 `gh release upload --clobber`，仅 tag 触发）；0.1.1 的
+  `refyard-0.1.1.vsix` 已手工挂上 release，并经 `code --install-extension` 装入本机
+  VS Code（`huakunshen.refyard-vscode@0.1.1`）。在 VS Code 里打开工作台的人工确认仍待
+  owner 执行。
+- **Homebrew**：cask 0.1.1 已推 `HuakunShen/homebrew-tap`（`brew fetch` 校验通过）；
+  Homebrew 7 弃用 `depends_on macos: :catalina` 与 `url` 的 `verified:`，均已移除。
