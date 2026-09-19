@@ -32,6 +32,8 @@
   } from "../lib/updates.js";
 
   interface SettingsAbout {
+    /** The app shell's own version, when the runtime knows one (desktop via Tauri). */
+    appVersion?: string;
     gitVersion?: string;
     serviceInstanceId?: string;
     backendLabel?: string;
@@ -107,8 +109,29 @@
     updatesPhase = await stepUpdates(updatesPhase, updates);
   }
 
+  // The platform's settings shortcut (Cmd+, on macOS, Ctrl+, elsewhere). The dialog owns
+  // the binding because it owns `open`; nothing else needs to know it exists. The key
+  // carries a modifier, so it can never collide with typing into a field.
+  $effect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        !event.altKey &&
+        event.key === ","
+      ) {
+        event.preventDefault();
+        open = true;
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   const ABOUT_ROWS = $derived(
     [
+      about?.appVersion === undefined
+        ? undefined
+        : { label: "Version", value: about.appVersion },
       about?.gitVersion === undefined
         ? undefined
         : { label: "Git", value: about.gitVersion },

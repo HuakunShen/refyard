@@ -60,6 +60,18 @@ by the tag-triggered desktop pipeline:
 Every artifact is minisign-signed, and each release carries a `latest.json` for the updater
 (see [Updates](#updates)).
 
+> **macOS without Apple code signing.** The binaries are ad-hoc signed only — there is no
+> Apple Developer ID behind them yet — so Gatekeeper blocks the first launch of a copy
+> downloaded from a browser. Clear the quarantine flag once, then open normally:
+>
+> ```sh
+> xattr -cr /Applications/Refyard.app
+> ```
+>
+> (or right-click the app and choose **Open** once, or approve it under **System Settings →
+> Privacy & Security**). Installing through Homebrew is not affected — Homebrew does not
+> quarantine casks.
+
 Homebrew (macOS), once the first release is published. The cask is versioned off the release
 DMG URLs, declares `auto_updates true` so the app's own updater stays in charge, and has a
 livecheck watching the releases:

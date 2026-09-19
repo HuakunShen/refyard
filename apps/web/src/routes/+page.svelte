@@ -151,6 +151,7 @@
   let updatesProbe = $state<UpdatesProbe | null>(null);
   let autoCheck = $state(browser ? readStoredUpdateCheck() : false);
   let pendingUpdate = $state<UpdateOffer | null>(null);
+  let appVersion = $state<string | undefined>(undefined);
   let failureBanner = $state("");
 
   let accent = $state(browser ? readStoredAccent() : "default");
@@ -191,6 +192,22 @@
           });
       }
     });
+  });
+
+  // The shell version for the Settings sheet: only the desktop runtime carries one,
+  // and its code only loads there. A browser build simply has no Version row.
+  $effect(() => {
+    if (!browser || runtime.kind !== "tauri" || appVersion !== undefined) {
+      return;
+    }
+    void import("@tauri-apps/api/app")
+      .then((app) => app.getVersion())
+      .then((version) => {
+        appVersion = version;
+      })
+      .catch(() => {
+        // Without a version the About section omits the row; that is the honest state.
+      });
   });
 
   const queryClient = useQueryClient();
@@ -1145,6 +1162,7 @@
         about={capabilities.data === undefined
           ? undefined
           : {
+              appVersion,
               gitVersion: capabilities.data.git.version,
               serviceInstanceId: capabilities.data.serviceInstanceId,
               backendLabel,
