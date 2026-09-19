@@ -22,6 +22,33 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <!-- Installable as an app shell; the data still comes from the service on loopback. -->
     <link rel="manifest" href="/manifest.webmanifest" />
+    <!--
+      Paint the canvas before any app code runs: the stored preference decides, and the
+      system's own appearance is the fallback — the same rule the workbench applies once
+      booted, so the first frame already shows the theme the person chose.
+    -->
+    <style>
+      html {
+        background-color: #fafafa;
+      }
+      html.dark {
+        background-color: #0a0a0a;
+      }
+    </style>
+    <script>
+      (() => {
+        try {
+          const stored = localStorage.getItem("mode-watcher-mode");
+          const dark =
+            stored === "dark" ||
+            (stored !== "light" &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.classList.toggle("dark", dark);
+        } catch {
+          /* no storage (denied, private mode) — the stylesheet default stands */
+        }
+      })();
+    </script>
     %sveltekit.head%
   </head>
   <body class="h-full" data-sveltekit-preload-data="hover">
