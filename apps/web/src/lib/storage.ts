@@ -63,3 +63,6 @@ export const readStoredUpdateCheck = (): boolean =>
   storage.readStoredUpdateCheck();
 export const storeUpdateCheck = (enabled: boolean): void =>
   storage.storeUpdateCheck(enabled);
+export const readStoredAvatars = (): boolean => storage.readStoredAvatars();
+export const storeAvatars = (enabled: boolean): void =>
+  storage.storeAvatars(enabled);

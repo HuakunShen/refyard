@@ -113,6 +113,8 @@
     storeToken,
     readStoredUpdateCheck,
     storeUpdateCheck,
+    readStoredAvatars,
+    storeAvatars,
   } from "$lib/storage.js";
   import { createDesktopUpdates } from "$lib/runtime/updates.js";
   import type { UpdateOffer, UpdatesProbe } from "@refyard/git-ui";
@@ -157,6 +159,7 @@
   let accent = $state(browser ? readStoredAccent() : "default");
   let background = $state(browser ? readStoredBackground() : "none");
   let glass = $state(browser ? readStoredGlass() : false);
+  let avatars = $state(browser ? readStoredAvatars() : true);
 
   $effect(() => {
     if (!browser) {
@@ -170,6 +173,7 @@
     storeAccent(accent);
     storeBackground(background);
     storeGlass(glass);
+    storeAvatars(avatars);
   });
 
   // The updater exists only on the desktop runtime, and its code only loads there.
@@ -1170,9 +1174,11 @@
         {accent}
         {background}
         {glass}
+        {avatars}
         onAccentChange={(val) => (accent = val)}
         onBackgroundChange={(val) => (background = val)}
         onGlassChange={(val) => (glass = val)}
+        onAvatarsChange={(val) => (avatars = val)}
         updates={updatesProbe ?? undefined}
         {autoCheck}
         onAutoCheckChange={(enabled) => {
@@ -1498,6 +1504,7 @@
               onDeleteTag={graphMenuOperations.has("deleteTag")
                 ? (tagName) => onTagDelete(tagName)
                 : undefined}
+              showAvatars={avatars}
               class="min-h-0 flex-1"
             />
           {/if}

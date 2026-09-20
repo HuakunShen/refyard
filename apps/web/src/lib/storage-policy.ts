@@ -27,6 +27,11 @@ const ACCENT_KEY = "refyard.theme.accent";
 const UPDATE_CHECK_KEY = "refyard.updates.checkOnStartup";
 const BG_KEY = "refyard.theme.background";
 const GLASS_KEY = "refyard.theme.glass";
+/**
+ * Author avatars from GitHub are on unless explicitly refused — the stored
+ * value exists to record an opt-out, not permission.
+ */
+const AVATARS_KEY = "refyard.appearance.avatars";
 
 /** The two methods of the browser's `Storage` this module uses. */
 export interface StorageLike {
@@ -58,6 +63,8 @@ export interface BrowserStorage {
   storeGlass(enabled: boolean): void;
   readStoredUpdateCheck(): boolean;
   storeUpdateCheck(enabled: boolean): void;
+  readStoredAvatars(): boolean;
+  storeAvatars(enabled: boolean): void;
 }
 
 export function createBrowserStorage(stores: BrowserStores): BrowserStorage {
@@ -151,6 +158,12 @@ export function createBrowserStorage(stores: BrowserStores): BrowserStorage {
     },
     storeUpdateCheck(enabled: boolean): void {
       writeTo(stores.local, UPDATE_CHECK_KEY, enabled ? "true" : "false");
+    },
+    readStoredAvatars(): boolean {
+      return readFrom(stores.local, AVATARS_KEY) !== "false";
+    },
+    storeAvatars(enabled: boolean): void {
+      writeTo(stores.local, AVATARS_KEY, enabled ? "true" : "false");
     },
   };
 }

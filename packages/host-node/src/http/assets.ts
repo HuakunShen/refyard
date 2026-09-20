@@ -89,6 +89,9 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
  * something else. The default `connect-src 'self'` keeps the API same-origin, which
  * is also why there is no CORS header anywhere in this service. An embedding host can
  * opt into exact API origins without changing that default.
+ *
+ * Author avatars are the one cross-origin image: GitHub serves the photo for a
+ * noreply commit email, fetched with no referrer and no credentials.
  */
 export const HTML_HEADERS: Readonly<Record<string, string>> = {
   "content-type": "text/html; charset=utf-8",
@@ -96,7 +99,7 @@ export const HTML_HEADERS: Readonly<Record<string, string>> = {
   "x-content-type-options": "nosniff",
   "referrer-policy": "no-referrer",
   "content-security-policy":
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://github.com https://avatars.githubusercontent.com; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
   "x-frame-options": "DENY",
 };
 

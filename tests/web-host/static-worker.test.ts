@@ -98,18 +98,19 @@ describe("Cloudflare static UI Worker", () => {
   it("fails closed when no API origin is configured", async () => {
     // Prevents: the deployed shell silently granting JavaScript network access to
     // every HTTPS service when an operator forgot to configure the tunnel origin.
+    // The check is scoped to connect-src: img-src legitimately names the GitHub
+    // avatar hosts, and the policy as a whole therefore contains https:.
     const calls: string[] = [];
     const response = await worker.fetch(
       new Request("https://ui.example.test/workspaces/one"),
       { ...environment(calls), PUBLIC_API_ORIGINS: "" },
     );
 
-    expect(response.headers.get("content-security-policy")).toContain(
-      "connect-src 'self'",
-    );
-    expect(response.headers.get("content-security-policy")).not.toContain(
-      "https:",
-    );
+    const policy = response.headers.get("content-security-policy") ?? "";
+    const connectSource = policy
+      .split(";")
+      .find((part) => part.trim().startsWith("connect-src"));
+    expect(connectSource?.trim()).toBe("connect-src 'self'");
   });
 
   it("refuses non-read asset methods before the binding runs", async () => {

@@ -8,9 +8,10 @@
   that serves the comment and leaves the document empty.
 
   With `ssr = false` the body is just the app shell and the page paints itself in the
-  browser. Nothing here loads from another origin: an offline workbench that quietly fetched
-  a font or an analytics bundle would be both slower and a leak of the fact that the app is
-  open.
+  browser. Nothing here loads from another origin except author avatars (GitHub
+  photos for noreply commit emails, fetched with no referrer and no credentials):
+  an offline workbench that quietly fetched a font or an analytics bundle would be
+  both slower and a leak of the fact that the app is open.
 -->
 <html lang="en" class="h-full">
   <head>

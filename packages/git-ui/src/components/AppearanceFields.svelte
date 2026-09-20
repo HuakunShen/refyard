@@ -14,18 +14,22 @@
     accent: string;
     background: string;
     glass: boolean;
+    avatars: boolean;
     onAccentChange: (accent: string) => void;
     onBackgroundChange: (bg: string) => void;
     onGlassChange: (glass: boolean) => void;
+    onAvatarsChange?: (avatars: boolean) => void;
   }
 
   let {
     accent,
     background,
     glass,
+    avatars,
     onAccentChange,
     onBackgroundChange,
     onGlassChange,
+    onAvatarsChange = undefined,
   }: Props = $props();
 
   let customUrlInput = $state("");
@@ -223,6 +227,32 @@
         onchange={(e) => onGlassChange(e.currentTarget.checked)}
         class="sr-only peer"
         aria-label="Toggle frosted glass"
+      />
+      <div
+        class="w-9 h-5 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"
+      ></div>
+    </label>
+  </div>
+
+  <!-- Author Photos Toggle -->
+  <div
+    class="flex items-center justify-between rounded-lg border border-border/60 bg-card/50 p-3"
+  >
+    <div class="flex flex-col gap-0.5">
+      <span class="text-xs font-medium text-foreground">Author Photos</span>
+      <span class="text-[11px] text-ink-faint">
+        GitHub profile pictures in the history list — commits identify their
+        author by email; authors without a photo get colored initials
+      </span>
+    </div>
+    <label class="relative inline-flex items-center cursor-pointer">
+      <input
+        type="checkbox"
+        checked={avatars}
+        onchange={(e) => onAvatarsChange?.(e.currentTarget.checked)}
+        class="sr-only peer"
+        aria-label="Toggle author photos"
+        data-testid="settings-avatars-toggle"
       />
       <div
         class="w-9 h-5 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"

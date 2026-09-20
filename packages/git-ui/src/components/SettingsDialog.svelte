@@ -45,9 +45,11 @@
     accent: string;
     background: string;
     glass: boolean;
+    avatars?: boolean;
     onAccentChange: (accent: string) => void;
     onBackgroundChange: (bg: string) => void;
     onGlassChange: (glass: boolean) => void;
+    onAvatarsChange?: (avatars: boolean) => void;
     about?: SettingsAbout;
     onDisconnect?: () => void;
     /** Present only where updates can exist: the desktop runtime. */
@@ -60,9 +62,11 @@
     accent,
     background,
     glass,
+    avatars = true,
     onAccentChange,
     onBackgroundChange,
     onGlassChange,
+    onAvatarsChange = undefined,
     about,
     onDisconnect,
     updates,
@@ -217,9 +221,11 @@
           {accent}
           {background}
           {glass}
+          {avatars}
           {onAccentChange}
           {onBackgroundChange}
           {onGlassChange}
+          {onAvatarsChange}
         />
       </section>
 

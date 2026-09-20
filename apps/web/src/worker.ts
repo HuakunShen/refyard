@@ -110,7 +110,10 @@ function contentSecurityPolicy(
     "default-src 'self'",
     `script-src 'self'${inlineHashes.length > 0 ? ` ${inlineHashes.join(" ")}` : ""}`,
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data:",
+    // Author avatars are the one deliberate cross-origin load: GitHub serves
+    // the photo for a noreply commit email, requested with no credentials and
+    // no referrer. Everything else stays same-origin.
+    "img-src 'self' data: https://github.com https://avatars.githubusercontent.com",
     "font-src 'self'",
     `connect-src ${connectSources.join(" ")}`,
     "object-src 'none'",

@@ -12,6 +12,7 @@
   import Copy from "@lucide/svelte/icons/copy";
   import Check from "@lucide/svelte/icons/check";
   import { Badge } from "./ui/badge/index.js";
+  import AuthorAvatar from "./AuthorAvatar.svelte";
   import { absoluteTime, shortOid } from "../lib/format.js";
   import { cn } from "../lib/utils.js";
 
@@ -83,7 +84,12 @@
     {:else}
       <dl class="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1 text-xs">
         <dt class="text-ink-faint">author</dt>
-        <dd class="text-ink">
+        <dd class="flex items-center gap-1.5 text-ink">
+          <AuthorAvatar
+            email={detail.authorEmail}
+            name={detail.authorName}
+            size={16}
+          />
           {detail.authorName} &lt;{detail.authorEmail}&gt;
         </dd>
         <dt class="text-ink-faint">authored</dt>
