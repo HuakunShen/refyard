@@ -8,6 +8,7 @@ import type {
 import {
   diffRequestForSelection,
   historyNoticesFor,
+  laneColorFor,
   workspaceRootsFor,
 } from "../../apps/web/src/lib/workbench/query-model.js";
 
@@ -122,5 +123,29 @@ describe("workbench query model", () => {
       tipsMoved: true,
       shallow: true,
     });
+  });
+});
+
+describe("laneColorFor", () => {
+  it("paints the checked-out branch the current-branch colour", () => {
+    expect(laneColorFor("v2", ["refs/heads/v2"])).toBe("lane-current");
+    expect(laneColorFor("v2", ["refs/remotes/origin/v2"])).not.toBe(
+      "lane-current",
+    );
+  });
+
+  it("derives one stable colour from a branch name", () => {
+    // The hue follows the branch, not the lane slot: the same branch keeps its
+    // colour across pages, and two calls agree.
+    expect(laneColorFor(null, ["refs/heads/main"])).toBe(
+      laneColorFor(null, ["refs/heads/main"]),
+    );
+    expect(laneColorFor(null, ["refs/remotes/origin/next"])).toBeDefined();
+  });
+
+  it("lets tags colour nothing", () => {
+    // A tag landing on a trunk commit must not recolor the trunk below it.
+    expect(laneColorFor(null, ["refs/tags/v1.0.0"])).toBeUndefined();
+    expect(laneColorFor(null, [])).toBeUndefined();
   });
 });

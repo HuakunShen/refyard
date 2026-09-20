@@ -5,7 +5,11 @@ import type {
   RepositorySummary,
   StatusEntry,
 } from "@refyard/git-contract";
-import type { GraphCommit } from "@refyard/git-graph";
+import {
+  refColorFor,
+  type GraphCommit,
+  type LaneColor,
+} from "@refyard/git-graph";
 
 export interface WorkspaceRootChoice {
   readonly allowedRootId: string;
@@ -95,4 +99,31 @@ export function graphCommitFor(commit: CommitSummary): GraphCommit {
     parentIds: commit.parents,
     refNames: commit.refNames,
   };
+}
+
+/**
+ * The colour a commit's ref implies for its lane.
+ *
+ * GitKraken paints the checked-out branch a signature accent so the trunk reads as
+ * "where am I" at a glance, and every other branch keeps one stable hue derived from
+ * its name — the hue follows the branch, not the lane slot, so a branch keeps its
+ * colour across pages and after a lane closes and reopens. Tags colour nothing: a
+ * tag landing on a trunk commit must not recolor the trunk below it.
+ */
+export function laneColorFor(
+  currentBranch: string | null,
+  refNames: readonly string[],
+): LaneColor | undefined {
+  if (
+    currentBranch !== null &&
+    refNames.includes(`refs/heads/${currentBranch}`)
+  ) {
+    return "lane-current";
+  }
+  return refColorFor(
+    refNames.filter(
+      (name) =>
+        name.startsWith("refs/heads/") || name.startsWith("refs/remotes/"),
+    ),
+  );
 }

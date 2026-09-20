@@ -56,6 +56,7 @@ import {
   diffRequestForSelection,
   graphCommitFor,
   historyNoticesFor,
+  laneColorFor,
   workspaceRootsFor,
 } from "./query-model.js";
 import { describeBackendProblem } from "./session.js";
@@ -651,11 +652,16 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
   const historyPages = $derived(history.data?.pages ?? []);
   const commits = $derived(historyPages.flatMap((page) => page.commits));
   const historyTopology = $derived(historyTopologyFor(historyPages));
+  const currentBranchName = $derived(status.data?.head?.branchName ?? null);
   const graph = $derived(
     historyTopology === "sparse"
       ? { rows: [], laneCount: 1 }
       : layoutPages(
           historyPages.map((page) => page.commits.map(graphCommitFor)),
+          {
+            colorForRef: (commit) =>
+              laneColorFor(currentBranchName, commit.refNames ?? []),
+          },
         ),
   );
   const historyNotices = $derived(historyNoticesFor(historyPages));

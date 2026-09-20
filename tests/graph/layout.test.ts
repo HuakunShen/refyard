@@ -223,3 +223,47 @@ describe("determinism and bounds", () => {
     expect(result.continuation).not.toBe(continuation);
   });
 });
+
+describe("adjacent branch lanes", () => {
+  const history: GraphCommit[] = [
+    commit("t", ["m"]),
+    commit("u", ["o"]),
+    commit("m", ["left", "side"]),
+    commit("left", ["base"]),
+    commit("side", ["base"]),
+    commit("o", ["base"]),
+    commit("base"),
+  ];
+
+  it("opens a branch lane beside the lane it branches from, not at the right edge", () => {
+    // GitKraken keeps a branch's lane next to its parent's, so the branch curve into
+    // the trunk is one lane wide and unrelated lanes keep their distance.
+    const result = layoutGraph(history);
+    const mergeRow = result.rows[2];
+    expect(mergeRow?.outputLanes.map((lane) => lane.id)).toEqual([
+      "left",
+      "side",
+      "o",
+    ]);
+  });
+
+  it("shifts a surviving unrelated lane sideways by the lanes opened left of it", () => {
+    // Prevents: a renderer matching lanes by index drawing the unrelated lane as a
+    // merge into this row's commit. The lane keeps its identity (id) across the shift;
+    // `rowGeometry` matches by id, and this pins the data it matches on.
+    const result = layoutGraph(history);
+    const mergeRow = result.rows[2];
+    expect(mergeRow?.inputLanes.map((lane) => lane.id)).toEqual(["m", "o"]);
+    const outputSlotOfO = mergeRow?.outputLanes.findIndex(
+      (lane) => lane.id === "o",
+    );
+    expect(outputSlotOfO).toBe(2);
+  });
+
+  it("keeps each branch's circle in the lane that waited for it", () => {
+    const result = layoutGraph(history);
+    expect(result.rows[3]?.laneIndex).toBe(0); // left
+    expect(result.rows[4]?.laneIndex).toBe(1); // side — opened beside the trunk
+    expect(result.rows[5]?.laneIndex).toBe(2); // o — pushed right by `side`
+  });
+});

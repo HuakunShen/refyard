@@ -37,7 +37,9 @@
   import type { CommitSummary } from "@refyard/git-contract";
   import type { GraphRow } from "@refyard/git-graph";
   import GitBranch from "@lucide/svelte/icons/git-branch";
+  import BadgeCheck from "@lucide/svelte/icons/badge-check";
   import Globe from "@lucide/svelte/icons/globe";
+  import Pencil from "@lucide/svelte/icons/pencil";
   import Settings2 from "@lucide/svelte/icons/settings-2";
   import TagIcon from "@lucide/svelte/icons/tag";
   import { Badge } from "./ui/badge/index.js";
@@ -73,7 +75,7 @@
     classifyCommitRef,
     commitRefDisplayName,
   } from "../lib/history-refs.js";
-  import { absoluteTime, relativeTime, shortOid } from "../lib/format.js";
+  import { absoluteTime, shortAbsoluteTime, shortOid } from "../lib/format.js";
   import { cn } from "../lib/utils.js";
 
   interface Props {
@@ -83,8 +85,6 @@
     filtered?: boolean;
     commits: readonly CommitSummary[];
     selectedOid: string | null;
-    /** Wall-clock milliseconds used for relative times, so rendering stays a pure function. */
-    now: number;
     hasMore: boolean;
     loadingMore: boolean;
     tipsMoved: boolean;
@@ -105,6 +105,16 @@
     onCopyText?: (text: string) => void;
     /** The checked-out branch, which hides switch/merge/delete on its own labels. */
     currentBranch?: string | null;
+    /**
+     * The working copy's uncommitted state, shown as the graph's `// WIP` row the
+     * way GitKraken pins the working copy above history. Null (a clean tree, or a
+     * host that did not say) renders no row; selecting it hands back to the page,
+     * which shows the working copy.
+     */
+    wip?: {
+      readonly changedCount: number;
+      readonly onSelect: () => void;
+    } | null;
     onCheckoutBranch?: (branchName: string) => void;
     onMergeBranch?: (branchName: string) => void;
     /** Both deletes run after this component's own confirmation dialog. */
@@ -119,7 +129,6 @@
     filtered = false,
     commits,
     selectedOid,
-    now,
     hasMore,
     loadingMore,
     tipsMoved,
@@ -134,6 +143,7 @@
     onCopyOid = undefined,
     onCopyText = undefined,
     currentBranch = null,
+    wip = null,
     onCheckoutBranch = undefined,
     onMergeBranch = undefined,
     onDeleteBranch = undefined,
@@ -190,6 +200,29 @@
     onLoadMore();
   }
 
+  /**
+   * Arrow-key navigation, the GitKraken way: Up/Down move the selection one commit,
+   * and the list scrolls the row into view. Key handling lives on the scroll
+   * container, so it only fires while the user is actually working the list — an
+   * arrow in the search box is the search box's business.
+   */
+  function onListKeyDown(event: KeyboardEvent): void {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") {
+      return;
+    }
+    const index = commits.findIndex((commit) => commit.oid === selectedOid);
+    const current =
+      index === -1 ? (event.key === "ArrowDown" ? -1 : commits.length) : index;
+    const next = current + (event.key === "ArrowDown" ? 1 : -1);
+    const target = commits[next];
+    if (target === undefined) {
+      return;
+    }
+    event.preventDefault();
+    onSelect(target);
+    instance?.scrollToIndex(next, { align: "auto" });
+  }
+
   $effect(() => {
     if (!loadingMore) {
       autoLoadPending = false;
@@ -229,6 +262,7 @@
   const cellById = $derived(new Map(cells.map((cell) => [cell.id, cell])));
   const graphCell = $derived(cellById.get("graph"));
   const graphLeft = $derived(cellById.get("refs")?.width ?? 0);
+  const refsColumn = $derived(cellById.get("refs"));
   /** Cells left of the flexible message column: the Branch/Tag and Graph columns. */
   const leadCells = $derived(
     cells.filter((cell) => cell.id === "refs" || cell.id === "graph"),
@@ -643,9 +677,65 @@
         </button>
       </div>
 
+      {#if wip !== null}
+        <!-- The working copy, pinned between the header and the history the way
+             GitKraken pins its `// WIP` row above the graph: the uncommitted state is
+             the first thing a read of history should offer, not something reached
+             through the sidebar. -->
+        <button
+          type="button"
+          class="flex h-7 shrink-0 items-stretch border-b border-border/40 bg-muted/25 text-left transition-colors hover:bg-muted/50"
+          data-testid="wip-row"
+          onclick={wip.onSelect}
+        >
+          {#if refsColumn !== undefined}
+            <div
+              class="flex items-center gap-1 overflow-hidden border-r border-border/25 px-2.5"
+              style="width: {refsColumn.width}px; min-width: {refsColumn.width}px; flex: none"
+            >
+              {#if currentBranch !== null}
+                <Badge tone="head">
+                  <GitBranch />
+                  {currentBranch}
+                </Badge>
+              {/if}
+            </div>
+          {/if}
+          {#if graphCell !== undefined}
+            <div
+              class="flex shrink-0 items-center border-r border-border/25"
+              style="width: {graphCell.width}px; min-width: {graphCell.width}px; padding-left: {metrics.lanePadding +
+                metrics.radius -
+                6}px"
+            >
+              <span
+                aria-hidden="true"
+                class="size-3 rounded-full border-2 border-dashed border-muted-foreground/50"
+              ></span>
+            </div>
+          {/if}
+          <div class="flex min-w-0 flex-1 items-center gap-2 px-2.5">
+            <span class="truncate font-mono text-xs text-muted-foreground"
+              >// WIP</span
+            >
+            <Pencil class="size-3 shrink-0 text-muted-foreground/70" />
+            <span class="shrink-0 text-xs text-muted-foreground"
+              >{wip.changedCount}</span
+            >
+            <span class="truncate text-xs text-muted-foreground/60"
+              >uncommitted changes — click to work on them</span
+            >
+          </div>
+        </button>
+      {/if}
+
       <div
         bind:this={scrollElement}
         class="relative min-h-0 flex-1 overflow-auto"
+        tabindex="0"
+        aria-label="Commit history — arrow keys move the selection"
+        data-testid="history-scroll"
+        onkeydown={onListKeyDown}
       >
         <div class="relative" style="height: {totalSize}px">
           {#if topology === "continuous" && graphCell !== undefined}
@@ -776,9 +866,14 @@
                       </Badge>
                     {/if}
                     {#if commit.signed}
-                      <Badge tone="muted" title="Commit carries a signature."
-                        >signed</Badge
+                      <!-- A text badge per row turns every signed history into a wall
+                           of chips; GitKraken's signature mark is an icon first. -->
+                      <span
+                        class="shrink-0 text-muted-foreground/70"
+                        title="Commit carries a signature."
                       >
+                        <BadgeCheck class="size-3.5" />
+                      </span>
                     {/if}
                   </button>
                   {#if authorCell !== undefined}
@@ -797,11 +892,11 @@
                       style="width: {dateCell.width}px; min-width: {dateCell.width}px"
                     >
                       <time
-                        class="truncate text-xs text-muted-foreground/75"
+                        class="truncate font-mono text-xs text-muted-foreground/75"
                         datetime={commit.authoredAt}
                         title={absoluteTime(commit.authoredAt)}
                       >
-                        {relativeTime(commit.authoredAt, now)}
+                        {shortAbsoluteTime(commit.authoredAt)}
                       </time>
                     </div>
                   {/if}

@@ -50,7 +50,7 @@
         d={segment.path}
         fill="none"
         stroke={segment.paint}
-        stroke-width="1.5"
+        stroke-width="2"
         stroke-linecap="round"
       />
     {/each}

@@ -68,6 +68,24 @@ export function absoluteTime(isoTimestamp: string): string {
   );
 }
 
+/**
+ * A compact absolute stamp in the viewer's own timezone, for the history table's
+ * date column (GitKraken shows absolute stamps there too — a column of "3 minutes
+ * ago" cannot be scanned for "when was this"). The exact UTC instant stays in the
+ * hover tooltip via `absoluteTime`.
+ */
+export function shortAbsoluteTime(isoTimestamp: string): string {
+  const date = new Date(isoTimestamp);
+  if (Number.isNaN(date.getTime())) {
+    return isoTimestamp;
+  }
+  const pad = (value: number): string => String(value).padStart(2, "0");
+  return (
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+    `${pad(date.getHours())}:${pad(date.getMinutes())}`
+  );
+}
+
 /** Byte counts for diff stats and truncation notices. */
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) {

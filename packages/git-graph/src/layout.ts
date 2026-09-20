@@ -12,9 +12,11 @@
  * - **Lane index is a position, not an identity.** A branch is a *ref name*; a lane
  *   is just a slot in one row. Two rows may draw different branches in the same lane,
  *   and the UI must never label a lane with a branch name.
- * - **A lane is never reordered inside a row.** Lanes only shrink (when a lane's
- *   commit converges into another) or grow at the right edge, so a row's geometry is
- *   a function of its own lane arrays plus where its parents are.
+ * - **A lane's identity survives index changes.** Lanes close when they converge and
+ *   new lanes open directly beside the lane they branch from, so a surviving lane can
+ *   shift sideways across one row. Renderers must therefore match lanes by *id*
+ *   between a row's input and output, never by index — `rowGeometry` in the UI
+ *   package does exactly that.
  * - **Continuation is explicit.** The last row's `outputLanes` is the state to draw
  *   under a "load more" row, and an unresolved parent stays in the array as a
  *   placeholder until it appears — a page boundary therefore never breaks a line.
@@ -98,29 +100,38 @@ export function layoutGraph(
     const inputLanes: LaneRef[] = previousOut.map((lane) => ({ ...lane }));
     const outputLanes: LaneRef[] = [];
     let firstParentPlaced = false;
+    /** Where the commit's own lane sits in `outputLanes` (-1 until placed). */
+    let ownLaneOutputIndex = -1;
 
     // 2. The lane waiting for this commit becomes its first parent, in place, so the
-    //    lane keeps its index and colour down the row.
+    //    lane keeps its index, colour and identity down the row. The colour is kept
+    //    unconditionally: a branch's line is coloured once, when the lane opens at
+    //    that branch's tip, and a ref met along the way — a remote-tracking twin, a
+    //    tag — must not recolor the rest of the line. Any other lane waiting for the
+    //    same commit is a convergence: it closes here rather than being duplicated.
     if (commit.parentIds.length > 0) {
       for (const lane of inputLanes) {
         if (lane.id === commit.id) {
           if (!firstParentPlaced) {
             outputLanes.push({
               id: commit.parentIds[0] ?? "",
-              color: options.colorForRef?.(commit) ?? lane.color,
+              color: lane.color,
             });
+            ownLaneOutputIndex = outputLanes.length - 1;
             firstParentPlaced = true;
           }
-          // Any other lane waiting for the same commit is a convergence: it closes
-          // here rather than being duplicated.
           continue;
         }
         outputLanes.push({ ...lane });
       }
     }
 
-    // 3. Additional parents (a merge or an octopus) are appended at the right edge,
-    //    or the first parent is appended when this commit opened a new lane.
+    // 3. Additional parents (a merge or an octopus) open their lanes directly next to
+    //    the lane they branch from — GitKraken-style adjacency, which keeps a branch's
+    //    line short and its curve into the trunk tight instead of sweeping across every
+    //    lane to the right edge. When this commit opened its own new lane (it was not
+    //    awaited), there is no adjacent slot, so the parents append at the right edge.
+    let inserted = 0;
     const start = firstParentPlaced ? 1 : 0;
     for (let index = start; index < commit.parentIds.length; index += 1) {
       const parentId = commit.parentIds[index];
@@ -139,7 +150,13 @@ export function layoutGraph(
         paletteCursor = (paletteCursor + 1) % palette.length;
         color = palette[paletteCursor] ?? defaultColor;
       }
-      outputLanes.push({ id: parentId, color });
+      const lane: LaneRef = { id: parentId, color };
+      if (ownLaneOutputIndex !== -1) {
+        outputLanes.splice(ownLaneOutputIndex + 1 + inserted, 0, lane);
+        inserted += 1;
+      } else {
+        outputLanes.push(lane);
+      }
     }
 
     // 4. The circle: this commit's own lane, or a new one to the right of everything

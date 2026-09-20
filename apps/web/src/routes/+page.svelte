@@ -959,18 +959,6 @@
     });
   });
 
-  /* ------------------------------------------------------------------ clock */
-
-  let now = $state(Date.now());
-  $effect(() => {
-    const handle = setInterval(() => {
-      now = Date.now();
-    }, 30_000);
-    return () => {
-      clearInterval(handle);
-    };
-  });
-
   /* --------------------------------------------------------------- helpers */
 
   /** True while the chosen address is still this page's own origin. */
@@ -1474,7 +1462,6 @@
               filtered={historyFiltersActive(historyFilterState.applied)}
               {commits}
               {selectedOid}
-              {now}
               hasMore={history.hasNextPage}
               loadingMore={history.isFetchingNextPage}
               tipsMoved={historyNotices.tipsMoved}
@@ -1492,6 +1479,13 @@
               onCopyOid={onCommitCopyOid}
               {onCopyText}
               currentBranch={status.data?.head?.branchName ?? null}
+              wip={status.data?.worktreeId === activeWorktreeId &&
+              (status.data?.entries.length ?? 0) > 0
+                ? {
+                    changedCount: status.data?.entries.length ?? 0,
+                    onSelect: backToHistory,
+                  }
+                : null}
               onCheckoutBranch={graphMenuOperations.has("switchBranch")
                 ? (branchName) => onBranchSwitch(branchName)
                 : undefined}

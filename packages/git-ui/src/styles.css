@@ -62,15 +62,19 @@
 	--color-remove: oklch(0.55 0.18 25);
 	--color-warn: oklch(0.62 0.13 75);
 
-	/* commit-graph lanes */
-	--color-lane-1: oklch(0.45 0 0);
+	/* commit-graph lanes. `lane-current` is the checked-out branch's own colour —
+	   GitKraken paints the current branch a signature accent so the trunk reads as
+	   "where am I" at a glance; the rest of the palette is vivid (no neutral) because
+	   a grey line reads as a rendering artefact, not as history. */
+	--color-lane-current: oklch(0.58 0.12 230);
+	--color-lane-1: oklch(0.55 0.15 265);
 	--color-lane-2: oklch(0.62 0.15 150);
 	--color-lane-3: oklch(0.66 0.16 60);
 	--color-lane-4: oklch(0.6 0.19 20);
 	--color-lane-5: oklch(0.6 0.17 310);
-	--color-lane-6: oklch(0.62 0.13 200);
+	--color-lane-6: oklch(0.55 0.13 200);
 	--color-lane-7: oklch(0.6 0.17 340);
-	--color-lane-8: oklch(0.62 0.12 120);
+	--color-lane-8: oklch(0.58 0.14 120);
 }
 
 .dark {
@@ -104,8 +108,9 @@
 	--color-remove: oklch(0.68 0.17 25);
 	--color-warn: oklch(0.76 0.13 80);
 
-	/* commit-graph lanes */
-	--color-lane-1: oklch(0.85 0 0);
+	/* commit-graph lanes (dark) */
+	--color-lane-current: oklch(0.75 0.11 230);
+	--color-lane-1: oklch(0.75 0.13 265);
 	--color-lane-2: oklch(0.75 0.15 150);
 	--color-lane-3: oklch(0.78 0.14 70);
 	--color-lane-4: oklch(0.7 0.17 25);

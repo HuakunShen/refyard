@@ -36,7 +36,7 @@ export const DEFAULT_METRICS: GraphMetrics = {
   rowHeight: 28,
   laneWidth: 14,
   lanePadding: 10,
-  radius: 4,
+  radius: 4.5,
 };
 
 export type SegmentKind = "lane" | "merge" | "branch";
@@ -106,7 +106,21 @@ export function edgePath(
   );
 }
 
-/** Everything one row draws, in row-local coordinates (the caller translates by index). */
+/**
+ * Everything one row draws, in row-local coordinates (the caller translates by index).
+ *
+ * Lanes are matched between the row's input and output **by id, not by index**: the
+ * layout opens a branch's lane beside its parent's, so a surviving lane can shift one
+ * slot sideways across a row. Matching by index would draw that shift as a merge into
+ * this row's commit — a line the data does not contain. The id match gives the three
+ * segment kinds a row can have:
+ *
+ * - a lane whose id survives into the output passes through, straight when it keeps
+ *   its slot and a shallow curve when it shifted;
+ * - a lane waiting for *this* commit (id === row id) ends at the circle;
+ * - an output lane no input lane claims opened at this row, drawn from the circle to
+ *   the bottom edge.
+ */
 export function rowGeometry(
   row: GraphRow,
   index: number,
@@ -118,19 +132,34 @@ export function rowGeometry(
   const bottom = top + metrics.rowHeight;
   const segments: GraphSegment[] = [];
 
-  // A lane that is present at the same index on both sides is waiting for somebody
-  // else: it passes through untouched and keeps its own colour.
-  const passesThrough = (laneIndex: number): boolean => {
-    const input = row.inputLanes[laneIndex];
-    const output = row.outputLanes[laneIndex];
-    return (
-      input !== undefined && output !== undefined && input.id === output.id
-    );
+  // One output slot can be claimed by at most one input lane, so a degenerate commit
+  // that lists one parent twice still draws both of its lines.
+  const claimed = new Set<number>();
+  const outputSlotOf = (id: string): number | undefined => {
+    for (let slot = 0; slot < row.outputLanes.length; slot += 1) {
+      if (row.outputLanes[slot]?.id === id && !claimed.has(slot)) {
+        return slot;
+      }
+    }
+    return undefined;
   };
 
   row.inputLanes.forEach((lane, laneIndex) => {
     const x = laneX(laneIndex, metrics);
-    if (passesThrough(laneIndex)) {
+    if (lane.id === row.id) {
+      // This lane was waiting for the commit: it ends at the circle, whether it is
+      // the lane that continues as the first parent or one that converges here.
+      segments.push({
+        path: edgePath(x, top, cx, cy),
+        paint: lanePaint(lane.color),
+        kind: x === cx ? "lane" : "merge",
+      });
+      return;
+    }
+    const outputSlot = outputSlotOf(lane.id);
+    if (outputSlot === undefined) {
+      // A live lane always continues; drawing a straight pass-through keeps the line
+      // whole even if the layout ever hands over a row that drops one.
       segments.push({
         path: edgePath(x, top, x, bottom),
         paint: lanePaint(lane.color),
@@ -138,17 +167,17 @@ export function rowGeometry(
       });
       return;
     }
-    // Otherwise this lane reaches this row's commit — including a lane that converges
-    // here from the side, which is why the circle is the endpoint either way.
+    claimed.add(outputSlot);
+    const xOut = laneX(outputSlot, metrics);
     segments.push({
-      path: edgePath(x, top, cx, cy),
+      path: edgePath(x, top, xOut, bottom),
       paint: lanePaint(lane.color),
-      kind: x === cx ? "lane" : "merge",
+      kind: xOut === x ? "lane" : "merge",
     });
   });
 
   row.outputLanes.forEach((lane, laneIndex) => {
-    if (passesThrough(laneIndex)) {
+    if (claimed.has(laneIndex)) {
       return;
     }
     const x = laneX(laneIndex, metrics);
@@ -167,6 +196,7 @@ function format(value: number): string {
 }
 
 const LANE_PAINT: Readonly<Record<string, string>> = {
+  "lane-current": "var(--color-lane-current, currentColor)",
   "lane-1": "var(--color-lane-1, currentColor)",
   "lane-2": "var(--color-lane-2, currentColor)",
   "lane-3": "var(--color-lane-3, currentColor)",

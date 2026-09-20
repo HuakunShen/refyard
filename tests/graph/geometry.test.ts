@@ -221,3 +221,48 @@ describe("row geometry", () => {
     expect(lanePaint("lane-99")).toBe(lanePaint("lane-1"));
   });
 });
+
+describe("shifted lanes", () => {
+  const shiftedRow = row({
+    id: "m",
+    laneIndex: 0,
+    inputLanes: [ref("m", "lane-current"), ref("o", "lane-2")],
+    outputLanes: [
+      ref("left", "lane-current"),
+      ref("side", "lane-5"),
+      ref("o", "lane-2"),
+    ],
+  });
+
+  it("draws a surviving lane that shifted sideways as a pass-through curve, not a merge", () => {
+    // The layout opens `side` between the trunk and `o`; `o` keeps its identity but
+    // moves one slot right. Matching by index would bend `o` into this row's circle —
+    // a merge the repository does not contain.
+    const geometry = rowGeometry(shiftedRow, 3, metrics);
+    const oIn = laneX(1, metrics);
+    const oOut = laneX(2, metrics);
+    const oSegments = geometry.segments.filter(
+      (segment) => segment.paint === lanePaint("lane-2"),
+    );
+    expect(oSegments).toHaveLength(1);
+    expect(oSegments[0]?.path).toBe(
+      edgePath(oIn, 3 * metrics.rowHeight, oOut, 4 * metrics.rowHeight),
+    );
+  });
+
+  it("draws the branch lane that opened beside the trunk from the circle to the bottom", () => {
+    const geometry = rowGeometry(shiftedRow, 3, metrics);
+    const branch = geometry.segments.find(
+      (segment) => segment.paint === lanePaint("lane-5"),
+    );
+    expect(branch?.kind).toBe("branch");
+    expect(branch?.path).toBe(
+      edgePath(
+        laneX(0, metrics),
+        rowCenterY(3, metrics),
+        laneX(1, metrics),
+        4 * metrics.rowHeight,
+      ),
+    );
+  });
+});

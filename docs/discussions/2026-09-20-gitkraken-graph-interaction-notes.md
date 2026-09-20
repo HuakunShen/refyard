@@ -150,3 +150,47 @@ Deliberately not adopted yet: revert/cherry-pick/reset/drop/rebase/squash
 (no operations), AI actions, PR creation, Pin/Solo, commit drag, the WIP row,
 per-column sort/filter, rename-from-graph (BranchPanel owns rename; it needs
 an inline text field the graph menu does not have).
+
+## 5. Round two — the graph drawing itself (same day, 20:00)
+
+The user called the graph's _drawing_ the remaining gap. Rendering our layout
+and GitKraken's over the same repositories (`~/Dev/kunkun-services`, which
+GitKraken had open, and `~/Dev/others/drizzle-orm` — ~385 merges per 100
+first-parent commits) showed four concrete differences:
+
+1. **The trunk was grey.** `lane-1` — the first palette entry and everything's
+   default — was a neutral in both themes, so the most important line in the
+   graph looked like a rendering artefact. GitKraken paints the checked-out
+   branch a signature accent. Fixed: `lane-current` (a blue accent, light and
+   dark variants) applied through `colorForRef`, and the palette's grey
+   replaced with a violet.
+2. **Line colour followed refs, not branches.** The layout recoloured a lane
+   every time a commit on it carried a ref, so the `origin/v2` twin sitting
+   one commit below `v2` flipped the trunk to that hash's colour mid-line.
+   Fixed in `layout.ts`: a lane's colour is decided once, when the lane opens
+   at its branch's tip, and refs met along the way never recolor it.
+   `laneColorFor` (app side) maps the checked-out branch to `lane-current` and
+   every other branch to a hue hashed from its name, ignoring tags.
+3. **Branch lanes opened at the right edge.** Every merge sent its branch's
+   lane to the far right, sweeping a long flat curve across the whole graph.
+   GitKraken opens the new lane directly beside the lane it branches from.
+   Fixed in `layout.ts` (splice at the parent lane's index + 1). The cost: a
+   surviving lane can now shift sideways across one row, so `rowGeometry`
+   matches a row's input and output lanes **by id, not by index** — index
+   matching would have drawn the shift as a merge into that row's commit.
+4. **The working copy was not in the graph.** GitKraken pins a `// WIP` row —
+   dashed circle, pencil, change count, the branch label — above history.
+   Fixed: a WIP row between the table header and the scroll area, shown when
+   the active worktree is dirty, clicking it hands back to the working copy.
+
+Also borrowed: absolute `YYYY-MM-DD HH:mm` stamps in the date column (a
+column of "3 minutes ago" cannot be scanned for "when"), the signature shown
+as an icon instead of a text badge on every row, 2px strokes with 4.5px dots,
+and Up/Down arrow navigation of the selection with scroll-into-view.
+
+Left for later, recorded so the next round does not re-derive it: author
+avatars inside first-parent dots (needs an avatar story — GitKraken's look,
+not reproducible honestly with initials at 9px), hover-pinning of branch
+labels to arbitrary rows (Smart Branch Visibility), horizontal scrolling when
+the user widens fixed columns past the panel, and a compact-rows density
+toggle.
