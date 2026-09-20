@@ -104,18 +104,25 @@ export function layoutGraph(
     let ownLaneOutputIndex = -1;
 
     // 2. The lane waiting for this commit becomes its first parent, in place, so the
-    //    lane keeps its index, colour and identity down the row. The colour is kept
-    //    unconditionally: a branch's line is coloured once, when the lane opens at
-    //    that branch's tip, and a ref met along the way — a remote-tracking twin, a
-    //    tag — must not recolor the rest of the line. Any other lane waiting for the
-    //    same commit is a convergence: it closes here rather than being duplicated.
+    //    lane keeps its index, colour and identity down the row. A LOCAL branch's tip
+    //    is the one exception — it is where that branch's line begins, so from here
+    //    down the lane takes the branch's colour (GitKraken paints the checked-out
+    //    branch from its tip down). Remote-tracking twins and tags share the commit
+    //    without owning the line: recolouring for them is what made a trunk flip
+    //    colour one commit under its own tip. Any other lane waiting for the same
+    //    commit is a convergence: it closes here rather than being duplicated.
     if (commit.parentIds.length > 0) {
       for (const lane of inputLanes) {
         if (lane.id === commit.id) {
           if (!firstParentPlaced) {
+            const localHeadColour = commit.refNames?.some((name) =>
+              name.startsWith("refs/heads/"),
+            )
+              ? options.colorForRef?.(commit)
+              : undefined;
             outputLanes.push({
               id: commit.parentIds[0] ?? "",
-              color: lane.color,
+              color: localHeadColour ?? lane.color,
             });
             ownLaneOutputIndex = outputLanes.length - 1;
             firstParentPlaced = true;

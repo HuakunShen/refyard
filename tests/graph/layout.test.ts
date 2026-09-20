@@ -267,3 +267,43 @@ describe("adjacent branch lanes", () => {
     expect(result.rows[5]?.laneIndex).toBe(2); // o — pushed right by `side`
   });
 });
+
+describe("lane colour at branch tips", () => {
+  const colorForRef = (c: GraphCommit) =>
+    (c.refNames ?? []).includes("refs/heads/current")
+      ? "lane-current"
+      : refColorFor(c.refNames ?? []);
+
+  it("recolors the line at a local branch's tip, where that branch begins", () => {
+    const result = layoutGraph(
+      [
+        commit("lane-mate", ["merge"], ["refs/heads/other"]),
+        commit("merge", ["older"], ["refs/heads/current", "refs/tags/v1"]),
+        commit("older", ["oldest"]),
+        commit("oldest"),
+      ],
+      { colorForRef },
+    );
+    // `other` opened the lane above; from `merge` (current's tip) down it is
+    // current's line and takes the current colour.
+    expect(result.rows[0]?.outputLanes[0]?.color).not.toBe("lane-current");
+    expect(result.rows[1]?.outputLanes[0]?.color).toBe("lane-current");
+    expect(result.rows[2]?.outputLanes[0]?.color).toBe("lane-current");
+  });
+
+  it("does not recolor for a remote-tracking twin or a tag alone", () => {
+    // Prevents: the trunk flipping to a hash colour one commit under its own tip,
+    // because origin/<branch> sits there and grabbed the line.
+    const result = layoutGraph(
+      [
+        commit("tip", ["under"], ["refs/heads/current"]),
+        commit("under", ["older"], ["refs/remotes/origin/current"]),
+        commit("older", ["oldest"], ["refs/tags/v9"]),
+        commit("oldest"),
+      ],
+      { colorForRef },
+    );
+    expect(result.rows[1]?.outputLanes[0]?.color).toBe("lane-current");
+    expect(result.rows[2]?.outputLanes[0]?.color).toBe("lane-current");
+  });
+});
