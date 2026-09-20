@@ -5,6 +5,11 @@ export type ContextAction =
       readonly label: string;
       readonly disabled?: boolean;
       readonly destructive?: boolean;
+      /**
+       * Menu items that reflect a boolean setting render a check instead of a
+       * blank gutter; the value is display-only, the action itself toggles.
+       */
+      readonly checked?: boolean;
       readonly onSelect: () => void;
     }
   | {

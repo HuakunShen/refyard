@@ -116,6 +116,33 @@ export type { UpdateOffer, UpdatesProbe, UpdatesPhase } from "./lib/updates.js";
 export { stepUpdates } from "./lib/updates.js";
 export { default as AppearanceFields } from "./components/AppearanceFields.svelte";
 export { default as ContextActionMenu } from "./components/ContextActionMenu.svelte";
+export { default as ContextMenuLayer } from "./components/ContextMenuLayer.svelte";
+export {
+  closeContextMenu,
+  createContextMenuState,
+  openAnchoredContextMenu,
+  openContextMenu,
+  type ContextMenuState,
+} from "./lib/context-menu.svelte.js";
+export {
+  HISTORY_COLUMN_IDS,
+  columnLimits,
+  defaultColumnState,
+  loadStoredColumnState,
+  parseColumnState,
+  resizeColumn,
+  serializeColumnState,
+  storeColumnState,
+  toggleColumn,
+  visibleColumns,
+  type HistoryColumnId,
+  type HistoryColumnState,
+} from "./lib/column-layout.js";
+export {
+  classifyCommitRef,
+  commitRefDisplayName,
+  type CommitRef,
+} from "./lib/history-refs.js";
 export { default as ConfirmDialog } from "./components/ConfirmDialog.svelte";
 
 export { default as BranchPanel } from "./components/BranchPanel.svelte";

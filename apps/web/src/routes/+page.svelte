@@ -877,6 +877,10 @@
   const tagAvailable = $derived(writeController.availability.tag);
   const onBranchCreate = writeController.onBranchCreate;
   const onTagCreate = writeController.onTagCreate;
+  const onBranchSwitch = writeController.onBranchSwitch;
+  const onBranchMerge = writeController.onBranchMerge;
+  const onBranchDelete = writeController.onBranchDelete;
+  const onTagDelete = writeController.onTagDelete;
 
   function onCommitCreateBranch(
     commit: CommitSummary,
@@ -899,6 +903,24 @@
     }
     void navigator.clipboard.writeText(commit.oid);
   }
+
+  function onCopyText(text: string): void {
+    if (!browser || navigator.clipboard === undefined) {
+      return;
+    }
+    void navigator.clipboard.writeText(text);
+  }
+
+  /**
+   * The graph's ref-label menus carry only operations that exist: each callback
+   * is passed to the commit list only when its operation kind is in the
+   * capabilities, so an unavailable operation is absent, not a dead item.
+   */
+  const graphMenuOperations = $derived(
+    new Set(
+      (capabilities.data?.operations ?? []).map((operation) => operation.kind),
+    ),
+  );
   /* ------------------------------------------------------- connection and hints */
 
   // Browser reachability and live updates are separate signals: navigator.onLine gates
@@ -1468,6 +1490,20 @@
                 : undefined}
               onCreateTagAt={tagAvailable ? onCommitCreateTag : undefined}
               onCopyOid={onCommitCopyOid}
+              {onCopyText}
+              currentBranch={status.data?.head?.branchName ?? null}
+              onCheckoutBranch={graphMenuOperations.has("switchBranch")
+                ? (branchName) => onBranchSwitch(branchName)
+                : undefined}
+              onMergeBranch={graphMenuOperations.has("merge")
+                ? (branchName) => onBranchMerge(branchName, false)
+                : undefined}
+              onDeleteBranch={graphMenuOperations.has("deleteBranch")
+                ? (branchName) => onBranchDelete(branchName)
+                : undefined}
+              onDeleteTag={graphMenuOperations.has("deleteTag")
+                ? (tagName) => onTagDelete(tagName)
+                : undefined}
               class="min-h-0 flex-1"
             />
           {/if}

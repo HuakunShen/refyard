@@ -169,6 +169,72 @@ test.describe("Git context menus", () => {
         .trim(),
     ).toBe("");
   });
+  test("offers ref actions from the graph and confirms tag deletion", async ({
+    page,
+  }) => {
+    await repo.git(["branch", "graph-ref", historicalOid]);
+    await repo.git(["tag", "graph-tag", historicalOid]);
+    await page.goto(service.pairingUrl);
+    await expect(page.getByTestId(`commit-row-${historicalOid}`)).toBeVisible();
+
+    const branchBadge = page.getByTestId("commit-ref-refs/heads/graph-ref");
+    await branchBadge.click({ button: "right" });
+    const branchMenu = page.getByTestId(
+      "commit-ref-context-refs/heads/graph-ref",
+    );
+    await expect(branchMenu).toBeVisible();
+    await expect(
+      branchMenu.getByTestId(
+        "commit-ref-context-refs/heads/graph-ref-checkout",
+      ),
+    ).toBeVisible();
+    await expect(
+      branchMenu.getByTestId("commit-ref-context-refs/heads/graph-ref-merge"),
+    ).toHaveText("Merge into main");
+    await expect(
+      branchMenu.getByTestId("commit-ref-context-refs/heads/graph-ref-delete"),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    // The checked-out branch is not offered its own switch/merge/delete.
+    const headBadge = page.getByTestId("commit-ref-refs/heads/main");
+    await headBadge.click({ button: "right" });
+    const headMenu = page.getByTestId("commit-ref-context-refs/heads/main");
+    await expect(headMenu).toBeVisible();
+    await expect(
+      headMenu.getByTestId("commit-ref-context-refs/heads/main-checkout"),
+    ).toHaveCount(0);
+    await expect(
+      headMenu.getByTestId("commit-ref-context-refs/heads/main-merge"),
+    ).toHaveCount(0);
+    await expect(
+      headMenu.getByTestId("commit-ref-context-refs/heads/main-delete"),
+    ).toHaveCount(0);
+    await page.keyboard.press("Escape");
+
+    // A tag's delete is destructive: it runs only through the confirm dialog.
+    const tagBadge = page.getByTestId("commit-ref-refs/tags/graph-tag");
+    await tagBadge.click({ button: "right" });
+    const tagMenu = page.getByTestId("commit-ref-context-refs/tags/graph-tag");
+    await tagMenu
+      .getByTestId("commit-ref-context-refs/tags/graph-tag-delete")
+      .click();
+    await expect(page.getByTestId("commit-ref-delete-dialog")).toBeVisible();
+    expect(
+      new TextDecoder()
+        .decode(await repo.git(["tag", "--list", "graph-tag"]))
+        .trim(),
+    ).toBe("graph-tag");
+    await page.getByTestId("commit-ref-delete-dialog-confirm").click();
+    await expect
+      .poll(async () =>
+        new TextDecoder()
+          .decode(await repo.git(["tag", "--list", "graph-tag"]))
+          .trim(),
+      )
+      .toBe("");
+  });
+
   test("stages, unstages and confirms discard from a path context menu", async ({
     page,
   }) => {

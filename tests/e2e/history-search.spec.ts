@@ -7,9 +7,12 @@ test.describe("history search", () => {
   let repo: GitFixtureRepo;
   let service: Awaited<ReturnType<typeof startE2eService>>;
   let newestOid: string;
+  /** The initial commit the `base-only` branch points at. */
+  let baseOid: string;
   const releaseOids: string[] = [];
   test.beforeAll(async () => {
     repo = await createRepo({ initialCommit: true });
+    baseOid = await repo.headOid();
     await repo.git(["branch", "base-only"]);
     for (let index = 0; index < 105; index += 1) {
       await repo.write("a.txt", `release ${index}\n`);
@@ -91,7 +94,9 @@ test.describe("history search", () => {
       .getByLabel("Ref", { exact: true })
       .selectOption("refs/heads/base-only");
     await search.getByRole("button", { name: "Apply", exact: true }).click();
-    await expect(page.getByRole("button", { name: /^base / })).toBeVisible();
+    // Identified by the tip's oid: the row button's accessible name is the
+    // subject alone now that refs and metadata live in their own columns.
+    await expect(page.getByTestId(`commit-row-${baseOid}`)).toBeVisible();
     await expect(latest).toHaveCount(0);
     await expect(page.locator("svg[data-slot='graph-gutter']")).toHaveCount(1);
 

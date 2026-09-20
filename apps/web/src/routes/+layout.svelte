@@ -32,7 +32,26 @@
       },
     },
   });
+
+  /**
+   * The WebView's default context menu (Reload and friends) is not part of this
+   * app's interface, and right-click is a real gesture here — every commit row
+   * and ref label has its own menu. Text still needs the native menu for
+   * copy/paste, so editable targets keep it.
+   */
+  function suppressContextMenu(event: MouseEvent): void {
+    const target = event.target;
+    if (
+      target instanceof HTMLElement &&
+      target.closest("input, textarea, select, [contenteditable]")
+    ) {
+      return;
+    }
+    event.preventDefault();
+  }
 </script>
+
+<svelte:document oncontextmenu={suppressContextMenu} />
 
 <QueryClientProvider client={queryClient}>
   <ModeWatcher />

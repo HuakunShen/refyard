@@ -1,18 +1,33 @@
 <script lang="ts">
   /**
-   * The commit list: one fixed row height shared by the graph gutter and the rows.
+   * The commit history table: columns, the graph gutter, and the context menus.
    *
-   * The list is virtualized because a repository's history is effectively unbounded, and
-   * the graph is drawn *outside* the virtualizer — a single SVG column whose contents are
-   * the visible rows only — so a merge line stays continuous while the rows scroll
-   * independently of it. The row height is a parameter, not a constant in two places:
-   * `metrics.rowHeight` is what the virtualizer estimates with and what the geometry uses
-   * to place circles, which is the only reason the two can be trusted to agree.
+   * The list is virtualized because a repository's history is effectively unbounded,
+   * and the graph is drawn *outside* the virtualizer — a single SVG column whose
+   * contents are the visible rows only — so a merge line stays continuous while the
+   * rows scroll independently of it. The row height is a parameter, not a constant in
+   * two places: `metrics.rowHeight` is what the virtualizer estimates with and what
+   * the geometry uses to place circles, which is the only reason the two can be
+   * trusted to agree.
    *
-   * Paging is automatic. Reaching the scroll threshold asks the caller for the next page; the
-   * caller must continue the layout from the previous page's lanes (`layoutPages` in
-   * `@refyard/git-graph`) or the graph would restart at lane 0 mid-history. `tipsMoved` remains
-   * visible because it describes consistency, while page truncation is handled by scrolling.
+   * The table is GitKraken-shaped: a fixed header names the columns (Branch / Tag,
+   * Graph, Commit message, Author, Date / Time, Sha); each column's width is
+   * resizable from the header band and every column except the commit message can be
+   * hidden from the settings gear. The layout persists per browser. The commit
+   * message column is deliberately absent from those controls: it is the flexible
+   * remainder of the row, and a history list without subjects is not a state this
+   * app offers.
+   *
+   * Right-click is per target: a row (graph lanes included) opens the commit's menu,
+   * a branch or tag badge in the Branch / Tag column opens that ref's menu, each
+   * offering only operations the host reported. This component never decides
+   * capability — the page passes a callback only when the operation exists.
+   *
+   * Paging is automatic. Reaching the scroll threshold asks the caller for the next
+   * page; the caller must continue the layout from the previous page's lanes
+   * (`layoutPages` in `@refyard/git-graph`) or the graph would restart at lane 0
+   * mid-history. `tipsMoved` remains visible because it describes consistency, while
+   * page truncation is handled by scrolling.
    */
   import {
     createVirtualizer,
@@ -21,19 +36,45 @@
   import { onDestroy } from "svelte";
   import type { CommitSummary } from "@refyard/git-contract";
   import type { GraphRow } from "@refyard/git-graph";
+  import GitBranch from "@lucide/svelte/icons/git-branch";
+  import Globe from "@lucide/svelte/icons/globe";
+  import Settings2 from "@lucide/svelte/icons/settings-2";
+  import TagIcon from "@lucide/svelte/icons/tag";
   import { Badge } from "./ui/badge/index.js";
   import CommitGraph from "./CommitGraph.svelte";
   import CommitRefDialog from "./CommitRefDialog.svelte";
-  import ContextActionMenu from "./ContextActionMenu.svelte";
+  import ConfirmDialog from "./ConfirmDialog.svelte";
+  import ContextMenuLayer from "./ContextMenuLayer.svelte";
   import StateBanner from "./StateBanner.svelte";
   import {
     DEFAULT_METRICS,
     gutterWidth,
     type GraphMetrics,
   } from "../lib/geometry.js";
+  import {
+    HISTORY_COLUMN_IDS,
+    defaultColumnState,
+    loadStoredColumnState,
+    resizeColumn,
+    storeColumnState,
+    toggleColumn,
+    visibleColumns,
+    type HistoryColumnId,
+    type HistoryColumnState,
+  } from "../lib/column-layout.js";
+  import {
+    closeContextMenu,
+    createContextMenuState,
+    openAnchoredContextMenu,
+    openContextMenu,
+  } from "../lib/context-menu.svelte.js";
+  import type { ContextAction } from "../lib/context-actions.js";
+  import {
+    classifyCommitRef,
+    commitRefDisplayName,
+  } from "../lib/history-refs.js";
   import { absoluteTime, relativeTime, shortOid } from "../lib/format.js";
   import { cn } from "../lib/utils.js";
-  import type { ContextAction } from "../lib/context-actions.js";
 
   interface Props {
     /** Graph rows, index-aligned with `commits`. */
@@ -60,6 +101,15 @@
       annotation: string | null,
     ) => void;
     onCopyOid?: (commit: CommitSummary) => void;
+    /** Copy arbitrary text (a subject, a ref name); absent means the host cannot. */
+    onCopyText?: (text: string) => void;
+    /** The checked-out branch, which hides switch/merge/delete on its own labels. */
+    currentBranch?: string | null;
+    onCheckoutBranch?: (branchName: string) => void;
+    onMergeBranch?: (branchName: string) => void;
+    /** Both deletes run after this component's own confirmation dialog. */
+    onDeleteBranch?: (branchName: string) => void;
+    onDeleteTag?: (tagName: string) => void;
     class?: string;
   }
 
@@ -82,6 +132,12 @@
     onCreateBranchAt = undefined,
     onCreateTagAt = undefined,
     onCopyOid = undefined,
+    onCopyText = undefined,
+    currentBranch = null,
+    onCheckoutBranch = undefined,
+    onMergeBranch = undefined,
+    onDeleteBranch = undefined,
+    onDeleteTag = undefined,
     class: className = "",
   }: Props = $props();
 
@@ -104,8 +160,8 @@
    * Subscribing with `$virtualizer` *and* calling `setOptions` on it from an effect makes
    * the effect its own dependency, and Svelte answers that with
    * `effect_update_depth_exceeded` — which is how a list that merely grows a page turns
-   * into a page that stops updating. Reading through the store's own `subscribe` keeps the
-   * update path one-way: props in, options out.
+   * into a page that stops updating. Reading through the store's own `subscribe` keeps
+   * the update path one-way: props in, options out.
    */
   let instance: SvelteVirtualizer<HTMLDivElement, HTMLDivElement> | null = null;
   const unsubscribe = virtualizer.subscribe((value) => {
@@ -151,32 +207,124 @@
     return () => element.removeEventListener("scroll", maybeLoadMore);
   });
 
-  const items = $derived($virtualizer.getVirtualItems());
-  const totalSize = $derived($virtualizer.getTotalSize());
-  const gutter = $derived(
-    topology === "sparse" ? 24 : gutterWidth(laneCount, metrics),
+  /* --------------------------------------------------------------- columns */
+
+  let columnState = $state<HistoryColumnState>(loadStoredColumnState());
+  $effect(() => {
+    storeColumnState(columnState);
+  });
+
+  /**
+   * The graph column can never be narrower than the lanes drawn in it; the lane
+   * layout owns that floor. Filtered (sparse) history has no graph at all.
+   */
+  const graphLaneFloor = $derived(
+    topology === "continuous" ? gutterWidth(laneCount, metrics) : 0,
   );
-  const visibleRows = $derived(
-    items
-      .map((item) => rows[item.index])
-      .filter((row): row is GraphRow => row !== undefined),
+  const cells = $derived(
+    visibleColumns(columnState, graphLaneFloor).filter(
+      (cell) => cell.id !== "graph" || topology === "continuous",
+    ),
   );
-  const firstVisible = $derived(items[0]?.index ?? 0);
-  function formatRefName(ref: string): string {
-    return ref.replace(/^refs\/(heads|remotes|tags)\//, "");
+  const cellById = $derived(new Map(cells.map((cell) => [cell.id, cell])));
+  const graphCell = $derived(cellById.get("graph"));
+  const graphLeft = $derived(cellById.get("refs")?.width ?? 0);
+  /** Cells left of the flexible message column: the Branch/Tag and Graph columns. */
+  const leadCells = $derived(
+    cells.filter((cell) => cell.id === "refs" || cell.id === "graph"),
+  );
+  /** Cells right of the message column: Author, Date / Time, Sha. */
+  const metaCells = $derived(
+    cells.filter((cell) => cell.id !== "refs" && cell.id !== "graph"),
+  );
+  const headerLabels: Record<HistoryColumnId | "message", string> = {
+    refs: "Branch / Tag",
+    graph: "Graph",
+    message: "Commit message",
+    author: "Author",
+    date: "Date / Time",
+    sha: "Sha",
+  };
+
+  function startColumnResize(event: PointerEvent, id: HistoryColumnId): void {
+    const target = event.currentTarget;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    event.preventDefault();
+    const startX = event.clientX;
+    // The graph's effective width is at least its lane floor; dragging from a
+    // floor-raised width must not snap back to the narrower stored one.
+    const startWidth =
+      id === "graph"
+        ? Math.max(columnState.widths[id], graphLaneFloor)
+        : columnState.widths[id];
+    const floor = id === "graph" ? graphLaneFloor : undefined;
+    target.setPointerCapture(event.pointerId);
+    const onMove = (move: PointerEvent): void => {
+      columnState = resizeColumn(
+        columnState,
+        id,
+        startWidth + move.clientX - startX,
+        floor,
+      );
+    };
+    const onEnd = (): void => {
+      target.removeEventListener("pointermove", onMove);
+      target.removeEventListener("pointerup", onEnd);
+      target.removeEventListener("pointercancel", onEnd);
+    };
+    target.addEventListener("pointermove", onMove);
+    target.addEventListener("pointerup", onEnd);
+    target.addEventListener("pointercancel", onEnd);
   }
 
-  let refDialogOpen = $state(false);
-  let refDialogKind = $state<"branch" | "tag">("branch");
-  let refDialogCommit = $state<CommitSummary | null>(null);
+  const settingsMenu = $state(createContextMenuState());
 
-  function openRefDialog(kind: "branch" | "tag", commit: CommitSummary): void {
-    refDialogKind = kind;
-    refDialogCommit = commit;
-    refDialogOpen = true;
+  function columnSettingsActions(): readonly ContextAction[] {
+    return [
+      ...HISTORY_COLUMN_IDS.map((id): ContextAction => ({
+        kind: "action" as const,
+        id: `toggle-${id}`,
+        label: headerLabels[id],
+        checked: !columnState.hidden.includes(id),
+        onSelect: () => {
+          columnState = toggleColumn(columnState, id);
+        },
+      })),
+      { kind: "separator" as const, id: "reset-separator" },
+      {
+        kind: "action" as const,
+        id: "reset-columns",
+        label: "Reset columns to default layout",
+        onSelect: () => {
+          columnState = defaultColumnState();
+        },
+      },
+    ];
   }
 
-  function contextActionsFor(commit: CommitSummary): readonly ContextAction[] {
+  let settingsGear = $state<HTMLButtonElement | null>(null);
+
+  function openColumnSettings(): void {
+    const gear = settingsGear;
+    if (gear === null) {
+      return;
+    }
+    const rect = gear.getBoundingClientRect();
+    openAnchoredContextMenu(
+      settingsMenu,
+      columnSettingsActions(),
+      { left: rect.left, bottom: rect.bottom },
+      { testId: "history-column-settings-menu" },
+    );
+  }
+
+  /* ---------------------------------------------------------- context menus */
+
+  const commitMenu = $state(createContextMenuState());
+
+  function commitActionsFor(commit: CommitSummary): readonly ContextAction[] {
     return [
       ...(onCreateBranchAt === undefined
         ? []
@@ -211,7 +359,198 @@
               onSelect: () => onCopyOid(commit),
             },
           ]),
+      ...(onCopyText === undefined
+        ? []
+        : [
+            {
+              kind: "action" as const,
+              id: "copy-message",
+              label: "Copy Message",
+              onSelect: () => onCopyText(commit.subject),
+            },
+          ]),
     ];
+  }
+
+  function openCommitMenu(event: MouseEvent, commit: CommitSummary): void {
+    const actions = commitActionsFor(commit);
+    if (actions.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    openContextMenu(
+      commitMenu,
+      actions,
+      { x: event.clientX + 2, y: event.clientY + 2 },
+      { testId: `commit-context-${commit.oid}` },
+    );
+  }
+
+  let deleteDialogOpen = $state(false);
+  let pendingDelete = $state<{ kind: "branch" | "tag"; name: string } | null>(
+    null,
+  );
+
+  function askDelete(kind: "branch" | "tag", name: string): void {
+    pendingDelete = { kind, name };
+    deleteDialogOpen = true;
+  }
+
+  function refActionsFor(
+    ref: ReturnType<typeof classifyCommitRef>,
+  ): readonly ContextAction[] {
+    if (ref.kind === "local") {
+      const isCurrent =
+        currentBranch !== null && ref.branchName === currentBranch;
+      return [
+        ...(onCheckoutBranch !== undefined && !isCurrent
+          ? [
+              {
+                kind: "action" as const,
+                id: "checkout",
+                label: "Checkout",
+                disabled: contextDisabled,
+                onSelect: () => onCheckoutBranch(ref.branchName),
+              },
+            ]
+          : []),
+        ...(onMergeBranch !== undefined && !isCurrent
+          ? [
+              {
+                kind: "action" as const,
+                id: "merge",
+                label: `Merge into ${currentBranch ?? "current branch"}`,
+                disabled: contextDisabled,
+                onSelect: () => onMergeBranch(ref.branchName),
+              },
+            ]
+          : []),
+        { kind: "separator" as const, id: "delete-separator" },
+        ...(onDeleteBranch !== undefined && !isCurrent
+          ? [
+              {
+                kind: "action" as const,
+                id: "delete",
+                label: "Delete…",
+                destructive: true,
+                disabled: contextDisabled,
+                onSelect: () => askDelete("branch", ref.branchName),
+              },
+            ]
+          : []),
+        ...(onCopyText === undefined
+          ? []
+          : [
+              {
+                kind: "action" as const,
+                id: "copy-name",
+                label: "Copy Branch Name",
+                onSelect: () => onCopyText(ref.branchName),
+              },
+            ]),
+      ];
+    }
+    if (ref.kind === "tag") {
+      return [
+        ...(onDeleteTag !== undefined
+          ? [
+              {
+                kind: "action" as const,
+                id: "delete",
+                label: "Delete…",
+                destructive: true,
+                disabled: contextDisabled,
+                onSelect: () => askDelete("tag", ref.tagName),
+              },
+            ]
+          : []),
+        ...(onCopyText === undefined
+          ? []
+          : [
+              {
+                kind: "action" as const,
+                id: "copy-name",
+                label: "Copy Tag Name",
+                onSelect: () => onCopyText(ref.tagName),
+              },
+            ]),
+      ];
+    }
+    // Remote-tracking refs and anything unmodelled: this menu has no write for
+    // them, so the honest menu is the copy-only one.
+    return [
+      ...(onCopyText === undefined
+        ? []
+        : [
+            {
+              kind: "action" as const,
+              id: "copy-name",
+              label: "Copy Name",
+              onSelect: () => onCopyText(commitRefDisplayName(ref)),
+            },
+          ]),
+    ];
+  }
+
+  function openRefMenu(event: MouseEvent, refName: string): void {
+    const ref = classifyCommitRef(refName);
+    const actions = refActionsFor(ref);
+    event.preventDefault();
+    event.stopPropagation();
+    if (actions.length === 0) {
+      return;
+    }
+    openContextMenu(
+      commitMenu,
+      actions,
+      { x: event.clientX + 2, y: event.clientY + 2 },
+      { testId: `commit-ref-context-${refName}` },
+    );
+  }
+
+  /* --------------------------------------------------------------- refs UI */
+
+  let refDialogOpen = $state(false);
+  let refDialogKind = $state<"branch" | "tag">("branch");
+  let refDialogCommit = $state<CommitSummary | null>(null);
+
+  function openRefDialog(kind: "branch" | "tag", commit: CommitSummary): void {
+    refDialogKind = kind;
+    refDialogCommit = commit;
+    refDialogOpen = true;
+  }
+
+  const items = $derived($virtualizer.getVirtualItems());
+  const totalSize = $derived($virtualizer.getTotalSize());
+  const visibleRows = $derived(
+    items
+      .map((item) => rows[item.index])
+      .filter((row): row is GraphRow => row !== undefined),
+  );
+  const firstVisible = $derived(items[0]?.index ?? 0);
+
+  const shownRefs = $derived.by(() => {
+    // Computed once per row set: decoration names classify to stable kinds.
+    return new Map(
+      commits.map((commit) => [
+        commit.oid,
+        commit.refNames.slice(0, 3).map((refName) => ({
+          refName,
+          ref: classifyCommitRef(refName),
+        })),
+      ]),
+    );
+  });
+
+  function refTone(
+    ref: ReturnType<typeof classifyCommitRef>,
+  ): "head" | "branch" | "remote" | "tag" {
+    if (ref.kind === "local") {
+      return currentBranch !== null && ref.branchName === currentBranch
+        ? "head"
+        : "branch";
+    }
+    return ref.kind === "remote" ? "remote" : "tag";
   }
 </script>
 
@@ -241,81 +580,193 @@
     />
   {:else}
     <div
-      bind:this={scrollElement}
-      class="relative min-h-0 flex-1 overflow-auto rounded-md border border-border bg-panel"
+      class="flex min-h-0 flex-1 flex-col rounded-md border border-border bg-panel"
     >
-      <div class="relative" style="height: {totalSize}px">
-        {#if topology === "continuous"}
-          <svg
-            class="pointer-events-none absolute top-0 left-0"
-            width={gutter}
-            height={totalSize}
-            aria-hidden="true"
-            data-slot="graph-gutter"
+      <div
+        class="relative flex h-7 shrink-0 items-stretch border-b border-border select-none"
+        data-testid="history-column-header"
+      >
+        {#each leadCells as cell (cell.id)}
+          <div
+            class="relative flex items-center border-r border-border/60 px-2.5"
+            style="width: {cell.width}px; min-width: {cell.width}px; flex: none"
           >
-            <CommitGraph
-              rows={visibleRows}
-              startIndex={firstVisible}
-              {metrics}
-              {selectedOid}
-            />
-          </svg>
-        {/if}
-
-        {#each items as item (item.key)}
-          {@const commit = commits[item.index]}
-          {#if commit !== undefined}
-            {@const selected = commit.oid === selectedOid}
-            <div
-              class="absolute top-0 right-0 left-0"
-              style="height: {item.size}px; padding-left: {gutter}px; transform: translateY({item.start}px)"
+            <span
+              class="truncate text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
+              >{headerLabels[cell.id]}</span
             >
-              {#if topology === "sparse"}
-                <span
-                  aria-hidden="true"
-                  data-testid="sparse-commit-marker"
-                  class="pointer-events-none absolute left-2 top-1/2 size-2 -translate-y-1/2 rounded-full border border-muted-foreground/60 bg-panel"
-                ></span>
-              {/if}
-              <ContextActionMenu
-                actions={contextActionsFor(commit)}
-                triggerClass="h-full w-full"
-                data-testid={`commit-context-${commit.oid}`}
+            <span
+              class="absolute top-0 right-0 h-full w-1.5 cursor-col-resize bg-transparent transition-colors hover:bg-primary/30 active:bg-primary/50"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="resize {headerLabels[cell.id]} column"
+              data-testid={`history-column-resize-${cell.id}`}
+              onpointerdown={(event) => startColumnResize(event, cell.id)}
+            ></span>
+          </div>
+        {/each}
+        <div class="flex min-w-16 flex-1 items-center px-2.5">
+          <span
+            class="truncate text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
+            >{headerLabels.message}</span
+          >
+        </div>
+        {#each metaCells as cell (cell.id)}
+          <div
+            class="relative flex items-center border-r border-border/60 px-2.5"
+            style="width: {cell.width}px; min-width: {cell.width}px; flex: none"
+          >
+            <span
+              class="truncate text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
+              >{headerLabels[cell.id]}</span
+            >
+            <span
+              class="absolute top-0 right-0 h-full w-1.5 cursor-col-resize bg-transparent transition-colors hover:bg-primary/30 active:bg-primary/50"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="resize {headerLabels[cell.id]} column"
+              data-testid={`history-column-resize-${cell.id}`}
+              onpointerdown={(event) => startColumnResize(event, cell.id)}
+            ></span>
+          </div>
+        {/each}
+        <button
+          bind:this={settingsGear}
+          type="button"
+          class="flex shrink-0 items-center px-2 text-muted-foreground transition-colors hover:text-foreground"
+          aria-label="Column settings"
+          title="Column settings"
+          data-testid="history-column-settings"
+          onclick={openColumnSettings}
+        >
+          <Settings2 class="size-3.5" />
+        </button>
+      </div>
+
+      <div
+        bind:this={scrollElement}
+        class="relative min-h-0 flex-1 overflow-auto"
+      >
+        <div class="relative" style="height: {totalSize}px">
+          {#if topology === "continuous" && graphCell !== undefined}
+            <svg
+              class="pointer-events-none absolute top-0"
+              style="left: {graphLeft}px"
+              width={graphCell.width}
+              height={totalSize}
+              aria-hidden="true"
+              data-slot="graph-gutter"
+            >
+              <CommitGraph
+                rows={visibleRows}
+                startIndex={firstVisible}
+                {metrics}
+                {selectedOid}
+              />
+            </svg>
+          {/if}
+
+          {#each items as item (item.key)}
+            {@const commit = commits[item.index]}
+            {@const selected =
+              commit !== undefined && commit.oid === selectedOid}
+            {@const refs =
+              commit === undefined ? [] : (shownRefs.get(commit.oid) ?? [])}
+            {@const refsCell = cellById.get("refs")}
+            {@const authorCell = cellById.get("author")}
+            {@const dateCell = cellById.get("date")}
+            {@const shaCell = cellById.get("sha")}
+            {#if commit !== undefined}
+              <div
+                role="presentation"
+                class={cn(
+                  "absolute top-0 right-0 left-0",
+                  selected ? "bg-primary/10" : "hover:bg-muted/50",
+                )}
+                style="height: {item.size}px; transform: translateY({item.start}px)"
+                oncontextmenu={(event) => openCommitMenu(event, commit)}
               >
-                {#snippet children()}
+                {#if selected}
+                  <span
+                    class="absolute top-1.5 bottom-1.5 left-0 w-1 rounded-r bg-primary"
+                    aria-hidden="true"
+                  ></span>
+                {/if}
+                {#if topology === "sparse"}
+                  <div
+                    class="absolute top-0 bottom-0 left-0 flex w-6 items-center justify-center"
+                  >
+                    <span
+                      aria-hidden="true"
+                      data-testid="sparse-commit-marker"
+                      class="size-2 rounded-full border border-muted-foreground/60 bg-panel"
+                    ></span>
+                  </div>
+                {/if}
+                <div
+                  class="flex h-full items-stretch"
+                  style="padding-left: {topology === 'sparse' ? 24 : 0}px"
+                >
+                  {#if refsCell !== undefined}
+                    <div
+                      class="flex items-center gap-1 overflow-hidden border-r border-border/25 px-2.5"
+                      style="width: {refsCell.width}px; min-width: {refsCell.width}px; flex: none"
+                    >
+                      {#each refs as entry (entry.refName)}
+                        <button
+                          type="button"
+                          class="cursor-default"
+                          data-testid={`commit-ref-${entry.refName}`}
+                          title={entry.refName}
+                          onclick={() => onSelect(commit)}
+                          oncontextmenu={(event) =>
+                            openRefMenu(event, entry.refName)}
+                        >
+                          <Badge tone={refTone(entry.ref)}>
+                            {#if entry.ref.kind === "local"}
+                              <GitBranch />
+                            {:else if entry.ref.kind === "remote"}
+                              <Globe />
+                            {:else if entry.ref.kind === "tag"}
+                              <TagIcon />
+                            {/if}
+                            {commitRefDisplayName(entry.ref)}
+                          </Badge>
+                        </button>
+                      {/each}
+                      {#if commit.refNames.length > 3}
+                        <Badge tone="muted" title={commit.refNames.join(", ")}>
+                          +{commit.refNames.length - 3}
+                        </Badge>
+                      {/if}
+                    </div>
+                  {/if}
+                  {#if graphCell !== undefined}
+                    <div
+                      class="shrink-0 border-r border-border/25"
+                      style="width: {graphCell.width}px; min-width: {graphCell.width}px"
+                    ></div>
+                  {/if}
                   <button
                     type="button"
                     onclick={() => onSelect(commit)}
                     aria-current={selected ? "true" : undefined}
                     data-testid={`commit-row-${commit.oid}`}
                     class={cn(
-                      "relative flex h-full w-full items-center gap-2 px-2.5 text-left transition-colors",
+                      "flex h-full min-w-16 flex-1 items-center gap-2 px-2.5 text-left",
                       selected
-                        ? "bg-primary/10 font-medium text-foreground before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-1 before:rounded-r before:bg-primary"
-                        : "hover:bg-muted/50 text-foreground/90",
+                        ? "font-medium text-foreground"
+                        : "text-foreground/90",
                     )}
                   >
                     <span
-                      class="min-w-0 flex-1 truncate text-sm text-foreground"
+                      class="min-w-0 flex-1 truncate text-sm"
                       title={commit.subject}
                     >
                       {commit.subject.length === 0
                         ? "(no subject)"
                         : commit.subject}
                     </span>
-
-                    {#each commit.refNames.slice(0, 3) as refName (refName)}
-                      <Badge
-                        tone={refName.includes("/") ? "branch" : "muted"}
-                        title={refName}>{formatRefName(refName)}</Badge
-                      >
-                    {/each}
-                    {#if commit.refNames.length > 3}
-                      <Badge tone="muted" title={commit.refNames.join(", ")}>
-                        +{commit.refNames.length - 3}
-                      </Badge>
-                    {/if}
-
                     {#if commit.missingParents.length > 0}
                       <Badge
                         tone="warn"
@@ -329,44 +780,85 @@
                         >signed</Badge
                       >
                     {/if}
-
-                    <span
-                      class="hidden shrink-0 text-xs text-muted-foreground xl:inline"
-                      >{commit.authorName}</span
-                    >
-                    <time
-                      class="shrink-0 text-xs text-muted-foreground/75"
-                      datetime={commit.authoredAt}
-                      title={absoluteTime(commit.authoredAt)}
-                    >
-                      {relativeTime(commit.authoredAt, now)}
-                    </time>
-                    <span
-                      class="shrink-0 font-mono text-xs text-muted-foreground/60"
-                      title={commit.oid}
-                    >
-                      {shortOid(commit.oid)}
-                    </span>
                   </button>
-                {/snippet}
-              </ContextActionMenu>
-            </div>
-          {/if}
-        {/each}
-      </div>
+                  {#if authorCell !== undefined}
+                    <div
+                      class="flex shrink-0 items-center overflow-hidden border-r border-border/25 px-2.5"
+                      style="width: {authorCell.width}px; min-width: {authorCell.width}px"
+                    >
+                      <span class="truncate text-xs text-muted-foreground"
+                        >{commit.authorName}</span
+                      >
+                    </div>
+                  {/if}
+                  {#if dateCell !== undefined}
+                    <div
+                      class="flex shrink-0 items-center overflow-hidden border-r border-border/25 px-2.5"
+                      style="width: {dateCell.width}px; min-width: {dateCell.width}px"
+                    >
+                      <time
+                        class="truncate text-xs text-muted-foreground/75"
+                        datetime={commit.authoredAt}
+                        title={absoluteTime(commit.authoredAt)}
+                      >
+                        {relativeTime(commit.authoredAt, now)}
+                      </time>
+                    </div>
+                  {/if}
+                  {#if shaCell !== undefined}
+                    <div
+                      class="flex shrink-0 items-center overflow-hidden px-2.5"
+                      style="width: {shaCell.width}px; min-width: {shaCell.width}px"
+                    >
+                      <span
+                        class="truncate font-mono text-xs text-muted-foreground/60"
+                        title={commit.oid}
+                      >
+                        {shortOid(commit.oid)}
+                      </span>
+                    </div>
+                  {/if}
+                </div>
+              </div>
+            {/if}
+          {/each}
+        </div>
 
-      <div class="flex items-center justify-center border-t border-border p-2">
-        {#if loadingMore}
-          <span class="text-xs text-ink-faint" aria-live="polite">Loading more…</span>
-        {:else if hasMore}
-          <span class="text-xs text-ink-faint">Scroll for more</span>
-        {:else}
-          <span class="text-xs text-ink-faint">End of the loaded history</span>
-        {/if}
+        <div
+          class="flex items-center justify-center border-t border-border p-2"
+        >
+          {#if loadingMore}
+            <span class="text-xs text-ink-faint" aria-live="polite"
+              >Loading more…</span
+            >
+          {:else if hasMore}
+            <span class="text-xs text-ink-faint">Scroll for more</span>
+          {:else}
+            <span class="text-xs text-ink-faint">End of the loaded history</span
+            >
+          {/if}
+        </div>
       </div>
     </div>
   {/if}
 </div>
+
+<ContextMenuLayer
+  open={commitMenu.open}
+  x={commitMenu.x}
+  y={commitMenu.y}
+  actions={commitMenu.actions}
+  testId={commitMenu.testId}
+  onClose={() => closeContextMenu(commitMenu)}
+/>
+<ContextMenuLayer
+  open={settingsMenu.open}
+  x={settingsMenu.x}
+  y={settingsMenu.y}
+  actions={settingsMenu.actions}
+  testId={settingsMenu.testId}
+  onClose={() => closeContextMenu(settingsMenu)}
+/>
 
 <CommitRefDialog
   bind:open={refDialogOpen}
@@ -380,4 +872,34 @@
       onCreateTagAt?.(commit, name, annotation);
     }
   }}
+/>
+
+<ConfirmDialog
+  bind:open={deleteDialogOpen}
+  title={pendingDelete === null
+    ? "Delete ref"
+    : pendingDelete.kind === "branch"
+      ? `Delete ${pendingDelete.name}?`
+      : `Delete tag ${pendingDelete.name}?`}
+  description={pendingDelete?.kind === "tag"
+    ? "The tag is removed from this repository. Pushed copies stay on the remote until pushed as a deletion."
+    : "Only fully merged branches can be deleted; unmerged work is refused by Git."}
+  confirmLabel={pendingDelete === null
+    ? "Delete"
+    : pendingDelete.kind === "branch"
+      ? `Delete ${pendingDelete.name}`
+      : `Delete tag ${pendingDelete.name}`}
+  disabled={pendingDelete === null || contextDisabled}
+  onConfirm={() => {
+    if (pendingDelete === null) {
+      return;
+    }
+    if (pendingDelete.kind === "branch") {
+      onDeleteBranch?.(pendingDelete.name);
+    } else {
+      onDeleteTag?.(pendingDelete.name);
+    }
+    pendingDelete = null;
+  }}
+  data-testid="commit-ref-delete-dialog"
 />
