@@ -1,6 +1,7 @@
 /** Verifies the history table's column widths/visibility survive storage and clamp. */
 import { describe, expect, it } from "vitest";
 import {
+  HIDEABLE_COLUMN_IDS,
   HISTORY_COLUMN_IDS,
   clampColumnWidth,
   columnLimits,
@@ -53,6 +54,7 @@ describe("history column layout", () => {
     state = toggleColumn(state, "graph");
     expect(visibleColumns(state, 120).map((column) => column.id)).toEqual([
       "refs",
+      "message",
       "date",
       "sha",
     ]);
@@ -60,6 +62,7 @@ describe("history column layout", () => {
     // hiding is a user decision, not something graph state overrides.
     expect(visibleColumns(state, 200).map((column) => column.id)).toEqual([
       "refs",
+      "message",
       "date",
       "sha",
     ]);
@@ -67,10 +70,23 @@ describe("history column layout", () => {
     expect(visibleColumns(resizeColumn(shown, "graph", 90), 120)).toEqual([
       { id: "refs", width: shown.widths.refs },
       { id: "graph", width: 120 },
+      { id: "message", width: shown.widths.message },
       { id: "author", width: shown.widths.author },
       { id: "date", width: shown.widths.date },
       { id: "sha", width: shown.widths.sha },
     ]);
+  });
+
+  it("the commit message is a real column but never a hideable one", () => {
+    // TanStack-style resizing needs a stored width for every column, message
+    // included; the settings gear only offers HIDEABLE_COLUMN_IDS, which keeps
+    // the message — it is the row's identity and selection target.
+    expect(HISTORY_COLUMN_IDS).toContain("message");
+    expect(HIDEABLE_COLUMN_IDS).not.toContain("message");
+    const hidden = toggleColumn(defaultColumnState(), "message");
+    expect(
+      visibleColumns(hidden, 0).map((column) => column.id),
+    ).not.toContain("message");
   });
 
   it("serializes and parses a round trip", () => {

@@ -1,23 +1,41 @@
 /**
  * Layout state for the history table's columns: widths, visibility, persistence.
  *
- * The commit-message column is not in here — it is the flexible remainder of
- * the row, the one column that always exists. Everything else can be resized
- * (within per-column limits) and hidden, and both survive a reload through the
- * browser's localStorage. Parsing is defensive on purpose: a stored value was
- * written by an older build or a curious hand, and the table must render the
- * default layout rather than crash or accept unknown column ids.
+ * Every column — the commit message included — is a real column with a stored
+ * width, and resize follows the shadcn/TanStack data-table semantics: resizing a
+ * column changes only that column, the columns to its right are pushed outward,
+ * and the table grows wider than the panel into a horizontal scroll. The table's
+ * width is the sum of the visible columns (never narrower than the panel), so no
+ * column ever flexes and a resize never moves an unrelated boundary. Parsing is
+ * defensive on purpose: a stored value was written by an older build or a
+ * curious hand, and the table must render the default layout rather than crash
+ * or accept unknown column ids.
  */
 
-export type HistoryColumnId = "refs" | "graph" | "author" | "date" | "sha";
+export type HistoryColumnId =
+  | "refs"
+  | "graph"
+  | "message"
+  | "author"
+  | "date"
+  | "sha";
 
 export const HISTORY_COLUMN_IDS: readonly HistoryColumnId[] = [
   "refs",
   "graph",
+  "message",
   "author",
   "date",
   "sha",
 ];
+
+/**
+ * Columns the settings gear may hide. The commit message is excluded: it is the
+ * row's identity and the row's selection target, and a history table without
+ * subjects is not a state this app offers.
+ */
+export const HIDEABLE_COLUMN_IDS: readonly HistoryColumnId[] =
+  HISTORY_COLUMN_IDS.filter((id) => id !== "message");
 
 export interface ColumnLimits {
   readonly min: number;
@@ -27,14 +45,16 @@ export interface ColumnLimits {
 export const columnLimits: Record<HistoryColumnId, ColumnLimits> = {
   refs: { min: 80, max: 400 },
   graph: { min: 56, max: 600 },
+  message: { min: 160, max: 1200 },
   author: { min: 80, max: 320 },
   date: { min: 140, max: 320 },
   sha: { min: 56, max: 120 },
 };
 
 const DEFAULT_WIDTHS: Record<HistoryColumnId, number> = {
-  refs: 150,
+  refs: 140,
   graph: 120,
+  message: 480,
   author: 110,
   date: 150,
   sha: 70,
@@ -106,9 +126,8 @@ export function visibleColumns(
   state: HistoryColumnState,
   graphFloor: number,
 ): readonly { id: HistoryColumnId; width: number }[] {
-  const order: HistoryColumnId[] = ["refs", "graph", "author", "date", "sha"];
   const cells: { id: HistoryColumnId; width: number }[] = [];
-  for (const id of order) {
+  for (const id of HISTORY_COLUMN_IDS) {
     if (!isVisible(state, id)) {
       continue;
     }

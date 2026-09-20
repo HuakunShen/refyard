@@ -43,6 +43,7 @@
   import Settings2 from "@lucide/svelte/icons/settings-2";
   import TagIcon from "@lucide/svelte/icons/tag";
   import { Badge } from "./ui/badge/index.js";
+  import AuthorAvatar from "./AuthorAvatar.svelte";
   import CommitGraph from "./CommitGraph.svelte";
   import CommitRefDialog from "./CommitRefDialog.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
@@ -54,7 +55,7 @@
     type GraphMetrics,
   } from "../lib/geometry.js";
   import {
-    HISTORY_COLUMN_IDS,
+    HIDEABLE_COLUMN_IDS,
     defaultColumnState,
     loadStoredColumnState,
     resizeColumn,
@@ -120,6 +121,11 @@
     /** Both deletes run after this component's own confirmation dialog. */
     onDeleteBranch?: (branchName: string) => void;
     onDeleteTag?: (tagName: string) => void;
+    /**
+     * Author photos from GitHub, keyed off noreply commit emails. On by
+     * default; a privacy-conscious host can turn the column to initials only.
+     */
+    showAvatars?: boolean;
     class?: string;
   }
 
@@ -148,6 +154,7 @@
     onMergeBranch = undefined,
     onDeleteBranch = undefined,
     onDeleteTag = undefined,
+    showAvatars = true,
     class: className = "",
   }: Props = $props();
 
@@ -263,15 +270,7 @@
   const graphCell = $derived(cellById.get("graph"));
   const graphLeft = $derived(cellById.get("refs")?.width ?? 0);
   const refsColumn = $derived(cellById.get("refs"));
-  /** Cells left of the flexible message column: the Branch/Tag and Graph columns. */
-  const leadCells = $derived(
-    cells.filter((cell) => cell.id === "refs" || cell.id === "graph"),
-  );
-  /** Cells right of the message column: Author, Date / Time, Sha. */
-  const metaCells = $derived(
-    cells.filter((cell) => cell.id !== "refs" && cell.id !== "graph"),
-  );
-  const headerLabels: Record<HistoryColumnId | "message", string> = {
+  const headerLabels: Record<HistoryColumnId, string> = {
     refs: "Branch / Tag",
     graph: "Graph",
     message: "Commit message",
@@ -280,6 +279,45 @@
     sha: "Sha",
   };
 
+  /**
+   * The table's width: the sum of the visible columns, never narrower than the
+   * panel. Nothing flexes — resizing a column changes only that column and
+   * pushes the columns to its right outward (shadcn/TanStack data-table
+   * semantics); when the sum passes the panel's width the table scrolls
+   * horizontally instead of squeezing a bystander column.
+   */
+  let shell = $state<HTMLDivElement | null>(null);
+  let containerWidth = $state(0);
+  $effect(() => {
+    const element = shell;
+    if (element === null) {
+      return;
+    }
+    const observer = new ResizeObserver((entries) => {
+      containerWidth = entries[0]?.contentRect.width ?? 0;
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  });
+  const tableWidth = $derived(
+    Math.max(
+      cells.reduce((total, cell) => total + cell.width, 0),
+      containerWidth,
+    ),
+  );
+
+  /**
+   * The header (and the WIP row above the body) live outside the scrolling
+   * element, so the body's horizontal scroll is mirrored into them as a
+   * translateX. It must be reactive state, not an imperative style write:
+   * Svelte rewrites this element's style attribute when the table width
+   * changes mid-scroll, which would wipe an unmanaged transform.
+   */
+  let historyScrollX = $state(0);
+  function onHistoryScroll(): void {
+    historyScrollX = scrollElement?.scrollLeft ?? 0;
+  }
+
   function startColumnResize(event: PointerEvent, id: HistoryColumnId): void {
     const target = event.currentTarget;
     if (!(target instanceof HTMLElement)) {
@@ -287,7 +325,7 @@
     }
     event.preventDefault();
     const startX = event.clientX;
-    // The graph's effective width is at least its lane floor; dragging from a
+    // The graph is never narrower than its lane floor; dragging from a
     // floor-raised width must not snap back to the narrower stored one.
     const startWidth =
       id === "graph"
@@ -317,7 +355,7 @@
 
   function columnSettingsActions(): readonly ContextAction[] {
     return [
-      ...HISTORY_COLUMN_IDS.map((id): ContextAction => ({
+      ...HIDEABLE_COLUMN_IDS.map((id): ContextAction => ({
         kind: "action" as const,
         id: `toggle-${id}`,
         label: headerLabels[id],
@@ -614,56 +652,41 @@
     />
   {:else}
     <div
+      bind:this={shell}
       class="flex min-h-0 flex-1 flex-col rounded-md border border-border bg-panel"
     >
       <div
         class="relative flex h-7 shrink-0 items-stretch border-b border-border select-none"
         data-testid="history-column-header"
       >
-        {#each leadCells as cell (cell.id)}
+        <!-- The clip window stays put; the transform rides the content div so
+             scrolling reveals the table instead of dragging the window away. -->
+        <div class="flex min-w-0 flex-1 items-stretch overflow-hidden">
           <div
-            class="relative flex items-center border-r border-border/60 px-2.5"
-            style="width: {cell.width}px; min-width: {cell.width}px; flex: none"
+            class="flex items-stretch"
+            style="width: {tableWidth}px; transform: translateX({-historyScrollX}px)"
           >
-            <span
-              class="truncate text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
-              >{headerLabels[cell.id]}</span
-            >
-            <span
-              class="absolute top-0 right-0 h-full w-1.5 cursor-col-resize bg-transparent transition-colors hover:bg-primary/30 active:bg-primary/50"
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="resize {headerLabels[cell.id]} column"
-              data-testid={`history-column-resize-${cell.id}`}
-              onpointerdown={(event) => startColumnResize(event, cell.id)}
-            ></span>
+            {#each cells as cell (cell.id)}
+              <div
+                class="relative flex items-center border-r border-border/60 px-2.5"
+                style="width: {cell.width}px; min-width: {cell.width}px; flex: none"
+              >
+                <span
+                  class="truncate text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
+                  >{headerLabels[cell.id]}</span
+                >
+                <span
+                  class="absolute top-0 right-0 h-full w-1.5 cursor-col-resize bg-transparent transition-colors hover:bg-primary/30 active:bg-primary/50"
+                  role="separator"
+                  aria-orientation="vertical"
+                  aria-label="resize {headerLabels[cell.id]} column"
+                  data-testid={`history-column-resize-${cell.id}`}
+                  onpointerdown={(event) => startColumnResize(event, cell.id)}
+                ></span>
+              </div>
+            {/each}
           </div>
-        {/each}
-        <div class="flex min-w-16 flex-1 items-center px-2.5">
-          <span
-            class="truncate text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
-            >{headerLabels.message}</span
-          >
         </div>
-        {#each metaCells as cell (cell.id)}
-          <div
-            class="relative flex items-center border-r border-border/60 px-2.5"
-            style="width: {cell.width}px; min-width: {cell.width}px; flex: none"
-          >
-            <span
-              class="truncate text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
-              >{headerLabels[cell.id]}</span
-            >
-            <span
-              class="absolute top-0 right-0 h-full w-1.5 cursor-col-resize bg-transparent transition-colors hover:bg-primary/30 active:bg-primary/50"
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="resize {headerLabels[cell.id]} column"
-              data-testid={`history-column-resize-${cell.id}`}
-              onpointerdown={(event) => startColumnResize(event, cell.id)}
-            ></span>
-          </div>
-        {/each}
         <button
           bind:this={settingsGear}
           type="button"
@@ -681,52 +704,60 @@
         <!-- The working copy, pinned between the header and the history the way
              GitKraken pins its `// WIP` row above the graph: the uncommitted state is
              the first thing a read of history should offer, not something reached
-             through the sidebar. -->
-        <button
-          type="button"
-          class="flex h-7 shrink-0 items-stretch border-b border-border/40 bg-muted/25 text-left transition-colors hover:bg-muted/50"
-          data-testid="wip-row"
-          onclick={wip.onSelect}
-        >
-          {#if refsColumn !== undefined}
-            <div
-              class="flex items-center gap-1 overflow-hidden border-r border-border/25 px-2.5"
-              style="width: {refsColumn.width}px; min-width: {refsColumn.width}px; flex: none"
+             through the sidebar. It rides the same horizontal scroll as the body. -->
+        <div class="shrink-0 overflow-hidden border-b border-border/40">
+          <div
+            class="flex h-7 items-stretch bg-muted/25"
+            style="transform: translateX({-historyScrollX}px)"
+          >
+            <button
+              type="button"
+              class="flex h-full items-stretch text-left transition-colors hover:bg-muted/50"
+              style="width: {tableWidth}px"
+              data-testid="wip-row"
+              onclick={wip.onSelect}
             >
-              {#if currentBranch !== null}
-                <Badge tone="head">
-                  <GitBranch />
-                  {currentBranch}
-                </Badge>
+              {#if refsColumn !== undefined}
+                <div
+                  class="flex items-center gap-1 overflow-hidden border-r border-border/25 px-2.5"
+                  style="width: {refsColumn.width}px; min-width: {refsColumn.width}px; flex: none"
+                >
+                  {#if currentBranch !== null}
+                    <Badge tone="head">
+                      <GitBranch />
+                      {currentBranch}
+                    </Badge>
+                  {/if}
+                </div>
               {/if}
-            </div>
-          {/if}
-          {#if graphCell !== undefined}
-            <div
-              class="flex shrink-0 items-center border-r border-border/25"
-              style="width: {graphCell.width}px; min-width: {graphCell.width}px; padding-left: {metrics.lanePadding +
-                metrics.radius -
-                6}px"
-            >
-              <span
-                aria-hidden="true"
-                class="size-3 rounded-full border-2 border-dashed border-muted-foreground/50"
-              ></span>
-            </div>
-          {/if}
-          <div class="flex min-w-0 flex-1 items-center gap-2 px-2.5">
-            <span class="truncate font-mono text-xs text-muted-foreground"
-              >// WIP</span
-            >
-            <Pencil class="size-3 shrink-0 text-muted-foreground/70" />
-            <span class="shrink-0 text-xs text-muted-foreground"
-              >{wip.changedCount}</span
-            >
-            <span class="truncate text-xs text-muted-foreground/60"
-              >uncommitted changes — click to work on them</span
-            >
+              {#if graphCell !== undefined}
+                <div
+                  class="flex shrink-0 items-center border-r border-border/25"
+                  style="width: {graphCell.width}px; min-width: {graphCell.width}px; padding-left: {metrics.lanePadding +
+                    metrics.radius -
+                    6}px"
+                >
+                  <span
+                    aria-hidden="true"
+                    class="size-3 rounded-full border-2 border-dashed border-muted-foreground/50"
+                  ></span>
+                </div>
+              {/if}
+              <div class="flex min-w-0 flex-1 items-center gap-2 px-2.5">
+                <span class="truncate font-mono text-xs text-muted-foreground"
+                  >// WIP</span
+                >
+                <Pencil class="size-3 shrink-0 text-muted-foreground/70" />
+                <span class="shrink-0 text-xs text-muted-foreground"
+                  >{wip.changedCount}</span
+                >
+                <span class="truncate text-xs text-muted-foreground/60"
+                  >uncommitted changes — click to work on them</span
+                >
+              </div>
+            </button>
           </div>
-        </button>
+        </div>
       {/if}
 
       <div
@@ -736,8 +767,12 @@
         aria-label="Commit history — arrow keys move the selection"
         data-testid="history-scroll"
         onkeydown={onListKeyDown}
+        onscroll={onHistoryScroll}
       >
-        <div class="relative" style="height: {totalSize}px">
+        <div
+          class="relative"
+          style="height: {totalSize}px; width: {tableWidth}px"
+        >
           {#if topology === "continuous" && graphCell !== undefined}
             <svg
               class="pointer-events-none absolute top-0"
@@ -763,6 +798,7 @@
             {@const refs =
               commit === undefined ? [] : (shownRefs.get(commit.oid) ?? [])}
             {@const refsCell = cellById.get("refs")}
+            {@const messageCell = cellById.get("message")}
             {@const authorCell = cellById.get("author")}
             {@const dateCell = cellById.get("date")}
             {@const shaCell = cellById.get("sha")}
@@ -843,11 +879,12 @@
                     aria-current={selected ? "true" : undefined}
                     data-testid={`commit-row-${commit.oid}`}
                     class={cn(
-                      "flex h-full min-w-16 flex-1 items-center gap-2 px-2.5 text-left",
+                      "flex h-full items-center gap-2 px-2.5 text-left",
                       selected
                         ? "font-medium text-foreground"
                         : "text-foreground/90",
                     )}
+                    style="width: {messageCell !== undefined ? messageCell.width : 160}px; min-width: {messageCell !== undefined ? messageCell.width : 160}px; flex: none"
                   >
                     <span
                       class="min-w-0 flex-1 truncate text-sm"
@@ -878,9 +915,15 @@
                   </button>
                   {#if authorCell !== undefined}
                     <div
-                      class="flex shrink-0 items-center overflow-hidden border-r border-border/25 px-2.5"
+                      class="flex shrink-0 items-center gap-1.5 overflow-hidden border-r border-border/25 px-2.5"
                       style="width: {authorCell.width}px; min-width: {authorCell.width}px"
                     >
+                      {#if showAvatars}
+                        <AuthorAvatar
+                          email={commit.authorEmail}
+                          name={commit.authorName}
+                        />
+                      {/if}
                       <span class="truncate text-xs text-muted-foreground"
                         >{commit.authorName}</span
                       >
