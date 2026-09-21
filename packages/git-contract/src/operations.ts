@@ -504,6 +504,38 @@ const OPERATION_SCHEMAS = {
       description:
         "Move the checked-out branch to another commit. Soft keeps the index exactly as it is; mixed resets the index to the target commit, which unstages anything staged. The working tree is never touched and no content is lost: a mode that would discard it (Git's hard reset) is deliberately not offered. A merge or revert in progress is refused.",
     }),
+
+  cherryPick: z
+    .strictObject({
+      kind: z.literal("cherryPick"),
+      oid: objectIdSchema,
+    })
+    .meta({
+      id: "CherryPickOperation",
+      description:
+        "Apply one commit's change onto the checked-out branch as a new commit, keeping the original message and author. A merge commit is refused: picking which parent to keep is a decision this build does not make. A conflict stops the operation into the same resolve-and-continue state a merge uses.",
+    }),
+
+  continueCherryPick: z
+    .strictObject({
+      kind: z.literal("continueCherryPick"),
+    })
+    .meta({
+      id: "ContinueCherryPickOperation",
+      description:
+        "Commit the resolved index of a cherry-pick that stopped for conflicts, using the original message. Refused while any conflicted path is still unmerged.",
+    }),
+
+  abortCherryPick: z
+    .strictObject({
+      kind: z.literal("abortCherryPick"),
+      confirmed: confirmedField,
+    })
+    .meta({
+      id: "AbortCherryPickOperation",
+      description:
+        "Abort the cherry-pick in progress and restore the state it started from. When Git cannot restore it, the diagnostic is reported and nothing is reset.",
+    }),
 } as const;
 
 export { OPERATION_SCHEMAS };
@@ -552,6 +584,9 @@ export const OPERATION_TARGET_LIST = [
   ["abortMerge", ["worktree"]],
   ["revertCommit", ["worktree"]],
   ["resetBranch", ["worktree"]],
+  ["cherryPick", ["worktree"]],
+  ["continueCherryPick", ["worktree"]],
+  ["abortCherryPick", ["worktree"]],
 ] as const;
 
 export type MutationKind = (typeof OPERATION_TARGET_LIST)[number][0];
@@ -600,9 +635,9 @@ type Expect<T extends true> = T;
 export type _SchemasMatchTargetList = Expect<
   Equal<keyof typeof OPERATION_SCHEMAS, MutationKind>
 >;
-/** The documented union has exactly 37 members; a list edit that changes that stops compiling. */
+/** The documented union has exactly 40 members; a list edit that changes that stops compiling. */
 export type _MutationCount = Expect<
-  Equal<(typeof OPERATION_TARGET_LIST)["length"], 37>
+  Equal<(typeof OPERATION_TARGET_LIST)["length"], 40>
 >;
 
 /** Operations that can destroy work and therefore require explicit confirmation. */

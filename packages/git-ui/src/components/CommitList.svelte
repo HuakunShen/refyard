@@ -152,6 +152,12 @@
      */
     onResetBranch?: (commit: CommitSummary, mode: "soft" | "mixed") => void;
     /**
+     * Apply this commit's change onto the checked-out branch, keeping the
+     * original message and author. A conflict stops into the state the
+     * sidebar's conflict panel finishes. Absent means the host cannot.
+     */
+    onCherryPickCommit?: (commit: CommitSummary) => void;
+    /**
      * Add a linked worktree whose new branch starts at this commit. The
      * component asks for the destination and branch name; the host's own
      * validation refuses paths that leave the approved root. Absent means the
@@ -205,6 +211,7 @@
     onRevertCommit = undefined,
     onResetBranch = undefined,
     onCreateWorktreeAt = undefined,
+    onCherryPickCommit = undefined,
     showAvatars = true,
     remoteAvatars = undefined,
     class: className = "",
@@ -543,6 +550,17 @@
               onSelect: () => askRevert(commit),
             },
           ]),
+      ...(onCherryPickCommit === undefined
+        ? []
+        : [
+            {
+              kind: "action" as const,
+              id: "cherry-pick-commit",
+              label: "Cherry-Pick Commit…",
+              disabled: contextDisabled,
+              onSelect: () => askCherryPick(commit),
+            },
+          ]),
       ...(onResetBranch === undefined
         ? []
         : [
@@ -653,6 +671,14 @@
   function askWorktree(commit: CommitSummary): void {
     pendingWorktree = commit;
     worktreeDialogOpen = true;
+  }
+
+  let cherryPickDialogOpen = $state(false);
+  let pendingCherryPick = $state<CommitSummary | null>(null);
+
+  function askCherryPick(commit: CommitSummary): void {
+    pendingCherryPick = commit;
+    cherryPickDialogOpen = true;
   }
 
   function refActionsFor(
@@ -1524,4 +1550,24 @@
     pendingWorktree = null;
   }}
   data-testid="commit-worktree-dialog"
+/>
+
+<ConfirmDialog
+  bind:open={cherryPickDialogOpen}
+  title={pendingCherryPick === null
+    ? "Cherry-pick commit"
+    : `Cherry-pick "${pendingCherryPick.subject}" onto ${currentBranch ?? "the checked-out branch"}?`}
+  description="Applies this commit's change onto your checked-out branch as a new commit, keeping the original message and author. A conflict stops it for you to resolve, like a merge; a merge commit itself is refused."
+  confirmLabel={pendingCherryPick === null
+    ? "Cherry-pick"
+    : `Cherry-pick "${pendingCherryPick.subject}"`}
+  disabled={pendingCherryPick === null || contextDisabled}
+  onConfirm={() => {
+    if (pendingCherryPick === null) {
+      return;
+    }
+    onCherryPickCommit?.(pendingCherryPick);
+    pendingCherryPick = null;
+  }}
+  data-testid="commit-cherry-pick-dialog"
 />

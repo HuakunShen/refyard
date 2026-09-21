@@ -940,6 +940,7 @@
   const onCommitRevert = writeController.onCommitRevert;
   const onCommitReset = writeController.onCommitReset;
   const onWorktreeCreate = writeController.onWorktreeCreate;
+  const onCommitCherryPick = writeController.onCommitCherryPick;
 
   function onCommitCreateBranch(
     commit: CommitSummary,
@@ -1566,6 +1567,9 @@
                 : undefined}
               onResetBranch={graphMenuOperations.has("resetBranch")
                 ? (commit, mode) => onCommitReset(commit.oid, mode)
+                : undefined}
+              onCherryPickCommit={graphMenuOperations.has("cherryPick")
+                ? (commit) => onCommitCherryPick(commit.oid)
                 : undefined}
               onCreateWorktreeAt={graphMenuOperations.has("createWorktree")
                 ? (commit, relativeDestination, branchName) =>

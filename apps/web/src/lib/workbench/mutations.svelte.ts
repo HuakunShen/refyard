@@ -872,6 +872,45 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     );
   }
 
+  /**
+   * Apply one commit's change onto the checked-out branch. A conflict stops
+   * into the same resolve-and-continue state a merge uses; the sidebar's
+   * conflict panel takes over from there.
+   */
+  function onCommitCherryPick(oid: string): void {
+    void performWrite(
+      "commit-cherry-pick",
+      () => ({ kind: "cherryPick", oid }),
+      (message, context) => {
+        stagingMessage =
+          message === null || context === null ? null : { context, message };
+      },
+      "worktree",
+    );
+  }
+
+  function onCherryPickContinue(): void {
+    void performWrite(
+      "continue-cherry-pick",
+      () => ({ kind: "continueCherryPick" }),
+      (result) => {
+        mergeMessage = result;
+      },
+      "worktree",
+    );
+  }
+
+  function onCherryPickAbort(): void {
+    void performWrite(
+      "abort-cherry-pick",
+      () => ({ kind: "abortCherryPick", confirmed: true }),
+      (result) => {
+        mergeMessage = result;
+      },
+      "worktree",
+    );
+  }
+
   function onMergeContinue(): void {
     void performWrite(
       "continue-merge",
@@ -1364,6 +1403,9 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     onBranchMerge,
     onMergeContinue,
     onMergeAbort,
+    onCommitCherryPick,
+    onCherryPickContinue,
+    onCherryPickAbort,
     onRemoteAdd,
     onRemoteUpdate,
     onRemoteRemove,

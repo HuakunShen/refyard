@@ -50,8 +50,16 @@
     class: className = "",
   }: Props = $props();
 
-  /** Operations this build can finish. A rebase or a cherry-pick is not one of them. */
-  const ours: readonly string[] = ["merge"];
+  /**
+   * Operations this build can finish: the sequencer states its own effects can
+   * open. A rebase or a bisect is somebody else's state and offers nothing.
+   */
+  const ours: readonly string[] = ["merge", "cherry-pick"];
+
+  /** "merge" / "cherry-pick", for the buttons that finish either. */
+  const operationName = $derived(
+    operationInProgress === "cherry-pick" ? "cherry-pick" : "merge",
+  );
 
   const isOurs = $derived(
     operationInProgress !== null && ours.includes(operationInProgress),
@@ -123,12 +131,12 @@
           onclick={onContinue}
           data-testid="continue-merge"
         >
-          Continue merge
+          Continue {operationName}
         </Button>
         <ConfirmAction
-          label="Abort merge"
-          confirmLabel="Abort and restore the pre-merge state"
-          description="Restores the commit and index the merge started from."
+          label="Abort {operationName}"
+          confirmLabel="Abort and restore the state it started from"
+          description="Restores the commit and index the operation started from."
           disabled={disabled || busy}
           {busy}
           onConfirm={onAbort}

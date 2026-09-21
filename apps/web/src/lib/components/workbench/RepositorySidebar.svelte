@@ -117,6 +117,18 @@
   const onBranchMerge = $derived(mutations.onBranchMerge);
   const onMergeContinue = $derived(mutations.onMergeContinue);
   const onMergeAbort = $derived(mutations.onMergeAbort);
+  const onCherryPickContinue = $derived(mutations.onCherryPickContinue);
+  const onCherryPickAbort = $derived(mutations.onCherryPickAbort);
+  // The conflict panel finishes whichever sequencer operation this build has
+  // open; the dispatch is on what Git reports, not on what this session ran.
+  const onConflictContinue = $derived(
+    operationInProgress === "cherry-pick"
+      ? onCherryPickContinue
+      : onMergeContinue,
+  );
+  const onConflictAbort = $derived(
+    operationInProgress === "cherry-pick" ? onCherryPickAbort : onMergeAbort,
+  );
   const onRemoteAdd = $derived(mutations.onRemoteAdd);
   const onRemoteUpdate = $derived(mutations.onRemoteUpdate);
   const onRemoteRemove = $derived(mutations.onRemoteRemove);
@@ -302,8 +314,8 @@
           disabled={mutationBusy}
           busy={mutationBusy}
           message={mergeMessage}
-          onContinue={onMergeContinue}
-          onAbort={onMergeAbort}
+          onContinue={onConflictContinue}
+          onAbort={onConflictAbort}
         />
       {/if}
 

@@ -645,6 +645,17 @@ export function validateOperationSemantics(
       // The schema allows only the two modes that cannot lose content and one
       // object name; there is no second field to cross-check.
       return [];
+
+    case "cherryPick":
+      // One object name: the oid schema already refuses everything that is not
+      // a full object name.
+      return [];
+
+    case "continueCherryPick":
+      return [];
+
+    case "abortCherryPick":
+      return [];
   }
 }
 

@@ -235,19 +235,21 @@ export function indexFingerprint(input: {
 /**
  * In-progress operations each mutation may run alongside.
  *
- * While `merge` is unfinished, four kinds stay available, because they are the
- * documented way through a conflict:
+ * While `merge` or `cherry-pick` is unfinished, the kinds that are the documented
+ * way through the conflict stay available:
  *
  * - `stagePaths` **is** the resolution step. Git's own workflow is "resolve the
  *   files, `git add` them, commit", so blocking staging would leave the repository
  *   with no way to record the resolution the UI asks the user to perform.
  * - `unstagePaths` is that step in reverse — taking a wrong stage back out before
  *   continuing — and it cannot discard working-tree content.
- * - `continueMerge` and `abortMerge` are the two ways to end the merge.
+ * - `continueMerge` and `abortMerge` are the two ways to end a merge, and they end
+ *   only a merge; `continueCherryPick` and `abortCherryPick` end only a cherry-pick.
+ *   Each operation's finish belongs to that operation alone.
  *
  * Everything else stays blocked, `commit` and `discardTrackedPaths` included: a plain
- * commit would write the wrong history in place of the merge commit, and a discard
- * fights the conflict state. A rebase, cherry-pick, bisect, revert or mailbox apply is
+ * commit would write the wrong history in place of the stopped operation, and a
+ * discard fights the conflict state. A rebase, bisect, revert or mailbox apply is
  * not on any list either — this build did not start it and must not be the thing that
  * ends it.
  */
@@ -255,9 +257,13 @@ export function mayRunDuringOperation(kind: string): readonly string[] {
   switch (kind) {
     case "stagePaths":
     case "unstagePaths":
+      return ["merge", "cherry-pick"];
     case "continueMerge":
     case "abortMerge":
       return ["merge"];
+    case "continueCherryPick":
+    case "abortCherryPick":
+      return ["cherry-pick"];
     default:
       return [];
   }

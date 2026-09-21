@@ -83,7 +83,6 @@ test.describe("Git context menus", () => {
     await expect(row).toBeVisible();
 
     await row.click({ button: "right" });
-    const menu = page.getByTestId(`commit-context-${historicalOid}`);
     await expect(
       page.getByTestId(`commit-context-${historicalOid}-create-worktree`),
     ).toHaveText("Create Worktree from Here…");

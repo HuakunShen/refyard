@@ -260,7 +260,28 @@
         "worktree"
       ],
       "payloadSchema": "ResetBranchOperation"
+    },
+    {
+      "kind": "cherryPick",
+      "targets": [
+        "worktree"
+      ],
+      "payloadSchema": "CherryPickOperation"
+    },
+    {
+      "kind": "continueCherryPick",
+      "targets": [
+        "worktree"
+      ],
+      "payloadSchema": "ContinueCherryPickOperation"
+    },
+    {
+      "kind": "abortCherryPick",
+      "targets": [
+        "worktree"
+      ],
+      "payloadSchema": "AbortCherryPickOperation"
     }
   ],
-  "count": 37
+  "count": 40
 }

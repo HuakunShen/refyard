@@ -48,6 +48,10 @@ import {
   planRevertCommit,
   planRevertInProgress,
   planResetBranch,
+  planCherryPickAbort,
+  planCherryPick,
+  planCherryPickContinue,
+  planCherryPickInProgress,
   type GitCommandSpec,
 } from "@refyard/git-core";
 import { createRepo } from "../support/repo.js";
@@ -383,6 +387,59 @@ describe("revert planning", () => {
       "REVERT_HEAD",
     ]);
     expect(planRevertAbort(context).argv).toEqual(["revert", "--abort"]);
+  });
+
+  it("plans the cherry-pick family without an editor and without -m", () => {
+    expect(planCherryPick(context, { oid: "d".repeat(40) }).argv).toEqual([
+      "cherry-pick",
+      "--no-edit",
+      "d".repeat(40),
+    ]);
+    // The stop probe is a read; finishing uses the sequencer subcommands.
+    expect(planCherryPickInProgress(context).argv).toEqual([
+      "rev-parse",
+      "--verify",
+      "--quiet",
+      "CHERRY_PICK_HEAD",
+    ]);
+    expect(planCherryPickContinue(context).argv).toEqual([
+      "cherry-pick",
+      "--continue",
+    ]);
+    expect(planCherryPickAbort(context).argv).toEqual(["cherry-pick", "--abort"]);
+  });
+
+  it("cherry-picks a real commit, keeping the original subject and author", async () => {
+    const repo = await createRepo({ initialCommit: true });
+    try {
+      await repo.git(["switch", "-c", "side"]);
+      await repo.write("a.txt", "from side\n");
+      const side = await repo.commitAll("from side");
+      const author = new TextDecoder()
+        .decode(await repo.git(["log", "-1", "--format=%an <%ae>", side]))
+        .trim();
+      await repo.git(["switch", "main"]);
+      // A commit of main's own: without it the pick would reproduce the side
+      // commit byte for byte — same parent, tree, author, timestamps — and land
+      // on the identical object id.
+      await repo.write("main.txt", "main own\n");
+      await repo.commitAll("main own");
+
+      const spec = planCherryPick(context, { oid: side });
+      await repo.git(spec.argv, { stdin: spec.stdin });
+
+      const subject = new TextDecoder()
+        .decode(await repo.git(["log", "-1", "--format=%s"]))
+        .trim();
+      expect(subject).toEqual("from side");
+      const got = new TextDecoder()
+        .decode(await repo.git(["log", "-1", "--format=%an <%ae>"]))
+        .trim();
+      expect(got).toEqual(author);
+      expect((await repo.headOid()).trim()).not.toEqual(side);
+    } finally {
+      await repo.dispose();
+    }
   });
 
   it("resets only with the content-preserving mode flags", () => {

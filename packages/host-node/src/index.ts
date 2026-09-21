@@ -314,6 +314,11 @@ export {
   type MergeEffectsOptions,
 } from "./coordinator/merge-effects.js";
 export {
+  createCherryPickEffects,
+  CHERRY_PICK_MUTATION_KINDS,
+  type CherryPickEffectsOptions,
+} from "./coordinator/cherry-pick-effects.js";
+export {
   kindsBlockedByGitFeatures,
   unavailableForGitFeatures,
   unavailableMutations,
