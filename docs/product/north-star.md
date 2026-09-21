@@ -217,10 +217,43 @@ Status: **implemented locally; externally deployed MCP remains unverified.** The
 OpenAPI document, Scalar reference page and read-only MCP protocol cases pass while the existing
 auth/origin/SSE/static boundaries remain covered.
 
-## 8. Decision log
+## 8. The provider axis — opt-in forge connections (GitHub first, read-only first)
+
+> Added 2026-09-22, from the user's direction that a complete app needs forge integration
+> (GitKraken-style: GitHub, GitLab, Bitbucket, Gitea) — at minimum showing issues and pull
+> requests, deliberately lighter than GitKraken. The workstream authority is
+> `docs/superpowers/specs/2026-09-22-provider-integration-design.md`.
+
+Refyard gains a fourth surface alongside the four forms: **an explicit, user-initiated
+connection to a forge account**, after which the host performs read-only REST calls to
+show facts Git itself does not carry (open pull requests, later issues and PR↔branch/commit
+association). This axis exists in whichever form the user is using, because it belongs to
+the **host**, not to a form: the token and the network call live beside the Git host, and
+every form's UI reaches it through the same authenticated boundary.
+
+The spine holds unchanged, applied to a capability class this file had not named before:
+
+1. **The token never enters the browser.** Provider calls happen in the host; the browser
+   sends intentions and receives redacted DTOs. No forge API origin enters CSP.
+2. **Connection is granted, never assumed** — the same rule as §2.3 and §4, applied to
+   credentials: explicit connect, journaled (without token bytes), revocable, under a
+   dedicated `provider:manage` scope.
+3. **Capability honesty extends to providers:** a host without a provider module omits it
+   from `capabilities.providers`, and no UI renders an empty shell for it.
+4. **Read-only first.** Writes to a forge (comments, merges) are a later decision with
+   their own scope; reads never widen into them by accident.
+5. **Outbound URL discipline:** request URLs come from a fixed API base plus coordinates
+   parsed from the repository's own remote — user input never fills a URL path.
+
+Auth per provider follows reality, not symmetry: GitHub supports the device flow with
+client_id only, so it is first (PAT path, device flow later); GitLab and Gitea have no
+device flow and arrive later via PAT/PKCE. PAT support is first-class, not a fallback.
+
+## 9. Decision log
 
 | Date       | Decision                                                                                                                                                                                                                                                                                                                                                     |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 2026-09-22 | Provider axis opens: opt-in forge connections, read-only first, GitHub first (PAT, device flow later); token and network live host-side only; capability-honest per host. §8.                                                                                                          |
 | 2026-09-18 | Form 4 is a Rust + Tauri 2 native host (no JS runtime, no localhost HTTP bridge) that reuses the same Svelte UI through a BackendAdapter, reads local repos directly and reaches remote repos through the host machine's system OpenSSH; the Node service stays the runtime for forms 1–3.                                                                   |
 | 2026-09-14 | One runtime for V1: Node 26.x. No Rust/Bun/second engine in the shipped service.                                                                                                                                                                                                                                                                             |
 | 2026-09-14 | Public contract is Zod-first (`packages/git-contract`), exported as JSON Schema.                                                                                                                                                                                                                                                                             |
@@ -233,12 +266,15 @@ auth/origin/SSE/static boundaries remain covered.
 | 2026-09-16 | Restore the bundled same-origin local workbench as the default `open` product form; keep `serve` API-only and the Cloudflare PWA as an optional hosted client.                                                                                                                                                                                               |
 | 2026-09-15 | Parsing placement: argv, state truth and write permission stay in core; display parsing stays server-side **because it is bounded**, with typed degradation; no browser parsing Worker until the UI parses something heavy. Reopening needs measurements naming a shape the bound cannot serve (`docs/discussions/2026-09-15-frontend-parsing-boundary.md`). |
 
-## 9. What this file forbids
+## 10. What this file forbids
 
 - Widening origin checks, adding a CORS wildcard, or exposing reads unauthenticated "just for the
   hosted UI". Form 3 needs an allowlist and a password, or it does not ship.
 - Widening an approved root because a repository was inconvenient to approve. Form 2 is an
   approval flow, not a broader default.
+- **Connecting a provider implicitly, storing a forge token anywhere but the host's private
+  state, or letting a token cross into the browser, a journal line, or a log.** A provider
+  connection is an approval, and its capability is reported only when it exists.
 - Moving Git logic into a Node-only module for convenience. If it cannot run in a neutral runtime,
   it belongs behind `GitHostPort`.
 - Turning a form into two implementations of the same thing. Form 4 uses the _same_ core; form 3
