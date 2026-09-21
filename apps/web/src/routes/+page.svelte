@@ -38,6 +38,7 @@
     cn,
     type ExecutionTargetSelection,
   } from "@refyard/git-ui";
+  import { githubOwnerAvatarUrl } from "@refyard/git-ui/lib/avatars";
   import {
     FileDiff,
     FolderGit2,
@@ -354,6 +355,22 @@
   const diff = queries.diff;
   const diffPatch = queries.diffPatch;
   const identity = queries.identity;
+
+  /**
+   * GitHub org avatar per remote name, from the redacted fetch URL — the icon
+   * a remote badge wears instead of a generic globe. Remotes that are not
+   * github.com URLs simply stay out of the map.
+   */
+  const remoteAvatars = $derived.by(() => {
+    const map = new Map<string, string>();
+    for (const remote of refs.data?.remotes ?? []) {
+      const url = githubOwnerAvatarUrl(remote.fetchUrlDisplay);
+      if (url !== null) {
+        map.set(remote.name, url);
+      }
+    }
+    return map;
+  });
 
   const repository = $derived(queries.repository);
   const repositoryList = $derived(queries.repositoryList);
@@ -1505,6 +1522,7 @@
                 ? (tagName) => onTagDelete(tagName)
                 : undefined}
               showAvatars={avatars}
+              {remoteAvatars}
               class="min-h-0 flex-1"
             />
           {/if}

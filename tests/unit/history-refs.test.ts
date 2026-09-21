@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifyCommitRef,
   commitRefDisplayName,
+  groupCommitRefs,
 } from "@refyard/git-ui/lib/history-refs";
 
 describe("commit ref classification", () => {
@@ -51,5 +52,72 @@ describe("commit ref classification", () => {
       commitRefDisplayName(classifyCommitRef("refs/remotes/origin/v2")),
     ).toBe("origin/v2");
     expect(commitRefDisplayName(classifyCommitRef("refs/tags/v1"))).toBe("v1");
+  });
+});
+
+describe("commit ref badge grouping", () => {
+  it("merges a local branch with its in-sync remote twin into one pill", () => {
+    // Real-world failure prevented: three pills saying `main` twice (and
+    // origin/HEAD once) squeezed a narrow column with no information gain.
+    const groups = groupCommitRefs(
+      [
+        "refs/heads/main",
+        "refs/remotes/origin/HEAD",
+        "refs/remotes/origin/main",
+      ],
+      "main",
+    );
+    expect(groups).toHaveLength(1);
+    const group = groups[0];
+    expect(group?.name).toBe("main");
+    expect(group?.primaryRefName).toBe("refs/heads/main");
+    expect(group?.head).toBe(true);
+    expect(group?.local).toBe(true);
+    expect(group?.remotes).toEqual(["origin"]);
+    expect(group?.refs).toHaveLength(2);
+  });
+
+  it("keeps origin/HEAD out of the badges entirely", () => {
+    // A symbolic ref is not a branch; decorating a row with it is how a
+    // synced trunk reads as three different things.
+    const groups = groupCommitRefs(["refs/remotes/origin/HEAD"], "main");
+    expect(groups).toEqual([]);
+  });
+
+  it("keeps a tag a separate pill even on the same commit as its branch", () => {
+    const groups = groupCommitRefs(
+      ["refs/heads/v1.0", "refs/remotes/origin/v1.0", "refs/tags/v1.0"],
+      null,
+    );
+    expect(groups.map((group) => group.name)).toEqual(["v1.0", "v1.0"]);
+    expect(groups[0]?.tag).toBe(false);
+    expect(groups[1]?.tag).toBe(true);
+    expect(groups[1]?.primaryRefName).toBe("refs/tags/v1.0");
+  });
+
+  it("shows a remote-only branch as remote without local flags", () => {
+    const groups = groupCommitRefs(["refs/remotes/origin/topic"], "topic");
+    expect(groups).toHaveLength(1);
+    const group = groups[0];
+    expect(group?.local).toBe(false);
+    expect(group?.head).toBe(false);
+    expect(group?.remotes).toEqual(["origin"]);
+    expect(group?.primaryRefName).toBe("refs/remotes/origin/topic");
+  });
+
+  it("records every remote name when two remotes carry the branch", () => {
+    const groups = groupCommitRefs(
+      [
+        "refs/remotes/origin/v2",
+        "refs/remotes/upstream/v2",
+        "refs/heads/v2",
+      ],
+      null,
+    );
+    expect(groups).toHaveLength(1);
+    const group = groups[0];
+    expect(group?.remotes).toEqual(["origin", "upstream"]);
+    expect(group?.local).toBe(true);
+    expect(group?.primaryRefName).toBe("refs/heads/v2");
   });
 });

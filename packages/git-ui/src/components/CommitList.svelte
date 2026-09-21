@@ -36,9 +36,10 @@
   import { onDestroy } from "svelte";
   import type { CommitSummary } from "@refyard/git-contract";
   import type { GraphRow } from "@refyard/git-graph";
-  import GitBranch from "@lucide/svelte/icons/git-branch";
   import BadgeCheck from "@lucide/svelte/icons/badge-check";
+  import Check from "@lucide/svelte/icons/check";
   import Globe from "@lucide/svelte/icons/globe";
+  import Laptop from "@lucide/svelte/icons/laptop";
   import Pencil from "@lucide/svelte/icons/pencil";
   import Settings2 from "@lucide/svelte/icons/settings-2";
   import TagIcon from "@lucide/svelte/icons/tag";
@@ -76,6 +77,8 @@
   import {
     classifyCommitRef,
     commitRefDisplayName,
+    groupCommitRefs,
+    type CommitRefBadgeGroup,
   } from "../lib/history-refs.js";
   import { absoluteTime, shortAbsoluteTime, shortOid } from "../lib/format.js";
   import { cn } from "../lib/utils.js";
@@ -127,6 +130,12 @@
      * default; a privacy-conscious host can turn the column to initials only.
      */
     showAvatars?: boolean;
+    /**
+     * Remote avatar URLs by remote name (GitHub org photos from the remote's
+     * URL, when the host can resolve one); remotes absent from the map get a
+     * globe icon on their badges.
+     */
+    remoteAvatars?: ReadonlyMap<string, string>;
     class?: string;
   }
 
@@ -156,6 +165,7 @@
     onDeleteBranch = undefined,
     onDeleteTag = undefined,
     showAvatars = true,
+    remoteAvatars = undefined,
     class: className = "",
   }: Props = $props();
 
@@ -589,11 +599,39 @@
     ];
   }
 
-  function openRefMenu(event: MouseEvent, refName: string): void {
-    const ref = classifyCommitRef(refName);
-    const actions = refActionsFor(ref);
+  function openRefMenu(event: MouseEvent, group: CommitRefBadgeGroup): void {
     event.preventDefault();
     event.stopPropagation();
+    // One pill can stand for several refs (local branch + its remote twins).
+    // The menu is the union: the primary ref's actions first, then each other
+    // ref's honest copy-only actions, so right-clicking a merged pill can
+    // still address the remote by name.
+    const primary =
+      group.refs.find((entry) => entry.refName === group.primaryRefName) ??
+      group.refs[0];
+    if (primary === undefined) {
+      return;
+    }
+    let actions: readonly ContextAction[] = refActionsFor(primary.ref);
+    for (const entry of group.refs) {
+      if (entry.refName === group.primaryRefName || entry.ref.kind !== "remote") {
+        continue;
+      }
+      actions = [
+        ...actions,
+        { kind: "separator" as const, id: `sep-${entry.refName}` },
+        ...(onCopyText === undefined
+          ? []
+          : [
+              {
+                kind: "action" as const,
+                id: `copy-${entry.refName}`,
+                label: `Copy ${commitRefDisplayName(entry.ref)}`,
+                onSelect: () => onCopyText(commitRefDisplayName(entry.ref)),
+              },
+            ]),
+      ];
+    }
     if (actions.length === 0) {
       return;
     }
@@ -601,7 +639,7 @@
       commitMenu,
       actions,
       { x: event.clientX + 2, y: event.clientY + 2 },
-      { testId: `commit-ref-context-${refName}` },
+      { testId: `commit-ref-context-${group.primaryRefName}` },
     );
   }
 
@@ -626,28 +664,31 @@
   );
   const firstVisible = $derived(items[0]?.index ?? 0);
 
-  const shownRefs = $derived.by(() => {
-    // Computed once per row set: decoration names classify to stable kinds.
+  const refGroups = $derived.by(() => {
+    // Computed once per row set: decoration names cluster into logical-branch
+    // badges (a local branch and its in-sync remote twin share one pill), and
+    // a row shows at most three of them before the +N badge.
     return new Map(
       commits.map((commit) => [
         commit.oid,
-        commit.refNames.slice(0, 3).map((refName) => ({
-          refName,
-          ref: classifyCommitRef(refName),
-        })),
+        groupCommitRefs(commit.refNames, currentBranch).slice(0, 3),
       ]),
     );
   });
 
-  function refTone(
-    ref: ReturnType<typeof classifyCommitRef>,
+  /** Remote avatars that failed to load fall back to a globe, per remote. */
+  let failedRemoteAvatars = $state<ReadonlySet<string>>(new Set());
+
+  function groupTone(
+    group: CommitRefBadgeGroup,
   ): "head" | "branch" | "remote" | "tag" {
-    if (ref.kind === "local") {
-      return currentBranch !== null && ref.branchName === currentBranch
-        ? "head"
-        : "branch";
+    if (group.head) {
+      return "head";
     }
-    return ref.kind === "remote" ? "remote" : "tag";
+    if (group.local) {
+      return "branch";
+    }
+    return group.remotes.length > 0 ? "remote" : "tag";
   }
 
   /* --------------------------------------------------- ref badge expansion */
@@ -660,7 +701,10 @@
     top: number;
     label: string;
     tone: "head" | "branch" | "remote" | "tag";
-    kind: "local" | "remote" | "tag";
+    head: boolean;
+    local: boolean;
+    remotes: readonly string[];
+    tag: boolean;
   };
 
   /**
@@ -705,18 +749,18 @@
     };
   }
 
-  function expandCommitRef(
+  function expandRefGroup(
     event: MouseEvent,
     owner: string,
-    ref: ReturnType<typeof classifyCommitRef>,
+    group: CommitRefBadgeGroup,
   ): void {
-    if (ref.kind === "other") {
-      return;
-    }
     showExpandedRef(event, owner, {
-      label: commitRefDisplayName(ref),
-      tone: refTone(ref),
-      kind: ref.kind,
+      label: group.name,
+      tone: groupTone(group),
+      head: group.head,
+      local: group.local,
+      remotes: group.remotes,
+      tag: group.tag,
     });
   }
 
@@ -831,11 +875,15 @@
                         showExpandedRef(event, "wip", {
                           label: currentBranch,
                           tone: "head",
-                          kind: "local",
+                          head: true,
+                          local: true,
+                          remotes: [],
+                          tag: false,
                         })}
                       onmouseleave={() => clearExpandedRef("wip")}
                     >
-                      <GitBranch />
+                      <Check />
+                      <Laptop />
                       <span class="min-w-0 truncate">{currentBranch}</span>
                     </Badge>
                   {/if}
@@ -874,7 +922,8 @@
                 data-testid="ref-badge-overlay"
               >
                 <Badge tone="head">
-                  <GitBranch />
+                  <Check />
+                  <Laptop />
                   {expandedRef.label}
                 </Badge>
               </span>
@@ -919,8 +968,6 @@
             {@const commit = commits[item.index]}
             {@const selected =
               commit !== undefined && commit.oid === selectedOid}
-            {@const refs =
-              commit === undefined ? [] : (shownRefs.get(commit.oid) ?? [])}
             {@const refsCell = cellById.get("refs")}
             {@const messageCell = cellById.get("message")}
             {@const authorCell = cellById.get("author")}
@@ -958,43 +1005,65 @@
                   style="padding-left: {topology === 'sparse' ? 24 : 0}px"
                 >
                   {#if refsCell !== undefined}
+                    {@const groups = refGroups.get(commit.oid) ?? []}
                     <div
                       class="flex items-center gap-1 overflow-hidden border-r border-border/25 px-2.5"
                       style="width: {refsCell.width}px; min-width: {refsCell.width}px; flex: none"
                     >
-                      {#each refs as entry (entry.refName)}
+                      {#each groups as group (group.primaryRefName)}
                         <button
                           type="button"
                           class="min-w-0 max-w-full cursor-default"
-                          data-testid={`commit-ref-${entry.refName}`}
-                          title={entry.refName}
+                          data-testid={`commit-ref-${group.primaryRefName}`}
+                          title={group.refs
+                            .map((entry) => entry.refName)
+                            .join(" ")}
                           onclick={() => onSelect(commit)}
-                          oncontextmenu={(event) =>
-                            openRefMenu(event, entry.refName)}
+                          oncontextmenu={(event) => openRefMenu(event, group)}
                           onmouseenter={(event) =>
-                            expandCommitRef(event, commit.oid, entry.ref)}
+                            expandRefGroup(event, commit.oid, group)}
                           onmouseleave={() => clearExpandedRef(commit.oid)}
                         >
-                          <Badge
-                            tone={refTone(entry.ref)}
-                            class="max-w-full"
-                          >
-                            {#if entry.ref.kind === "local"}
-                              <GitBranch />
-                            {:else if entry.ref.kind === "remote"}
-                              <Globe />
-                            {:else if entry.ref.kind === "tag"}
+                          <Badge tone={groupTone(group)} class="max-w-full">
+                            {#if group.head}
+                              <Check />
+                            {/if}
+                            {#if group.local}
+                              <Laptop />
+                            {/if}
+                            {#each group.remotes as remoteName (remoteName)}
+                              {#if remoteAvatars?.get(remoteName) !== undefined &&
+                                !failedRemoteAvatars.has(remoteName)}
+                                <img
+                                  src={remoteAvatars.get(remoteName)}
+                                  alt=""
+                                  loading="lazy"
+                                  decoding="async"
+                                  referrerpolicy="no-referrer"
+                                  class="size-3 shrink-0 rounded-full object-cover"
+                                  onerror={() => {
+                                    failedRemoteAvatars = new Set(
+                                      failedRemoteAvatars,
+                                    ).add(remoteName);
+                                  }}
+                                />
+                              {:else}
+                                <Globe />
+                              {/if}
+                            {/each}
+                            {#if group.tag}
                               <TagIcon />
                             {/if}
-                            <span class="min-w-0 truncate">
-                              {commitRefDisplayName(entry.ref)}
-                            </span>
+                            <span class="min-w-0 truncate">{group.name}</span>
                           </Badge>
                         </button>
                       {/each}
-                      {#if commit.refNames.length > 3}
-                        <Badge tone="muted" title={commit.refNames.join(", ")}>
-                          +{commit.refNames.length - 3}
+                      {#if groups.length > 3}
+                        <Badge
+                          tone="muted"
+                          title={commit.refNames.join(", ")}
+                        >
+                          +{groups.length - 3}
                         </Badge>
                       {/if}
                     </div>
@@ -1096,11 +1165,26 @@
                     data-testid="ref-badge-overlay"
                   >
                     <Badge tone={expandedRef.tone}>
-                      {#if expandedRef.kind === "local"}
-                        <GitBranch />
-                      {:else if expandedRef.kind === "remote"}
-                        <Globe />
-                      {:else}
+                      {#if expandedRef.head}
+                        <Check />
+                      {/if}
+                      {#if expandedRef.local}
+                        <Laptop />
+                      {/if}
+                      {#each expandedRef.remotes as remoteName (remoteName)}
+                        {#if remoteAvatars?.get(remoteName) !== undefined &&
+                          !failedRemoteAvatars.has(remoteName)}
+                          <img
+                            src={remoteAvatars.get(remoteName)}
+                            alt=""
+                            referrerpolicy="no-referrer"
+                            class="size-3 shrink-0 rounded-full object-cover"
+                          />
+                        {:else}
+                          <Globe />
+                        {/if}
+                      {/each}
+                      {#if expandedRef.tag}
                         <TagIcon />
                       {/if}
                       {expandedRef.label}

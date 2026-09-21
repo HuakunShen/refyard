@@ -78,3 +78,55 @@ function hueOf(input: string): number {
   }
   return hash % 360;
 }
+
+/**
+ * The avatar of the GitHub account that owns a remote, for the remote badge's
+ * identity icon: `https://github.com/drizzle-team/x.git` yields the
+ * drizzle-team photo. Accepts the https and scp-like ssh shapes; anything that
+ * is not a github.com host returns null and the badge falls back to a globe.
+ *
+ * The input is the already-redacted display URL — the host strips credentials
+ * before it ever reaches the browser, and this function re-strips the userinfo
+ * anyway so a hostile value cannot smuggle one into the constructed URL.
+ */
+export function githubOwnerAvatarUrl(remoteUrl: string): string | null {
+  const trimmed = remoteUrl.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+  let host: string | null = null;
+  let path: string | null = null;
+  const scheme = /^https?:\/\//i.exec(trimmed);
+  if (scheme !== null) {
+    try {
+      const parsed = new URL(trimmed);
+      host = parsed.hostname.toLowerCase();
+      path = parsed.pathname;
+    } catch {
+      return null;
+    }
+  } else {
+    // scp-like: git@github.com:owner/repo.git
+    const scp = /^(?:[^@/]+@)?([^/:]+):([^/].*)$/.exec(trimmed);
+    if (scp === null) {
+      return null;
+    }
+    host = scp[1]?.toLowerCase() ?? null;
+    path = scp[2] ?? null;
+  }
+  if (host !== "github.com" && host !== "www.github.com") {
+    return null;
+  }
+  const owner =
+    path
+      ?.replace(/^\/+/, "")
+      .replace(/\.git$/i, "")
+      .split("/")[0]
+      ?.trim() ?? "";
+  if (!/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(owner)) {
+    // Not a usable account name (empty, `settings/`, trajectory of an attack);
+    // the globe is the honest icon.
+    return null;
+  }
+  return `https://github.com/${owner}.png?size=40`;
+}

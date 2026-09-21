@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 import {
   authorAvatar,
+  githubOwnerAvatarUrl,
   initialsAvatar,
 } from "@refyard/git-ui/lib/avatars";
 
@@ -88,5 +89,35 @@ describe("author avatars", () => {
       expect(avatar.hue).toBeGreaterThanOrEqual(0);
       expect(avatar.hue).toBeLessThan(360);
     }
+  });
+});
+
+describe("remote owner avatars", () => {
+  it("maps a github remote URL to its owner's photo", () => {
+    expect(
+      githubOwnerAvatarUrl("https://github.com/drizzle-team/drizzle-orm.git"),
+    ).toBe("https://github.com/drizzle-team.png?size=40");
+    expect(
+      githubOwnerAvatarUrl("git@github.com:trendyol/kunkun-services.git"),
+    ).toBe("https://github.com/trendyol.png?size=40");
+  });
+
+  it("redacts userinfo even if the caller passed an unredacted URL", () => {
+    // Real-world failure prevented: a remote URL carrying an embedded token
+    // must not leak it, and must still resolve the owner.
+    expect(
+      githubOwnerAvatarUrl(
+        "https://user:token@github.com/octocat/hello.git",
+      ),
+    ).toBe("https://github.com/octocat.png?size=40");
+  });
+
+  it("returns null for non-github hosts and unusable owners", () => {
+    expect(githubOwnerAvatarUrl("https://gitlab.com/a/b.git")).toBeNull();
+    // No owner segment at all: there is no account to name.
+    expect(githubOwnerAvatarUrl("https://github.com")).toBeNull();
+    expect(githubOwnerAvatarUrl("https://github.com/.git")).toBeNull();
+    expect(githubOwnerAvatarUrl("")).toBeNull();
+    expect(githubOwnerAvatarUrl("/local/path/repo.git")).toBeNull();
   });
 });
