@@ -315,7 +315,14 @@
    */
   let historyScrollX = $state(0);
   function onHistoryScroll(): void {
-    historyScrollX = scrollElement?.scrollLeft ?? 0;
+    const left = scrollElement?.scrollLeft ?? 0;
+    // Clear on horizontal movement only: an auto-reveal vertical scroll (from
+    // clicking or hovering a row just brought into view) fires this too, and
+    // would tear down a menu or badge overlay the pointer is still on.
+    if (left !== historyScrollX) {
+      expandedRef = null;
+    }
+    historyScrollX = left;
   }
 
   function startColumnResize(event: PointerEvent, id: HistoryColumnId): void {
@@ -624,6 +631,82 @@
     }
     return ref.kind === "remote" ? "remote" : "tag";
   }
+
+  /* --------------------------------------------------- ref badge expansion */
+
+  type ExpandedRefBadge = {
+    /** The row that owns the overlay: a commit oid, or `"wip"` for the WIP row. */
+    owner: string;
+    /** Position within the owning row (the badge's offsetLeft/offsetTop). */
+    left: number;
+    top: number;
+    label: string;
+    tone: "head" | "branch" | "remote" | "tag";
+    kind: "local" | "remote" | "tag";
+  };
+
+  /**
+   * GitKraken-style hover expansion: a ref badge truncated by a narrow
+   * Branch / Tag column grows a floating full-name copy on hover. The overlay
+   * is positioned against the row (the nearest positioned ancestor), so the
+   * cell's own overflow-hidden does not clip it and it may reach over the
+   * graph the way GitKraken's does.
+   */
+  let expandedRef = $state<ExpandedRefBadge | null>(null);
+
+  function showExpandedRef(
+    event: MouseEvent,
+    owner: string,
+    info: Omit<ExpandedRefBadge, "owner" | "left" | "top">,
+  ): void {
+    const target = event.currentTarget;
+    if (!(target instanceof HTMLElement)) {
+      return;
+    }
+    // Only a badge that is actually truncated expands; an untruncated hover
+    // would just re-draw the same badge with a shadow. The truncation lives on
+    // the label span (the ellipsis is drawn there), so that is what measures.
+    const badge = target.matches('[data-slot="badge"]')
+      ? target
+      : target.querySelector<HTMLElement>('[data-slot="badge"]');
+    if (badge === null) {
+      expandedRef = null;
+      return;
+    }
+    const label =
+      badge.querySelector<HTMLElement>("span.truncate") ?? badge;
+    if (label.scrollWidth <= label.clientWidth + 1) {
+      expandedRef = null;
+      return;
+    }
+    expandedRef = {
+      owner,
+      left: target.offsetLeft,
+      top: target.offsetTop,
+      ...info,
+    };
+  }
+
+  function expandCommitRef(
+    event: MouseEvent,
+    owner: string,
+    ref: ReturnType<typeof classifyCommitRef>,
+  ): void {
+    if (ref.kind === "other") {
+      return;
+    }
+    showExpandedRef(event, owner, {
+      label: commitRefDisplayName(ref),
+      tone: refTone(ref),
+      kind: ref.kind,
+    });
+  }
+
+  function clearExpandedRef(owner: string): void {
+    if (expandedRef?.owner === owner) {
+      expandedRef = null;
+    }
+  }
 </script>
 
 <div class={cn("flex h-full min-h-0 flex-col gap-2", className)}>
@@ -723,9 +806,19 @@
                   style="width: {refsColumn.width}px; min-width: {refsColumn.width}px; flex: none"
                 >
                   {#if currentBranch !== null}
-                    <Badge tone="head">
+                    <Badge
+                      tone="head"
+                      class="max-w-full"
+                      onmouseenter={(event) =>
+                        showExpandedRef(event, "wip", {
+                          label: currentBranch,
+                          tone: "head",
+                          kind: "local",
+                        })}
+                      onmouseleave={() => clearExpandedRef("wip")}
+                    >
                       <GitBranch />
-                      {currentBranch}
+                      <span class="min-w-0 truncate">{currentBranch}</span>
                     </Badge>
                   {/if}
                 </div>
@@ -756,6 +849,18 @@
                 >
               </div>
             </button>
+            {#if expandedRef !== null && expandedRef.owner === "wip"}
+              <span
+                class="pointer-events-none absolute top-1.5 z-30 rounded-4xl bg-panel shadow-md"
+                style="left: {expandedRef.left}px"
+                data-testid="ref-badge-overlay"
+              >
+                <Badge tone="head">
+                  <GitBranch />
+                  {expandedRef.label}
+                </Badge>
+              </span>
+            {/if}
           </div>
         </div>
       {/if}
@@ -841,14 +946,20 @@
                       {#each refs as entry (entry.refName)}
                         <button
                           type="button"
-                          class="cursor-default"
+                          class="min-w-0 max-w-full cursor-default"
                           data-testid={`commit-ref-${entry.refName}`}
                           title={entry.refName}
                           onclick={() => onSelect(commit)}
                           oncontextmenu={(event) =>
                             openRefMenu(event, entry.refName)}
+                          onmouseenter={(event) =>
+                            expandCommitRef(event, commit.oid, entry.ref)}
+                          onmouseleave={() => clearExpandedRef(commit.oid)}
                         >
-                          <Badge tone={refTone(entry.ref)}>
+                          <Badge
+                            tone={refTone(entry.ref)}
+                            class="max-w-full"
+                          >
                             {#if entry.ref.kind === "local"}
                               <GitBranch />
                             {:else if entry.ref.kind === "remote"}
@@ -856,7 +967,9 @@
                             {:else if entry.ref.kind === "tag"}
                               <TagIcon />
                             {/if}
-                            {commitRefDisplayName(entry.ref)}
+                            <span class="min-w-0 truncate">
+                              {commitRefDisplayName(entry.ref)}
+                            </span>
                           </Badge>
                         </button>
                       {/each}
@@ -957,6 +1070,24 @@
                     </div>
                   {/if}
                 </div>
+                {#if expandedRef !== null && expandedRef.owner === commit.oid}
+                  <span
+                    class="pointer-events-none absolute z-30 rounded-4xl bg-panel shadow-md"
+                    style="left: {expandedRef.left}px; top: {expandedRef.top}px"
+                    data-testid="ref-badge-overlay"
+                  >
+                    <Badge tone={expandedRef.tone}>
+                      {#if expandedRef.kind === "local"}
+                        <GitBranch />
+                      {:else if expandedRef.kind === "remote"}
+                        <Globe />
+                      {:else}
+                        <TagIcon />
+                      {/if}
+                      {expandedRef.label}
+                    </Badge>
+                  </span>
+                {/if}
               </div>
             {/if}
           {/each}
