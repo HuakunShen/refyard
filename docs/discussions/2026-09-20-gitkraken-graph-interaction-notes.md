@@ -194,3 +194,42 @@ not reproducible honestly with initials at 9px), hover-pinning of branch
 labels to arbitrary rows (Smart Branch Visibility), horizontal scrolling when
 the user widens fixed columns past the panel, and a compact-rows density
 toggle.
+
+## 6. Round three — density, ref connectors, lane-coloured labels (2026-09-21)
+
+Round two fixed *where* the lines are. This round compared the same two
+screenshots again and fixed how much room they get and how a label joins them.
+
+1. **The graph was drawn for a 28px row.** GitKraken's default is roughly a
+   43px row with a 26px avatar node and a 3px lane; ours was 28/9/2. The
+   proportions were close, the absolute size was not, which is most of why a
+   GitKraken graph reads as calm and ours read as dense. Row density is now a
+   setting — Compact 28, Comfortable 36, Roomy 44, default Comfortable — and
+   the stroke width, lane spacing, node size and padding all scale with it
+   (`densityMetrics` in `lib/geometry.ts`). Settings → Appearance → Row Density.
+2. **A ref label was not connected to its line.** GitKraken runs a short
+   horizontal line from the branch pill into the graph at the labelled row;
+   without it the pill and the lane are two things the reader has to join up.
+   Drawn in the lane's colour (`refConnectorPath`).
+3. **Labels are the lane's colour.** GitKraken paints a branch label in the
+   colour of the line it names, which is what makes a colourful graph readable
+   without tracing every line. Branch, remote and HEAD pills now take their
+   row's lane tint (`color-mix`, so a browser without it keeps the fixed tones
+   rather than losing the colour); tag pills keep their own tone.
+
+Two bugs surfaced because the numbers finally moved:
+
+- the squeeze scaled lanes and dots but not the padding, so a column narrowed
+  to 60px overflowed by 1.2px — the whole span scales now, with its own floor;
+- a row's height *is* the virtualizer's item size, so switching density left
+  every row at its old height until something remounted the list: the setting
+  looked inert until a reload. A density change now discards measured sizes.
+
+Measured for a future round, so it does not have to be re-derived: picking a
+demo repository for a *wide* graph is not about fame. `git log -40 --merges`
+plus `git rev-list --count <p2> ^<p1>` per merge gives the side-branch lengths
+that decide how wide the braid looks. Among the local clones, `vscode` (avg
+348), `protobuf` (209) and `effect` (198) merge long branches, but their recent
+top screen is squash-merged and reads as a single lane; `tauri` (56),
+`shiki` (68) and `drizzle-orm` braid in the visible window. Both facts were
+checked by screenshot, not inferred.
