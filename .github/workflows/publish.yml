@@ -44,6 +44,18 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # The integration suite includes `tests/native`, which drives the real
+      # `refyard-native` release binary. Without it the publish gate would fail before
+      # `npm publish` — this workflow has never run, so that trap had not been sprung.
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+
+      - name: Build the native host the integration suite drives
+        run: cargo build --release
+
       - name: Static gates
         run: |
           pnpm check

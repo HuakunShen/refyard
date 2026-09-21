@@ -53,6 +53,19 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # `pnpm test:integration` includes `tests/native`, which drives the real
+      # `refyard-native` release binary — it fails by design when that binary is absent,
+      # naming the task that forgot to build it. Every run before this step existed was
+      # red for exactly that reason, on every platform.
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+
+      - name: Build the native host the integration suite drives
+        run: cargo build --release
+
       - name: Static gates
         run: |
           pnpm check
