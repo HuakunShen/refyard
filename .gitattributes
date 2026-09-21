@@ -1,0 +1,8 @@
+# Every tracked file is stored and checked out with LF, on every platform.
+#
+# `pnpm check:contract` compares the committed contract artifacts byte-for-byte with a
+# fresh generation, and the Windows CI runner checks the tree out with `core.autocrlf`
+# enabled — so those two JSON files arrived with CRLF and the gate reported them "out of
+# date" on Windows while passing everywhere else. Declaring the checkout here keeps the
+# comparison platform-independent instead of teaching the gate to ignore line endings.
+* text=auto eol=lf
