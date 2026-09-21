@@ -156,10 +156,13 @@ an editor — measured) — the sidebar conflict panel now finishes merge, cherr
 AND rebase stops — and **create worktree from here** (rides the existing
 `createWorktree` with a start commit) plus **checkout a remote branch as local**
 (one `createBranch` with switchToIt, offered only when no local twin exists).
-Deliberately not adopted yet: drop/squash/interactive-rebase (history-rewrite
-powers this build does not hand out), AI actions, PR creation, Pin/Solo, commit
-drag, the WIP row, per-column sort/filter, rename-from-graph (BranchPanel owns
-rename; it needs an inline text field the graph menu does not have).
+Adopted 2026-09-22 (later the same day): **drop commit** (`dropCommit` — one
+`rebase --onto <parent> <oid>`; merges, the branch root, and off-branch commits
+refused; a descendant that becomes empty is dropped silently with the target —
+measured). Deliberately not adopted yet: squash/interactive-rebase (needs the
+todo-list machinery), AI actions, PR creation, Pin/Solo, commit drag, the WIP
+row, per-column sort/filter, rename-from-graph (BranchPanel owns rename; it
+needs an inline text field the graph menu does not have).
 
 ## 7. Round three — segment ownership (2026-09-22)
 
