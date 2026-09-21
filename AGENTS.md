@@ -162,6 +162,9 @@ each carries, and which project to read for which question.
 ```
 apps/web/                  SvelteKit shell: routes, connection config, service worker (T07/T14)
 apps/cli/                  argv parsing, doctor, open/serve lifecycle
+apps/docs/                 the published documentation site: static Fumadocs-on-Astro build,
+                           GitHub Pages via .github/workflows/docs.yml. Build-time only —
+                           never a product runtime, and never a release gate.
 packages/git-contract/     public Zod schemas, inferred DTOs, semantic validation (single source)
 packages/git-core/         bytes/ parse/ plan/ workflows/ ports.ts — no host APIs
 packages/git-graph/        pure-TS DAG lane layout + fixtures

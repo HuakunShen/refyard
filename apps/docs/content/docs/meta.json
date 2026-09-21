@@ -1,0 +1,14 @@
+{
+  "title": "Refyard",
+  "pages": [
+    "index",
+    "install",
+    "first-session",
+    "workbench",
+    "cli",
+    "forms",
+    "security",
+    "architecture",
+    "troubleshooting"
+  ]
+}

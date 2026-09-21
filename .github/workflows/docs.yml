@@ -1,0 +1,62 @@
+# Publishes the documentation site (`apps/docs`) to GitHub Pages.
+#
+# Separate from `publish.yml` and `release.yml` on purpose: the docs are not a release
+# artifact and a typo in a guide must not be able to fail a release. The site is a static
+# Astro build — plain HTML plus one React island for the Fumadocs shell, and a search index
+# built at build time — so Pages can serve it directly, with no server of any kind.
+name: docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/docs/**"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: docs-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - uses: actions/configure-pages@v5
+
+      - name: Build the site
+        run: pnpm --dir apps/docs build:site
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/docs/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

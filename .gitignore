@@ -34,6 +34,9 @@ build-desktop
 # SvelteKit's generated types and route manifest (`svelte-kit sync`, run by `pnpm build`).
 .svelte-kit
 
+# Astro's generated types and content cache for the documentation site (`apps/docs`).
+.astro
+
 # Playwright's failure artifacts (traces, screenshots, page snapshots).
 test-results
 playwright-report

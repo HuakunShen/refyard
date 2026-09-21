@@ -1,0 +1,4 @@
+{
+  "title": "Where it runs",
+  "pages": ["desktop", "local", "hosted", "vscode"]
+}

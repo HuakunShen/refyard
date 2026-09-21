@@ -1,0 +1,30 @@
+{
+  "name": "@refyard/docs",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The published documentation site: a static Fumadocs-on-Astro build of the guides in this repository. Build-time only — no runtime of the product depends on it.",
+  "type": "module",
+  "scripts": {
+    "dev:site": "astro dev",
+    "build:site": "astro build",
+    "preview:site": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/markdown-remark": "catalog:",
+    "@astrojs/mdx": "catalog:",
+    "@astrojs/react": "catalog:",
+    "astro": "catalog:",
+    "fumadocs-core": "catalog:",
+    "fumadocs-ui": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "sharp": "catalog:",
+    "takumi-js": "catalog:"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "tailwindcss": "catalog:"
+  }
+}
