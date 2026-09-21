@@ -14,7 +14,6 @@ import {
   listServiceInstances,
   requestPairingUrl,
   startPairingControl,
-  type PairingControlServer,
 } from "@refyard/host-node";
 
 const cleanups: (() => Promise<void>)[] = [];

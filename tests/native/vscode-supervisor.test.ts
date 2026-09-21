@@ -6,6 +6,8 @@
  */
 import { afterAll, describe, expect, it } from "vitest";
 import { realpath } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   startMachineService,
   stopService,
@@ -54,5 +56,14 @@ describe("the extension's supervisor wrapper", () => {
 });
 
 function joinBinary(): string {
-  return process.env["REFYARD_NATIVE_BIN"] ?? "";
+  const override = process.env["REFYARD_NATIVE_BIN"];
+  if (override !== undefined && override.length > 0) {
+    return override;
+  }
+  // The same default `native-server.ts` uses: the workspace's release build,
+  // resolved from this file rather than from whatever vitest's cwd happens to be.
+  return join(
+    dirname(fileURLToPath(import.meta.url)),
+    "../../target/release/refyard-native",
+  );
 }
