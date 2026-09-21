@@ -1,6 +1,6 @@
 {
   "kind": "refyard-performance-report",
-  "measuredAt": "2026-09-16T13:56:27.207Z",
+  "measuredAt": "2026-09-21T09:54:20.777Z",
   "runtime": {
     "kind": "node",
     "version": "26.8.2",
@@ -11,20 +11,20 @@
   "gitVersion": "2.50.1 (Apple Git-155)",
   "artifact": {
     "path": "packages/npm-dist/dist/cli.mjs",
-    "modifiedAt": "2026-09-16T13:23:17.476Z",
+    "modifiedAt": "2026-09-21T09:54:08.980Z",
     "buildInfo": {
       "name": "refyard",
-      "version": "0.1.2",
+      "version": "0.2.0",
       "engines": {
         "node": ">=22 <27"
       },
-      "builtAt": "2026-09-16T13:23:17.411Z",
-      "gitCommit": "c938c8e",
+      "builtAt": "2026-09-21T09:54:08.863Z",
+      "gitCommit": "2a1b3e2",
       "node": "v26.3.0",
-      "bundleBytes": 2210213,
+      "bundleBytes": 2235253,
       "entryPoints": 1
     },
-    "headRevision": "c938c8e",
+    "headRevision": "2a1b3e2",
     "workingTreeDirty": true
   },
   "fixture": {
@@ -56,61 +56,61 @@
   "measurements": [
     {
       "name": "cold-start-to-ready",
-      "durationSeconds": 0.386,
+      "durationSeconds": 0.504,
       "processScope": "refyard CLI process: spawn → listener up → readiness object printed (Git feature probe included)",
       "memoryMetric": "none",
-      "value": 0.386,
+      "value": 0.504,
       "unit": "seconds",
-      "notes": "Includes the doctor-style Git feature probe at startup; excludes building the fixture. median of 3 runs, range 0.382–0.388."
+      "notes": "Includes the doctor-style Git feature probe at startup; excludes building the fixture. median of 3 runs, range 0.451–0.529."
     },
     {
       "name": "service-rss-after-start",
-      "durationSeconds": 0.446,
+      "durationSeconds": 0.472,
       "processScope": "the refyard service process only (ps -o rss), after readiness and before any read",
       "memoryMetric": "resident set size of that process, as reported by ps",
       "value": 95,
       "unit": "MiB",
-      "notes": "Excludes the browser and excludes any Git process. median of 3 runs, range 95.109–96.141."
+      "notes": "Excludes the browser and excludes any Git process. median of 3 runs, range 95.422–95.734."
     },
     {
       "name": "status-read-throughput",
-      "durationSeconds": 0.446,
+      "durationSeconds": 0.472,
       "processScope": "one refyard service process over loopback HTTP; each read runs `git status --porcelain=v2 --branch -z` plus the index read",
       "memoryMetric": "none",
-      "value": 224.2,
+      "value": 211.9,
       "unit": "reads/second",
-      "notes": "At concurrency 4 against a 100000-commit repository on this machine. median of 3 runs, range 217.391–233.1."
+      "notes": "At concurrency 4 against a 100000-commit repository on this machine. median of 3 runs, range 191.939–218.818."
     },
     {
       "name": "service-rss-after-reads",
-      "durationSeconds": 0.446,
+      "durationSeconds": 0.472,
       "processScope": "the refyard service process only, after the read batch above",
       "memoryMetric": "resident set size of that process, as reported by ps",
       "value": 103,
       "unit": "MiB",
-      "notes": "After 100 reads at concurrency 4. median of 3 runs, range 103–104.141."
+      "notes": "After 100 reads at concurrency 4. median of 3 runs, range 102.531–102.781."
     },
     {
       "name": "history-first-page",
-      "durationSeconds": 0.345,
+      "durationSeconds": 0.548,
       "processScope": "one refyard service process: `git log` for one page, parsed into commit summaries",
       "memoryMetric": "none",
-      "value": 345,
+      "value": 548,
       "unit": "milliseconds",
-      "notes": "Page size 100 of 100000 commits; the response is bounded by the contract's page limit (truncated in 3 of 3 runs). median of 3 runs, range 326–350."
+      "notes": "Page size 100 of 100000 commits; the response is bounded by the contract's page limit (truncated in 3 of 3 runs). median of 3 runs, range 459–549."
     },
     {
       "name": "diff-large-file",
-      "durationSeconds": 0.099,
+      "durationSeconds": 0.126,
       "processScope": "a second refyard service process, one repository with uncommitted changes: one `git diff` of a 8000-line file, parsed into hunks",
       "memoryMetric": "none",
-      "value": 99,
+      "value": 126,
       "unit": "milliseconds",
-      "notes": "Every patch line delivered (16000 of 16000; the run fails if a run delivers fewer), and the response also carries every changed path's metadata. The same patch as git prints it is 813 KiB; the response is 1518 KiB, because each line travels as a {kind,text,noNewline} object. median of 3 runs, range 97–99."
+      "notes": "Every patch line delivered (16000 of 16000; the run fails if a run delivers fewer), and the response also carries every changed path's metadata. The same patch as git prints it is 813 KiB; the response is 1518 KiB, because each line travels as a {kind,text,noNewline} object. median of 3 runs, range 116–141."
     },
     {
       "name": "diff-large-file-payload",
-      "durationSeconds": 0.099,
+      "durationSeconds": 0.126,
       "processScope": "the same response as diff-large-file, measured as the bytes on the wire",
       "memoryMetric": "none",
       "value": 1554484,
@@ -119,34 +119,34 @@
     },
     {
       "name": "graceful-shutdown",
-      "durationSeconds": 0.003,
+      "durationSeconds": 0.005,
       "processScope": "the first service process: SIGTERM to exit, with no request in flight",
       "memoryMetric": "none",
-      "value": 3,
+      "value": 5,
       "unit": "milliseconds",
-      "notes": "After a full read batch and a diff batch on other services. The bounded drain window applies only when a request is in flight, so this is the floor. median of 3 runs, range 3–4."
+      "notes": "After a full read batch and a diff batch on other services. The bounded drain window applies only when a request is in flight, so this is the floor. median of 3 runs, range 4–6."
     },
     {
       "name": "diff-large-file-second-read",
-      "durationSeconds": 0.09,
+      "durationSeconds": 0.112,
       "processScope": "the same read again, immediately, against the same service (cache warm)",
       "memoryMetric": "none",
-      "value": 90,
+      "value": 112,
       "unit": "milliseconds",
-      "notes": "Compared with diff-large-file this is what the service's read cache is worth, not what Git costs. median of 3 runs, range 89–91."
+      "notes": "Compared with diff-large-file this is what the service's read cache is worth, not what Git costs. median of 3 runs, range 110–129."
     },
     {
       "name": "diff-long-line",
-      "durationSeconds": 0.093,
+      "durationSeconds": 0.111,
       "processScope": "a second refyard service process: one `git diff` of a single 700000-character line",
       "memoryMetric": "none",
-      "value": 93,
+      "value": 111,
       "unit": "milliseconds",
-      "notes": "The minified-file shape: one line with no newlines to split on, carried complete (2 patch lines for a single line, 1367 KiB of patch text). median of 3 runs, range 91–93."
+      "notes": "The minified-file shape: one line with no newlines to split on, carried complete (2 patch lines for a single line, 1367 KiB of patch text). median of 3 runs, range 109–129."
     },
     {
       "name": "diff-long-line-payload",
-      "durationSeconds": 0.093,
+      "durationSeconds": 0.111,
       "processScope": "the same response as diff-long-line, measured as the bytes on the wire",
       "memoryMetric": "none",
       "value": 1442557,
@@ -155,16 +155,16 @@
     },
     {
       "name": "diff-many-files",
-      "durationSeconds": 0.057,
+      "durationSeconds": 0.072,
       "processScope": "a second refyard service process: one diff request covering 150 changed files",
       "memoryMetric": "none",
-      "value": 57,
+      "value": 72,
       "unit": "milliseconds",
-      "notes": "Per-file share is in the note's first number divided by 150 (0.38 ms each). median of 3 runs, range 56–60."
+      "notes": "Per-file share is in the note's first number divided by 150 (0.48 ms each). median of 3 runs, range 69–92."
     },
     {
       "name": "diff-many-files-payload",
-      "durationSeconds": 0.057,
+      "durationSeconds": 0.072,
       "processScope": "the same response as diff-many-files, measured as the bytes on the wire",
       "memoryMetric": "none",
       "value": 42374,
@@ -173,16 +173,16 @@
     },
     {
       "name": "diff-truncated-patch",
-      "durationSeconds": 0.111,
+      "durationSeconds": 0.134,
       "processScope": "a second refyard service process: one `git diff` whose patch crosses the per-file bound, answered bounded",
       "memoryMetric": "none",
-      "value": 111,
+      "value": 134,
       "unit": "milliseconds",
-      "notes": "The service delivered 19995/19995/19995 of 64000 patch lines and reported the response truncated in every run (asserted above): a bounded answer, not a failure. The complete patch is 3.2 MB of patch text. The response names no limit — that string is computed and dropped (see the note in plan 0003's R2). median of 3 runs, range 109–114."
+      "notes": "The service delivered 19995/19995/19995 of 64000 patch lines and reported the response truncated in every run (asserted above): a bounded answer, not a failure. The complete patch is 3.2 MB of patch text. The response names no limit — that string is computed and dropped (see the note in plan 0003's R2). median of 3 runs, range 131–158."
     },
     {
       "name": "diff-truncated-patch-payload",
-      "durationSeconds": 0.111,
+      "durationSeconds": 0.134,
       "processScope": "the same response as diff-truncated-patch, measured as the bytes on the wire",
       "memoryMetric": "none",
       "value": 1962008,
@@ -191,30 +191,30 @@
     },
     {
       "name": "diff-service-rss-after-start",
-      "durationSeconds": 0.099,
+      "durationSeconds": 0.126,
       "processScope": "the second refyard service process only, before any diff was read",
       "memoryMetric": "resident set size of that process, as reported by ps",
-      "value": 95,
+      "value": 96,
       "unit": "MiB",
-      "notes": "The baseline for the batch below; it serves the diff fixture, not the 100000-commit one. median of 3 runs, range 95.016–95.734."
+      "notes": "The baseline for the batch below; it serves the diff fixture, not the 100000-commit one. median of 3 runs, range 95.672–95.938."
     },
     {
       "name": "diff-service-rss-after-batch",
-      "durationSeconds": 0.099,
+      "durationSeconds": 0.126,
       "processScope": "the second refyard service process only, after the diff batch above",
       "memoryMetric": "resident set size of that process, as reported by ps",
-      "value": 204,
+      "value": 205,
       "unit": "MiB",
-      "notes": "Growth over diff-service-rss-after-start: 108.3 MiB for a batch that read a complete ~2 MB patch, a bounded one, a long line, and every changed path's metadata. median of 3 runs, range 203.406–209.563."
+      "notes": "Growth over diff-service-rss-after-start: 109.3 MiB for a batch that read a complete ~2 MB patch, a bounded one, a long line, and every changed path's metadata. median of 3 runs, range 204.906–205.469."
     },
     {
       "name": "status-after-switching-services",
-      "durationSeconds": 0.014,
+      "durationSeconds": 0.018,
       "processScope": "two refyard service processes: a status read against the first, immediately after the second one answered",
       "memoryMetric": "none",
-      "value": 14,
+      "value": 18,
       "unit": "milliseconds",
-      "notes": "A sequential status read on the first service measured in the same position was 21 ms, so this number is what talking to a different process costs. median of 3 runs, range 14–15."
+      "notes": "A sequential status read on the first service measured in the same position was 27 ms, so this number is what talking to a different process costs. median of 3 runs, range 17–20."
     }
   ]
 }

@@ -708,3 +708,60 @@ Choose folder… 出现附着于主窗口的 "Open" 面板（`list_windows` 可�
 上全链路验证：请求到达 → 面板可见 → Escape 取消按 null 作答 → 连点只存一个面板（守卫）
 → 选目录点 Open 路径经 IPC 回填。Browse 空路径在 Rust 侧立即按 InvalidRequest 拒绝
 （`reads/filesystem.rs` 回落主目录），无挂起。插桩已移除。
+
+### 9.19 0.2.0 发布线准备（2026-09-20）
+
+**发布线现状（全部为实测，非推断）**：npm `latest` = `0.1.1`（`npm view refyard versions`
+只有 0.1.0/0.1.1，两者都是 owner 手工 `npm publish`）；远端 tag 只有 `app-v0.1.0/1/2`，
+`v0.1.2` **从未推送**，`gh run list --workflow publish.yml` 为空——**publish.yml 从未运行过**；
+tap 的 cask 已是 0.1.2（真实 shasum）；`main` 缺少 8 个桌面 0.1.2 提交（`app-v0.1.2` 不是
+main 的祖先），合并为 `2a1b3e2`，冲突解取 main 的 `img-src`（头像域名）+ 分支的
+`dangerousDisableAssetCspModification`。
+
+**版本提升**：`packages/npm-dist/package.json`、`apps/desktop/src-tauri/tauri.conf.json`、
+该 crate 的 `Cargo.toml`/`Cargo.lock`、`apps/desktop/package.json` → `0.2.0`。
+`crates/*` 保持 `0.1.0`（0.1.2 发布时同样如此：桌面产物版本由 `tauri.conf.json` 决定）。
+cask 源文件同步为 tap 的 0.1.2 实值，`0.2.0` 的填充命令写在 `docs/releasing.md`。
+
+**本地门禁（命令与结果）**：`pnpm check` 0 errors；`pnpm check:boundaries` 通过；
+`pnpm check:contract` 通过（500 个具名 schema）；`pnpm test:unit` 474 passed；
+`pnpm test:integration` 479 passed（先 `cargo build --release`）；
+`pnpm test:portable` 4 passed；`pnpm test:pack` 7 passed；
+`pnpm build:release` 通过（staged `packages/npm-dist/dist`，`build-info` 指向 `2a1b3e2`）；
+`pnpm pack:smoke` 15 步全绿；`cargo test --workspace` 20 个测试二进制 0 失败（20 个
+ignored，均为需要外部 SSH/环境的用例）；`pnpm bench:runtime` 通过并重写
+`docs/evidence/performance.json`（cold-start-to-ready 0.504s、service RSS 95 MiB、
+status 211.9 reads/s、history 首页 548ms、graceful shutdown 5ms）。
+
+**未通过项（如实记录，均非 0.2.0 引入）**：
+
+- chromium e2e：66 passed / 1 failed = `tests/e2e/offline.spec.ts:92`。判定依据：
+  用 `f933d2f`（本轮 UI 改动之前的提交）重建 `apps/web` 后，同一条断言以完全相同的方式
+  失败——`getByText("refyard", { exact: true })` element not found；服务停掉后重载进入的是
+  启动器状态（失败快照的 main 里只有 "Could not list repositories" 与仓库启动器），而全仓库
+  唯一渲染裸文本 `refyard` 的地方是 Settings 的 About 区块。即断言里"这是 App"的代理在
+  工作台标签化改版后失效，与本次发布无关。
+- compat：chromium/webkit 6 passed；firefox 3 failed，全部是
+  `browserType.launch: Failed to launch the browser process ... Could not find profile folder`
+  ——本机 Firefox 无法创建 profile，**NOT RUN**（不是产品失败）。
+- 这两项都不在 `publish.yml` / `release.yml` 的门禁里（已逐个核对两个 workflow 的步骤）。
+
+**两条既存 CI 缺陷（已修，都会挡住发布路径）**：
+
+- `pnpm test:integration` 包含 `tests/native`，它按设计在缺 `target/release/refyard-native`
+  时失败（`tests/native/native-server.ts` 的注释就是这么写的）。`ci.yml` 与 `publish.yml`
+  都没有构建该二进制，所以 main 三平台全红（run 35425715517 的失败 trace 指向
+  `native-server.ts:82` 的 spawn 与 `vscode-supervisor.test.ts`），而 publish.yml 的同一
+  步骤会在 `npm publish` 之前失败。修复（`0f844fe`）：两个 workflow 增加
+  `dtolnay/rust-toolchain@stable` + `swatinem/rust-cache@v2` + `cargo build --release`。
+- windows-latest 独有的 `check:contract` 失败：Windows runner 以 `core.autocrlf` 检出，
+  两个生成物在工作区里是 CRLF，与 LF 的生成结果逐字节比较必然不等。修复（`fd41bea`）：
+  新增 `.gitattributes`（`* text=auto eol=lf`）；仓库内 0 个 CRLF 文件，索引无变化。
+
+**交付 owner 的发布动作**（本仓库不推送、不发布）：`git push origin main`（含合并与修复）→
+`git tag -a v0.2.0 && git push origin v0.2.0`（npm，经 publish.yml）→
+`git tag -a app-v0.2.0 && git push origin app-v0.2.0`（五平台桌面产物 + latest.json + vsix）→
+用 release 资产的两个 DMG 算 sha256 填入 cask 并推 tap。**风险点**：npm 的 Trusted
+Publishing 是否已配置无法从此处核验（npm 无公开端点，且 publish.yml 从未运行）；若 OIDC
+未配置，tag 运行会在最后一步失败，回落到 owner 手工 `npm publish`（`docs/releasing.md`
+已写明）。
