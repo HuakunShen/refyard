@@ -977,10 +977,11 @@
               <div
                 role="presentation"
                 class={cn(
-                  "absolute top-0 right-0 left-0",
+                  "absolute top-0 right-0 left-0 cursor-default",
                   selected ? "bg-primary/10" : "hover:bg-muted/50",
                 )}
                 style="height: {item.size}px; transform: translateY({item.start}px)"
+                onclick={() => onSelect(commit)}
                 oncontextmenu={(event) => openCommitMenu(event, commit)}
               >
                 {#if selected}
