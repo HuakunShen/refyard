@@ -24,6 +24,7 @@ import {
   commitIndex,
   resetBranch,
   revertCommit,
+  squashTopCommit,
   restoreSelectedPaths,
   selectDiscardablePaths,
   stageSelectedPaths,
@@ -575,6 +576,53 @@ export function createStagingEffects(
     },
   });
 
+  const squashEffect = createEffect({
+    kind: "squashCommit",
+    schema: OPERATION_SCHEMAS.squashCommit,
+    async run({ operation, request, operationId }) {
+      const facts = await resolveFacts(request, operationId);
+      if (!facts.ok) {
+        return failed(facts.problem);
+      }
+      const outcome = await squashTopCommit(
+        options.engine,
+        { cwdHandle: facts.value.cwdHandle },
+        {
+          message:
+            operation.message === null
+              ? null
+              : new TextEncoder().encode(operation.message),
+        },
+      );
+      switch (outcome.kind) {
+        case "squashed":
+          return {
+            kind: "succeeded",
+            result: resultOf({
+              summary: "squashed the top commit into its parent",
+              changedRefs: [],
+              newHeadOid: outcome.head?.oid ?? null,
+            }),
+          };
+        case "commitFailed":
+          return failedOp(
+            operationId,
+            "GitCommandFailed",
+            `the squash's commit step failed, so the branch points at the parent with the combined change staged: ${outcome.diagnostic.trim().slice(0, 1200)}`,
+          );
+        case "refused":
+          return failedOp(operationId, "InvalidRequest", outcome.reason);
+        case "gitRefused":
+          return writeOutcomeFromGit(operationId, outcome.refusal);
+        case "unknown":
+          return unknownOutcome(
+            operationId,
+            "whether the squash completed is not established; look at the repository with git before writing again",
+          );
+      }
+    },
+  });
+
   return [
     stageEffect,
     unstageEffect,
@@ -583,6 +631,7 @@ export function createStagingEffects(
     amendEffect,
     revertEffect,
     resetEffect,
+    squashEffect,
   ];
 }
 
@@ -595,4 +644,5 @@ export const STAGING_MUTATION_KINDS: readonly MutationKind[] = [
   "amendCommit",
   "revertCommit",
   "resetBranch",
+  "squashCommit",
 ];

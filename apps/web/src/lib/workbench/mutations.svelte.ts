@@ -984,6 +984,22 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     );
   }
 
+  /**
+   * Fold the checked-out branch's top commit into the one below it. A null
+   * message keeps the parent's message.
+   */
+  function onCommitSquash(message: string | null): void {
+    void performWrite(
+      "commit-squash",
+      () => ({ kind: "squashCommit", message }),
+      (message, context) => {
+        stagingMessage =
+          message === null || context === null ? null : { context, message };
+      },
+      "worktree",
+    );
+  }
+
   function onMergeContinue(): void {
     void performWrite(
       "continue-merge",
@@ -1484,6 +1500,7 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     onRebaseContinue,
     onRebaseAbort,
     onCommitDrop,
+    onCommitSquash,
     onRemoteAdd,
     onRemoteUpdate,
     onRemoteRemove,

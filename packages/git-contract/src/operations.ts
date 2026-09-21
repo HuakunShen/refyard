@@ -580,6 +580,17 @@ const OPERATION_SCHEMAS = {
       description:
         "Remove one commit from the checked-out branch by replaying its descendants onto its parent. A merge commit and the branch's first commit are refused, and the commit must be on the checked-out branch. A conflict during the replay stops into the same resolve-and-continue state a merge uses; a descendant that becomes empty is dropped with the target.",
     }),
+
+  squashCommit: z
+    .strictObject({
+      kind: z.literal("squashCommit"),
+      message: commitMessageSchema.nullable(),
+    })
+    .meta({
+      id: "SquashCommitOperation",
+      description:
+        "Fold the checked-out branch's top commit into the one below it: the branch moves to the parent with both changes combined in one commit. A null message keeps the parent's message. Content is never lost — the combined change stays as a commit — but the two old commits are rewritten, so this is a history operation on a branch this build's own queue writes.",
+    }),
 } as const;
 
 export { OPERATION_SCHEMAS };
@@ -635,6 +646,7 @@ export const OPERATION_TARGET_LIST = [
   ["continueRebase", ["worktree"]],
   ["abortRebase", ["worktree"]],
   ["dropCommit", ["worktree"]],
+  ["squashCommit", ["worktree"]],
 ] as const;
 
 export type MutationKind = (typeof OPERATION_TARGET_LIST)[number][0];
@@ -683,9 +695,9 @@ type Expect<T extends true> = T;
 export type _SchemasMatchTargetList = Expect<
   Equal<keyof typeof OPERATION_SCHEMAS, MutationKind>
 >;
-/** The documented union has exactly 44 members; a list edit that changes that stops compiling. */
+/** The documented union has exactly 45 members; a list edit that changes that stops compiling. */
 export type _MutationCount = Expect<
-  Equal<(typeof OPERATION_TARGET_LIST)["length"], 44>
+  Equal<(typeof OPERATION_TARGET_LIST)["length"], 45>
 >;
 
 /** Operations that can destroy work and therefore require explicit confirmation. */

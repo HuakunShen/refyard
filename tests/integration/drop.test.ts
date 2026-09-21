@@ -102,7 +102,7 @@ describe("dropping a commit", () => {
   });
 
   it("removes the middle commit and replays the descendants", async () => {
-    const { a, b, c } = await threeCommitBranch(repo);
+    const { b, c } = await threeCommitBranch(repo);
 
     const record = await submitDrop(service, b);
     expect(record.status).toBe("succeeded");

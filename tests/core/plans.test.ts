@@ -60,6 +60,7 @@ import {
   planDropCommitParent,
   planDropCommitRebase,
   planDropCommitSecondParent,
+  planSquashSoftReset,
   type GitCommandSpec,
 } from "@refyard/git-core";
 import { createRepo } from "../support/repo.js";
@@ -445,6 +446,43 @@ describe("revert planning", () => {
         .trim();
       expect(got).toEqual(author);
       expect((await repo.headOid()).trim()).not.toEqual(side);
+    } finally {
+      await repo.dispose();
+    }
+  });
+
+  it("plans the squash soft reset as fixed text", () => {
+    // HEAD^ is never client input, so the argv is constant.
+    expect(planSquashSoftReset(context).argv).toEqual([
+      "reset",
+      "--soft",
+      "HEAD^",
+    ]);
+  });
+
+  it("squashes a real top commit into its parent, combining the trees", async () => {
+    const repo = await createRepo({ initialCommit: true });
+    try {
+      await repo.write("a.txt", "A\n");
+      await repo.commitAll("A");
+      await repo.write("b.txt", "B\n");
+      await repo.commitAll("B");
+      const oneCommit = await repo.git(["rev-parse", "HEAD~1"]);
+
+      const reset = planSquashSoftReset(context);
+      await repo.git(reset.argv, { stdin: reset.stdin });
+      const commitStep = planAmendCommit(context, null);
+      await repo.git(commitStep.argv, { stdin: commitStep.stdin });
+
+      const subjects = new TextDecoder()
+        .decode(await repo.git(["log", "--format=%s"]))
+        .trim()
+        .split("\n");
+      expect(subjects).toEqual(["A", "base"]);
+      // Both changes live in the one squashed commit.
+      expect(await repo.readText("a.txt")).toEqual("A\n");
+      expect(await repo.readText("b.txt")).toEqual("B\n");
+      void oneCommit;
     } finally {
       await repo.dispose();
     }

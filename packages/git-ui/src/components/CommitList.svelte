@@ -51,6 +51,7 @@
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import ResetBranchDialog from "./ResetBranchDialog.svelte";
   import WorktreeFromCommitDialog from "./WorktreeFromCommitDialog.svelte";
+  import SquashCommitDialog from "./SquashCommitDialog.svelte";
   import ContextMenuLayer from "./ContextMenuLayer.svelte";
   import StateBanner from "./StateBanner.svelte";
   import {
@@ -178,6 +179,14 @@
      */
     onDropCommit?: (commit: CommitSummary) => void;
     /**
+     * Fold the checked-out branch's top commit into the one below it. The
+     * menu item appears on the top commit's row only, which is what
+     * `headOid` marks; absent means the host cannot.
+     */
+    onSquashTopCommit?: (message: string | null) => void;
+    /** The checked-out branch's tip, which is the only squashable row. */
+    headOid?: string | null;
+    /**
      * Add a linked worktree whose new branch starts at this commit. The
      * component asks for the destination and branch name; the host's own
      * validation refuses paths that leave the approved root. Absent means the
@@ -235,6 +244,8 @@
     onCheckoutRemoteBranch = undefined,
     onRebaseOntoBranch = undefined,
     onDropCommit = undefined,
+    onSquashTopCommit = undefined,
+    headOid = null,
     showAvatars = true,
     remoteAvatars = undefined,
     class: className = "",
@@ -584,6 +595,20 @@
               onSelect: () => askCherryPick(commit),
             },
           ]),
+      ...(onSquashTopCommit !== undefined &&
+      headOid !== null &&
+      commit.oid === headOid &&
+      (rows.find((row) => row.id === commit.oid)?.parentIds.length ?? 0) > 0
+        ? [
+            {
+              kind: "action" as const,
+              id: "squash-commit",
+              label: "Squash into Parent…",
+              disabled: contextDisabled,
+              onSelect: () => askSquash(),
+            },
+          ]
+        : []),
       ...(onDropCommit === undefined
         ? []
         : [
@@ -723,6 +748,12 @@
   function askDrop(commit: CommitSummary): void {
     pendingDrop = commit;
     dropDialogOpen = true;
+  }
+
+  let squashDialogOpen = $state(false);
+
+  function askSquash(): void {
+    squashDialogOpen = true;
   }
 
   function refActionsFor(
@@ -1675,4 +1706,16 @@
     pendingDrop = null;
   }}
   data-testid="commit-drop-dialog"
+/>
+
+<SquashCommitDialog
+  bind:open={squashDialogOpen}
+  subject={headOid === null
+    ? null
+    : (commits.find((entry) => entry.oid === headOid)?.subject ?? null)}
+  disabled={contextDisabled}
+  onConfirm={(message) => {
+    onSquashTopCommit?.(message);
+  }}
+  data-testid="commit-squash-dialog"
 />

@@ -369,6 +369,43 @@ test.describe("Git context menus", () => {
     expect(subjects).toContain("third");
   });
 
+  test("squashes the tip commit into its parent from the context menu", async ({
+    page,
+  }) => {
+    await page.goto(service.pairingUrl);
+    const tipOid = new TextDecoder()
+      .decode(await repo.git(["rev-parse", "HEAD"]))
+      .trim();
+    const row = page.getByTestId(`commit-row-${tipOid}`);
+    await expect(row).toBeVisible();
+
+    await row.click({ button: "right" });
+    const item = page.getByTestId(`commit-context-${tipOid}-squash-commit`);
+    await expect(item).toHaveText("Squash into Parent…");
+    await item.click();
+
+    const dialog = page.getByTestId("commit-squash-dialog");
+    await expect(dialog).toBeVisible();
+    await page
+      .getByTestId("commit-squash-dialog-message")
+      .fill("base and second together");
+    await page.getByTestId("commit-squash-dialog-confirm").click();
+
+    // The history shrank to the single squashed commit with the new message.
+    await expect
+      .poll(async () => {
+        const result = await repo.gitResult(["rev-parse", "HEAD~1"]);
+        return String(result.code);
+      })
+      .toBe("128");
+    const subject = new TextDecoder()
+      .decode(await repo.git(["log", "-1", "--format=%s"]))
+      .trim();
+    expect(subject).toEqual("base and second together");
+    // Both changes survive the squash.
+    expect(await repo.readText("a.txt")).toEqual("second\n");
+  });
+
   test("checks a remote branch out as a local branch from its context menu", async ({
     page,
   }) => {

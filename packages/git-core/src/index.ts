@@ -62,3 +62,4 @@ export * from "./workflows/reset.js";
 export * from "./workflows/cherry-pick.js";
 export * from "./workflows/rebase.js";
 export * from "./workflows/drop.js";
+export * from "./workflows/squash.js";

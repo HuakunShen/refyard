@@ -185,3 +185,12 @@ export function planStashResolve(
     "rev-parse stash locator",
   );
 }
+
+/**
+ * The soft reset that opens a squash: the branch moves to the parent and the
+ * combined change sits in the index, ready for the commit step. `HEAD^` is
+ * fixed text, never client input.
+ */
+export function planSquashSoftReset(context: PlanContext): GitCommandSpec {
+  return spec(context, ["reset", "--soft", "HEAD^"], "squash soft reset");
+}

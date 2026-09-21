@@ -51,6 +51,7 @@ const MUTATION_SCOPE = {
   continueRebase: "repository:write",
   abortRebase: "repository:write",
   dropCommit: "repository:write",
+  squashCommit: "repository:write",
   revertCommit: "repository:write",
   resetBranch: "repository:write",
 } satisfies Record<MutationKind, AuthorizationScope>;

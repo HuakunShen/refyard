@@ -309,7 +309,14 @@
         "worktree"
       ],
       "payloadSchema": "DropCommitOperation"
+    },
+    {
+      "kind": "squashCommit",
+      "targets": [
+        "worktree"
+      ],
+      "payloadSchema": "SquashCommitOperation"
     }
   ],
-  "count": 44
+  "count": 45
 }

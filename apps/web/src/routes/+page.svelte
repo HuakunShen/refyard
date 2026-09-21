@@ -944,6 +944,7 @@
   const onRemoteBranchCheckout = writeController.onRemoteBranchCheckout;
   const onBranchRebase = writeController.onBranchRebase;
   const onCommitDrop = writeController.onCommitDrop;
+  const onCommitSquash = writeController.onCommitSquash;
 
   function onCommitCreateBranch(
     commit: CommitSummary,
@@ -1571,6 +1572,10 @@
               onResetBranch={graphMenuOperations.has("resetBranch")
                 ? (commit, mode) => onCommitReset(commit.oid, mode)
                 : undefined}
+              onSquashTopCommit={graphMenuOperations.has("squashCommit")
+                ? onCommitSquash
+                : undefined}
+              headOid={status.data?.head?.oid ?? null}
               onDropCommit={graphMenuOperations.has("dropCommit")
                 ? (commit) => onCommitDrop(commit.oid)
                 : undefined}

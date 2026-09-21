@@ -673,6 +673,10 @@ export function validateOperationSemantics(
       // a merge, the branch root, or off-branch is the workflow's to refuse —
       // the schema cannot express reachability.
       return [];
+
+    case "squashCommit":
+      // Message schema handles its own bounds; null means keep the parent's.
+      return [];
   }
 }
 
