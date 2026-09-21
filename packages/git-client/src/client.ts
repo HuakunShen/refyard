@@ -31,6 +31,11 @@ import {
   statusSnapshotSchema,
   submodulesResponseSchema,
   worktreesResponseSchema,
+  providerConnectionsResponseSchema,
+  providerPullRequestsResponseSchema,
+  type ProviderConnectionsResponse,
+  type ProviderId,
+  type ProviderPullRequestsResponse,
   type CapabilitiesResponse,
   type DiffResponse,
   type FilesystemEntriesResponse,
@@ -163,6 +168,14 @@ export interface GitClient {
     readonly worktreeId: string;
     readonly pathIds: readonly string[];
   }): Promise<PreviewsResponse>;
+  /** The provider axis. A host without the module answers UnsupportedOperation. */
+  providerConnection(): Promise<ProviderConnectionsResponse>;
+  connectProvider(
+    provider: ProviderId,
+    token: string,
+  ): Promise<ProviderConnectionsResponse>;
+  disconnectProvider(provider: ProviderId): Promise<ProviderConnectionsResponse>;
+  providerPullRequests(repositoryId: string): Promise<ProviderPullRequestsResponse>;
 }
 
 /** Turn a query object into a query string, dropping undefined values. */
@@ -397,6 +410,29 @@ export function createGitClient(options: GitClientOptions): GitClient {
         worktreeId: query.worktreeId,
         pathIds: [...query.pathIds],
       }),
+
+    providerConnection: () =>
+      send("GET", "/api/v1/provider/connection", providerConnectionsResponseSchema),
+
+    connectProvider: (provider, token) =>
+      send(
+        "POST",
+        "/api/v1/provider/github/connect",
+        providerConnectionsResponseSchema,
+        { provider, token },
+      ),
+
+    disconnectProvider: (provider) =>
+      send("POST", "/api/v1/provider/disconnect", providerConnectionsResponseSchema, {
+        provider,
+      }),
+
+    providerPullRequests: (repositoryId) =>
+      send(
+        "GET",
+        `/api/v1/provider/pull-requests${toQueryString({ repositoryId })}`,
+        providerPullRequestsResponseSchema,
+      ),
   };
 }
 

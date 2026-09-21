@@ -9,7 +9,11 @@
 import type { Problem } from "@refyard/git-contract";
 import type { EventService } from "./events.js";
 import type { HostService } from "./host.js";
-import type { GitReadService, MutationService } from "./service.js";
+import type {
+  GitReadService,
+  MutationService,
+  ProviderBackendService,
+} from "./service.js";
 
 export type ConnectionPhase =
   "connecting" | "ready" | "reconnecting" | "disconnected" | "failed";
@@ -42,6 +46,13 @@ export interface BackendSession {
   readonly mutations: MutationService;
   readonly host: HostService;
   readonly events: EventService;
+  /**
+   * Forge connections and their one read. Optional on the session: a host
+   * without the provider module leaves it unset, and the UI keeps every
+   * provider surface hidden — absence is the honest answer there, not an
+   * empty panel.
+   */
+  readonly provider?: ProviderBackendService | undefined;
   state(): ConnectionState;
   onState(listener: (state: ConnectionState) => void): () => void;
   /** Idempotent: releases this session's listeners, timers and owned targets. */

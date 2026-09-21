@@ -129,3 +129,66 @@ it("refuses an older history response without explicit topology", async () => {
     client.history({ repositoryId: "repo_test" }),
   ).rejects.toMatchObject({ code: "InternalError" });
 });
+
+describe("provider surface transport", () => {
+  /** A client over a stub that records what was sent and answers `routes`. */
+  function clientFor(
+    routes: Readonly<Record<string, unknown>>,
+    requests: { path: URL; init?: RequestInit }[],
+  ) {
+    return createGitClient({
+      baseUrl: "http://127.0.0.1:9595",
+      fetch: async (input, init) => {
+        const url = new URL(String(input));
+        requests.push({ path: url, init });
+        const route = routes[url.pathname];
+        if (route === undefined) {
+          return new Response(JSON.stringify({ problem: { code: "NotFound", message: "no route", retryable: false } }), {
+            status: 404,
+          });
+        }
+        return new Response(JSON.stringify(route), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+      token: () => "rfs_bearer",
+    });
+  }
+
+  it("sends the token in the connect body, never in a URL", async () => {
+    const requests: { path: URL; init?: RequestInit }[] = [];
+    const client = clientFor(
+      {
+        "/api/v1/provider/github/connect": { connections: [] },
+      },
+      requests,
+    );
+    const result = await client.connectProvider("github", "github_pat_11TESTTOKEN000000000000000");
+    expect(result).toEqual({ connections: [] });
+    expect(requests[0]?.path.pathname).toBe("/api/v1/provider/github/connect");
+    expect(requests[0]?.path.search).toBe("");
+    expect(String(requests[0]?.init?.body)).toContain("github_pat_11TESTTOKEN000000000000000");
+    expect(requests[0]?.init?.headers && new Headers(requests[0]?.init?.headers).get("authorization")).toBe(
+      "Bearer rfs_bearer",
+    );
+  });
+
+  it("encodes the pull-request query and validates the response", async () => {
+    const requests: { path: URL; init?: RequestInit }[] = [];
+    const client = clientFor(
+      {
+        "/api/v1/provider/pull-requests": {
+          repository: { provider: "github", owner: "octocat", repo: "Hello-World" },
+          source: "upstream",
+          cachedAt: null,
+          pullRequests: [],
+        },
+      },
+      requests,
+    );
+    const result = await client.providerPullRequests("repo_aaaaaaaaaaaaaaaa");
+    expect(result.pullRequests).toEqual([]);
+    expect(requests[0]?.path.search).toBe("?repositoryId=repo_aaaaaaaaaaaaaaaa");
+  });
+});

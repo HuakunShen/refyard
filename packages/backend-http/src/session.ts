@@ -35,6 +35,7 @@ import {
   type SessionMetadata,
 } from "@refyard/git-service";
 import { createHttpEventService } from "./events.js";
+import type { ProviderBackendService } from "@refyard/git-service";
 import {
   probeHostExtension,
   requestJson,
@@ -325,12 +326,24 @@ export function createHttpBackendSession(
     backendLabel: ports.backendLabel ?? "HTTP service",
   };
 
+  // The provider axis rides on the same HTTP client. It is optional on the
+  // session type, so a host without the module is reported as exactly that:
+  // `UnsupportedOperation` wrapped in the session's error vocabulary, and the
+  // UI hides the panel instead of rendering an empty connection list.
+  const provider: ProviderBackendService = {
+    status: () => guard(() => client.providerConnection()),
+    connect: (name, token) => guard(() => client.connectProvider(name, token)),
+    disconnect: (name) => guard(() => client.disconnectProvider(name)),
+    pullRequests: (repositoryId) => guard(() => client.providerPullRequests(repositoryId)),
+  };
+
   return {
     metadata,
     git,
     mutations,
     host,
     events,
+    provider,
     state: () => state,
     onState: (listener) => {
       stateListeners.add(listener);

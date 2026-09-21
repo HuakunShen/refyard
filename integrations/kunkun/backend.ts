@@ -53,6 +53,10 @@ export function createKunkunBackend(
     submodules: (query) => client.submodules(query),
     stashes: (query) => client.stashes(query),
     previews: (query) => client.previews(query),
+    providerConnection: () => client.providerConnection(),
+    connectProvider: (provider, token) => client.connectProvider(provider, token),
+    disconnectProvider: (provider) => client.disconnectProvider(provider),
+    providerPullRequests: (repositoryId) => client.providerPullRequests(repositoryId),
   };
   return {
     git,

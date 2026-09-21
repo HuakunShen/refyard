@@ -24,6 +24,9 @@ import type {
   StatusSnapshot,
   SubmodulesResponse,
   WorktreesResponse,
+  ProviderConnectionsResponse,
+  ProviderId,
+  ProviderPullRequestsResponse,
 } from "@refyard/git-contract";
 
 /**
@@ -102,6 +105,21 @@ export interface GitReadService {
   submodules(query: SubmodulesQuery): Promise<SubmodulesResponse>;
   stashes(query: StashesQuery): Promise<StashesResponse>;
   previews(query: PreviewsQuery): Promise<PreviewsResponse>;
+}
+
+/**
+ * Forge connections and their one read. A host without the provider module
+ * answers `UnsupportedOperation`; the UI must treat that as "no panel", never
+ * as an empty connection list.
+ */
+export interface ProviderBackendService {
+  status(): Promise<ProviderConnectionsResponse>;
+  connect(
+    provider: ProviderId,
+    token: string,
+  ): Promise<ProviderConnectionsResponse>;
+  disconnect(provider: ProviderId): Promise<ProviderConnectionsResponse>;
+  pullRequests(repositoryId: string): Promise<ProviderPullRequestsResponse>;
 }
 
 /**
