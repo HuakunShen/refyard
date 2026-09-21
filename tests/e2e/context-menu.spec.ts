@@ -326,6 +326,49 @@ test.describe("Git context menus", () => {
     await page.getByTestId("working-copy-discard-dialog-confirm").click();
     await expect.poll(() => repo.readText("a.txt")).toBe("second\n");
   });
+  test("drops a middle commit after confirmation", async ({ page }) => {
+    // A third commit makes the clicked commit a middle one: dropping it must
+    // keep the commit after it.
+    await repo.write("third.txt", "third\n");
+    await repo.commitAll("third");
+    // The middle commit: dropping the root would be refused by design.
+    const secondOid = new TextDecoder()
+      .decode(await repo.git(["rev-parse", "HEAD~1"]))
+      .trim();
+
+    await page.goto(service.pairingUrl);
+    const row = page.getByTestId(`commit-row-${secondOid}`);
+    await expect(row).toBeVisible();
+
+    await row.click({ button: "right" });
+    const item = page.getByTestId(`commit-context-${secondOid}-drop-commit`);
+    await expect(item).toHaveText("Drop Commit…");
+    await item.click();
+
+    const dialog = page.getByTestId("commit-drop-dialog");
+    await expect(dialog).toBeVisible();
+    await page.getByTestId("commit-drop-dialog-confirm").click();
+
+    await expect
+      .poll(async () => {
+        const result = await repo.gitResult([
+          "merge-base",
+          "--is-ancestor",
+          secondOid,
+          "HEAD",
+        ]);
+        return String(result.code);
+      })
+      .toBe("1");
+    // The commit after the dropped one survives the rewrite.
+    const subjects = new TextDecoder()
+      .decode(await repo.git(["log", "--format=%s"]))
+      .trim()
+      .split("\n");
+    expect(subjects).not.toContain("second");
+    expect(subjects).toContain("third");
+  });
+
   test("checks a remote branch out as a local branch from its context menu", async ({
     page,
   }) => {
