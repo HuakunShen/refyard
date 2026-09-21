@@ -299,7 +299,8 @@ fn operation_targets(kind: MutationKind) -> Vec<TargetKind> {
         | MutationKind::Merge
         | MutationKind::ContinueMerge
         | MutationKind::AbortMerge
-        | MutationKind::RevertCommit => vec![TargetKind::Worktree],
+        | MutationKind::RevertCommit
+        | MutationKind::ResetBranch => vec![TargetKind::Worktree],
         _ => vec![TargetKind::Repository],
     }
 }

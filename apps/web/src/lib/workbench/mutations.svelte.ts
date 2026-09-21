@@ -1064,6 +1064,22 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     );
   }
 
+  /**
+   * Move the checked-out branch to a commit, soft or mixed — the only two
+   * modes that cannot lose content. The working tree is untouched either way.
+   */
+  function onCommitReset(oid: string, mode: "soft" | "mixed"): void {
+    void performWrite(
+      "commit-reset",
+      () => ({ kind: "resetBranch", oid, mode }),
+      (message, context) => {
+        stagingMessage =
+          message === null || context === null ? null : { context, message };
+      },
+      "worktree",
+    );
+  }
+
   function onTagDelete(tagName: string): void {
     void performWrite(
       "tag-delete",
@@ -1347,6 +1363,7 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     onStashDrop,
     onTagCreate,
     onCommitRevert,
+    onCommitReset,
     onTagDelete,
     onTagPush,
     onWorktreeCreate,

@@ -938,6 +938,7 @@
   const onBranchDelete = writeController.onBranchDelete;
   const onTagDelete = writeController.onTagDelete;
   const onCommitRevert = writeController.onCommitRevert;
+  const onCommitReset = writeController.onCommitReset;
 
   function onCommitCreateBranch(
     commit: CommitSummary,
@@ -1561,6 +1562,9 @@
                 : undefined}
               onRevertCommit={graphMenuOperations.has("revertCommit")
                 ? (commit) => onCommitRevert(commit.oid)
+                : undefined}
+              onResetBranch={graphMenuOperations.has("resetBranch")
+                ? (commit, mode) => onCommitReset(commit.oid, mode)
                 : undefined}
               showAvatars={avatars}
               {remoteAvatars}

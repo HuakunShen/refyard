@@ -47,6 +47,7 @@ import {
   planRevertAbort,
   planRevertCommit,
   planRevertInProgress,
+  planResetBranch,
   type GitCommandSpec,
 } from "@refyard/git-core";
 import { createRepo } from "../support/repo.js";
@@ -382,6 +383,48 @@ describe("revert planning", () => {
       "REVERT_HEAD",
     ]);
     expect(planRevertAbort(context).argv).toEqual(["revert", "--abort"]);
+  });
+
+  it("resets only with the content-preserving mode flags", () => {
+    expect(
+      planResetBranch(context, { oid: "c".repeat(40), mode: "soft" }).argv,
+    ).toEqual(["reset", "--soft", "c".repeat(40)]);
+    expect(
+      planResetBranch(context, { oid: "c".repeat(40), mode: "mixed" }).argv,
+    ).toEqual(["reset", "--mixed", "c".repeat(40)]);
+    // `--hard` is a mode the planner cannot be asked for: the input union has
+    // no such member, and the string below documents that it must stay that way.
+    for (const spec of [
+      planResetBranch(context, { oid: "c".repeat(40), mode: "soft" }),
+      planResetBranch(context, { oid: "c".repeat(40), mode: "mixed" }),
+    ]) {
+      expect(spec.argv).not.toContain("--hard");
+    }
+  });
+
+  it("resets a real branch and moves the head without touching the tree", async () => {
+    const repo = await createRepo({ initialCommit: true });
+    try {
+      await repo.write("a.txt", "second\n");
+      const second = await repo.commitAll("second");
+      await repo.write("a.txt", "third\n");
+      const third = await repo.commitAll("third");
+      const spec = planResetBranch(context, { oid: second, mode: "mixed" });
+      await repo.git(spec.argv, { stdin: spec.stdin });
+
+      expect((await repo.headOid()).trim()).toEqual(second);
+      // Mixed reset left the working file alone and unstaged the delta.
+      expect(await repo.readText("a.txt")).toEqual("third\n");
+      // No trim: the leading space of " M a.txt" is the empty index column,
+      // which is the assertion — unstaged worktree change, staged nothing.
+      const status = new TextDecoder().decode(
+        await repo.git(["status", "--porcelain"]),
+      );
+      expect(status).toContain(" M a.txt");
+      expect((await repo.headOid()).trim()).not.toEqual(third);
+    } finally {
+      await repo.dispose();
+    }
   });
 
   it("reverts a real commit and records the undo commit Git writes", async () => {

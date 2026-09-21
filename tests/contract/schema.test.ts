@@ -1,5 +1,5 @@
 /**
- * Contract tests: the 36-operation union, its target pairing, and the semantic
+ * Contract tests: the 37-operation union, its target pairing, and the semantic
  * rules that JSON Schema cannot express.
  *
  * These are the tests that make "the browser cannot ask for arbitrary Git
@@ -162,6 +162,7 @@ const MINIMAL_OPERATION: Readonly<Record<MutationKind, unknown>> = {
   continueMerge: { kind: "continueMerge", message: null },
   abortMerge: { kind: "abortMerge", confirmed: true },
   revertCommit: { kind: "revertCommit", oid: OID },
+  resetBranch: { kind: "resetBranch", oid: OID, mode: "mixed" },
 };
 
 const TARGETS: Readonly<Record<string, unknown>> = {
@@ -195,10 +196,10 @@ function requestFor(
 }
 
 describe("the mutation union", () => {
-  it("declares exactly the 36 documented operations, in order", () => {
-    expect(MUTATION_KINDS).toHaveLength(36);
+  it("declares exactly the 37 documented operations, in order", () => {
+    expect(MUTATION_KINDS).toHaveLength(37);
     expect(MUTATION_KINDS[0]).toBe("initRepository");
-    expect(MUTATION_KINDS.at(-1)).toBe("revertCommit");
+    expect(MUTATION_KINDS.at(-1)).toBe("resetBranch");
     // A copy in the list would silently reduce coverage of every loop below.
     expect(new Set(MUTATION_KINDS).size).toBe(MUTATION_KINDS.length);
   });
@@ -660,7 +661,7 @@ describe("the schema registry", () => {
   });
 
   it("describes each operation exactly once in the target list", () => {
-    expect(OPERATION_TARGET_LIST).toHaveLength(36);
+    expect(OPERATION_TARGET_LIST).toHaveLength(37);
     const kinds = OPERATION_TARGET_LIST.map(([kind]) => kind);
     expect(new Set(kinds).size).toBe(kinds.length);
     for (const [, targets] of OPERATION_TARGET_LIST) {

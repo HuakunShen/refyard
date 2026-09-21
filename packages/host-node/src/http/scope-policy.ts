@@ -45,6 +45,7 @@ const MUTATION_SCOPE = {
   continueMerge: "repository:write",
   abortMerge: "repository:write",
   revertCommit: "repository:write",
+  resetBranch: "repository:write",
 } satisfies Record<MutationKind, AuthorizationScope>;
 
 export function scopeForMutationKind(kind: MutationKind): AuthorizationScope {

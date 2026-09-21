@@ -253,7 +253,14 @@
         "worktree"
       ],
       "payloadSchema": "RevertCommitOperation"
+    },
+    {
+      "kind": "resetBranch",
+      "targets": [
+        "worktree"
+      ],
+      "payloadSchema": "ResetBranchOperation"
     }
   ],
-  "count": 36
+  "count": 37
 }

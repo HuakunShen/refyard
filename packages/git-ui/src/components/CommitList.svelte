@@ -49,6 +49,7 @@
   import CommitGraph from "./CommitGraph.svelte";
   import CommitRefDialog from "./CommitRefDialog.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
+  import ResetBranchDialog from "./ResetBranchDialog.svelte";
   import ContextMenuLayer from "./ContextMenuLayer.svelte";
   import StateBanner from "./StateBanner.svelte";
   import {
@@ -144,6 +145,12 @@
      */
     onRevertCommit?: (commit: CommitSummary) => void;
     /**
+     * Move the checked-out branch to a commit, soft or mixed — the host
+     * refuses modes that could lose content, so none are offered. Absent
+     * means the host cannot.
+     */
+    onResetBranch?: (commit: CommitSummary, mode: "soft" | "mixed") => void;
+    /**
      * Author photos from GitHub, keyed off noreply commit emails. On by
      * default; a privacy-conscious host can turn the column to initials only.
      */
@@ -184,6 +191,7 @@
     onDeleteBranch = undefined,
     onDeleteTag = undefined,
     onRevertCommit = undefined,
+    onResetBranch = undefined,
     showAvatars = true,
     remoteAvatars = undefined,
     class: className = "",
@@ -511,6 +519,17 @@
               onSelect: () => askRevert(commit),
             },
           ]),
+      ...(onResetBranch === undefined
+        ? []
+        : [
+            {
+              kind: "action" as const,
+              id: "reset-branch",
+              label: "Reset Branch to Here…",
+              disabled: contextDisabled,
+              onSelect: () => askReset(commit),
+            },
+          ]),
       { kind: "separator" as const, id: "copy-separator" },
       ...(onCopyOid === undefined
         ? []
@@ -594,6 +613,14 @@
   function askRevert(commit: CommitSummary): void {
     pendingRevert = commit;
     revertDialogOpen = true;
+  }
+
+  let resetDialogOpen = $state(false);
+  let pendingReset = $state<CommitSummary | null>(null);
+
+  function askReset(commit: CommitSummary): void {
+    pendingReset = commit;
+    resetDialogOpen = true;
   }
 
   function refActionsFor(
@@ -1428,12 +1455,27 @@
     ? "Revert"
     : `Revert "${pendingRevert.subject}"`}
   disabled={pendingRevert === null || contextDisabled}
-  onConfirm={() => {
-    if (pendingRevert === null) {
+    onConfirm={() => {
+      if (pendingRevert === null) {
+        return;
+      }
+      onRevertCommit?.(pendingRevert);
+      pendingRevert = null;
+    }}
+    data-testid="commit-revert-dialog"
+/>
+
+<ResetBranchDialog
+  bind:open={resetDialogOpen}
+  subject={pendingReset?.subject ?? null}
+  branchName={currentBranch}
+  disabled={pendingReset === null || contextDisabled}
+  onConfirm={(mode) => {
+    if (pendingReset === null) {
       return;
     }
-    onRevertCommit?.(pendingRevert);
-    pendingRevert = null;
+    onResetBranch?.(pendingReset, mode);
+    pendingReset = null;
   }}
-  data-testid="commit-revert-dialog"
+  data-testid="commit-reset-dialog"
 />

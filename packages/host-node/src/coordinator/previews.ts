@@ -22,6 +22,7 @@ import { OPERATION_SCHEMAS } from "@refyard/git-contract";
 import {
   pathKey,
   commitIndex,
+  resetBranch,
   revertCommit,
   restoreSelectedPaths,
   selectDiscardablePaths,
@@ -538,6 +539,42 @@ export function createStagingEffects(
     },
   });
 
+  const resetEffect = createEffect({
+    kind: "resetBranch",
+    schema: OPERATION_SCHEMAS.resetBranch,
+    async run({ request, operation, operationId }) {
+      const facts = await resolveFacts(request, operationId);
+      if (!facts.ok) {
+        return failed(facts.problem);
+      }
+      const outcome = await resetBranch(
+        options.engine,
+        { cwdHandle: facts.value.cwdHandle },
+        { oid: operation.oid, mode: operation.mode },
+      );
+      switch (outcome.kind) {
+        case "reset":
+          return {
+            kind: "succeeded",
+            result: resultOf({
+              summary: `branch reset to ${outcome.head?.oid ?? "unknown"}`,
+              changedPaths: null,
+              newHeadOid: outcome.head?.oid ?? null,
+            }),
+          };
+        case "refused":
+          return failedOp(operationId, "Conflict", outcome.reason);
+        case "gitRefused":
+          return writeOutcomeFromGit(operationId, outcome.refusal);
+        case "unknown":
+          return unknownOutcome(
+            operationId,
+            "whether the branch moved is not established; look at the repository with git before writing again",
+          );
+      }
+    },
+  });
+
   return [
     stageEffect,
     unstageEffect,
@@ -545,6 +582,7 @@ export function createStagingEffects(
     commitEffect,
     amendEffect,
     revertEffect,
+    resetEffect,
   ];
 }
 
@@ -556,4 +594,5 @@ export const STAGING_MUTATION_KINDS: readonly MutationKind[] = [
   "commit",
   "amendCommit",
   "revertCommit",
+  "resetBranch",
 ];

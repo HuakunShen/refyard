@@ -640,6 +640,11 @@ export function validateOperationSemantics(
       // One object name, no cross-field rules: the oid schema already refuses
       // everything that is not a full object name, and there is no second field.
       return [];
+
+    case "resetBranch":
+      // The schema allows only the two modes that cannot lose content and one
+      // object name; there is no second field to cross-check.
+      return [];
   }
 }
 
