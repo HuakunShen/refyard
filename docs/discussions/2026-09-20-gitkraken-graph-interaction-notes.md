@@ -146,10 +146,35 @@ rules out menu items whose operation does not exist. Adopted in this round:
   fields, which is what made right-click look like "refresh + highlight" in
   the desktop app.
 
-Deliberately not adopted yet: revert/cherry-pick/reset/drop/rebase/squash
-(no operations), AI actions, PR creation, Pin/Solo, commit drag, the WIP row,
+Adopted since this note was written: **revert** (2026-09-22, `revertCommit`
+operation end to end — merge commits refused, conflicts aborted by the host).
+Deliberately not adopted yet: cherry-pick/reset/drop/rebase/squash (no
+operations), AI actions, PR creation, Pin/Solo, commit drag, the WIP row,
 per-column sort/filter, rename-from-graph (BranchPanel owns rename; it needs
 an inline text field the graph menu does not have).
+
+## 7. Round three — segment ownership (2026-09-22)
+
+Side-by-side on drizzle-orm, the graph's remaining "GitKraken-ness" came from
+colour semantics, not geometry:
+
+- The layout now hands a lane to **any branch tip** sitting on a commit —
+  local or remote — so a trunk that absorbed other branches' history wears
+  those branches' colours below the point where it absorbed it (drizzle's
+  trunk turns `origin/beta`'s colour at #5788). The colour callback — not the
+  layout — keeps the checked-out branch's own remote twin from splitting the
+  trunk (`laneColorFor` answers `lane-current` for `origin/<current>`), and
+  `origin/HEAD` colours nothing.
+- The rows where the checked-out branch still owns its line are **tinted** —
+  GitKraken's "what my branch adds" band. `headSegmentFor` walks first
+  parents while the lane token is unchanged, so the band skips a merged-in
+  side commit's row (it is not on the spine), and a page boundary ends the
+  band rather than guessing past it.
+- Every row carries a small **lane-colour tick** at the graph column's right
+  edge, which keeps lanes readable when the graph is squeezed or straight.
+- The **roomy density (44px rows) became the default**: once the drawing
+  matched, the 36px default was the last visible difference, and roomy was
+  already calibrated to GitKraken's proportions.
 
 ## 5. Round two — the graph drawing itself (same day, 20:00)
 
