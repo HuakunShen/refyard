@@ -14,7 +14,8 @@
   "dependencies": {
     "@refyard/git-client": "workspace:*",
     "@refyard/git-contract": "workspace:*",
-    "@refyard/git-graph": "workspace:*"
+    "@refyard/git-graph": "workspace:*",
+    "@refyard/git-provider": "workspace:*"
   },
   "devDependencies": {
     "@internationalized/date": "^3.12.4",

@@ -189,6 +189,9 @@ importers:
       '@refyard/git-graph':
         specifier: workspace:*
         version: link:packages/git-graph
+      '@refyard/git-provider':
+        specifier: workspace:*
+        version: link:packages/git-provider
       '@refyard/git-service':
         specifier: workspace:*
         version: link:packages/git-service
@@ -482,6 +485,12 @@ importers:
         specifier: workspace:*
         version: link:../git-contract
 
+  packages/git-provider:
+    devDependencies:
+      '@refyard/git-contract':
+        specifier: workspace:*
+        version: link:../git-contract
+
   packages/git-service:
     dependencies:
       '@refyard/git-contract':
@@ -499,6 +508,9 @@ importers:
       '@refyard/git-graph':
         specifier: workspace:*
         version: link:../git-graph
+      '@refyard/git-provider':
+        specifier: workspace:*
+        version: link:../git-provider
     devDependencies:
       '@internationalized/date':
         specifier: ^3.12.4

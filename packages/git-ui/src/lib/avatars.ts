@@ -9,6 +9,7 @@
  * gets deterministic initials tinted by a hash of their email, so the same
  * person keeps the same colour across sessions without anything being stored.
  */
+import { providerRepoFromRemote } from "@refyard/git-provider/remotes";
 
 export interface GithubAvatar {
   readonly kind: "github";
@@ -86,7 +87,7 @@ function hueOf(input: string): number {
  * is not a github.com host returns null and the badge falls back to a globe.
  *
  * The input is the already-redacted display URL — the host strips credentials
- * before it ever reaches the browser, and this function re-strips the userinfo
+ * before it ever reaches the browser, and the parser re-strips the userinfo
  * anyway so a hostile value cannot smuggle one into the constructed URL.
  */
 export interface GithubRepo {
@@ -98,57 +99,15 @@ export interface GithubRepo {
 /**
  * The GitHub repository a remote points at, or null.
  *
- * Only github.com counts: every URL built from this module is a
+ * Delegates to `@refyard/git-provider/remotes` — the single source for remote
+ * parsing, shared with the host, which needs the same answer before it calls a
+ * provider API. Only github.com counts: every URL built from this module is a
  * `https://github.com/...` link, and inventing one for a GitLab or self-hosted
- * remote would produce a link that 404s. Both remote spellings are accepted —
- * `https://github.com/owner/repo.git` and the scp-like
- * `git@github.com:owner/repo.git` — with or without the suffix.
+ * remote would produce a link that 404s.
  */
 export function githubRepoFromRemote(remoteUrl: string): GithubRepo | null {
-  const trimmed = remoteUrl.trim();
-  if (trimmed.length === 0) {
-    return null;
-  }
-  let host: string | null = null;
-  let path: string | null = null;
-  const scheme = /^https?:\/\//i.exec(trimmed);
-  if (scheme !== null) {
-    try {
-      const parsed = new URL(trimmed);
-      host = parsed.hostname.toLowerCase();
-      path = parsed.pathname;
-    } catch {
-      return null;
-    }
-  } else {
-    // scp-like: git@github.com:owner/repo.git
-    const scp = /^(?:[^@/]+@)?([^/:]+):([^/].*)$/.exec(trimmed);
-    if (scp === null) {
-      return null;
-    }
-    host = scp[1]?.toLowerCase() ?? null;
-    path = scp[2] ?? null;
-  }
-  if (host !== "github.com" && host !== "www.github.com") {
-    return null;
-  }
-  const segments = (path ?? "")
-    .replace(/^\/+/, "")
-    .replace(/\.git$/i, "")
-    .split("/")
-    .map((segment) => segment.trim())
-    .filter((segment) => segment.length > 0);
-  const owner = segments[0] ?? "";
-  const name = segments[1] ?? "";
-  if (
-    !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(owner) ||
-    !/^[a-z0-9._-]+$/i.test(name)
-  ) {
-    // Not a usable owner/repository pair (empty, `settings/`, trajectory of an
-    // attack); the globe is the honest icon and a link would be a lie.
-    return null;
-  }
-  return { owner, name };
+  const found = providerRepoFromRemote(remoteUrl);
+  return found === null ? null : { owner: found.owner, name: found.repo };
 }
 
 /** The owner's avatar on GitHub, for a remote's org or user photo. */

@@ -1,0 +1,16 @@
+{
+  "name": "@refyard/git-provider",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@refyard/git-contract": "workspace:*"
+  }
+}
