@@ -56,6 +56,10 @@ import {
   planRebase,
   planRebaseContinue,
   planRebaseInProgress,
+  planDropCommitAncestry,
+  planDropCommitParent,
+  planDropCommitRebase,
+  planDropCommitSecondParent,
   type GitCommandSpec,
 } from "@refyard/git-core";
 import { createRepo } from "../support/repo.js";
@@ -441,6 +445,65 @@ describe("revert planning", () => {
         .trim();
       expect(got).toEqual(author);
       expect((await repo.headOid()).trim()).not.toEqual(side);
+    } finally {
+      await repo.dispose();
+    }
+  });
+
+  it("plans the drop probes and the onto-rebase", () => {
+    const oid = "d".repeat(40);
+    expect(planDropCommitAncestry(context, { oid }).argv).toEqual([
+      "merge-base",
+      "--is-ancestor",
+      oid,
+      "HEAD",
+    ]);
+    expect(planDropCommitSecondParent(context, { oid }).argv).toEqual([
+      "rev-parse",
+      "--verify",
+      "--quiet",
+      `${oid}^2`,
+    ]);
+    expect(planDropCommitParent(context, { oid }).argv).toEqual([
+      "rev-parse",
+      "--verify",
+      `${oid}^`,
+    ]);
+    expect(
+      planDropCommitRebase(context, { oid, parentOid: "b".repeat(40) }).argv,
+    ).toEqual(["rebase", "--onto", "b".repeat(40), oid]);
+  });
+
+  it("drops a real middle commit and replays the rest", async () => {
+    const repo = await createRepo({ initialCommit: true });
+    try {
+      await repo.write("a.txt", "A\n");
+      await repo.commitAll("A");
+      await repo.write("b.txt", "B\n");
+      await repo.commitAll("B");
+      await repo.write("c.txt", "C\n");
+      await repo.commitAll("C");
+
+      const spec = planDropCommitRebase(context, {
+        oid: await repo.git(["rev-parse", "HEAD~1"]).then((bytes) =>
+          new TextDecoder().decode(bytes).trim(),
+        ),
+        parentOid: await repo.git(["rev-parse", "HEAD~2"]).then((bytes) =>
+          new TextDecoder().decode(bytes).trim(),
+        ),
+      });
+      await repo.git(spec.argv, { stdin: spec.stdin });
+
+      const subjects = new TextDecoder()
+        .decode(await repo.git(["log", "--format=%s"]))
+        .trim()
+        .split("\n");
+      expect(subjects).toEqual(["C", "A", "base"]);
+      // Dropping B discards its change: b.txt is gone from history and tree,
+      // while A's and C's content survive.
+      const bTracked = await repo.gitResult(["ls-files", "--", "b.txt"]);
+      expect(new TextDecoder().decode(bTracked.stdout).trim()).toEqual("");
+      expect(await repo.readText("c.txt")).toEqual("C\n");
     } finally {
       await repo.dispose();
     }

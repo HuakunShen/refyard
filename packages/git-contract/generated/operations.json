@@ -302,7 +302,14 @@
         "worktree"
       ],
       "payloadSchema": "AbortRebaseOperation"
+    },
+    {
+      "kind": "dropCommit",
+      "targets": [
+        "worktree"
+      ],
+      "payloadSchema": "DropCommitOperation"
     }
   ],
-  "count": 43
+  "count": 44
 }

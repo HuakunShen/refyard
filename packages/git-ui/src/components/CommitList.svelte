@@ -171,6 +171,13 @@
      */
     onRebaseOntoBranch?: (branchName: string, tipOid: string) => void;
     /**
+     * Remove this commit from the checked-out branch by replaying its
+     * descendants onto its parent — history rewriting, hence the host's own
+     * refusals and this component's confirmation dialog. Absent means the
+     * host cannot.
+     */
+    onDropCommit?: (commit: CommitSummary) => void;
+    /**
      * Add a linked worktree whose new branch starts at this commit. The
      * component asks for the destination and branch name; the host's own
      * validation refuses paths that leave the approved root. Absent means the
@@ -227,6 +234,7 @@
     onCherryPickCommit = undefined,
     onCheckoutRemoteBranch = undefined,
     onRebaseOntoBranch = undefined,
+    onDropCommit = undefined,
     showAvatars = true,
     remoteAvatars = undefined,
     class: className = "",
@@ -576,6 +584,19 @@
               onSelect: () => askCherryPick(commit),
             },
           ]),
+      ...(onDropCommit === undefined
+        ? []
+        : [
+            { kind: "separator" as const, id: "drop-separator" },
+            {
+              kind: "action" as const,
+              id: "drop-commit",
+              label: "Drop Commit…",
+              destructive: true,
+              disabled: contextDisabled,
+              onSelect: () => askDrop(commit),
+            },
+          ]),
       ...(onResetBranch === undefined
         ? []
         : [
@@ -694,6 +715,14 @@
   function askCherryPick(commit: CommitSummary): void {
     pendingCherryPick = commit;
     cherryPickDialogOpen = true;
+  }
+
+  let dropDialogOpen = $state(false);
+  let pendingDrop = $state<CommitSummary | null>(null);
+
+  function askDrop(commit: CommitSummary): void {
+    pendingDrop = commit;
+    dropDialogOpen = true;
   }
 
   function refActionsFor(
@@ -1628,4 +1657,22 @@
     pendingCherryPick = null;
   }}
   data-testid="commit-cherry-pick-dialog"
+/>
+
+<ConfirmDialog
+  bind:open={dropDialogOpen}
+  title={pendingDrop === null
+    ? "Drop commit"
+    : `Drop "${pendingDrop.subject}"?`}
+  description="Removes this commit from the checked-out branch and replays the commits after it onto its parent — a history rewrite. A conflict stops it for you to resolve, like a merge. Merge commits and the branch's first commit are refused."
+  confirmLabel={pendingDrop === null ? "Drop" : `Drop "${pendingDrop.subject}"`}
+  disabled={pendingDrop === null || contextDisabled}
+  onConfirm={() => {
+    if (pendingDrop === null) {
+      return;
+    }
+    onDropCommit?.(pendingDrop);
+    pendingDrop = null;
+  }}
+  data-testid="commit-drop-dialog"
 />

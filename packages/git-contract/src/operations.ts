@@ -568,6 +568,18 @@ const OPERATION_SCHEMAS = {
       description:
         "Abort the rebase in progress and restore the branch to where the rebase started. When Git cannot restore it, the diagnostic is reported and nothing is reset.",
     }),
+
+  dropCommit: z
+    .strictObject({
+      kind: z.literal("dropCommit"),
+      oid: objectIdSchema,
+      confirmed: confirmedField,
+    })
+    .meta({
+      id: "DropCommitOperation",
+      description:
+        "Remove one commit from the checked-out branch by replaying its descendants onto its parent. A merge commit and the branch's first commit are refused, and the commit must be on the checked-out branch. A conflict during the replay stops into the same resolve-and-continue state a merge uses; a descendant that becomes empty is dropped with the target.",
+    }),
 } as const;
 
 export { OPERATION_SCHEMAS };
@@ -622,6 +634,7 @@ export const OPERATION_TARGET_LIST = [
   ["rebase", ["worktree"]],
   ["continueRebase", ["worktree"]],
   ["abortRebase", ["worktree"]],
+  ["dropCommit", ["worktree"]],
 ] as const;
 
 export type MutationKind = (typeof OPERATION_TARGET_LIST)[number][0];
@@ -670,9 +683,9 @@ type Expect<T extends true> = T;
 export type _SchemasMatchTargetList = Expect<
   Equal<keyof typeof OPERATION_SCHEMAS, MutationKind>
 >;
-/** The documented union has exactly 43 members; a list edit that changes that stops compiling. */
+/** The documented union has exactly 44 members; a list edit that changes that stops compiling. */
 export type _MutationCount = Expect<
-  Equal<(typeof OPERATION_TARGET_LIST)["length"], 43>
+  Equal<(typeof OPERATION_TARGET_LIST)["length"], 44>
 >;
 
 /** Operations that can destroy work and therefore require explicit confirmation. */

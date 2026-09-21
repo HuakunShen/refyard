@@ -667,6 +667,12 @@ export function validateOperationSemantics(
 
     case "abortRebase":
       return [];
+
+    case "dropCommit":
+      // One object name plus the explicit confirmation; whether the commit is
+      // a merge, the branch root, or off-branch is the workflow's to refuse —
+      // the schema cannot express reachability.
+      return [];
   }
 }
 

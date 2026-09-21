@@ -550,6 +550,7 @@ pub enum MutationKind {
     Rebase,
     ContinueRebase,
     AbortRebase,
+    DropCommit,
 }
 
 /// Which kind of resource a mutation addresses.
@@ -568,7 +569,7 @@ pub enum TargetKind {
 /// this build does *not* implement needs the complete list, and deriving it from the
 /// contract rather than from a second hand-written table is what keeps the two from
 /// disagreeing.
-pub const MUTATION_KINDS: [MutationKind; 43] = [
+pub const MUTATION_KINDS: [MutationKind; 44] = [
     MutationKind::InitRepository,
     MutationKind::CloneRepository,
     MutationKind::StagePaths,
@@ -612,6 +613,7 @@ pub const MUTATION_KINDS: [MutationKind; 43] = [
     MutationKind::Rebase,
     MutationKind::ContinueRebase,
     MutationKind::AbortRebase,
+    MutationKind::DropCommit,
 ];
 
 /// What a mutation is allowed to touch, discriminated by `kind`. An operation
@@ -1147,7 +1149,7 @@ mod tests {
     fn the_mutation_list_names_every_kind_the_contract_declares() {
         // A capability answer says "none of these is available", so a kind missing from
         // this list would be silently advertised as supported by omission.
-        assert_eq!(MUTATION_KINDS.len(), 43);
+        assert_eq!(MUTATION_KINDS.len(), 44);
         let mut names: Vec<String> = MUTATION_KINDS
             .iter()
             .map(|kind| serde_json::to_string(kind).expect("serializes"))

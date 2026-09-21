@@ -966,6 +966,24 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     );
   }
 
+  /**
+   * Remove one commit from the checked-out branch by replaying its
+   * descendants onto its parent. The host refuses merges, the branch root,
+   * and off-branch commits; a conflict stops into the state the sidebar's
+   * conflict panel finishes.
+   */
+  function onCommitDrop(oid: string): void {
+    void performWrite(
+      "commit-drop",
+      () => ({ kind: "dropCommit", oid, confirmed: true }),
+      (message, context) => {
+        stagingMessage =
+          message === null || context === null ? null : { context, message };
+      },
+      "worktree",
+    );
+  }
+
   function onMergeContinue(): void {
     void performWrite(
       "continue-merge",
@@ -1465,6 +1483,7 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     onBranchRebase,
     onRebaseContinue,
     onRebaseAbort,
+    onCommitDrop,
     onRemoteAdd,
     onRemoteUpdate,
     onRemoteRemove,

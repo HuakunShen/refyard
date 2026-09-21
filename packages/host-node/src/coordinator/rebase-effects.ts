@@ -18,9 +18,11 @@ import { OPERATION_SCHEMAS } from "@refyard/git-contract";
 import {
   abortRebase,
   continueRebase,
+  dropCommit,
   rebase,
   type AbortRebaseOutcome,
   type ContinueRebaseOutcome,
+  type DropCommitOutcome,
   type GitEngine,
   type RebaseOutcome,
 } from "@refyard/git-core";
@@ -181,6 +183,60 @@ function abortOutcomeOf(
   }
 }
 
+function dropOutcomeOf(
+  operationId: string,
+  outcome: DropCommitOutcome,
+): EffectOutcome {
+  switch (outcome.kind) {
+    case "dropped": {
+      return {
+        kind: "succeeded",
+        result: resultOf({
+          summary: "dropped the commit and replayed its descendants onto its parent",
+          changedRefs: [],
+          newHeadOid: outcome.head?.oid ?? null,
+        }),
+      };
+    }
+    case "conflicted": {
+      return {
+        kind: "needsAttention",
+        problem: {
+          code: "GitCommandFailed",
+          message:
+            `the drop stopped with ${outcome.conflictedPaths} conflicted path(s); ` +
+            `resolve them, stage the results and continue, or abort the rebase` +
+            (outcome.diagnostic.trim().length === 0
+              ? ""
+              : ` (git: ${outcome.diagnostic.trim().slice(0, 600)})`),
+          details: { conflictedPaths: outcome.conflictedPaths },
+          retryable: false,
+          operationId,
+        },
+      };
+    }
+    case "stopAborted": {
+      return failedOp(
+        operationId,
+        "Conflict",
+        `the drop stopped for a reason other than a conflict and was aborted, so the branch is unchanged: ${outcome.diagnostic.trim().slice(0, 600)}`,
+      );
+    }
+    case "refused": {
+      return failedOp(operationId, "InvalidRequest", outcome.reason);
+    }
+    case "gitRefused": {
+      return gitFailureOutcome(operationId, "the drop", outcome.refusal);
+    }
+    case "unknown": {
+      return unknownOutcome(
+        operationId,
+        `the drop did not finish cleanly (${outcome.code}); whether Git changed anything is not known and nothing was retried`,
+      );
+    }
+  }
+}
+
 export function createRebaseEffects(
   options: RebaseEffectsOptions,
 ): readonly MutationEffect[] {
@@ -234,6 +290,22 @@ export function createRebaseEffects(
         return abortOutcomeOf(operationId, outcome);
       },
     }),
+    createEffect({
+      kind: "dropCommit",
+      schema: OPERATION_SCHEMAS.dropCommit,
+      async run({ operation, request, operationId }): Promise<EffectOutcome> {
+        const facts = await resolveFacts(request, operationId);
+        if (!facts.ok) {
+          return { kind: "failed", problem: facts.problem };
+        }
+        const outcome = await dropCommit(
+          options.engine,
+          { cwdHandle: facts.value.cwdHandle },
+          { oid: operation.oid },
+        );
+        return dropOutcomeOf(operationId, outcome);
+      },
+    }),
   ];
 }
 
@@ -242,4 +314,5 @@ export const REBASE_MUTATION_KINDS = [
   "rebase",
   "continueRebase",
   "abortRebase",
+  "dropCommit",
 ] as const;
