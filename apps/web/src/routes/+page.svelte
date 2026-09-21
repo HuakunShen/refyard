@@ -40,6 +40,11 @@
   } from "@refyard/git-ui";
   import { githubOwnerAvatarUrl } from "@refyard/git-ui/lib/avatars";
   import {
+    densityMetrics,
+    isRowDensity,
+    type RowDensity,
+  } from "@refyard/git-ui/lib/geometry";
+  import {
     FileDiff,
     FolderGit2,
     GitBranch,
@@ -116,6 +121,8 @@
     storeUpdateCheck,
     readStoredAvatars,
     storeAvatars,
+    readStoredDensity,
+    storeDensity,
   } from "$lib/storage.js";
   import { createDesktopUpdates } from "$lib/runtime/updates.js";
   import type { UpdateOffer, UpdatesProbe } from "@refyard/git-ui";
@@ -161,6 +168,13 @@
   let background = $state(browser ? readStoredBackground() : "none");
   let glass = $state(browser ? readStoredGlass() : false);
   let avatars = $state(browser ? readStoredAvatars() : true);
+  const storedDensity = browser ? readStoredDensity() : "comfortable";
+  let density = $state<RowDensity>(
+    isRowDensity(storedDensity) ? storedDensity : "comfortable",
+  );
+  // One value for the whole list: the virtualizer's row height and the graph's lane
+  // spacing must be the same number, or a node stops sitting on its own row.
+  const historyMetrics = $derived(densityMetrics(density));
 
   $effect(() => {
     if (!browser) {
@@ -175,6 +189,7 @@
     storeBackground(background);
     storeGlass(glass);
     storeAvatars(avatars);
+    storeDensity(density);
   });
 
   // The updater exists only on the desktop runtime, and its code only loads there.
@@ -1192,10 +1207,12 @@
         {background}
         {glass}
         {avatars}
+        {density}
         onAccentChange={(val) => (accent = val)}
         onBackgroundChange={(val) => (background = val)}
         onGlassChange={(val) => (glass = val)}
         onAvatarsChange={(val) => (avatars = val)}
+        onDensityChange={(val) => (density = val)}
         updates={updatesProbe ?? undefined}
         {autoCheck}
         onAutoCheckChange={(enabled) => {
@@ -1523,6 +1540,7 @@
                 : undefined}
               showAvatars={avatars}
               {remoteAvatars}
+              metrics={historyMetrics}
               class="min-h-0 flex-1"
             />
           {/if}

@@ -30,6 +30,7 @@
     type UpdatesPhase,
     type UpdatesProbe,
   } from "../lib/updates.js";
+  import type { RowDensity } from "../lib/geometry.js";
 
   interface SettingsAbout {
     /** The app shell's own version, when the runtime knows one (desktop via Tauri). */
@@ -46,10 +47,12 @@
     background: string;
     glass: boolean;
     avatars?: boolean;
+    density?: RowDensity;
     onAccentChange: (accent: string) => void;
     onBackgroundChange: (bg: string) => void;
     onGlassChange: (glass: boolean) => void;
     onAvatarsChange?: (avatars: boolean) => void;
+    onDensityChange?: (density: RowDensity) => void;
     about?: SettingsAbout;
     onDisconnect?: () => void;
     /** Present only where updates can exist: the desktop runtime. */
@@ -63,10 +66,12 @@
     background,
     glass,
     avatars = true,
+    density = "comfortable",
     onAccentChange,
     onBackgroundChange,
     onGlassChange,
     onAvatarsChange = undefined,
+    onDensityChange = undefined,
     about,
     onDisconnect,
     updates,
@@ -222,10 +227,12 @@
           {background}
           {glass}
           {avatars}
+          {density}
           {onAccentChange}
           {onBackgroundChange}
           {onGlassChange}
           {onAvatarsChange}
+          {onDensityChange}
         />
       </section>
 

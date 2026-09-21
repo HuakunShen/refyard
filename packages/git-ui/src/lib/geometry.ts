@@ -30,14 +30,68 @@ export interface GraphMetrics {
   readonly lanePadding: number;
   /** Commit circle radius. */
   readonly radius: number;
+  /** Lane stroke width, scaled with the row so a roomy graph is not drawn with hairlines. */
+  readonly lineWidth: number;
 }
 
-export const DEFAULT_METRICS: GraphMetrics = {
-  rowHeight: 28,
-  laneWidth: 14,
-  lanePadding: 10,
-  radius: 4.5,
+/**
+ * How much room a row gets.
+ *
+ * GitKraken's default sits at the roomy end of this scale — roughly 43px rows, 26px
+ * avatar nodes and 3px lanes — which is what makes its graph read as calm instead of
+ * dense. The proportions are held constant here (lane stroke ≈ 7% of the row, avatar
+ * ≈ 30%); only the absolute size changes.
+ */
+export type RowDensity = "compact" | "comfortable" | "roomy";
+
+export const ROW_DENSITIES: readonly RowDensity[] = [
+  "compact",
+  "comfortable",
+  "roomy",
+];
+
+const DENSITY_METRICS: Record<RowDensity, GraphMetrics> = {
+  compact: {
+    rowHeight: 28,
+    laneWidth: 14,
+    lanePadding: 10,
+    radius: 4.5,
+    lineWidth: 2,
+  },
+  comfortable: {
+    rowHeight: 36,
+    laneWidth: 20,
+    lanePadding: 12,
+    radius: 6,
+    lineWidth: 2.5,
+  },
+  roomy: {
+    rowHeight: 44,
+    laneWidth: 26,
+    lanePadding: 14,
+    radius: 7.5,
+    lineWidth: 3,
+  },
 };
+
+export function isRowDensity(value: string | null): value is RowDensity {
+  return value !== null && (ROW_DENSITIES as readonly string[]).includes(value);
+}
+
+export function densityMetrics(density: RowDensity): GraphMetrics {
+  return DENSITY_METRICS[density];
+}
+
+export const DEFAULT_METRICS: GraphMetrics = DENSITY_METRICS.comfortable;
+
+/**
+ * Avatar radius for a row: GitKraken's 26px photo in a 43px row is a 0.30 ratio, with
+ * floors and ceilings so a compact graph still shows a face and a roomy one does not
+ * turn the photo into the row.
+ */
+export function avatarRadiusFor(metrics: GraphMetrics): number {
+  return Math.max(6, Math.min(14, metrics.rowHeight * 0.3));
+}
 
 export type SegmentKind = "lane" | "merge" | "branch";
 
@@ -86,15 +140,21 @@ export function gutterWidth(
 /** Below these a squeezed graph stops shrinking and lets the column clip it. */
 const MIN_LANE_WIDTH = 6;
 const MIN_RADIUS = 2.5;
+const MIN_LINE_WIDTH = 1.25;
+const MIN_LANE_PADDING = 6;
 
 /**
  * Metrics that squeeze `laneCount` lanes into `availableWidth`, GitKraken-style.
  *
- * At or above the natural gutter the base metrics hold unchanged. Below it, the
- * lane spacing — and the dots with it — scales down until the lanes fit, so a
- * narrow Graph column compresses its lanes instead of forcing the column wide
- * or dropping them. The floors keep a maximally squeezed graph legible; past
- * them the column simply clips, which is what GitKraken does too.
+ * At or above the natural gutter the base metrics hold unchanged. Below it the whole
+ * span scales together — padding, lane spacing, dots and strokes — until the lanes fit,
+ * so a narrow Graph column compresses its graph instead of forcing the column wide or
+ * dropping lanes. Padding is part of the span rather than a fixed inset: two 12px
+ * insets are a quarter of a 100px column, and holding them fixed is what made a narrow
+ * column overflow by the very pixels it was trying to save.
+ *
+ * The floors keep a maximally squeezed graph legible; past them the column simply
+ * clips, which is what GitKraken does too.
  */
 export function compressedMetrics(
   laneCount: number,
@@ -105,21 +165,20 @@ export function compressedMetrics(
     return base;
   }
   const last = laneCount - 1;
-  // The stretch of the gutter that actually scales: from the first lane's
-  // centre to the last one's, plus both end radii. Padding stays fixed so the
-  // graph keeps its breathing room against the neighbouring columns.
-  const laneSpan = 2 * base.radius + last * base.laneWidth;
+  const span = 2 * base.lanePadding + 2 * base.radius + last * base.laneWidth;
   const scale = Math.min(
     Math.max(
-      (availableWidth - 2 * base.lanePadding) / laneSpan,
+      availableWidth / span,
       MIN_LANE_WIDTH / base.laneWidth,
     ),
     1,
   );
   return {
     ...base,
+    lanePadding: Math.max(MIN_LANE_PADDING, base.lanePadding * scale),
     laneWidth: Math.max(MIN_LANE_WIDTH, base.laneWidth * scale),
     radius: Math.max(MIN_RADIUS, base.radius * scale),
+    lineWidth: Math.max(MIN_LINE_WIDTH, base.lineWidth * scale),
   };
 }
 

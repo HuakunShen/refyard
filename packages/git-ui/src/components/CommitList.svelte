@@ -197,10 +197,27 @@
   });
   onDestroy(unsubscribe);
 
+  /**
+   * The row height the virtualizer currently believes in.
+   *
+   * Deliberately not reactive: it exists so the effect below can tell a density change
+   * from a page arriving, and making it `$state` would make that effect its own
+   * dependency.
+   */
+  let lastRowHeight: number | null = null;
+
   $effect(() => {
     const count = commits.length;
     const rowHeight = metrics.rowHeight;
     instance?.setOptions({ count, estimateSize: () => rowHeight });
+    if (lastRowHeight !== null && lastRowHeight !== rowHeight) {
+      // A row's height *is* the virtualizer's item size here, so a density change has to
+      // discard the sizes it measured at the old one. Without this, switching density
+      // left every row at its previous height until something else remounted the list:
+      // the setting looked like it did nothing until a reload.
+      instance?.measure();
+    }
+    lastRowHeight = rowHeight;
   });
 
   function maybeLoadMore(): void {

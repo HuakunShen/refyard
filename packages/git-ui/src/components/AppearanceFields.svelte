@@ -9,16 +9,23 @@
   import { Badge } from "./ui/badge/index.js";
   import Check from "@lucide/svelte/icons/check";
   import { cn } from "../lib/utils.js";
+  import {
+    densityMetrics,
+    ROW_DENSITIES,
+    type RowDensity,
+  } from "../lib/geometry.js";
 
   interface Props {
     accent: string;
     background: string;
     glass: boolean;
     avatars: boolean;
+    density: RowDensity;
     onAccentChange: (accent: string) => void;
     onBackgroundChange: (bg: string) => void;
     onGlassChange: (glass: boolean) => void;
     onAvatarsChange?: (avatars: boolean) => void;
+    onDensityChange?: (density: RowDensity) => void;
   }
 
   let {
@@ -26,11 +33,32 @@
     background,
     glass,
     avatars,
+    density,
     onAccentChange,
     onBackgroundChange,
     onGlassChange,
     onAvatarsChange = undefined,
+    onDensityChange = undefined,
   }: Props = $props();
+
+  const DENSITY_NOTES: Record<RowDensity, string> = {
+    compact: "28px rows — the most commits per screen",
+    comfortable: "36px rows — the default",
+    roomy: "44px rows — GitKraken's spacing",
+  };
+
+  /** The three buttons, each drawn with its own node size so the choice is visible. */
+  const DENSITIES = ROW_DENSITIES.map((id) => {
+    const metrics = densityMetrics(id);
+    return {
+      id,
+      name: id.charAt(0).toUpperCase() + id.slice(1),
+      // The dot in the button is the graph's node at that density, capped so the
+      // roomy one does not outgrow the button.
+      node: Math.round(Math.min(14, metrics.radius * 2)),
+      dots: 3,
+    };
+  });
 
   let customUrlInput = $state("");
 
@@ -258,5 +286,49 @@
         class="w-9 h-5 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"
       ></div>
     </label>
+  </div>
+
+  <!-- Row Density -->
+  <div class="flex flex-col gap-2">
+    <div class="flex items-center justify-between">
+      <span
+        class="text-xs font-semibold uppercase tracking-wider text-ink-muted"
+      >
+        Row Density
+      </span>
+      <span class="text-[11px] text-ink-faint">{DENSITY_NOTES[density]}</span>
+    </div>
+    <div
+      class="grid grid-cols-3 gap-2"
+      role="radiogroup"
+      aria-label="History row density"
+    >
+      {#each DENSITIES as item (item.id)}
+        {@const active = density === item.id}
+        <button
+          type="button"
+          role="radio"
+          aria-checked={active}
+          onclick={() => onDensityChange?.(item.id)}
+          class={cn(
+            "flex items-center gap-2 rounded-lg border p-2 text-left text-xs transition-all",
+            active
+              ? "border-primary bg-primary/10 font-medium text-foreground shadow-xs"
+              : "border-border/60 bg-card/60 hover:border-border hover:bg-accent/40 text-ink-muted",
+          )}
+          data-testid={`settings-density-${item.id}`}
+        >
+          <span class="flex shrink-0 items-center gap-1">
+            {#each Array(item.dots) as _, dot (dot)}
+              <span
+                class="rounded-full bg-ink-faint/70"
+                style="width: {item.node}px; height: {item.node}px"
+              ></span>
+            {/each}
+          </span>
+          <span class="truncate">{item.name}</span>
+        </button>
+      {/each}
+    </div>
   </div>
 </div>

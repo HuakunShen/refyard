@@ -9,10 +9,13 @@
 import { describe, expect, it } from "vitest";
 import { layoutGraph, type GraphRow, type LaneRef } from "@refyard/git-graph";
 import {
+  avatarRadiusFor,
   DEFAULT_METRICS,
   compressedMetrics,
+  densityMetrics,
   edgePath,
   gutterWidth,
+  isRowDensity,
   lanePaint,
   laneX,
   rowCenterY,
@@ -78,6 +81,49 @@ describe("lane positions", () => {
   });
 });
 
+describe("row density", () => {
+  it("scales the row, the lanes, the dots and the strokes together", () => {
+    // The failure this prevents: raising the row height alone, which leaves a roomy
+    // list drawn with compact-width lanes and hairline strokes — the graph stops
+    // matching the rows it is drawn against.
+    const compact = densityMetrics("compact");
+    const comfortable = densityMetrics("comfortable");
+    const roomy = densityMetrics("roomy");
+    for (const [small, large] of [
+      [compact, comfortable],
+      [comfortable, roomy],
+    ] as const) {
+      expect(large.rowHeight).toBeGreaterThan(small.rowHeight);
+      expect(large.laneWidth).toBeGreaterThan(small.laneWidth);
+      expect(large.radius).toBeGreaterThan(small.radius);
+      expect(large.lineWidth).toBeGreaterThan(small.lineWidth);
+      // The stroke stays around 7% of the row at every density: that ratio is what
+      // keeps a roomy graph from looking like a compact one that was stretched.
+      expect(large.lineWidth / large.rowHeight).toBeCloseTo(0.07, 1);
+    }
+  });
+
+  it("draws an avatar at GitKraken's 30% of the row, within floors", () => {
+    expect(avatarRadiusFor(densityMetrics("comfortable"))).toBeCloseTo(10.8, 5);
+    expect(avatarRadiusFor(densityMetrics("roomy"))).toBeCloseTo(13.2, 5);
+    // A compact row still shows a face; a row too short for one keeps the floor.
+    expect(avatarRadiusFor({ ...densityMetrics("compact"), rowHeight: 8 })).toBe(
+      6,
+    );
+  });
+
+  it("recognises only the densities it defines", () => {
+    expect(isRowDensity("roomy")).toBe(true);
+    expect(isRowDensity("spacious")).toBe(false);
+    expect(isRowDensity(null)).toBe(false);
+  });
+
+  it("ships the roomy default GitKraken's spacing asks for", () => {
+    expect(DEFAULT_METRICS).toEqual(densityMetrics("comfortable"));
+    expect(DEFAULT_METRICS.rowHeight).toBe(36);
+  });
+});
+
 describe("compressed metrics", () => {
   it("keeps the base metrics once the column fits the lanes", () => {
     const lanes = 4;
@@ -100,9 +146,37 @@ describe("compressed metrics", () => {
     // Squeezing is proportionate: lanes stay evenly spaced and dots stay round.
     expect(squeezed.laneWidth).toBeLessThan(metrics.laneWidth);
     expect(squeezed.radius).toBeLessThan(metrics.radius);
-    expect(laneX(3, squeezed) - laneX(2, squeezed)).toBe(squeezed.laneWidth);
+    // The padding is part of the span, so it shrinks too — held fixed it would be
+    // the pixels that overflow.
+    expect(squeezed.lanePadding).toBeLessThan(metrics.lanePadding);
+    // Evenly spaced: compared with a tolerance, because a lane centre is a sum of
+    // floats and the difference of two sums is not exactly the addend.
+    expect(laneX(3, squeezed) - laneX(2, squeezed)).toBeCloseTo(
+      squeezed.laneWidth,
+      9,
+    );
+    expect(laneX(2, squeezed) - laneX(1, squeezed)).toBeCloseTo(
+      squeezed.laneWidth,
+      9,
+    );
     // The row height is the list's layout and must never move.
     expect(squeezed.rowHeight).toBe(metrics.rowHeight);
+  });
+
+  it("scales the padding with the span, with a floor of its own", () => {
+    // At the lane-width floor the padding has already scaled by the same factor, so
+    // it is the base padding times that factor, not the base padding.
+    const floorScale = 6 / metrics.laneWidth;
+    const squeezed = compressedMetrics(20, 40, metrics);
+    expect(squeezed.lanePadding).toBeCloseTo(metrics.lanePadding * floorScale, 9);
+    // A roomy base scales further down than its own floor allows: 14px insets at the
+    // lane floor would be 3.2px, which is not an inset any more.
+    const roomy = compressedMetrics(
+      20,
+      40,
+      densityMetrics("roomy"),
+    );
+    expect(roomy.lanePadding).toBe(6);
   });
 
   it("stops shrinking at a legible floor and lets the column clip past it", () => {

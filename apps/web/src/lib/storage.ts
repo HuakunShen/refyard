@@ -66,3 +66,6 @@ export const storeUpdateCheck = (enabled: boolean): void =>
 export const readStoredAvatars = (): boolean => storage.readStoredAvatars();
 export const storeAvatars = (enabled: boolean): void =>
   storage.storeAvatars(enabled);
+export const readStoredDensity = (): string => storage.readStoredDensity();
+export const storeDensity = (density: string | null): void =>
+  storage.storeDensity(density);

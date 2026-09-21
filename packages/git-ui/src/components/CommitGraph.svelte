@@ -16,6 +16,7 @@
    */
   import type { GraphRow } from "@refyard/git-graph";
   import {
+    avatarRadiusFor,
     DEFAULT_METRICS,
     rowGeometry,
     type GraphMetrics,
@@ -51,9 +52,7 @@
 
   // The avatar keeps a photo-sized node even when the lanes are squeezed; the
   // ring rides just outside it.
-  const avatarRadius = $derived(
-    Math.max(6, Math.min(9, metrics.rowHeight / 2 - 5)),
-  );
+  const avatarRadius = $derived(avatarRadiusFor(metrics));
 
   let failedAvatars = $state<ReadonlySet<string>>(new Set());
 </script>
@@ -65,7 +64,7 @@
         d={segment.path}
         fill="none"
         stroke={segment.paint}
-        stroke-width="2"
+        stroke-width={metrics.lineWidth}
         stroke-linecap="round"
       />
     {/each}
@@ -90,7 +89,7 @@
         r={avatarRadius + 1}
         fill="var(--color-panel, currentColor)"
         stroke={entry.geometry.circle.paint}
-        stroke-width="1.5"
+        stroke-width={Math.max(1.5, metrics.lineWidth * 0.6)}
       />
       <clipPath id={`graph-avatar-${entry.row.id}`}>
         <circle

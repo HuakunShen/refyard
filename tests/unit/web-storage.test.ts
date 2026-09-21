@@ -135,6 +135,17 @@ describe("the browser's stored session", () => {
     expect(session.getItem("refyard.baseUrl")).toBeNull();
   });
 
+  it("reads a row density as a name, and defaults to the comfortable one", () => {
+    // Stored as a name rather than a pixel count: a later change to the density scale
+    // must not have to interpret numbers written by an older build.
+    expect(storage.readStoredDensity()).toBe("comfortable");
+
+    storage.storeDensity("roomy");
+
+    expect(storage.readStoredDensity()).toBe("roomy");
+    expect(local.getItem("refyard.appearance.density")).toBe("roomy");
+  });
+
   it("reads as unpaired when the browser refuses storage entirely", () => {
     // Private modes and blocked site data must not turn into a crash: the workbench opens
     // unpaired, and the pairing URL still works.
