@@ -12,7 +12,7 @@
 
 [package]
 name = "refyard-desktop"
-version = "0.1.1"
+version = "0.1.2"
 description = "Refyard desktop shell: the native workbench host the WebView talks to."
 edition = "2021"
 rust-version = "1.98"
@@ -28,7 +28,11 @@ name = "refyard-desktop"
 path = "src/main.rs"
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# `devtools` keeps the WebView inspector available in release builds: the context
+# menu's Inspect Element is the only way to interrogate a live wedge (stuck input,
+# stray overlays) on an installed copy. Revisit if this ever ships to a hostile
+# distribution channel — the inspector weakens the binary's opacity.
+tauri = { version = "2", features = ["devtools"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-process = "2"
 tauri-plugin-updater = "2"

@@ -273,10 +273,15 @@ mod tests {
         let script = format!(
             "#!/bin/sh\ncase \"$*\" in *-V*) echo \"OpenSSH_9.0p1 FakeSSH\" >&2; exit 0;; esac\n{refusal}echo \"ssh: connect to host 127.0.0.1 port 1: Connection refused\" >&2\nexit 255\n"
         );
-        std::fs::write(&path, script).expect("write the fake ssh");
+        // Write to a staging name and rename into place: on Linux an execve racing the
+        // just-closed write handle answers ETXTBSY ("Text file busy") and the probe
+        // reports the wrong failure. A rename publishes a file nobody holds for writing.
+        let staging = directory.path().join("ssh.staging");
+        std::fs::write(&staging, script).expect("write the fake ssh");
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))
+        std::fs::set_permissions(&staging, std::fs::Permissions::from_mode(0o700))
             .expect("make the fake ssh executable");
+        std::fs::rename(&staging, &path).expect("publish the fake ssh");
         (directory, path)
     }
 
