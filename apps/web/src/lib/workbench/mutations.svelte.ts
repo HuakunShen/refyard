@@ -1047,6 +1047,23 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     );
   }
 
+  /**
+   * Revert one completed commit: a new commit applying the inverse patch, with
+   * Git's own message and the user's hooks. The host aborts a conflicted revert
+   * before reporting, so a refusal here leaves the branch exactly as it was.
+   */
+  function onCommitRevert(oid: string): void {
+    void performWrite(
+      "commit-revert",
+      () => ({ kind: "revertCommit", oid }),
+      (message, context) => {
+        stagingMessage =
+          message === null || context === null ? null : { context, message };
+      },
+      "worktree",
+    );
+  }
+
   function onTagDelete(tagName: string): void {
     void performWrite(
       "tag-delete",
@@ -1329,6 +1346,7 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     onStashPop,
     onStashDrop,
     onTagCreate,
+    onCommitRevert,
     onTagDelete,
     onTagPush,
     onWorktreeCreate,

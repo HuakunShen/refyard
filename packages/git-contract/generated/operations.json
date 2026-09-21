@@ -246,7 +246,14 @@
         "worktree"
       ],
       "payloadSchema": "AbortMergeOperation"
+    },
+    {
+      "kind": "revertCommit",
+      "targets": [
+        "worktree"
+      ],
+      "payloadSchema": "RevertCommitOperation"
     }
   ],
-  "count": 35
+  "count": 36
 }

@@ -481,6 +481,17 @@ const OPERATION_SCHEMAS = {
       description:
         "Abort the in-progress merge. When Git cannot restore the previous state, the diagnostic is reported instead of a reset fallback.",
     }),
+
+  revertCommit: z
+    .strictObject({
+      kind: z.literal("revertCommit"),
+      oid: objectIdSchema,
+    })
+    .meta({
+      id: "RevertCommitOperation",
+      description:
+        "Create a commit that undoes one completed commit, with Git's own revert message and with the user's hooks running. A merge commit is refused: picking which parent to keep is a decision this build does not make. A conflict is aborted before it is reported, so the operation either completes or leaves nothing behind.",
+    }),
 } as const;
 
 export { OPERATION_SCHEMAS };
@@ -527,6 +538,7 @@ export const OPERATION_TARGET_LIST = [
   ["merge", ["worktree"]],
   ["continueMerge", ["worktree"]],
   ["abortMerge", ["worktree"]],
+  ["revertCommit", ["worktree"]],
 ] as const;
 
 export type MutationKind = (typeof OPERATION_TARGET_LIST)[number][0];
@@ -575,9 +587,9 @@ type Expect<T extends true> = T;
 export type _SchemasMatchTargetList = Expect<
   Equal<keyof typeof OPERATION_SCHEMAS, MutationKind>
 >;
-/** The documented union has exactly 35 members; a list edit that changes that stops compiling. */
+/** The documented union has exactly 36 members; a list edit that changes that stops compiling. */
 export type _MutationCount = Expect<
-  Equal<(typeof OPERATION_TARGET_LIST)["length"], 35>
+  Equal<(typeof OPERATION_TARGET_LIST)["length"], 36>
 >;
 
 /** Operations that can destroy work and therefore require explicit confirmation. */

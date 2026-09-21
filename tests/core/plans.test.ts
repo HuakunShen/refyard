@@ -44,6 +44,9 @@ import {
   planStatus,
   planUnstage,
   planUnstageUnborn,
+  planRevertAbort,
+  planRevertCommit,
+  planRevertInProgress,
   type GitCommandSpec,
 } from "@refyard/git-core";
 import { createRepo } from "../support/repo.js";
@@ -100,6 +103,9 @@ function allSpecs(): GitCommandSpec[] {
       destination: "/root/cloned",
       initializeSubmodules: false,
     }),
+    planRevertCommit(context, { oid: "a".repeat(40) }),
+    planRevertInProgress(context),
+    planRevertAbort(context),
   ];
 }
 
@@ -356,6 +362,48 @@ describe("commit planning", () => {
       "--amend",
       "--no-edit",
     ]);
+  });
+});
+
+describe("revert planning", () => {
+  // `--no-edit` keeps Git's own revert message and keeps hooks running; a revert
+  // that stops for a message editor would hang the queue on a UI the host cannot show.
+  it("reverts one object name with the message editor disabled", () => {
+    const spec = planRevertCommit(context, { oid: "b".repeat(40) });
+    expect(spec.argv).toEqual(["revert", "--no-edit", "b".repeat(40)]);
+    expect(spec.stdin).toBeUndefined();
+  });
+
+  it("probes REVERT_HEAD as a read and aborts as a write", () => {
+    expect(planRevertInProgress(context).argv).toEqual([
+      "rev-parse",
+      "--verify",
+      "--quiet",
+      "REVERT_HEAD",
+    ]);
+    expect(planRevertAbort(context).argv).toEqual(["revert", "--abort"]);
+  });
+
+  it("reverts a real commit and records the undo commit Git writes", async () => {
+    const repo = await createRepo({ initialCommit: true });
+    try {
+      await repo.write("a.txt", "second\n");
+      const second = await repo.commitAll("second");
+      const before = await repo.headOid();
+
+      const spec = planRevertCommit(context, { oid: second });
+      await repo.git(spec.argv, { stdin: spec.stdin });
+
+      const subject = new TextDecoder()
+        .decode(await repo.git(["log", "-1", "--format=%s"]))
+        .trim();
+      expect(subject).toEqual('Revert "second"');
+      expect(await repo.readText("a.txt")).toEqual("base\n");
+      expect((await repo.headOid()).trim()).not.toEqual(before.trim());
+      expect((await repo.headOid()).trim()).not.toEqual(second);
+    } finally {
+      await repo.dispose();
+    }
   });
 });
 

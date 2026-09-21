@@ -18,10 +18,7 @@ import {
   type ClientRequestId,
 } from "./ids.js";
 import { historyQuerySchema, type HistoryQuery } from "./reads.js";
-import {
-  createTargetRequestSchema,
-  type CreateTargetRequest,
-} from "./host.js";
+import { createTargetRequestSchema, type CreateTargetRequest } from "./host.js";
 import { LIMITS } from "./limits.js";
 import {
   branchNameSchema,
@@ -637,6 +634,11 @@ export function validateOperationSemantics(
         : validateCommitMessage(operation.message);
 
     case "abortMerge":
+      return [];
+
+    case "revertCommit":
+      // One object name, no cross-field rules: the oid schema already refuses
+      // everything that is not a full object name, and there is no second field.
       return [];
   }
 }

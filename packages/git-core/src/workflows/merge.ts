@@ -61,7 +61,7 @@ export type MergeOutcome =
   | { readonly kind: "gitRefused"; readonly refusal: CommandRefusal }
   | { readonly kind: "unknown"; readonly code: GitFailureCode };
 
-function failureCodeOf(termination: string): GitFailureCode {
+export function failureCodeOf(termination: string): GitFailureCode {
   switch (termination) {
     case "timeout":
       return "GitTimedOut";
@@ -76,7 +76,7 @@ function failureCodeOf(termination: string): GitFailureCode {
   }
 }
 
-function isUncertain(code: GitFailureCode): boolean {
+export function isUncertain(code: GitFailureCode): boolean {
   return (
     code === "GitTimedOut" ||
     code === "GitTerminatedBySignal" ||

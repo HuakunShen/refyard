@@ -512,7 +512,7 @@ describe("git client", () => {
       const missing = capabilities.unavailable[0];
       expect(missing?.code).toBe("not-implemented");
       expect(missing?.message.length).toBeGreaterThan(0);
-      expect(missing?.operations.length).toBe(35);
+      expect(missing?.operations.length).toBe(36);
       expect(missing?.operations).toContain("initRepository");
     } finally {
       await none.close();

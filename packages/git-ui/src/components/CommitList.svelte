@@ -137,6 +137,12 @@
     onDeleteBranch?: (branchName: string) => void;
     onDeleteTag?: (tagName: string) => void;
     /**
+     * Undo one completed commit with Git's own revert. The component only
+     * asks for confirmation; the host refuses merges, aborts conflicts, and
+     * reports anything uncertain as unknown. Absent means the host cannot.
+     */
+    onRevertCommit?: (commit: CommitSummary) => void;
+    /**
      * Author photos from GitHub, keyed off noreply commit emails. On by
      * default; a privacy-conscious host can turn the column to initials only.
      */
@@ -176,6 +182,7 @@
     onMergeBranch = undefined,
     onDeleteBranch = undefined,
     onDeleteTag = undefined,
+    onRevertCommit = undefined,
     showAvatars = true,
     remoteAvatars = undefined,
     class: className = "",
@@ -484,6 +491,18 @@
               onSelect: () => openRefDialog("tag", commit),
             },
           ]),
+      ...(onRevertCommit === undefined
+        ? []
+        : [
+            { kind: "separator" as const, id: "revert-separator" },
+            {
+              kind: "action" as const,
+              id: "revert-commit",
+              label: "Revert Commit…",
+              disabled: contextDisabled,
+              onSelect: () => askRevert(commit),
+            },
+          ]),
       { kind: "separator" as const, id: "copy-separator" },
       ...(onCopyOid === undefined
         ? []
@@ -559,6 +578,14 @@
   function askDelete(kind: "branch" | "tag", name: string): void {
     pendingDelete = { kind, name };
     deleteDialogOpen = true;
+  }
+
+  let revertDialogOpen = $state(false);
+  let pendingRevert = $state<CommitSummary | null>(null);
+
+  function askRevert(commit: CommitSummary): void {
+    pendingRevert = commit;
+    revertDialogOpen = true;
   }
 
   function refActionsFor(
@@ -687,7 +714,10 @@
     }
     let actions: readonly ContextAction[] = refActionsFor(primary.ref);
     for (const entry of group.refs) {
-      if (entry.refName === group.primaryRefName || entry.ref.kind !== "remote") {
+      if (
+        entry.refName === group.primaryRefName ||
+        entry.ref.kind !== "remote"
+      ) {
         continue;
       }
       actions = [
@@ -808,8 +838,7 @@
       expandedRef = null;
       return;
     }
-    const label =
-      badge.querySelector<HTMLElement>("span.truncate") ?? badge;
+    const label = badge.querySelector<HTMLElement>("span.truncate") ?? badge;
     if (label.scrollWidth <= label.clientWidth + 1) {
       expandedRef = null;
       return;
@@ -1031,7 +1060,7 @@
                 rows={visibleRows}
                 startIndex={firstVisible}
                 metrics={graphMetrics}
-                avatarByOid={avatarByOid}
+                {avatarByOid}
                 {selectedOid}
               />
             </svg>
@@ -1118,8 +1147,7 @@
                               <Laptop />
                             {/if}
                             {#each group.remotes as remoteName (remoteName)}
-                              {#if remoteAvatars?.get(remoteName) !== undefined &&
-                                !failedRemoteAvatars.has(remoteName)}
+                              {#if remoteAvatars?.get(remoteName) !== undefined && !failedRemoteAvatars.has(remoteName)}
                                 <img
                                   src={remoteAvatars.get(remoteName)}
                                   alt=""
@@ -1145,10 +1173,7 @@
                         </button>
                       {/each}
                       {#if groups.length > 3}
-                        <Badge
-                          tone="muted"
-                          title={commit.refNames.join(", ")}
-                        >
+                        <Badge tone="muted" title={commit.refNames.join(", ")}>
                           +{groups.length - 3}
                         </Badge>
                       {/if}
@@ -1171,7 +1196,11 @@
                         ? "font-medium text-foreground"
                         : "text-foreground/90",
                     )}
-                    style="width: {messageCell !== undefined ? messageCell.width : 160}px; min-width: {messageCell !== undefined ? messageCell.width : 160}px; flex: none"
+                    style="width: {messageCell !== undefined
+                      ? messageCell.width
+                      : 160}px; min-width: {messageCell !== undefined
+                      ? messageCell.width
+                      : 160}px; flex: none"
                   >
                     <span
                       class="min-w-0 flex-1 truncate text-sm"
@@ -1258,8 +1287,7 @@
                         <Laptop />
                       {/if}
                       {#each expandedRef.remotes as remoteName (remoteName)}
-                        {#if remoteAvatars?.get(remoteName) !== undefined &&
-                          !failedRemoteAvatars.has(remoteName)}
+                        {#if remoteAvatars?.get(remoteName) !== undefined && !failedRemoteAvatars.has(remoteName)}
                           <img
                             src={remoteAvatars.get(remoteName)}
                             alt=""
@@ -1360,4 +1388,24 @@
     pendingDelete = null;
   }}
   data-testid="commit-ref-delete-dialog"
+/>
+
+<ConfirmDialog
+  bind:open={revertDialogOpen}
+  title={pendingRevert === null
+    ? "Revert commit"
+    : `Revert "${pendingRevert.subject}"?`}
+  description="Creates a new commit that undoes this one, with Git's own revert message and your hooks running. Merge commits are refused, and if the revert conflicts with your working tree it is aborted, so your branch comes out unchanged."
+  confirmLabel={pendingRevert === null
+    ? "Revert"
+    : `Revert "${pendingRevert.subject}"`}
+  disabled={pendingRevert === null || contextDisabled}
+  onConfirm={() => {
+    if (pendingRevert === null) {
+      return;
+    }
+    onRevertCommit?.(pendingRevert);
+    pendingRevert = null;
+  }}
+  data-testid="commit-revert-dialog"
 />

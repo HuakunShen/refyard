@@ -22,6 +22,7 @@ import { OPERATION_SCHEMAS } from "@refyard/git-contract";
 import {
   pathKey,
   commitIndex,
+  revertCommit,
   restoreSelectedPaths,
   selectDiscardablePaths,
   stageSelectedPaths,
@@ -489,7 +490,62 @@ export function createStagingEffects(
     }
   }
 
-  return [stageEffect, unstageEffect, discardEffect, commitEffect, amendEffect];
+  const revertEffect = createEffect({
+    kind: "revertCommit",
+    schema: OPERATION_SCHEMAS.revertCommit,
+    async run({ request, operation, operationId }) {
+      const facts = await resolveFacts(request, operationId);
+      if (!facts.ok) {
+        return failed(facts.problem);
+      }
+      const outcome = await revertCommit(
+        options.engine,
+        { cwdHandle: facts.value.cwdHandle },
+        { oid: operation.oid },
+      );
+      switch (outcome.kind) {
+        case "reverted":
+          return {
+            kind: "succeeded",
+            result: resultOf({
+              summary: `reverted commit, new head ${outcome.head?.oid ?? "unknown"}`,
+              changedPaths: null,
+              newHeadOid: outcome.head?.oid ?? null,
+            }),
+          };
+        case "refused":
+          return failedOp(operationId, "Conflict", outcome.reason);
+        case "mergeRefused":
+          return failedOp(
+            operationId,
+            "InvalidRequest",
+            "that commit is a merge; reverting it needs a choice of parent that this build does not make",
+          );
+        case "conflictAborted":
+          return failedOp(
+            operationId,
+            "Conflict",
+            `the revert conflicted with your working tree and was aborted, so nothing was written: ${outcome.diagnostic}`,
+          );
+        case "gitRefused":
+          return writeOutcomeFromGit(operationId, outcome.refusal);
+        case "unknown":
+          return unknownOutcome(
+            operationId,
+            "whether the revert ran is not established; look at the repository with git before writing again",
+          );
+      }
+    },
+  });
+
+  return [
+    stageEffect,
+    unstageEffect,
+    discardEffect,
+    commitEffect,
+    amendEffect,
+    revertEffect,
+  ];
 }
 
 /** The mutation kinds this module turns on, in capabilities order. */
@@ -499,4 +555,5 @@ export const STAGING_MUTATION_KINDS: readonly MutationKind[] = [
   "discardTrackedPaths",
   "commit",
   "amendCommit",
+  "revertCommit",
 ];

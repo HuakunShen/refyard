@@ -937,6 +937,7 @@
   const onBranchMerge = writeController.onBranchMerge;
   const onBranchDelete = writeController.onBranchDelete;
   const onTagDelete = writeController.onTagDelete;
+  const onCommitRevert = writeController.onCommitRevert;
 
   function onCommitCreateBranch(
     commit: CommitSummary,
@@ -1557,6 +1558,9 @@
                 : undefined}
               onDeleteTag={graphMenuOperations.has("deleteTag")
                 ? (tagName) => onTagDelete(tagName)
+                : undefined}
+              onRevertCommit={graphMenuOperations.has("revertCommit")
+                ? (commit) => onCommitRevert(commit.oid)
                 : undefined}
               showAvatars={avatars}
               {remoteAvatars}
