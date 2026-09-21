@@ -86,12 +86,13 @@ export function operationIdFromSubmission(
 export function branchCreateOperation(
   branchName: string,
   startOid: string | null = null,
+  switchToIt = false,
 ) {
   return {
     kind: "createBranch" as const,
     branchName,
     startOid,
-    switchToIt: false,
+    switchToIt,
   };
 }
 

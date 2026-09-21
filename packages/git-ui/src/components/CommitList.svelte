@@ -158,6 +158,13 @@
      */
     onCherryPickCommit?: (commit: CommitSummary) => void;
     /**
+     * Check a remote-tracking branch out into a new local branch of the same
+     * name at the ref's commit, then switch to it. The menu item only offers
+     * remote branches that have no local twin on the same commit. Absent
+     * means the host cannot.
+     */
+    onCheckoutRemoteBranch?: (branchName: string, startOid: string) => void;
+    /**
      * Add a linked worktree whose new branch starts at this commit. The
      * component asks for the destination and branch name; the host's own
      * validation refuses paths that leave the approved root. Absent means the
@@ -212,6 +219,7 @@
     onResetBranch = undefined,
     onCreateWorktreeAt = undefined,
     onCherryPickCommit = undefined,
+    onCheckoutRemoteBranch = undefined,
     showAvatars = true,
     remoteAvatars = undefined,
     class: className = "",
@@ -683,6 +691,7 @@
 
   function refActionsFor(
     ref: ReturnType<typeof classifyCommitRef>,
+    commit: CommitSummary,
   ): readonly ContextAction[] {
     if (ref.kind === "local") {
       const isCurrent =
@@ -776,8 +785,34 @@
             ]),
       ];
     }
-    // Remote-tracking refs and anything unmodelled: this menu has no write for
-    // them, so the honest menu is the copy-only one.
+    if (ref.kind === "remote") {
+      return [
+        ...(onCheckoutRemoteBranch !== undefined
+          ? [
+              {
+                kind: "action" as const,
+                id: "checkout-remote",
+                label: `Checkout ${ref.remoteName}/${ref.branchName} as Local Branch`,
+                disabled: contextDisabled,
+                onSelect: () =>
+                  onCheckoutRemoteBranch(ref.branchName, commit.oid),
+              },
+            ]
+          : []),
+        ...(onCopyText === undefined
+          ? []
+          : [
+              {
+                kind: "action" as const,
+                id: "copy-name",
+                label: "Copy Name",
+                onSelect: () => onCopyText(commitRefDisplayName(ref)),
+              },
+            ]),
+      ];
+    }
+    // Anything else unmodelled: this menu has no write for it, so the honest
+    // menu is the copy-only one.
     return [
       ...(onCopyText === undefined
         ? []
@@ -792,7 +827,11 @@
     ];
   }
 
-  function openRefMenu(event: MouseEvent, group: CommitRefBadgeGroup): void {
+  function openRefMenu(
+    event: MouseEvent,
+    group: CommitRefBadgeGroup,
+    commit: CommitSummary,
+  ): void {
     event.preventDefault();
     event.stopPropagation();
     // One pill can stand for several refs (local branch + its remote twins).
@@ -805,7 +844,7 @@
     if (primary === undefined) {
       return;
     }
-    let actions: readonly ContextAction[] = refActionsFor(primary.ref);
+    let actions: readonly ContextAction[] = refActionsFor(primary.ref, commit);
     for (const entry of group.refs) {
       if (
         entry.refName === group.primaryRefName ||
@@ -1230,7 +1269,8 @@
                             .map((entry) => entry.refName)
                             .join(" ")}
                           onclick={() => onSelect(commit)}
-                          oncontextmenu={(event) => openRefMenu(event, group)}
+                          oncontextmenu={(event) =>
+                            openRefMenu(event, group, commit)}
                           onmouseenter={(event) =>
                             expandRefGroup(event, commit.oid, group)}
                           onmouseleave={() => clearExpandedRef(commit.oid)}

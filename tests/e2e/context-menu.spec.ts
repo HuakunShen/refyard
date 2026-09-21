@@ -326,6 +326,60 @@ test.describe("Git context menus", () => {
     await page.getByTestId("working-copy-discard-dialog-confirm").click();
     await expect.poll(() => repo.readText("a.txt")).toBe("second\n");
   });
+  test("checks a remote branch out as a local branch from its context menu", async ({
+    page,
+  }) => {
+    const remote = await createBareRemote();
+    try {
+      await repo.git(["remote", "add", "origin", remote.path]);
+      await repo.git(["switch", "-c", "feature"]);
+      await repo.write("feature.txt", "feature\n");
+      await repo.commitAll("feature");
+      const featureOid = (await repo.headOid()).trim();
+      await repo.git(["push", "origin", "feature"]);
+      await repo.git(["switch", "main"]);
+      // Drop the local twin so the remote ref renders its own pill: with a
+      // local branch present the two merge into one badge, whose menu is the
+      // local branch's.
+      await repo.git(["branch", "-D", "feature"]);
+
+      await page.goto(service.pairingUrl);
+      // The remote branch has no local twin, so it renders its own pill whose
+      // menu offers the checkout — GitKraken's "checkout remote branch".
+      const badge = page.getByTestId("commit-ref-refs/remotes/origin/feature");
+      await expect(badge).toBeVisible();
+      await badge.click({ button: "right" });
+      const item = page.getByTestId(
+        "commit-ref-context-refs/remotes/origin/feature-checkout-remote",
+      );
+      await expect(item).toHaveText("Checkout origin/feature as Local Branch");
+      await item.click();
+
+      // gitResult, not git: a poll callback that throws fails the test on its
+      // first evaluation instead of retrying until the branch appears.
+      await expect
+        .poll(async () => {
+          const result = await repo.gitResult([
+            "rev-parse",
+            "refs/heads/feature",
+          ]);
+          return result.code === 0
+            ? new TextDecoder().decode(result.stdout).trim()
+            : "(pending)";
+        })
+        .toBe(featureOid);
+      await expect
+        .poll(async () =>
+          new TextDecoder()
+            .decode(await repo.git(["branch", "--show-current"]))
+            .trim(),
+        )
+        .toBe("feature");
+    } finally {
+      await remote.dispose();
+    }
+  });
+
   test("targets the clicked remote and confirms removal", async ({ page }) => {
     const remote = await createBareRemote();
     try {

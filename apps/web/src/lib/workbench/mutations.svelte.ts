@@ -799,6 +799,22 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     );
   }
 
+  /**
+   * Check a remote-tracking branch out into a new local branch of the same
+   * name, created at the commit the remote ref points at and checked out
+   * immediately — one createBranch with switchToIt.
+   */
+  function onRemoteBranchCheckout(branchName: string, startOid: string): void {
+    void performWrite(
+      "remote-branch-checkout",
+      () => branchCreateOperation(branchName, startOid, true),
+      (result) => {
+        branchMessage = result;
+      },
+      "repository",
+    );
+  }
+
   function onBranchSwitch(branchName: string): void {
     void performWrite(
       "switch-branch",
@@ -1397,6 +1413,7 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     onAmend,
     onBranchCreate,
     onBranchSwitch,
+    onRemoteBranchCheckout,
     onBranchRename,
     onBranchDelete,
     onBranchSetUpstream,
