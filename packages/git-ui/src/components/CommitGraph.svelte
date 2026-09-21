@@ -18,6 +18,8 @@
   import {
     avatarRadiusFor,
     DEFAULT_METRICS,
+    lanePaint,
+    refConnectorPath,
     rowGeometry,
     type GraphMetrics,
   } from "../lib/geometry.js";
@@ -72,6 +74,17 @@
     {@const failed = failedAvatars.has(entry.row.id)}
     {@const nodeRadius =
       avatarUrl !== undefined && !failed ? avatarRadius : metrics.radius}
+    {#if entry.row.refNames.length > 0}
+      <!-- The label sits in the column to the left; this is the line that ties it to
+           the node it names. -->
+      <path
+        d={refConnectorPath(entry.row.laneIndex, entry.index, metrics)}
+        fill="none"
+        stroke={lanePaint(entry.row.laneColor)}
+        stroke-width={metrics.lineWidth}
+        stroke-linecap="round"
+      />
+    {/if}
     {#if entry.row.id === selectedOid}
       <circle
         cx={entry.geometry.circle.cx}

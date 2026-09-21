@@ -183,6 +183,24 @@ export function compressedMetrics(
 }
 
 /**
+ * The short horizontal line from a ref label into the graph, GitKraken-style.
+ *
+ * A branch or tag label lives in the column to the left of the graph, so without this
+ * the pill and the lane it names are two things a reader has to join up themselves.
+ * GitKraken draws the join, and it is what makes a branch tip read as "this line starts
+ * here". It runs from the column's left edge to the node's centre at the node's own y.
+ */
+export function refConnectorPath(
+  laneIndex: number,
+  index: number,
+  metrics: GraphMetrics = DEFAULT_METRICS,
+): string {
+  const cx = laneX(laneIndex, metrics);
+  const cy = rowCenterY(index, metrics);
+  return `M 0 ${format(cy)} L ${format(cx)} ${format(cy)}`;
+}
+
+/**
  * One edge between two points.
  *
  * A straight segment when the x positions match (a lane continuing through, or a first

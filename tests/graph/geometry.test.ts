@@ -18,6 +18,7 @@ import {
   isRowDensity,
   lanePaint,
   laneX,
+  refConnectorPath,
   rowCenterY,
   rowGeometry,
   type GraphMetrics,
@@ -191,6 +192,23 @@ describe("compressed metrics", () => {
     // Past the floor the gutter may exceed the column; the SVG clips, which is
     // exactly what a hard-squeezed GitKraken graph does.
     expect(gutterWidth(20, squeezed)).toBeGreaterThan(40);
+  });
+});
+
+describe("ref connectors", () => {
+  it("runs from the column's left edge to the node's centre on the node's row", () => {
+    // The failure this prevents: a branch pill in the BRANCH/TAG column and its lane in
+    // the graph column reading as two unrelated things. GitKraken draws the join.
+    expect(refConnectorPath(2, 3, metrics)).toBe(
+      `M 0 ${rowCenterY(3, metrics)} L ${laneX(2, metrics)} ${rowCenterY(3, metrics)}`,
+    );
+  });
+
+  it("is horizontal, so it never looks like an edge of the graph", () => {
+    const path = refConnectorPath(1, 5, metrics);
+    const [, startY] = path.split(" ").slice(1, 3);
+    const endY = path.split(" ").at(-1);
+    expect(endY).toBe(startY);
   });
 });
 
