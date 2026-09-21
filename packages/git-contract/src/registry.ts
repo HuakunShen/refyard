@@ -57,6 +57,15 @@ import { OPERATION_SCHEMAS } from "./operations.js";
 import { MutationRequestSchema, operationAcceptedSchema } from "./requests.js";
 import { problemResponseSchema, problemSchema } from "./errors.js";
 import {
+  connectProviderRequestSchema,
+  disconnectProviderRequestSchema,
+  providerConnectionSchema,
+  providerConnectionsResponseSchema,
+  providerIdSchema,
+  providerPullRequestSchema,
+  providerPullRequestsResponseSchema,
+} from "./provider.js";
+import {
   capabilitiesQuerySchema,
   capabilitiesResponseSchema,
   cancelOperationRequestSchema,
@@ -233,6 +242,13 @@ export const CONTRACT_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   CreateTargetRequest: createTargetRequestSchema,
   DisconnectTargetRequest: disconnectTargetRequestSchema,
   AcknowledgeUncertainOperationRequest: acknowledgeUncertainOperationRequestSchema,
+  ProviderId: providerIdSchema,
+  ProviderConnection: providerConnectionSchema,
+  ProviderConnectionsResponse: providerConnectionsResponseSchema,
+  ConnectProviderRequest: connectProviderRequestSchema,
+  DisconnectProviderRequest: disconnectProviderRequestSchema,
+  ProviderPullRequest: providerPullRequestSchema,
+  ProviderPullRequestsResponse: providerPullRequestsResponseSchema,
 };
 
 /** Names of the individual operation payload schemas, keyed by operation kind. */

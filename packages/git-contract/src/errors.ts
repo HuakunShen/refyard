@@ -49,6 +49,14 @@ export const PROBLEM_CODES = [
   "Cancelled",
   /** This service build cannot serve the request (missing Git, unsupported filesystem semantics). */
   "Unavailable",
+  /** No forge connection exists for the requested provider — the user has not connected one. */
+  "ProviderNotConnected",
+  /** The repository has no remote pointing at the requested provider. */
+  "NoProviderRemote",
+  /** The provider rejected the stored credential; the user must reconnect. */
+  "ProviderUnauthorized",
+  /** The provider rate-limited the request; retry later, never in a tight loop. */
+  "ProviderRateLimited",
   /** A defect in this service. Includes a correlation id, not a stack trace. */
   "InternalError",
 ] as const;

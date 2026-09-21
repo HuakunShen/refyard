@@ -67,7 +67,7 @@
           "$ref": "#/$defs/SnapshotId"
         },
         "confirmed": {
-          "$ref": "#/$defs/__schema376"
+          "$ref": "#/$defs/__schema377"
         }
       },
       "required": [
@@ -208,10 +208,10 @@
       "type": "object",
       "properties": {
         "targetId": {
-          "$ref": "#/$defs/__schema330"
+          "$ref": "#/$defs/__schema331"
         },
         "repositoryId": {
-          "$ref": "#/$defs/__schema331"
+          "$ref": "#/$defs/__schema332"
         }
       },
       "additionalProperties": false,
@@ -238,14 +238,17 @@
         "reads": {
           "$ref": "#/$defs/__schema182"
         },
-        "operations": {
+        "providers": {
           "$ref": "#/$defs/__schema183"
+        },
+        "operations": {
+          "$ref": "#/$defs/__schema184"
         },
         "limits": {
           "$ref": "#/$defs/RuntimeLimits"
         },
         "unavailable": {
-          "$ref": "#/$defs/__schema184"
+          "$ref": "#/$defs/__schema185"
         }
       },
       "required": [
@@ -316,40 +319,40 @@
           "$ref": "#/$defs/ObjectId"
         },
         "parents": {
-          "$ref": "#/$defs/__schema231"
+          "$ref": "#/$defs/__schema232"
         },
         "treeOid": {
           "$ref": "#/$defs/ObjectId"
         },
         "authorName": {
-          "$ref": "#/$defs/__schema232"
+          "$ref": "#/$defs/__schema233"
         },
         "authorEmail": {
-          "$ref": "#/$defs/__schema233"
+          "$ref": "#/$defs/__schema234"
         },
         "authoredAt": {
           "$ref": "#/$defs/Timestamp"
         },
         "committerName": {
-          "$ref": "#/$defs/__schema234"
+          "$ref": "#/$defs/__schema235"
         },
         "committerEmail": {
-          "$ref": "#/$defs/__schema235"
+          "$ref": "#/$defs/__schema236"
         },
         "committedAt": {
           "$ref": "#/$defs/Timestamp"
         },
         "subject": {
-          "$ref": "#/$defs/__schema236"
-        },
-        "body": {
           "$ref": "#/$defs/__schema237"
         },
-        "encoding": {
+        "body": {
           "$ref": "#/$defs/__schema238"
         },
-        "signed": {
+        "encoding": {
           "$ref": "#/$defs/__schema239"
+        },
+        "signed": {
+          "$ref": "#/$defs/__schema240"
         }
       },
       "required": [
@@ -400,16 +403,16 @@
           "$ref": "#/$defs/ObjectId"
         },
         "parents": {
-          "$ref": "#/$defs/__schema223"
-        },
-        "subject": {
           "$ref": "#/$defs/__schema224"
         },
-        "authorName": {
+        "subject": {
           "$ref": "#/$defs/__schema225"
         },
-        "authorEmail": {
+        "authorName": {
           "$ref": "#/$defs/__schema226"
+        },
+        "authorEmail": {
+          "$ref": "#/$defs/__schema227"
         },
         "authoredAt": {
           "$ref": "#/$defs/Timestamp"
@@ -418,16 +421,16 @@
           "$ref": "#/$defs/Timestamp"
         },
         "refNames": {
-          "$ref": "#/$defs/__schema227"
-        },
-        "signed": {
           "$ref": "#/$defs/__schema228"
         },
-        "boundary": {
+        "signed": {
           "$ref": "#/$defs/__schema229"
         },
-        "missingParents": {
+        "boundary": {
           "$ref": "#/$defs/__schema230"
+        },
+        "missingParents": {
+          "$ref": "#/$defs/__schema231"
         }
       },
       "required": [
@@ -445,6 +448,23 @@
       ],
       "additionalProperties": false,
       "description": "One row of history. `boundary` marks a shallow/grafted edge and `missingParents` names parents whose objects are absent, so a UI never draws an unloaded parent as a root."
+    },
+    "ConnectProviderRequest": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/ProviderId"
+        },
+        "token": {
+          "$ref": "#/$defs/__schema383"
+        }
+      },
+      "required": [
+        "provider",
+        "token"
+      ],
+      "additionalProperties": false,
+      "description": "The token is validated against the provider before anything is stored, lives only in the host's private state, and is never returned by any read."
     },
     "ContinueCherryPickOperation": {
       "type": "object",
@@ -567,13 +587,13 @@
     "CreateTargetRequest": {
       "anyOf": [
         {
-          "$ref": "#/$defs/__schema373"
-        },
-        {
           "$ref": "#/$defs/__schema374"
         },
         {
           "$ref": "#/$defs/__schema375"
+        },
+        {
+          "$ref": "#/$defs/__schema376"
         }
       ],
       "description": "Selects where future Git work runs: this machine, a candidate from the host list, or a manually entered alias bound to the config source it should be read from. Credentials are never part of this request."
@@ -656,28 +676,28 @@
           "$ref": "#/$defs/DisplayPath"
         },
         "oldPathId": {
-          "$ref": "#/$defs/__schema276"
-        },
-        "oldDisplayPath": {
           "$ref": "#/$defs/__schema277"
         },
-        "changeKind": {
+        "oldDisplayPath": {
           "$ref": "#/$defs/__schema278"
         },
-        "isBinary": {
+        "changeKind": {
           "$ref": "#/$defs/__schema279"
         },
-        "isSubmodule": {
+        "isBinary": {
           "$ref": "#/$defs/__schema280"
         },
-        "insertions": {
+        "isSubmodule": {
           "$ref": "#/$defs/__schema281"
         },
-        "deletions": {
+        "insertions": {
           "$ref": "#/$defs/__schema282"
         },
-        "modes": {
+        "deletions": {
           "$ref": "#/$defs/__schema283"
+        },
+        "modes": {
+          "$ref": "#/$defs/__schema284"
         },
         "patch": {
           "$ref": "#/$defs/FilePatch"
@@ -706,25 +726,25 @@
           "$ref": "#/$defs/RepositoryId"
         },
         "worktreeId": {
-          "$ref": "#/$defs/__schema349"
-        },
-        "kind": {
           "$ref": "#/$defs/__schema350"
         },
-        "oid": {
+        "kind": {
           "$ref": "#/$defs/__schema351"
         },
-        "from": {
+        "oid": {
           "$ref": "#/$defs/__schema352"
         },
-        "to": {
+        "from": {
           "$ref": "#/$defs/__schema353"
         },
-        "pathId": {
+        "to": {
           "$ref": "#/$defs/__schema354"
         },
-        "maxBytes": {
+        "pathId": {
           "$ref": "#/$defs/__schema355"
+        },
+        "maxBytes": {
+          "$ref": "#/$defs/__schema356"
         }
       },
       "required": [
@@ -744,22 +764,22 @@
           "$ref": "#/$defs/RepositoryId"
         },
         "worktreeId": {
-          "$ref": "#/$defs/__schema284"
+          "$ref": "#/$defs/__schema285"
         },
         "readAt": {
           "$ref": "#/$defs/Timestamp"
         },
         "request": {
-          "$ref": "#/$defs/__schema285"
-        },
-        "files": {
           "$ref": "#/$defs/__schema286"
         },
-        "stats": {
+        "files": {
           "$ref": "#/$defs/__schema287"
         },
-        "truncated": {
+        "stats": {
           "$ref": "#/$defs/__schema288"
+        },
+        "truncated": {
+          "$ref": "#/$defs/__schema289"
         }
       },
       "required": [
@@ -799,6 +819,19 @@
       ],
       "additionalProperties": false,
       "description": "Restore selected tracked files from the index — not from HEAD — after backing up what the change would destroy. Untracked, ignored, symlink and submodule paths are refused."
+    },
+    "DisconnectProviderRequest": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/ProviderId"
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "additionalProperties": false,
+      "description": "Deletes the stored connection. Revoking the token upstream is the user's act on the forge."
     },
     "DisconnectTargetRequest": {
       "type": "object",
@@ -864,7 +897,7 @@
       "type": "object",
       "properties": {
         "sequence": {
-          "$ref": "#/$defs/__schema329"
+          "$ref": "#/$defs/__schema330"
         },
         "emittedAt": {
           "$ref": "#/$defs/Timestamp"
@@ -884,9 +917,6 @@
     "EventPayload": {
       "anyOf": [
         {
-          "$ref": "#/$defs/__schema325"
-        },
-        {
           "$ref": "#/$defs/__schema326"
         },
         {
@@ -894,6 +924,9 @@
         },
         {
           "$ref": "#/$defs/__schema328"
+        },
+        {
+          "$ref": "#/$defs/__schema329"
         }
       ],
       "description": "SSE payload. Events are hints that invalidate cached reads; they are never the only source of truth."
@@ -902,7 +935,7 @@
       "type": "object",
       "properties": {
         "since": {
-          "$ref": "#/$defs/__schema358"
+          "$ref": "#/$defs/__schema359"
         }
       },
       "additionalProperties": false,
@@ -936,13 +969,13 @@
           "$ref": "#/$defs/ExecutionTargetKind"
         },
         "label": {
-          "$ref": "#/$defs/__schema371"
+          "$ref": "#/$defs/__schema372"
         },
         "state": {
           "$ref": "#/$defs/ExecutionTargetState"
         },
         "remotePathBrowse": {
-          "$ref": "#/$defs/__schema372"
+          "$ref": "#/$defs/__schema373"
         },
         "generation": {
           "$ref": "#/$defs/TargetGeneration"
@@ -987,9 +1020,6 @@
     "FilePatch": {
       "anyOf": [
         {
-          "$ref": "#/$defs/__schema271"
-        },
-        {
           "$ref": "#/$defs/__schema272"
         },
         {
@@ -1000,6 +1030,9 @@
         },
         {
           "$ref": "#/$defs/__schema275"
+        },
+        {
+          "$ref": "#/$defs/__schema276"
         }
       ],
       "description": "Text patches are bounded and parsed; a synthesized patch means the file is untracked and its content came from an authorised read, not from Git."
@@ -1008,10 +1041,10 @@
       "type": "object",
       "properties": {
         "path": {
-          "$ref": "#/$defs/__schema198"
+          "$ref": "#/$defs/__schema199"
         },
         "targetId": {
-          "$ref": "#/$defs/__schema199"
+          "$ref": "#/$defs/__schema200"
         }
       },
       "additionalProperties": false,
@@ -1024,13 +1057,13 @@
           "$ref": "#/$defs/DisplayPath"
         },
         "parentPath": {
-          "$ref": "#/$defs/__schema200"
-        },
-        "entries": {
           "$ref": "#/$defs/__schema201"
         },
-        "truncated": {
+        "entries": {
           "$ref": "#/$defs/__schema202"
+        },
+        "truncated": {
+          "$ref": "#/$defs/__schema203"
         }
       },
       "required": [
@@ -1046,13 +1079,13 @@
       "type": "object",
       "properties": {
         "name": {
-          "$ref": "#/$defs/__schema196"
+          "$ref": "#/$defs/__schema197"
         },
         "path": {
           "$ref": "#/$defs/DisplayPath"
         },
         "kind": {
-          "$ref": "#/$defs/__schema197"
+          "$ref": "#/$defs/__schema198"
         }
       },
       "required": [
@@ -1107,16 +1140,16 @@
       "type": "object",
       "properties": {
         "kind": {
-          "$ref": "#/$defs/__schema185"
-        },
-        "branchName": {
           "$ref": "#/$defs/__schema186"
         },
-        "oid": {
+        "branchName": {
           "$ref": "#/$defs/__schema187"
         },
-        "detached": {
+        "oid": {
           "$ref": "#/$defs/__schema188"
+        },
+        "detached": {
+          "$ref": "#/$defs/__schema189"
         }
       },
       "required": [
@@ -1165,25 +1198,25 @@
           "$ref": "#/$defs/ObjectFormat"
         },
         "shallow": {
-          "$ref": "#/$defs/__schema240"
-        },
-        "topology": {
           "$ref": "#/$defs/__schema241"
         },
-        "commits": {
+        "topology": {
           "$ref": "#/$defs/__schema242"
         },
-        "nextCursor": {
+        "commits": {
           "$ref": "#/$defs/__schema243"
         },
-        "tipsMoved": {
+        "nextCursor": {
           "$ref": "#/$defs/__schema244"
         },
-        "truncated": {
+        "tipsMoved": {
           "$ref": "#/$defs/__schema245"
         },
-        "detail": {
+        "truncated": {
           "$ref": "#/$defs/__schema246"
+        },
+        "detail": {
+          "$ref": "#/$defs/__schema247"
         }
       },
       "required": [
@@ -1209,40 +1242,40 @@
           "$ref": "#/$defs/RepositoryId"
         },
         "worktreeId": {
-          "$ref": "#/$defs/__schema335"
-        },
-        "cursor": {
           "$ref": "#/$defs/__schema336"
         },
-        "limit": {
+        "cursor": {
           "$ref": "#/$defs/__schema337"
         },
-        "detailOid": {
+        "limit": {
           "$ref": "#/$defs/__schema338"
         },
-        "firstParentOnly": {
+        "detailOid": {
           "$ref": "#/$defs/__schema339"
         },
-        "message": {
+        "firstParentOnly": {
           "$ref": "#/$defs/__schema340"
         },
+        "message": {
+          "$ref": "#/$defs/__schema341"
+        },
         "author": {
-          "$ref": "#/$defs/__schema342"
+          "$ref": "#/$defs/__schema343"
         },
         "oidPrefix": {
-          "$ref": "#/$defs/__schema344"
-        },
-        "refFullName": {
           "$ref": "#/$defs/__schema345"
         },
-        "committedAfter": {
+        "refFullName": {
           "$ref": "#/$defs/__schema346"
         },
-        "committedBefore": {
+        "committedAfter": {
           "$ref": "#/$defs/__schema347"
         },
-        "pathId": {
+        "committedBefore": {
           "$ref": "#/$defs/__schema348"
+        },
+        "pathId": {
+          "$ref": "#/$defs/__schema349"
         }
       },
       "required": [
@@ -1255,16 +1288,16 @@
       "type": "object",
       "properties": {
         "sshConfig": {
-          "$ref": "#/$defs/__schema359"
-        },
-        "localFolderPicker": {
           "$ref": "#/$defs/__schema360"
         },
-        "uncertainOperationAcknowledgement": {
+        "localFolderPicker": {
           "$ref": "#/$defs/__schema361"
         },
-        "targetKinds": {
+        "uncertainOperationAcknowledgement": {
           "$ref": "#/$defs/__schema362"
+        },
+        "targetKinds": {
+          "$ref": "#/$defs/__schema363"
         }
       },
       "required": [
@@ -1288,10 +1321,10 @@
       "type": "object",
       "properties": {
         "code": {
-          "$ref": "#/$defs/__schema363"
+          "$ref": "#/$defs/__schema364"
         },
         "message": {
-          "$ref": "#/$defs/__schema364"
+          "$ref": "#/$defs/__schema365"
         }
       },
       "required": [
@@ -1580,7 +1613,7 @@
           "$ref": "#/$defs/ClientRequestId"
         },
         "kind": {
-          "$ref": "#/$defs/__schema315"
+          "$ref": "#/$defs/__schema316"
         },
         "target": {
           "$ref": "#/$defs/MutationTarget"
@@ -1589,22 +1622,22 @@
           "$ref": "#/$defs/OperationStatus"
         },
         "sequence": {
-          "$ref": "#/$defs/__schema316"
+          "$ref": "#/$defs/__schema317"
         },
         "acceptedAt": {
           "$ref": "#/$defs/Timestamp"
         },
         "startedAt": {
-          "$ref": "#/$defs/__schema317"
-        },
-        "finishedAt": {
           "$ref": "#/$defs/__schema318"
         },
-        "result": {
+        "finishedAt": {
           "$ref": "#/$defs/__schema319"
         },
-        "problem": {
+        "result": {
           "$ref": "#/$defs/__schema320"
+        },
+        "problem": {
+          "$ref": "#/$defs/__schema321"
         }
       },
       "required": [
@@ -1627,19 +1660,19 @@
       "type": "object",
       "properties": {
         "summary": {
-          "$ref": "#/$defs/__schema310"
-        },
-        "changedRefs": {
           "$ref": "#/$defs/__schema311"
         },
-        "changedPaths": {
+        "changedRefs": {
           "$ref": "#/$defs/__schema312"
         },
-        "snapshotInvalidated": {
+        "changedPaths": {
           "$ref": "#/$defs/__schema313"
         },
-        "newHeadOid": {
+        "snapshotInvalidated": {
           "$ref": "#/$defs/__schema314"
+        },
+        "newHeadOid": {
+          "$ref": "#/$defs/__schema315"
         }
       },
       "required": [
@@ -1669,10 +1702,10 @@
       "type": "object",
       "properties": {
         "operationId": {
-          "$ref": "#/$defs/__schema356"
+          "$ref": "#/$defs/__schema357"
         },
         "limit": {
-          "$ref": "#/$defs/__schema357"
+          "$ref": "#/$defs/__schema358"
         }
       },
       "additionalProperties": false,
@@ -1682,10 +1715,10 @@
       "type": "object",
       "properties": {
         "operations": {
-          "$ref": "#/$defs/__schema321"
+          "$ref": "#/$defs/__schema322"
         },
         "truncated": {
-          "$ref": "#/$defs/__schema322"
+          "$ref": "#/$defs/__schema323"
         }
       },
       "required": [
@@ -1699,22 +1732,22 @@
       "type": "object",
       "properties": {
         "header": {
-          "$ref": "#/$defs/__schema265"
-        },
-        "oldStart": {
           "$ref": "#/$defs/__schema266"
         },
-        "oldLines": {
+        "oldStart": {
           "$ref": "#/$defs/__schema267"
         },
-        "newStart": {
+        "oldLines": {
           "$ref": "#/$defs/__schema268"
         },
-        "newLines": {
+        "newStart": {
           "$ref": "#/$defs/__schema269"
         },
-        "lines": {
+        "newLines": {
           "$ref": "#/$defs/__schema270"
+        },
+        "lines": {
+          "$ref": "#/$defs/__schema271"
         }
       },
       "required": [
@@ -1732,13 +1765,13 @@
       "type": "object",
       "properties": {
         "kind": {
-          "$ref": "#/$defs/__schema262"
-        },
-        "text": {
           "$ref": "#/$defs/__schema263"
         },
-        "noNewline": {
+        "text": {
           "$ref": "#/$defs/__schema264"
+        },
+        "noNewline": {
+          "$ref": "#/$defs/__schema265"
         }
       },
       "required": [
@@ -1832,7 +1865,7 @@
           "$ref": "#/$defs/WorktreeId"
         },
         "pathIds": {
-          "$ref": "#/$defs/__schema323"
+          "$ref": "#/$defs/__schema324"
         }
       },
       "required": [
@@ -1859,7 +1892,7 @@
           "$ref": "#/$defs/Timestamp"
         },
         "tokens": {
-          "$ref": "#/$defs/__schema324"
+          "$ref": "#/$defs/__schema325"
         }
       },
       "required": [
@@ -1921,6 +1954,10 @@
         "Timeout",
         "Cancelled",
         "Unavailable",
+        "ProviderNotConnected",
+        "NoProviderRemote",
+        "ProviderUnauthorized",
+        "ProviderRateLimited",
         "InternalError"
       ],
       "description": "Closed set of failure codes. Clients branch on these, not on message text."
@@ -1937,6 +1974,125 @@
       ],
       "additionalProperties": false,
       "description": "The body of any 4xx/5xx JSON response."
+    },
+    "ProviderConnection": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/ProviderId"
+        },
+        "accountLogin": {
+          "$ref": "#/$defs/__schema378"
+        },
+        "accountType": {
+          "$ref": "#/$defs/__schema379"
+        },
+        "scopes": {
+          "$ref": "#/$defs/__schema380"
+        },
+        "connectedAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "provider",
+        "accountLogin",
+        "accountType",
+        "scopes",
+        "connectedAt"
+      ],
+      "additionalProperties": false,
+      "description": "One live forge connection, as the host stores it. Never contains the token."
+    },
+    "ProviderConnectionsResponse": {
+      "type": "object",
+      "properties": {
+        "connections": {
+          "$ref": "#/$defs/__schema382"
+        }
+      },
+      "required": [
+        "connections"
+      ],
+      "additionalProperties": false,
+      "description": "The forge accounts this host is connected to."
+    },
+    "ProviderId": {
+      "type": "string",
+      "enum": [
+        "github"
+      ],
+      "description": "A forge integration this build carries. The enum grows only when an integration ships; hosts without one omit it from capabilities.providers."
+    },
+    "ProviderPullRequest": {
+      "type": "object",
+      "properties": {
+        "number": {
+          "$ref": "#/$defs/__schema384"
+        },
+        "title": {
+          "$ref": "#/$defs/__schema385"
+        },
+        "authorLogin": {
+          "$ref": "#/$defs/__schema386"
+        },
+        "authorAvatarUrl": {
+          "$ref": "#/$defs/__schema387"
+        },
+        "headRef": {
+          "$ref": "#/$defs/BranchName"
+        },
+        "baseRef": {
+          "$ref": "#/$defs/BranchName"
+        },
+        "isDraft": {
+          "$ref": "#/$defs/__schema389"
+        },
+        "url": {
+          "$ref": "#/$defs/__schema388"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/Timestamp"
+        }
+      },
+      "required": [
+        "number",
+        "title",
+        "authorLogin",
+        "authorAvatarUrl",
+        "headRef",
+        "baseRef",
+        "isDraft",
+        "url",
+        "updatedAt"
+      ],
+      "additionalProperties": false,
+      "description": "One open pull request, reduced to what the workbench shows. Draft and merge state that moved on are refreshed, not cached forever."
+    },
+    "ProviderPullRequestsResponse": {
+      "type": "object",
+      "properties": {
+        "repository": {
+          "$ref": "#/$defs/__schema390"
+        },
+        "source": {
+          "$ref": "#/$defs/__schema391"
+        },
+        "cachedAt": {
+          "$ref": "#/$defs/__schema392"
+        },
+        "pullRequests": {
+          "$ref": "#/$defs/__schema393"
+        }
+      },
+      "required": [
+        "repository",
+        "source",
+        "cachedAt",
+        "pullRequests"
+      ],
+      "additionalProperties": false,
+      "description": "Open pull requests for one repository's forge remote. Served from a short host-side cache; the age is always visible."
     },
     "PullOperation": {
       "type": "object",
@@ -2048,19 +2204,19 @@
       "type": "object",
       "properties": {
         "name": {
-          "$ref": "#/$defs/__schema247"
+          "$ref": "#/$defs/__schema248"
         },
         "fullName": {
-          "$ref": "#/$defs/__schema248"
+          "$ref": "#/$defs/__schema249"
         },
         "oid": {
           "$ref": "#/$defs/ObjectId"
         },
         "isCurrent": {
-          "$ref": "#/$defs/__schema249"
+          "$ref": "#/$defs/__schema250"
         },
         "upstream": {
-          "$ref": "#/$defs/__schema250"
+          "$ref": "#/$defs/__schema251"
         }
       },
       "required": [
@@ -2092,22 +2248,22 @@
           "$ref": "#/$defs/HeadState"
         },
         "branches": {
-          "$ref": "#/$defs/__schema256"
-        },
-        "remoteBranches": {
           "$ref": "#/$defs/__schema257"
         },
-        "tags": {
+        "remoteBranches": {
           "$ref": "#/$defs/__schema258"
         },
-        "remotes": {
+        "tags": {
           "$ref": "#/$defs/__schema259"
         },
-        "otherRefs": {
+        "remotes": {
           "$ref": "#/$defs/__schema260"
         },
-        "truncated": {
+        "otherRefs": {
           "$ref": "#/$defs/__schema261"
+        },
+        "truncated": {
+          "$ref": "#/$defs/__schema262"
         }
       },
       "required": [
@@ -2130,10 +2286,10 @@
       "type": "object",
       "properties": {
         "path": {
-          "$ref": "#/$defs/__schema332"
+          "$ref": "#/$defs/__schema333"
         },
         "targetId": {
-          "$ref": "#/$defs/__schema333"
+          "$ref": "#/$defs/__schema334"
         }
       },
       "required": [
@@ -2157,10 +2313,10 @@
       "type": "object",
       "properties": {
         "name": {
-          "$ref": "#/$defs/__schema251"
+          "$ref": "#/$defs/__schema252"
         },
         "fullName": {
-          "$ref": "#/$defs/__schema252"
+          "$ref": "#/$defs/__schema253"
         },
         "oid": {
           "$ref": "#/$defs/ObjectId"
@@ -2256,10 +2412,10 @@
       "type": "object",
       "properties": {
         "repositories": {
-          "$ref": "#/$defs/__schema194"
+          "$ref": "#/$defs/__schema195"
         },
         "allowedRoots": {
-          "$ref": "#/$defs/__schema195"
+          "$ref": "#/$defs/__schema196"
         }
       },
       "required": [
@@ -2297,10 +2453,10 @@
           "$ref": "#/$defs/AllowedRootId"
         },
         "targetId": {
-          "$ref": "#/$defs/__schema189"
+          "$ref": "#/$defs/__schema190"
         },
         "displayName": {
-          "$ref": "#/$defs/__schema190"
+          "$ref": "#/$defs/__schema191"
         },
         "displayPath": {
           "$ref": "#/$defs/DisplayPath"
@@ -2309,7 +2465,7 @@
           "$ref": "#/$defs/ObjectFormat"
         },
         "worktreeIds": {
-          "$ref": "#/$defs/__schema191"
+          "$ref": "#/$defs/__schema192"
         },
         "primaryWorktreeId": {
           "$ref": "#/$defs/WorktreeId"
@@ -2318,10 +2474,10 @@
           "$ref": "#/$defs/HeadState"
         },
         "operationInProgress": {
-          "$ref": "#/$defs/__schema192"
+          "$ref": "#/$defs/__schema193"
         },
         "lastFetchedAt": {
-          "$ref": "#/$defs/__schema193"
+          "$ref": "#/$defs/__schema194"
         }
       },
       "required": [
@@ -2628,13 +2784,13 @@
           "$ref": "#/$defs/SshSourceId"
         },
         "alias": {
-          "$ref": "#/$defs/__schema365"
-        },
-        "displayLabel": {
           "$ref": "#/$defs/__schema366"
         },
-        "discoveryIncomplete": {
+        "displayLabel": {
           "$ref": "#/$defs/__schema367"
+        },
+        "discoveryIncomplete": {
+          "$ref": "#/$defs/__schema368"
         }
       },
       "required": [
@@ -2656,13 +2812,13 @@
       "type": "object",
       "properties": {
         "hosts": {
-          "$ref": "#/$defs/__schema368"
-        },
-        "warnings": {
           "$ref": "#/$defs/__schema369"
         },
-        "revision": {
+        "warnings": {
           "$ref": "#/$defs/__schema370"
+        },
+        "revision": {
+          "$ref": "#/$defs/__schema371"
         }
       },
       "required": [
@@ -2709,13 +2865,13 @@
           "$ref": "#/$defs/StashLocator"
         },
         "message": {
-          "$ref": "#/$defs/__schema306"
+          "$ref": "#/$defs/__schema307"
         },
         "createdAt": {
           "$ref": "#/$defs/Timestamp"
         },
         "branchDisplay": {
-          "$ref": "#/$defs/__schema307"
+          "$ref": "#/$defs/__schema308"
         }
       },
       "required": [
@@ -2763,10 +2919,10 @@
           "$ref": "#/$defs/Timestamp"
         },
         "stashes": {
-          "$ref": "#/$defs/__schema308"
+          "$ref": "#/$defs/__schema309"
         },
         "truncated": {
-          "$ref": "#/$defs/__schema309"
+          "$ref": "#/$defs/__schema310"
         }
       },
       "required": [
@@ -2792,34 +2948,34 @@
           "$ref": "#/$defs/PathEncoding"
         },
         "kind": {
-          "$ref": "#/$defs/__schema208"
-        },
-        "indexStatus": {
           "$ref": "#/$defs/__schema209"
         },
-        "worktreeStatus": {
+        "indexStatus": {
           "$ref": "#/$defs/__schema210"
         },
-        "originalPathId": {
+        "worktreeStatus": {
           "$ref": "#/$defs/__schema211"
         },
-        "originalDisplayPath": {
+        "originalPathId": {
           "$ref": "#/$defs/__schema212"
         },
-        "headOid": {
+        "originalDisplayPath": {
           "$ref": "#/$defs/__schema213"
         },
-        "indexOid": {
+        "headOid": {
           "$ref": "#/$defs/__schema214"
         },
-        "modes": {
+        "indexOid": {
           "$ref": "#/$defs/__schema215"
         },
-        "submodule": {
+        "modes": {
           "$ref": "#/$defs/__schema216"
         },
-        "stages": {
+        "submodule": {
           "$ref": "#/$defs/__schema217"
+        },
+        "stages": {
+          "$ref": "#/$defs/__schema218"
         }
       },
       "required": [
@@ -2859,19 +3015,19 @@
           "$ref": "#/$defs/HeadState"
         },
         "upstream": {
-          "$ref": "#/$defs/__schema218"
-        },
-        "operationInProgress": {
           "$ref": "#/$defs/__schema219"
         },
-        "entries": {
+        "operationInProgress": {
           "$ref": "#/$defs/__schema220"
         },
-        "entryCount": {
+        "entries": {
           "$ref": "#/$defs/__schema221"
         },
-        "truncated": {
+        "entryCount": {
           "$ref": "#/$defs/__schema222"
+        },
+        "truncated": {
+          "$ref": "#/$defs/__schema223"
         }
       },
       "required": [
@@ -2893,13 +3049,13 @@
       "type": "object",
       "properties": {
         "commitChanged": {
-          "$ref": "#/$defs/__schema203"
-        },
-        "modified": {
           "$ref": "#/$defs/__schema204"
         },
-        "untracked": {
+        "modified": {
           "$ref": "#/$defs/__schema205"
+        },
+        "untracked": {
+          "$ref": "#/$defs/__schema206"
         }
       },
       "required": [
@@ -2914,7 +3070,7 @@
       "type": "object",
       "properties": {
         "name": {
-          "$ref": "#/$defs/__schema296"
+          "$ref": "#/$defs/__schema297"
         },
         "pathId": {
           "$ref": "#/$defs/PathId"
@@ -2923,25 +3079,25 @@
           "$ref": "#/$defs/DisplayPath"
         },
         "recordedOid": {
-          "$ref": "#/$defs/__schema297"
-        },
-        "indexOid": {
           "$ref": "#/$defs/__schema298"
         },
-        "actualOid": {
+        "indexOid": {
           "$ref": "#/$defs/__schema299"
         },
-        "state": {
+        "actualOid": {
           "$ref": "#/$defs/__schema300"
         },
-        "urlDisplay": {
+        "state": {
           "$ref": "#/$defs/__schema301"
         },
-        "branchName": {
+        "urlDisplay": {
           "$ref": "#/$defs/__schema302"
         },
-        "submoduleRepositoryId": {
+        "branchName": {
           "$ref": "#/$defs/__schema303"
+        },
+        "submoduleRepositoryId": {
+          "$ref": "#/$defs/__schema304"
         }
       },
       "required": [
@@ -2975,10 +3131,10 @@
           "$ref": "#/$defs/Timestamp"
         },
         "submodules": {
-          "$ref": "#/$defs/__schema304"
+          "$ref": "#/$defs/__schema305"
         },
         "truncated": {
-          "$ref": "#/$defs/__schema305"
+          "$ref": "#/$defs/__schema306"
         }
       },
       "required": [
@@ -3037,16 +3193,16 @@
           "$ref": "#/$defs/TagName"
         },
         "fullName": {
-          "$ref": "#/$defs/__schema253"
+          "$ref": "#/$defs/__schema254"
         },
         "oid": {
           "$ref": "#/$defs/ObjectId"
         },
         "annotated": {
-          "$ref": "#/$defs/__schema254"
+          "$ref": "#/$defs/__schema255"
         },
         "targetOid": {
-          "$ref": "#/$defs/__schema255"
+          "$ref": "#/$defs/__schema256"
         }
       },
       "required": [
@@ -3133,10 +3289,10 @@
       "type": "object",
       "properties": {
         "stage": {
-          "$ref": "#/$defs/__schema206"
+          "$ref": "#/$defs/__schema207"
         },
         "mode": {
-          "$ref": "#/$defs/__schema207"
+          "$ref": "#/$defs/__schema208"
         },
         "oid": {
           "$ref": "#/$defs/ObjectId"
@@ -3254,7 +3410,7 @@
           "$ref": "#/$defs/RepositoryId"
         },
         "worktreeId": {
-          "$ref": "#/$defs/__schema334"
+          "$ref": "#/$defs/__schema335"
         }
       },
       "required": [
@@ -3290,22 +3446,22 @@
           "$ref": "#/$defs/HeadState"
         },
         "isMain": {
-          "$ref": "#/$defs/__schema289"
-        },
-        "isBare": {
           "$ref": "#/$defs/__schema290"
         },
-        "isDetached": {
+        "isBare": {
           "$ref": "#/$defs/__schema291"
         },
-        "isLocked": {
+        "isDetached": {
           "$ref": "#/$defs/__schema292"
         },
-        "lockReason": {
+        "isLocked": {
           "$ref": "#/$defs/__schema293"
         },
-        "isPrunable": {
+        "lockReason": {
           "$ref": "#/$defs/__schema294"
+        },
+        "isPrunable": {
+          "$ref": "#/$defs/__schema295"
         }
       },
       "required": [
@@ -3360,7 +3516,7 @@
           "$ref": "#/$defs/Timestamp"
         },
         "worktrees": {
-          "$ref": "#/$defs/__schema295"
+          "$ref": "#/$defs/__schema296"
         }
       },
       "required": [
@@ -4248,6 +4404,12 @@
     "__schema183": {
       "type": "array",
       "items": {
+        "$ref": "#/$defs/ProviderId"
+      }
+    },
+    "__schema184": {
+      "type": "array",
+      "items": {
         "type": "object",
         "properties": {
           "kind": {
@@ -4315,20 +4477,20 @@
         "additionalProperties": false
       }
     },
-    "__schema184": {
+    "__schema185": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/UnavailableReason"
       }
     },
-    "__schema185": {
+    "__schema186": {
       "type": "string",
       "enum": [
         "born",
         "unborn"
       ]
     },
-    "__schema186": {
+    "__schema187": {
       "anyOf": [
         {
           "$ref": "#/$defs/BranchName"
@@ -4338,7 +4500,7 @@
         }
       ]
     },
-    "__schema187": {
+    "__schema188": {
       "anyOf": [
         {
           "$ref": "#/$defs/ObjectId"
@@ -4348,28 +4510,28 @@
         }
       ]
     },
-    "__schema188": {
-      "type": "boolean"
-    },
     "__schema189": {
-      "$ref": "#/$defs/TargetId"
+      "type": "boolean"
     },
     "__schema19": {
       "type": "string",
       "const": "workspace"
     },
     "__schema190": {
+      "$ref": "#/$defs/TargetId"
+    },
+    "__schema191": {
       "type": "string",
       "minLength": 1,
       "maxLength": 256
     },
-    "__schema191": {
+    "__schema192": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/WorktreeId"
       }
     },
-    "__schema192": {
+    "__schema193": {
       "anyOf": [
         {
           "type": "string",
@@ -4388,7 +4550,7 @@
         }
       ]
     },
-    "__schema193": {
+    "__schema194": {
       "anyOf": [
         {
           "$ref": "#/$defs/Timestamp"
@@ -4398,13 +4560,13 @@
         }
       ]
     },
-    "__schema194": {
+    "__schema195": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/RepositorySummary"
       }
     },
-    "__schema195": {
+    "__schema196": {
       "type": "array",
       "items": {
         "type": "object",
@@ -4430,24 +4592,21 @@
         "additionalProperties": false
       }
     },
-    "__schema196": {
+    "__schema197": {
       "type": "string",
       "minLength": 1,
       "maxLength": 255
     },
-    "__schema197": {
+    "__schema198": {
       "type": "string",
       "enum": [
         "directory",
         "repository"
       ]
     },
-    "__schema198": {
+    "__schema199": {
       "type": "string",
       "maxLength": 4096
-    },
-    "__schema199": {
-      "$ref": "#/$defs/TargetId"
     },
     "__schema2": {
       "type": "integer",
@@ -4459,6 +4618,9 @@
       "const": "repository"
     },
     "__schema200": {
+      "$ref": "#/$defs/TargetId"
+    },
+    "__schema201": {
       "anyOf": [
         {
           "$ref": "#/$defs/DisplayPath"
@@ -4468,14 +4630,11 @@
         }
       ]
     },
-    "__schema201": {
+    "__schema202": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/FilesystemEntry"
       }
-    },
-    "__schema202": {
-      "type": "boolean"
     },
     "__schema203": {
       "type": "boolean"
@@ -4487,6 +4646,9 @@
       "type": "boolean"
     },
     "__schema206": {
+      "type": "boolean"
+    },
+    "__schema207": {
       "anyOf": [
         {
           "type": "number",
@@ -4502,12 +4664,12 @@
         }
       ]
     },
-    "__schema207": {
+    "__schema208": {
       "type": "string",
       "minLength": 1,
       "maxLength": 16
     },
-    "__schema208": {
+    "__schema209": {
       "type": "string",
       "enum": [
         "ordinary",
@@ -4517,11 +4679,6 @@
         "untracked",
         "ignored"
       ]
-    },
-    "__schema209": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 1
     },
     "__schema21": {
       "type": "string",
@@ -4533,6 +4690,11 @@
       "maxLength": 1
     },
     "__schema211": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1
+    },
+    "__schema212": {
       "anyOf": [
         {
           "$ref": "#/$defs/PathId"
@@ -4542,20 +4704,10 @@
         }
       ]
     },
-    "__schema212": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/DisplayPath"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
     "__schema213": {
       "anyOf": [
         {
-          "$ref": "#/$defs/ObjectId"
+          "$ref": "#/$defs/DisplayPath"
         },
         {
           "type": "null"
@@ -4573,6 +4725,16 @@
       ]
     },
     "__schema215": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ObjectId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema216": {
       "anyOf": [
         {
           "type": "object",
@@ -4608,7 +4770,7 @@
         }
       ]
     },
-    "__schema216": {
+    "__schema217": {
       "anyOf": [
         {
           "$ref": "#/$defs/SubmoduleStatus"
@@ -4618,7 +4780,7 @@
         }
       ]
     },
-    "__schema217": {
+    "__schema218": {
       "anyOf": [
         {
           "type": "array",
@@ -4631,7 +4793,7 @@
         }
       ]
     },
-    "__schema218": {
+    "__schema219": {
       "anyOf": [
         {
           "type": "object",
@@ -4664,7 +4826,11 @@
         }
       ]
     },
-    "__schema219": {
+    "__schema22": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "__schema220": {
       "anyOf": [
         {
           "type": "string",
@@ -4683,52 +4849,45 @@
         }
       ]
     },
-    "__schema22": {
-      "type": "string",
-      "pattern": "^[0-9a-f]{40}$"
-    },
-    "__schema220": {
+    "__schema221": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/StatusEntry"
       }
     },
-    "__schema221": {
+    "__schema222": {
       "type": "integer",
       "minimum": 0,
       "maximum": 9007199254740991
     },
-    "__schema222": {
+    "__schema223": {
       "type": "boolean"
     },
-    "__schema223": {
+    "__schema224": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/ObjectId"
       }
     },
-    "__schema224": {
-      "type": "string",
-      "maxLength": 4096
-    },
     "__schema225": {
       "type": "string",
-      "maxLength": 512
+      "maxLength": 4096
     },
     "__schema226": {
       "type": "string",
       "maxLength": 512
     },
     "__schema227": {
+      "type": "string",
+      "maxLength": 512
+    },
+    "__schema228": {
       "type": "array",
       "items": {
         "type": "string",
         "minLength": 1,
         "maxLength": 1024
       }
-    },
-    "__schema228": {
-      "type": "boolean"
     },
     "__schema229": {
       "type": "boolean"
@@ -4742,10 +4901,7 @@
       }
     },
     "__schema230": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/ObjectId"
-      }
+      "type": "boolean"
     },
     "__schema231": {
       "type": "array",
@@ -4754,8 +4910,10 @@
       }
     },
     "__schema232": {
-      "type": "string",
-      "maxLength": 512
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ObjectId"
+      }
     },
     "__schema233": {
       "type": "string",
@@ -4771,13 +4929,17 @@
     },
     "__schema236": {
       "type": "string",
-      "maxLength": 4096
+      "maxLength": 512
     },
     "__schema237": {
       "type": "string",
-      "maxLength": 16777216
+      "maxLength": 4096
     },
     "__schema238": {
+      "type": "string",
+      "maxLength": 16777216
+    },
+    "__schema239": {
       "anyOf": [
         {
           "type": "string",
@@ -4787,9 +4949,6 @@
           "type": "null"
         }
       ]
-    },
-    "__schema239": {
-      "type": "boolean"
     },
     "__schema24": {
       "minItems": 1,
@@ -4803,19 +4962,22 @@
       "type": "boolean"
     },
     "__schema241": {
+      "type": "boolean"
+    },
+    "__schema242": {
       "type": "string",
       "enum": [
         "continuous",
         "sparse"
       ]
     },
-    "__schema242": {
+    "__schema243": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/CommitSummary"
       }
     },
-    "__schema243": {
+    "__schema244": {
       "anyOf": [
         {
           "$ref": "#/$defs/Cursor"
@@ -4825,13 +4987,13 @@
         }
       ]
     },
-    "__schema244": {
-      "type": "boolean"
-    },
     "__schema245": {
       "type": "boolean"
     },
     "__schema246": {
+      "type": "boolean"
+    },
+    "__schema247": {
       "anyOf": [
         {
           "$ref": "#/$defs/CommitDetail"
@@ -4841,18 +5003,15 @@
         }
       ]
     },
-    "__schema247": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 1024
-    },
     "__schema248": {
       "type": "string",
       "minLength": 1,
       "maxLength": 1024
     },
     "__schema249": {
-      "type": "boolean"
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
     },
     "__schema25": {
       "minItems": 1,
@@ -4863,6 +5022,9 @@
       }
     },
     "__schema250": {
+      "type": "boolean"
+    },
+    "__schema251": {
       "anyOf": [
         {
           "type": "object",
@@ -4899,11 +5061,6 @@
         }
       ]
     },
-    "__schema251": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 1024
-    },
     "__schema252": {
       "type": "string",
       "minLength": 1,
@@ -4915,9 +5072,14 @@
       "maxLength": 1024
     },
     "__schema254": {
-      "type": "boolean"
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
     },
     "__schema255": {
+      "type": "boolean"
+    },
+    "__schema256": {
       "anyOf": [
         {
           "$ref": "#/$defs/ObjectId"
@@ -4927,25 +5089,45 @@
         }
       ]
     },
-    "__schema256": {
+    "__schema257": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/RefEntry"
       }
     },
-    "__schema257": {
+    "__schema258": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/RemoteRefEntry"
       }
     },
-    "__schema258": {
+    "__schema259": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/TagEntry"
       }
     },
-    "__schema259": {
+    "__schema26": {
+      "type": "object",
+      "properties": {
+        "clientRequestId": {
+          "$ref": "#/$defs/ClientRequestId"
+        },
+        "target": {
+          "$ref": "#/$defs/WorkspaceTarget"
+        },
+        "operation": {
+          "$ref": "#/$defs/InitRepositoryOperation"
+        }
+      },
+      "required": [
+        "clientRequestId",
+        "target",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "__schema260": {
       "type": "array",
       "items": {
         "type": "object",
@@ -4977,27 +5159,7 @@
         "additionalProperties": false
       }
     },
-    "__schema26": {
-      "type": "object",
-      "properties": {
-        "clientRequestId": {
-          "$ref": "#/$defs/ClientRequestId"
-        },
-        "target": {
-          "$ref": "#/$defs/WorkspaceTarget"
-        },
-        "operation": {
-          "$ref": "#/$defs/InitRepositoryOperation"
-        }
-      },
-      "required": [
-        "clientRequestId",
-        "target",
-        "operation"
-      ],
-      "additionalProperties": false
-    },
-    "__schema260": {
+    "__schema261": {
       "type": "array",
       "items": {
         "type": "object",
@@ -5028,10 +5190,10 @@
         "additionalProperties": false
       }
     },
-    "__schema261": {
+    "__schema262": {
       "type": "boolean"
     },
-    "__schema262": {
+    "__schema263": {
       "type": "string",
       "enum": [
         "context",
@@ -5039,20 +5201,15 @@
         "remove"
       ]
     },
-    "__schema263": {
+    "__schema264": {
       "type": "string"
     },
-    "__schema264": {
+    "__schema265": {
       "type": "boolean"
     },
-    "__schema265": {
+    "__schema266": {
       "type": "string",
       "maxLength": 512
-    },
-    "__schema266": {
-      "type": "integer",
-      "minimum": -9007199254740991,
-      "maximum": 9007199254740991
     },
     "__schema267": {
       "type": "integer",
@@ -5074,12 +5231,17 @@
       "const": "initRepository"
     },
     "__schema270": {
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "__schema271": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/PatchLine"
       }
     },
-    "__schema271": {
+    "__schema272": {
       "type": "object",
       "properties": {
         "kind": {
@@ -5103,7 +5265,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema272": {
+    "__schema273": {
       "type": "object",
       "properties": {
         "kind": {
@@ -5116,7 +5278,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema273": {
+    "__schema274": {
       "type": "object",
       "properties": {
         "kind": {
@@ -5135,7 +5297,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema274": {
+    "__schema275": {
       "type": "object",
       "properties": {
         "kind": {
@@ -5154,7 +5316,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema275": {
+    "__schema276": {
       "type": "object",
       "properties": {
         "kind": {
@@ -5189,7 +5351,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema276": {
+    "__schema277": {
       "anyOf": [
         {
           "$ref": "#/$defs/PathId"
@@ -5199,7 +5361,7 @@
         }
       ]
     },
-    "__schema277": {
+    "__schema278": {
       "anyOf": [
         {
           "$ref": "#/$defs/DisplayPath"
@@ -5209,7 +5371,7 @@
         }
       ]
     },
-    "__schema278": {
+    "__schema279": {
       "type": "string",
       "enum": [
         "added",
@@ -5220,9 +5382,6 @@
         "typeChanged",
         "unmerged"
       ]
-    },
-    "__schema279": {
-      "type": "boolean"
     },
     "__schema28": {
       "anyOf": [
@@ -5238,16 +5397,7 @@
       "type": "boolean"
     },
     "__schema281": {
-      "anyOf": [
-        {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 9007199254740991
-        },
-        {
-          "type": "null"
-        }
-      ]
+      "type": "boolean"
     },
     "__schema282": {
       "anyOf": [
@@ -5262,6 +5412,18 @@
       ]
     },
     "__schema283": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema284": {
       "anyOf": [
         {
           "type": "object",
@@ -5290,7 +5452,7 @@
         }
       ]
     },
-    "__schema284": {
+    "__schema285": {
       "anyOf": [
         {
           "$ref": "#/$defs/WorktreeId"
@@ -5300,7 +5462,7 @@
         }
       ]
     },
-    "__schema285": {
+    "__schema286": {
       "type": "object",
       "properties": {
         "kind": {
@@ -5363,13 +5525,13 @@
       ],
       "additionalProperties": false
     },
-    "__schema286": {
+    "__schema287": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/DiffFile"
       }
     },
-    "__schema287": {
+    "__schema288": {
       "type": "object",
       "properties": {
         "filesChanged": {
@@ -5400,9 +5562,6 @@
         "binaryFiles"
       ],
       "additionalProperties": false
-    },
-    "__schema288": {
-      "type": "boolean"
     },
     "__schema289": {
       "type": "boolean"
@@ -5437,6 +5596,9 @@
       "type": "boolean"
     },
     "__schema293": {
+      "type": "boolean"
+    },
+    "__schema294": {
       "anyOf": [
         {
           "type": "string",
@@ -5447,29 +5609,19 @@
         }
       ]
     },
-    "__schema294": {
+    "__schema295": {
       "type": "boolean"
     },
-    "__schema295": {
+    "__schema296": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/WorktreeSummary"
       }
     },
-    "__schema296": {
+    "__schema297": {
       "type": "string",
       "minLength": 1,
       "maxLength": 1024
-    },
-    "__schema297": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/ObjectId"
-        },
-        {
-          "type": "null"
-        }
-      ]
     },
     "__schema298": {
       "anyOf": [
@@ -5501,6 +5653,16 @@
       "const": "cloneRepository"
     },
     "__schema300": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ObjectId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema301": {
       "type": "string",
       "enum": [
         "uninitialized",
@@ -5510,11 +5672,11 @@
         "unknown"
       ]
     },
-    "__schema301": {
+    "__schema302": {
       "type": "string",
       "maxLength": 2048
     },
-    "__schema302": {
+    "__schema303": {
       "anyOf": [
         {
           "type": "string",
@@ -5525,7 +5687,7 @@
         }
       ]
     },
-    "__schema303": {
+    "__schema304": {
       "anyOf": [
         {
           "$ref": "#/$defs/RepositoryId"
@@ -5535,20 +5697,20 @@
         }
       ]
     },
-    "__schema304": {
+    "__schema305": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/SubmoduleSummary"
       }
     },
-    "__schema305": {
+    "__schema306": {
       "type": "boolean"
     },
-    "__schema306": {
+    "__schema307": {
       "type": "string",
       "maxLength": 4096
     },
-    "__schema307": {
+    "__schema308": {
       "anyOf": [
         {
           "type": "string",
@@ -5559,24 +5721,24 @@
         }
       ]
     },
-    "__schema308": {
+    "__schema309": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/StashEntry"
       }
     },
-    "__schema309": {
-      "type": "boolean"
-    },
     "__schema31": {
       "type": "boolean"
     },
     "__schema310": {
+      "type": "boolean"
+    },
+    "__schema311": {
       "type": "string",
       "minLength": 1,
       "maxLength": 2000
     },
-    "__schema311": {
+    "__schema312": {
       "type": "array",
       "items": {
         "type": "string",
@@ -5584,7 +5746,7 @@
         "maxLength": 1024
       }
     },
-    "__schema312": {
+    "__schema313": {
       "anyOf": [
         {
           "type": "integer",
@@ -5596,10 +5758,10 @@
         }
       ]
     },
-    "__schema313": {
+    "__schema314": {
       "type": "boolean"
     },
-    "__schema314": {
+    "__schema315": {
       "anyOf": [
         {
           "$ref": "#/$defs/ObjectId"
@@ -5609,7 +5771,7 @@
         }
       ]
     },
-    "__schema315": {
+    "__schema316": {
       "type": "string",
       "enum": [
         "initRepository",
@@ -5659,20 +5821,10 @@
         "squashCommit"
       ]
     },
-    "__schema316": {
+    "__schema317": {
       "type": "integer",
       "minimum": 0,
       "maximum": 9007199254740991
-    },
-    "__schema317": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/Timestamp"
-        },
-        {
-          "type": "null"
-        }
-      ]
     },
     "__schema318": {
       "anyOf": [
@@ -5687,7 +5839,7 @@
     "__schema319": {
       "anyOf": [
         {
-          "$ref": "#/$defs/OperationResult"
+          "$ref": "#/$defs/Timestamp"
         },
         {
           "type": "null"
@@ -5717,7 +5869,7 @@
     "__schema320": {
       "anyOf": [
         {
-          "$ref": "#/$defs/Problem"
+          "$ref": "#/$defs/OperationResult"
         },
         {
           "type": "null"
@@ -5725,15 +5877,25 @@
       ]
     },
     "__schema321": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Problem"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema322": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/OperationRecord"
       }
     },
-    "__schema322": {
+    "__schema323": {
       "type": "boolean"
     },
-    "__schema323": {
+    "__schema324": {
       "minItems": 1,
       "maxItems": 1000,
       "type": "array",
@@ -5741,7 +5903,7 @@
         "$ref": "#/$defs/PathId"
       }
     },
-    "__schema324": {
+    "__schema325": {
       "type": "array",
       "items": {
         "type": "object",
@@ -5791,7 +5953,7 @@
         "additionalProperties": false
       }
     },
-    "__schema325": {
+    "__schema326": {
       "type": "object",
       "properties": {
         "kind": {
@@ -5808,7 +5970,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema326": {
+    "__schema327": {
       "type": "object",
       "properties": {
         "kind": {
@@ -5836,7 +5998,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema327": {
+    "__schema328": {
       "type": "object",
       "properties": {
         "kind": {
@@ -5861,7 +6023,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema328": {
+    "__schema329": {
       "type": "object",
       "properties": {
         "kind": {
@@ -5878,48 +6040,45 @@
       ],
       "additionalProperties": false
     },
-    "__schema329": {
-      "type": "integer",
-      "minimum": 0,
-      "maximum": 9007199254740991
-    },
     "__schema33": {
       "type": "string",
       "const": "stagePaths"
     },
     "__schema330": {
-      "$ref": "#/$defs/TargetId"
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
     },
     "__schema331": {
-      "$ref": "#/$defs/RepositoryId"
+      "$ref": "#/$defs/TargetId"
     },
     "__schema332": {
+      "$ref": "#/$defs/RepositoryId"
+    },
+    "__schema333": {
       "type": "string",
       "minLength": 1,
       "maxLength": 4096
     },
-    "__schema333": {
-      "$ref": "#/$defs/TargetId"
-    },
     "__schema334": {
-      "$ref": "#/$defs/WorktreeId"
+      "$ref": "#/$defs/TargetId"
     },
     "__schema335": {
       "$ref": "#/$defs/WorktreeId"
     },
     "__schema336": {
-      "$ref": "#/$defs/Cursor"
+      "$ref": "#/$defs/WorktreeId"
     },
     "__schema337": {
+      "$ref": "#/$defs/Cursor"
+    },
+    "__schema338": {
       "type": "integer",
       "exclusiveMinimum": 0,
       "maximum": 500
     },
-    "__schema338": {
-      "$ref": "#/$defs/ObjectId"
-    },
     "__schema339": {
-      "type": "boolean"
+      "$ref": "#/$defs/ObjectId"
     },
     "__schema34": {
       "type": "object",
@@ -5942,45 +6101,48 @@
       "additionalProperties": false
     },
     "__schema340": {
-      "description": "Trimmed single-line literal message search, 1–512 Unicode scalar values; semantic validation rejects NUL, CR/LF and unpaired surrogates.",
-      "$ref": "#/$defs/__schema341"
+      "type": "boolean"
     },
     "__schema341": {
-      "type": "string",
-      "maxLength": 4096
+      "description": "Trimmed single-line literal message search, 1–512 Unicode scalar values; semantic validation rejects NUL, CR/LF and unpaired surrogates.",
+      "$ref": "#/$defs/__schema342"
     },
     "__schema342": {
-      "description": "Trimmed single-line literal author search, 1–512 Unicode scalar values.",
-      "$ref": "#/$defs/__schema343"
-    },
-    "__schema343": {
       "type": "string",
       "maxLength": 4096
+    },
+    "__schema343": {
+      "description": "Trimmed single-line literal author search, 1–512 Unicode scalar values.",
+      "$ref": "#/$defs/__schema344"
     },
     "__schema344": {
       "type": "string",
-      "pattern": "^[0-9a-f]{4,64}$"
+      "maxLength": 4096
     },
     "__schema345": {
-      "$ref": "#/$defs/FullRefName"
+      "type": "string",
+      "pattern": "^[0-9a-f]{4,64}$"
     },
     "__schema346": {
-      "$ref": "#/$defs/Timestamp"
+      "$ref": "#/$defs/FullRefName"
     },
     "__schema347": {
       "$ref": "#/$defs/Timestamp"
     },
     "__schema348": {
-      "$ref": "#/$defs/PathId"
+      "$ref": "#/$defs/Timestamp"
     },
     "__schema349": {
-      "$ref": "#/$defs/WorktreeId"
+      "$ref": "#/$defs/PathId"
     },
     "__schema35": {
       "type": "string",
       "const": "unstagePaths"
     },
     "__schema350": {
+      "$ref": "#/$defs/WorktreeId"
+    },
+    "__schema351": {
       "type": "string",
       "enum": [
         "unstaged",
@@ -5990,9 +6152,6 @@
         "range"
       ]
     },
-    "__schema351": {
-      "$ref": "#/$defs/ObjectId"
-    },
     "__schema352": {
       "$ref": "#/$defs/ObjectId"
     },
@@ -6000,28 +6159,28 @@
       "$ref": "#/$defs/ObjectId"
     },
     "__schema354": {
-      "$ref": "#/$defs/PathId"
+      "$ref": "#/$defs/ObjectId"
     },
     "__schema355": {
+      "$ref": "#/$defs/PathId"
+    },
+    "__schema356": {
       "type": "integer",
       "exclusiveMinimum": 0,
       "maximum": 2097152
     },
-    "__schema356": {
+    "__schema357": {
       "$ref": "#/$defs/OperationId"
     },
-    "__schema357": {
+    "__schema358": {
       "type": "integer",
       "exclusiveMinimum": 0,
       "maximum": 2000
     },
-    "__schema358": {
+    "__schema359": {
       "type": "integer",
       "minimum": 0,
       "maximum": 9007199254740991
-    },
-    "__schema359": {
-      "type": "boolean"
     },
     "__schema36": {
       "type": "object",
@@ -6050,44 +6209,41 @@
       "type": "boolean"
     },
     "__schema362": {
+      "type": "boolean"
+    },
+    "__schema363": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/ExecutionTargetKind"
       }
     },
-    "__schema363": {
+    "__schema364": {
       "type": "string",
       "minLength": 1,
       "maxLength": 64
     },
-    "__schema364": {
+    "__schema365": {
       "type": "string",
       "minLength": 1,
       "maxLength": 512
     },
-    "__schema365": {
+    "__schema366": {
       "type": "string",
       "minLength": 1,
       "maxLength": 128
     },
-    "__schema366": {
+    "__schema367": {
       "type": "string",
       "minLength": 1,
       "maxLength": 256
     },
-    "__schema367": {
-      "type": "boolean"
-    },
     "__schema368": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/SshHostCandidate"
-      }
+      "type": "boolean"
     },
     "__schema369": {
       "type": "array",
       "items": {
-        "$ref": "#/$defs/HostWarning"
+        "$ref": "#/$defs/SshHostCandidate"
       }
     },
     "__schema37": {
@@ -6095,19 +6251,25 @@
       "const": "discardTrackedPaths"
     },
     "__schema370": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 128
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/HostWarning"
+      }
     },
     "__schema371": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 256
+      "maxLength": 128
     },
     "__schema372": {
-      "type": "boolean"
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
     },
     "__schema373": {
+      "type": "boolean"
+    },
+    "__schema374": {
       "type": "object",
       "properties": {
         "kind": {
@@ -6120,7 +6282,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema374": {
+    "__schema375": {
       "type": "object",
       "properties": {
         "kind": {
@@ -6137,7 +6299,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema375": {
+    "__schema376": {
       "type": "object",
       "properties": {
         "kind": {
@@ -6160,13 +6322,81 @@
       ],
       "additionalProperties": false
     },
-    "__schema376": {
+    "__schema377": {
       "type": "boolean",
       "const": true
+    },
+    "__schema378": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "__schema379": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 40
     },
     "__schema38": {
       "type": "boolean",
       "const": true
+    },
+    "__schema380": {
+      "maxItems": 32,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema381"
+      }
+    },
+    "__schema381": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "__schema382": {
+      "maxItems": 8,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ProviderConnection"
+      }
+    },
+    "__schema383": {
+      "type": "string",
+      "minLength": 20,
+      "maxLength": 255
+    },
+    "__schema384": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema385": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 600
+    },
+    "__schema386": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "__schema387": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/__schema388"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema388": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "pattern": "^https:\\/\\/(?:github\\.com|[\\w.-]+\\.githubusercontent\\.com|[\\w.-]+\\.github\\.com)(?:\\/|$)"
+    },
+    "__schema389": {
+      "type": "boolean"
     },
     "__schema39": {
       "type": "object",
@@ -6187,6 +6417,54 @@
         "operation"
       ],
       "additionalProperties": false
+    },
+    "__schema390": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/ProviderId"
+        },
+        "owner": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "repo": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      },
+      "required": [
+        "provider",
+        "owner",
+        "repo"
+      ],
+      "additionalProperties": false
+    },
+    "__schema391": {
+      "type": "string",
+      "enum": [
+        "upstream",
+        "cache"
+      ]
+    },
+    "__schema392": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Timestamp"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema393": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ProviderPullRequest"
+      }
     },
     "__schema4": {
       "type": "integer",

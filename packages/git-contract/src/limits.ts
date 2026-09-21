@@ -43,6 +43,7 @@ export const LIMITS = {
   pathSelectionMaxEntries: 1_000,
   stashListMaxEntries: 1_000,
   refListMaxEntries: 5_000,
+  providerPullRequestsMaxEntries: 100,
   commitMessageMaxBytes: 1_048_576,
   branchNameMaxLength: 255,
   /** How many tips a history snapshot may pin. */

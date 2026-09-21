@@ -39,6 +39,7 @@ import {
   tagNameSchema,
 } from "./names.js";
 import { MUTATION_KINDS, OPERATION_TARGET_LIST } from "./operations.js";
+import { providerIdSchema } from "./provider.js";
 import {
   mutationTargetSchema,
   targetKindSchema,
@@ -159,6 +160,8 @@ export const capabilitiesResponseSchema = z
       features: gitCapabilitiesSchema,
     }),
     reads: z.array(readKindSchema),
+    /** Forge integrations this host carries; absent from hosts without the module. */
+    providers: z.array(providerIdSchema).optional(),
     operations: z.array(
       z.strictObject({
         kind: z.enum(MUTATION_KINDS),

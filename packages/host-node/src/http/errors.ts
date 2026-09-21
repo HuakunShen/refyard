@@ -38,6 +38,13 @@ export const STATUS_BY_CODE: Readonly<Record<ProblemCode, number>> = {
   Timeout: 504,
   Cancelled: 409,
   Unavailable: 503,
+  // Provider axis: not-connected and no-remote are state preconditions like a
+  // conflict; an upstream credential rejection is an upstream problem (the
+  // session's own auth is fine), and a rate limit maps to 429 like ResourceBusy.
+  ProviderNotConnected: 409,
+  NoProviderRemote: 409,
+  ProviderUnauthorized: 502,
+  ProviderRateLimited: 429,
   InternalError: 500,
 };
 
