@@ -159,10 +159,14 @@ AND rebase stops — and **create worktree from here** (rides the existing
 Adopted 2026-09-22 (later the same day): **drop commit** (`dropCommit` — one
 `rebase --onto <parent> <oid>`; merges, the branch root, and off-branch commits
 refused; a descendant that becomes empty is dropped silently with the target —
-measured). Deliberately not adopted yet: squash/interactive-rebase (needs the
-todo-list machinery), AI actions, PR creation, Pin/Solo, commit drag, the WIP
-row, per-column sort/filter, rename-from-graph (BranchPanel owns rename; it
-needs an inline text field the graph menu does not have).
+measured). Adopted later the same day: **squash the tip into its parent** (`squashCommit`,
+contract kind 45 — soft reset plus amend, so both message paths replace the
+parent; a typed message replaces it, null keeps it; a top commit that adds
+nothing is refused). Deliberately not adopted yet: mid-history squash and
+interactive rebase (need the todo-list machinery), AI actions, PR creation,
+Pin/Solo, commit drag, the WIP row, per-column sort/filter, rename-from-graph
+(BranchPanel owns rename; it needs an inline text field the graph menu does not
+have).
 
 ## 7. Round three — segment ownership (2026-09-22)
 
