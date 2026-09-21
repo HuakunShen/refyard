@@ -83,6 +83,46 @@ export function gutterWidth(
   return laneX(last, metrics) + metrics.radius + metrics.lanePadding;
 }
 
+/** Below these a squeezed graph stops shrinking and lets the column clip it. */
+const MIN_LANE_WIDTH = 6;
+const MIN_RADIUS = 2.5;
+
+/**
+ * Metrics that squeeze `laneCount` lanes into `availableWidth`, GitKraken-style.
+ *
+ * At or above the natural gutter the base metrics hold unchanged. Below it, the
+ * lane spacing — and the dots with it — scales down until the lanes fit, so a
+ * narrow Graph column compresses its lanes instead of forcing the column wide
+ * or dropping them. The floors keep a maximally squeezed graph legible; past
+ * them the column simply clips, which is what GitKraken does too.
+ */
+export function compressedMetrics(
+  laneCount: number,
+  availableWidth: number,
+  base: GraphMetrics = DEFAULT_METRICS,
+): GraphMetrics {
+  if (laneCount <= 1 || availableWidth >= gutterWidth(laneCount, base)) {
+    return base;
+  }
+  const last = laneCount - 1;
+  // The stretch of the gutter that actually scales: from the first lane's
+  // centre to the last one's, plus both end radii. Padding stays fixed so the
+  // graph keeps its breathing room against the neighbouring columns.
+  const laneSpan = 2 * base.radius + last * base.laneWidth;
+  const scale = Math.min(
+    Math.max(
+      (availableWidth - 2 * base.lanePadding) / laneSpan,
+      MIN_LANE_WIDTH / base.laneWidth,
+    ),
+    1,
+  );
+  return {
+    ...base,
+    laneWidth: Math.max(MIN_LANE_WIDTH, base.laneWidth * scale),
+    radius: Math.max(MIN_RADIUS, base.radius * scale),
+  };
+}
+
 /**
  * One edge between two points.
  *

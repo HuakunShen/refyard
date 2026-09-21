@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import { layoutGraph, type GraphRow, type LaneRef } from "@refyard/git-graph";
 import {
   DEFAULT_METRICS,
+  compressedMetrics,
   edgePath,
   gutterWidth,
   lanePaint,
@@ -74,6 +75,48 @@ describe("lane positions", () => {
     expect(one).toBeGreaterThanOrEqual(
       2 * (metrics.radius + metrics.lanePadding),
     );
+  });
+});
+
+describe("compressed metrics", () => {
+  it("keeps the base metrics once the column fits the lanes", () => {
+    const lanes = 4;
+    expect(compressedMetrics(lanes, gutterWidth(lanes, metrics), metrics)).toBe(
+      metrics,
+    );
+    expect(compressedMetrics(lanes, 10_000, metrics)).toBe(metrics);
+    // A single lane never needs squeezing: the padding alone surrounds it.
+    expect(compressedMetrics(1, 0, metrics)).toBe(metrics);
+  });
+
+  it("squeezes the lane spacing so every lane fits a narrow column", () => {
+    // Real-world failure prevented: a user-narrowed graph column that either
+    // forced the table wide again or silently dropped lanes would undo the
+    // resize; GitKraken compresses the lanes instead, and so must we.
+    const lanes = 6;
+    const width = 60;
+    const squeezed = compressedMetrics(lanes, width, metrics);
+    expect(gutterWidth(lanes, squeezed)).toBeLessThanOrEqual(width);
+    // Squeezing is proportionate: lanes stay evenly spaced and dots stay round.
+    expect(squeezed.laneWidth).toBeLessThan(metrics.laneWidth);
+    expect(squeezed.radius).toBeLessThan(metrics.radius);
+    expect(laneX(3, squeezed) - laneX(2, squeezed)).toBe(squeezed.laneWidth);
+    // The row height is the list's layout and must never move.
+    expect(squeezed.rowHeight).toBe(metrics.rowHeight);
+  });
+
+  it("stops shrinking at a legible floor and lets the column clip past it", () => {
+    const squeezed = compressedMetrics(20, 40, metrics);
+    // The lane-width floor sets the scale; the radius rides it unless it would
+    // dip under its own floor.
+    const floorScale = 6 / metrics.laneWidth;
+    expect(squeezed.laneWidth).toBe(6);
+    expect(squeezed.radius).toBe(
+      Math.max(2.5, metrics.radius * floorScale),
+    );
+    // Past the floor the gutter may exceed the column; the SVG clips, which is
+    // exactly what a hard-squeezed GitKraken graph does.
+    expect(gutterWidth(20, squeezed)).toBeGreaterThan(40);
   });
 });
 

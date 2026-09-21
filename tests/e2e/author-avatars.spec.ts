@@ -65,6 +65,15 @@ test.describe("Author avatars", () => {
       "https://github.com/octocat.png?size=80",
     );
 
+    // The graph draws the photo as the commit node itself, ringed in the lane
+    // colour — the same URL the author column uses, so the browser fetches it
+    // once for both.
+    await expect(
+      page
+        .locator('svg[data-slot="graph-gutter"] image')
+        .first(),
+    ).toHaveAttribute("href", "https://github.com/octocat.png?size=80");
+
     // The fixture-authored commit has no GitHub email: colored initials, and
     // never a remote request for it.
     await expect(
@@ -84,12 +93,16 @@ test.describe("Author avatars", () => {
       .click();
 
     // Off means no avatar decoration at all: plain author names, no photo and
-    // no initials chip — initials are the fallback while photos are on.
+    // no initials chip, and the graph draws plain dots — initials are the
+    // fallback while photos are on, not a second persistent form.
     await expect(
       page.locator('[data-testid="author-avatar-img"]'),
     ).toHaveCount(0);
     await expect(
       page.locator('[data-testid="author-avatar-initials"]'),
+    ).toHaveCount(0);
+    await expect(
+      page.locator('svg[data-slot="graph-gutter"] image'),
     ).toHaveCount(0);
 
     // The refusal survives a reload — it is a stored preference, not view state.

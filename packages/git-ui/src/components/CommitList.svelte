@@ -51,9 +51,10 @@
   import StateBanner from "./StateBanner.svelte";
   import {
     DEFAULT_METRICS,
-    gutterWidth,
+    compressedMetrics,
     type GraphMetrics,
   } from "../lib/geometry.js";
+  import { authorAvatar } from "../lib/avatars.js";
   import {
     HIDEABLE_COLUMN_IDS,
     defaultColumnState,
@@ -255,14 +256,12 @@
   });
 
   /**
-   * The graph column can never be narrower than the lanes drawn in it; the lane
-   * layout owns that floor. Filtered (sparse) history has no graph at all.
+   * The graph column no longer owns a lane floor: whatever width it has, the
+   * lanes compress into it (GitKraken-style). Filtered (sparse) history has no
+   * graph at all.
    */
-  const graphLaneFloor = $derived(
-    topology === "continuous" ? gutterWidth(laneCount, metrics) : 0,
-  );
   const cells = $derived(
-    visibleColumns(columnState, graphLaneFloor).filter(
+    visibleColumns(columnState).filter(
       (cell) => cell.id !== "graph" || topology === "continuous",
     ),
   );
@@ -305,6 +304,32 @@
       containerWidth,
     ),
   );
+  /**
+   * The metrics the graph actually draws with: the lanes compress into whatever
+   * width the graph column has, so a narrowed column squeezes its spacing
+   * instead of forcing the table wide.
+   */
+  const graphMetrics = $derived(
+    graphCell === undefined
+      ? metrics
+      : compressedMetrics(laneCount, graphCell.width, metrics),
+  );
+  /**
+   * GitHub photo URLs by commit oid, for the graph's avatar nodes. Authors the
+   * commit email cannot map keep the plain coloured dot.
+   */
+  const avatarByOid = $derived.by(() => {
+    const map = new Map<string, string>();
+    if (showAvatars) {
+      for (const commit of commits) {
+        const avatar = authorAvatar(commit.authorEmail, commit.authorName);
+        if (avatar.kind === "github") {
+          map.set(commit.oid, avatar.url);
+        }
+      }
+    }
+    return map;
+  });
 
   /**
    * The header (and the WIP row above the body) live outside the scrolling
@@ -332,20 +357,13 @@
     }
     event.preventDefault();
     const startX = event.clientX;
-    // The graph is never narrower than its lane floor; dragging from a
-    // floor-raised width must not snap back to the narrower stored one.
-    const startWidth =
-      id === "graph"
-        ? Math.max(columnState.widths[id], graphLaneFloor)
-        : columnState.widths[id];
-    const floor = id === "graph" ? graphLaneFloor : undefined;
+    const startWidth = columnState.widths[id];
     target.setPointerCapture(event.pointerId);
     const onMove = (move: PointerEvent): void => {
       columnState = resizeColumn(
         columnState,
         id,
         startWidth + move.clientX - startX,
-        floor,
       );
     };
     const onEnd = (): void => {
@@ -826,8 +844,8 @@
               {#if graphCell !== undefined}
                 <div
                   class="flex shrink-0 items-center border-r border-border/25"
-                  style="width: {graphCell.width}px; min-width: {graphCell.width}px; padding-left: {metrics.lanePadding +
-                    metrics.radius -
+                  style="width: {graphCell.width}px; min-width: {graphCell.width}px; padding-left: {graphMetrics.lanePadding +
+                    graphMetrics.radius -
                     6}px"
                 >
                   <span
@@ -890,7 +908,8 @@
               <CommitGraph
                 rows={visibleRows}
                 startIndex={firstVisible}
-                {metrics}
+                metrics={graphMetrics}
+                avatarByOid={avatarByOid}
                 {selectedOid}
               />
             </svg>

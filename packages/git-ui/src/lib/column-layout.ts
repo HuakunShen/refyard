@@ -119,25 +119,17 @@ export function hiddenColumns(
 }
 
 /**
- * The visible columns in table order. The graph's floor is the lane layout's
- * own minimum width: a user-narrowed graph column still shows every lane.
+ * The visible columns in table order at their stored widths. The graph column
+ * has no lane floor here: a narrow graph compresses its lanes (see
+ * `compressedMetrics`), so the stored width is the whole truth.
  */
 export function visibleColumns(
   state: HistoryColumnState,
-  graphFloor: number,
 ): readonly { id: HistoryColumnId; width: number }[] {
-  const cells: { id: HistoryColumnId; width: number }[] = [];
-  for (const id of HISTORY_COLUMN_IDS) {
-    if (!isVisible(state, id)) {
-      continue;
-    }
-    const width =
-      id === "graph"
-        ? Math.max(state.widths.graph, graphFloor)
-        : state.widths[id];
-    cells.push({ id, width });
-  }
-  return cells;
+  return HISTORY_COLUMN_IDS.filter((id) => isVisible(state, id)).map((id) => ({
+    id,
+    width: state.widths[id],
+  }));
 }
 
 export function serializeColumnState(state: HistoryColumnState): string {

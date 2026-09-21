@@ -49,27 +49,28 @@ describe("history column layout", () => {
     expect(state.widths.author).toBe(200);
   });
 
-  it("visibleColumns lists cells in table order with the graph floor applied", () => {
+  it("visibleColumns lists cells in table order at their stored widths", () => {
+    const defaults = defaultColumnState().widths;
     let state = toggleColumn(defaultColumnState(), "author");
     state = toggleColumn(state, "graph");
-    expect(visibleColumns(state, 120).map((column) => column.id)).toEqual([
+    expect(visibleColumns(state).map((column) => column.id)).toEqual([
       "refs",
       "message",
       "date",
       "sha",
     ]);
-    // A hidden graph column stays hidden even when a lane floor arrives —
-    // hiding is a user decision, not something graph state overrides.
-    expect(visibleColumns(state, 200).map((column) => column.id)).toEqual([
-      "refs",
-      "message",
-      "date",
-      "sha",
+    expect(visibleColumns(state).map((column) => column.width)).toEqual([
+      defaults.refs,
+      defaults.message,
+      defaults.date,
+      defaults.sha,
     ]);
     const shown = defaultColumnState();
-    expect(visibleColumns(resizeColumn(shown, "graph", 90), 120)).toEqual([
+    // The graph has no lane floor any more: a narrow graph compresses its
+    // lanes, so the stored width is used verbatim.
+    expect(visibleColumns(resizeColumn(shown, "graph", 90))).toEqual([
       { id: "refs", width: shown.widths.refs },
-      { id: "graph", width: 120 },
+      { id: "graph", width: 90 },
       { id: "message", width: shown.widths.message },
       { id: "author", width: shown.widths.author },
       { id: "date", width: shown.widths.date },
@@ -85,7 +86,7 @@ describe("history column layout", () => {
     expect(HIDEABLE_COLUMN_IDS).not.toContain("message");
     const hidden = toggleColumn(defaultColumnState(), "message");
     expect(
-      visibleColumns(hidden, 0).map((column) => column.id),
+      visibleColumns(hidden).map((column) => column.id),
     ).not.toContain("message");
   });
 
