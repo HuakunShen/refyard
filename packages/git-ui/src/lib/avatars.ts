@@ -89,7 +89,22 @@ function hueOf(input: string): number {
  * before it ever reaches the browser, and this function re-strips the userinfo
  * anyway so a hostile value cannot smuggle one into the constructed URL.
  */
-export function githubOwnerAvatarUrl(remoteUrl: string): string | null {
+export interface GithubRepo {
+  readonly owner: string;
+  /** Repository name without the `.git` suffix. */
+  readonly name: string;
+}
+
+/**
+ * The GitHub repository a remote points at, or null.
+ *
+ * Only github.com counts: every URL built from this module is a
+ * `https://github.com/...` link, and inventing one for a GitLab or self-hosted
+ * remote would produce a link that 404s. Both remote spellings are accepted —
+ * `https://github.com/owner/repo.git` and the scp-like
+ * `git@github.com:owner/repo.git` — with or without the suffix.
+ */
+export function githubRepoFromRemote(remoteUrl: string): GithubRepo | null {
   const trimmed = remoteUrl.trim();
   if (trimmed.length === 0) {
     return null;
@@ -117,16 +132,62 @@ export function githubOwnerAvatarUrl(remoteUrl: string): string | null {
   if (host !== "github.com" && host !== "www.github.com") {
     return null;
   }
-  const owner =
-    path
-      ?.replace(/^\/+/, "")
-      .replace(/\.git$/i, "")
-      .split("/")[0]
-      ?.trim() ?? "";
-  if (!/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(owner)) {
-    // Not a usable account name (empty, `settings/`, trajectory of an attack);
-    // the globe is the honest icon.
+  const segments = (path ?? "")
+    .replace(/^\/+/, "")
+    .replace(/\.git$/i, "")
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+  const owner = segments[0] ?? "";
+  const name = segments[1] ?? "";
+  if (
+    !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(owner) ||
+    !/^[a-z0-9._-]+$/i.test(name)
+  ) {
+    // Not a usable owner/repository pair (empty, `settings/`, trajectory of an
+    // attack); the globe is the honest icon and a link would be a lie.
     return null;
   }
-  return `https://github.com/${owner}.png?size=40`;
+  return { owner, name };
+}
+
+/** The owner's avatar on GitHub, for a remote's org or user photo. */
+export function githubOwnerAvatarUrl(remoteUrl: string): string | null {
+  const repo = githubRepoFromRemote(remoteUrl);
+  return repo === null ? null : `https://github.com/${repo.owner}.png?size=40`;
+}
+
+/**
+ * The commit's page on GitHub — GitKraken's "Copy link to this commit".
+ *
+ * Null when the remote is not a GitHub remote, so a caller can leave the item
+ * out of a menu rather than offer a link that cannot exist.
+ */
+export function githubCommitUrl(
+  remoteUrl: string,
+  oid: string,
+): string | null {
+  const repo = githubRepoFromRemote(remoteUrl);
+  if (repo === null || !/^[0-9a-f]{7,64}$/i.test(oid)) {
+    return null;
+  }
+  return `https://github.com/${repo.owner}/${repo.name}/commit/${oid}`;
+}
+
+/** The branch's page on GitHub — GitKraken's "Copy link to branch". */
+export function githubBranchUrl(
+  remoteUrl: string,
+  branchName: string,
+): string | null {
+  const repo = githubRepoFromRemote(remoteUrl);
+  const name = branchName.trim();
+  if (repo === null || name.length === 0) {
+    return null;
+  }
+  // A branch name is a path segment: anything that would escape it is refused
+  // rather than percent-encoded into a link to somewhere else.
+  if (name.includes("..") || name.startsWith("/") || name.includes("\\")) {
+    return null;
+  }
+  return `https://github.com/${repo.owner}/${repo.name}/tree/${name.split("/").map(encodeURIComponent).join("/")}`;
 }

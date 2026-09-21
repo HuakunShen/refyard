@@ -5,7 +5,10 @@
 import { describe, expect, it } from "vitest";
 import {
   authorAvatar,
+  githubBranchUrl,
+  githubCommitUrl,
   githubOwnerAvatarUrl,
+  githubRepoFromRemote,
   initialsAvatar,
 } from "@refyard/git-ui/lib/avatars";
 
@@ -119,5 +122,52 @@ describe("remote owner avatars", () => {
     expect(githubOwnerAvatarUrl("https://github.com/.git")).toBeNull();
     expect(githubOwnerAvatarUrl("")).toBeNull();
     expect(githubOwnerAvatarUrl("/local/path/repo.git")).toBeNull();
+  });
+});
+
+describe("GitHub links from a remote", () => {
+  it("reads owner and repository from both remote spellings", () => {
+    expect(githubRepoFromRemote("https://github.com/drizzle-team/drizzle-orm.git")).toEqual(
+      { owner: "drizzle-team", name: "drizzle-orm" },
+    );
+    expect(githubRepoFromRemote("git@github.com:HuakunShen/refyard.git")).toEqual({
+      owner: "HuakunShen",
+      name: "refyard",
+    });
+    expect(githubRepoFromRemote("https://github.com/owner/repo")).toEqual({
+      owner: "owner",
+      name: "repo",
+    });
+  });
+
+  it("refuses a remote that is not a GitHub repository", () => {
+    // Prevents: offering "Copy GitHub Link" on a GitLab or self-hosted remote and
+    // handing the user a github.com URL that 404s.
+    expect(githubRepoFromRemote("https://gitlab.com/owner/repo.git")).toBeNull();
+    expect(githubRepoFromRemote("git@code.example.com:team/repo.git")).toBeNull();
+    expect(githubRepoFromRemote("https://github.com/owner")).toBeNull();
+    expect(githubRepoFromRemote("")).toBeNull();
+  });
+
+  it("builds the commit and branch pages, and nothing else", () => {
+    const remote = "git@github.com:HuakunShen/refyard.git";
+    expect(githubCommitUrl(remote, "abc1234")).toBe(
+      "https://github.com/HuakunShen/refyard/commit/abc1234",
+    );
+    expect(githubBranchUrl(remote, "feat/graph")).toBe(
+      "https://github.com/HuakunShen/refyard/tree/feat/graph",
+    );
+    // An oid that is not hex is not a commit, and a branch name that climbs out of
+    // the path is not a branch: both produce no link rather than a wrong one.
+    expect(githubCommitUrl(remote, "not-a-sha")).toBeNull();
+    expect(githubBranchUrl(remote, "../../etc/passwd")).toBeNull();
+    expect(githubBranchUrl("https://gitlab.com/owner/repo.git", "main")).toBeNull();
+  });
+
+  it("keeps the owner avatar working through the same parser", () => {
+    expect(githubOwnerAvatarUrl("git@github.com:HuakunShen/refyard.git")).toBe(
+      "https://github.com/HuakunShen.png?size=40",
+    );
+    expect(githubOwnerAvatarUrl("https://gitlab.com/owner/repo.git")).toBeNull();
   });
 });

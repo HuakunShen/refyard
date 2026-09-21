@@ -38,7 +38,10 @@
     cn,
     type ExecutionTargetSelection,
   } from "@refyard/git-ui";
-  import { githubOwnerAvatarUrl } from "@refyard/git-ui/lib/avatars";
+  import {
+    githubOwnerAvatarUrl,
+    githubRepoFromRemote,
+  } from "@refyard/git-ui/lib/avatars";
   import {
     densityMetrics,
     isRowDensity,
@@ -385,6 +388,23 @@
       }
     }
     return map;
+  });
+
+  /**
+   * A GitHub remote URL for the history's "Copy GitHub Link" items.
+   *
+   * `origin` wins when several remotes point at GitHub, because that is the one a
+   * "link to this commit" is expected to mean; a repository with no GitHub remote
+   * simply does not offer the items.
+   */
+  const githubRemoteUrl = $derived.by(() => {
+    const remotes = refs.data?.remotes ?? [];
+    const github = remotes.filter(
+      (remote) => githubRepoFromRemote(remote.fetchUrlDisplay) !== null,
+    );
+    const preferred =
+      github.find((remote) => remote.name === "origin") ?? github[0];
+    return preferred?.fetchUrlDisplay;
   });
 
   const repository = $derived(queries.repository);
@@ -1541,6 +1561,7 @@
               showAvatars={avatars}
               {remoteAvatars}
               metrics={historyMetrics}
+              {githubRemoteUrl}
               class="min-h-0 flex-1"
             />
           {/if}

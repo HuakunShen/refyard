@@ -56,7 +56,11 @@
     lanePaint,
     type GraphMetrics,
   } from "../lib/geometry.js";
-  import { authorAvatar } from "../lib/avatars.js";
+  import {
+    authorAvatar,
+    githubBranchUrl,
+    githubCommitUrl,
+  } from "../lib/avatars.js";
   import {
     HIDEABLE_COLUMN_IDS,
     defaultColumnState,
@@ -97,6 +101,12 @@
     shallow: boolean;
     laneCount: number;
     metrics?: GraphMetrics;
+    /**
+     * A GitHub remote URL for this repository, when it has one. Used only to offer
+     * "Copy GitHub link" items; without it those items are absent rather than
+     * disabled, because a link that cannot exist is not a feature.
+     */
+    githubRemoteUrl?: string;
     onSelect: (commit: CommitSummary) => void;
     onLoadMore: () => void;
     contextDisabled?: boolean;
@@ -152,6 +162,7 @@
     shallow,
     laneCount,
     metrics = DEFAULT_METRICS,
+    githubRemoteUrl = undefined,
     onSelect,
     onLoadMore,
     contextDisabled = false,
@@ -494,7 +505,36 @@
               onSelect: () => onCopyText(commit.subject),
             },
           ]),
+      ...(commitUrlFor(commit) === null || onCopyText === undefined
+        ? []
+        : [
+            {
+              kind: "action" as const,
+              id: "copy-github-link",
+              label: "Copy GitHub Link",
+              onSelect: () => {
+                const url = commitUrlFor(commit);
+                if (url !== null) {
+                  onCopyText(url);
+                }
+              },
+            },
+          ]),
     ];
+  }
+
+  /** The branch's page on GitHub, or null when there is no GitHub remote. */
+  function branchUrlFor(branchName: string): string | null {
+    return githubRemoteUrl === undefined
+      ? null
+      : githubBranchUrl(githubRemoteUrl, branchName);
+  }
+
+  /** The commit's page on GitHub, or null when there is no GitHub remote. */
+  function commitUrlFor(commit: CommitSummary): string | null {
+    return githubRemoteUrl === undefined
+      ? null
+      : githubCommitUrl(githubRemoteUrl, commit.oid);
   }
 
   function openCommitMenu(event: MouseEvent, commit: CommitSummary): void {
@@ -571,6 +611,21 @@
                 id: "copy-name",
                 label: "Copy Branch Name",
                 onSelect: () => onCopyText(ref.branchName),
+              },
+            ]),
+        ...(onCopyText === undefined || branchUrlFor(ref.branchName) === null
+          ? []
+          : [
+              {
+                kind: "action" as const,
+                id: "copy-github-branch",
+                label: "Copy GitHub Link",
+                onSelect: () => {
+                  const url = branchUrlFor(ref.branchName);
+                  if (url !== null) {
+                    onCopyText(url);
+                  }
+                },
               },
             ]),
       ];
