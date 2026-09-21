@@ -30,6 +30,12 @@ export interface GitHubRestClientOptions {
 export interface GitHubUser {
   readonly login: string;
   readonly type: string;
+  /**
+   * Scopes GitHub reports for the token (`x-oauth-scopes`), which only rides on
+   * responses made *with* that token — exactly what validation is. Empty for
+   * fine-grained PATs, which GitHub does not list here; display-only either way.
+   */
+  readonly scopes: readonly string[];
 }
 
 export interface GitHubPullRequest {
@@ -106,7 +112,7 @@ export function createGitHubRestClient(
     token: string,
     path: string,
     signal: AbortSignal | undefined,
-  ): Promise<GitHubResult<unknown>> {
+  ): Promise<GitHubResult<{ value: unknown; response: Response }>> {
     let response: Response;
     try {
       response = await options.fetch(`${baseUrl}${path}`, {
@@ -148,7 +154,10 @@ export function createGitHubRestClient(
       return { ok: false, error: { kind: "refused", status: response.status } };
     }
     try {
-      return { ok: true, value: await response.json() };
+      return {
+        ok: true,
+        value: { value: await response.json(), response },
+      };
     } catch {
       return {
         ok: false,
@@ -164,16 +173,21 @@ export function createGitHubRestClient(
       if (!result.ok) {
         return result;
       }
-      const parsed = userSchema.safeParse(result.value);
+      const parsed = userSchema.safeParse(result.value.value);
       if (!parsed.success) {
         return {
           ok: false,
           error: { kind: "malformed", reason: "unexpected /user shape" },
         };
       }
+      const headerScopes = result.value.response.headers.get("x-oauth-scopes");
       return {
         ok: true,
-        value: { login: parsed.data.login, type: parsed.data.type },
+        value: {
+          login: parsed.data.login,
+          type: parsed.data.type,
+          scopes: headerScopes === null ? [] : headerScopes.split(/\s+/).filter((scope) => scope.length > 0),
+        },
       };
     },
 
@@ -189,7 +203,7 @@ export function createGitHubRestClient(
         if (!result.ok) {
           return result;
         }
-        const parsed = z.array(pullSchema).safeParse(result.value);
+        const parsed = z.array(pullSchema).safeParse(result.value.value);
         if (!parsed.success) {
           return {
             ok: false,

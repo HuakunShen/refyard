@@ -17,6 +17,7 @@
     "@scalar/hono-api-reference": "catalog:",
     "@refyard/git-contract": "workspace:*",
     "@refyard/git-core": "workspace:*",
+    "@refyard/git-provider": "workspace:*",
     "hono": "catalog:",
     "hono-openapi": "catalog:",
     "hono-rate-limiter": "catalog:",

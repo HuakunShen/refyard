@@ -38,13 +38,15 @@ export type AuthorizationScope =
   | "repository:read"
   | "repository:write"
   | "repository:network"
-  | "workspace:manage";
+  | "workspace:manage"
+  | "provider:manage";
 
 export const AUTHORIZATION_SCOPES: readonly AuthorizationScope[] = [
   "repository:read",
   "repository:write",
   "repository:network",
   "workspace:manage",
+  "provider:manage",
 ];
 
 export interface SessionGrants {

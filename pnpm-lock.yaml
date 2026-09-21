@@ -569,6 +569,9 @@ importers:
       '@refyard/git-core':
         specifier: workspace:*
         version: link:../git-core
+      '@refyard/git-provider':
+        specifier: workspace:*
+        version: link:../git-provider
       '@scalar/hono-api-reference':
         specifier: 'catalog:'
         version: 0.12.1(hono@4.13.8)

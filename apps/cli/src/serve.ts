@@ -480,6 +480,7 @@ export async function runService(
         "repository:write",
         "repository:network",
         "workspace:manage",
+        "provider:manage",
       ],
     },
     log: (line) => {

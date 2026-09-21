@@ -349,6 +349,7 @@ export async function startTestService(
         "repository:write",
         "repository:network",
         "workspace:manage",
+        "provider:manage",
       ],
     },
     ...(options.allowedOrigins === undefined

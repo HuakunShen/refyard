@@ -67,19 +67,35 @@ function clientFor(
 const USER_BODY = JSON.stringify({ login: "octocat", type: "User" });
 
 describe("authenticatedUser", () => {
-  it("returns the account and sends the required headers", async () => {
-    stubs.set("GET /user", { status: 200, body: USER_BODY });
+  it("returns the account, its scopes, and sends the required headers", async () => {
+    stubs.set("GET /user", {
+      status: 200,
+      headers: { "x-oauth-scopes": "repo:read read:user" },
+      body: USER_BODY,
+    });
     const observed: { urls: string[]; headers: Array<Record<string, string | undefined>> } = {
       urls: [],
       headers: [],
     };
     const result = await clientFor(observed).authenticatedUser({ token: TOKEN });
-    expect(result).toEqual({ ok: true, value: { login: "octocat", type: "User" } });
+    expect(result).toEqual({
+      ok: true,
+      value: { login: "octocat", type: "User", scopes: ["repo:read", "read:user"] },
+    });
     expect(observed.urls).toEqual([`${baseUrl}/user`]);
     expect(observed.headers[0]?.authorization).toBe(`Bearer ${TOKEN}`);
     expect(observed.headers[0]?.accept).toContain("application/vnd.github");
     expect(observed.headers[0]?.["x-github-api-version"]).toBe("2022-11-28");
     expect(observed.headers[0]?.["user-agent"]).toMatch(/^refyard\//);
+  });
+
+  it("reports no scopes when the provider lists none (fine-grained tokens)", async () => {
+    stubs.set("GET /user", { status: 200, body: USER_BODY });
+    const result = await clientFor().authenticatedUser({ token: TOKEN });
+    expect(result).toEqual({
+      ok: true,
+      value: { login: "octocat", type: "User", scopes: [] },
+    });
   });
 
   it("classifies a rejected token as unauthorized", async () => {
