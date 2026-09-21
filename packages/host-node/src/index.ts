@@ -319,6 +319,11 @@ export {
   type CherryPickEffectsOptions,
 } from "./coordinator/cherry-pick-effects.js";
 export {
+  createRebaseEffects,
+  REBASE_MUTATION_KINDS,
+  type RebaseEffectsOptions,
+} from "./coordinator/rebase-effects.js";
+export {
   kindsBlockedByGitFeatures,
   unavailableForGitFeatures,
   unavailableMutations,

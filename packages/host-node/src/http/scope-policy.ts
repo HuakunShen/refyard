@@ -47,6 +47,9 @@ const MUTATION_SCOPE = {
   cherryPick: "repository:write",
   continueCherryPick: "repository:write",
   abortCherryPick: "repository:write",
+  rebase: "repository:write",
+  continueRebase: "repository:write",
+  abortRebase: "repository:write",
   revertCommit: "repository:write",
   resetBranch: "repository:write",
 } satisfies Record<MutationKind, AuthorizationScope>;

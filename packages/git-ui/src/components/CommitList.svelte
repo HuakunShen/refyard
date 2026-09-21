@@ -165,6 +165,12 @@
      */
     onCheckoutRemoteBranch?: (branchName: string, startOid: string) => void;
     /**
+     * Replay the checked-out branch's own commits onto this branch's tip.
+     * Offered on local branches only, never on the checked-out branch itself.
+     * Absent means the host cannot.
+     */
+    onRebaseOntoBranch?: (branchName: string, tipOid: string) => void;
+    /**
      * Add a linked worktree whose new branch starts at this commit. The
      * component asks for the destination and branch name; the host's own
      * validation refuses paths that leave the approved root. Absent means the
@@ -220,6 +226,7 @@
     onCreateWorktreeAt = undefined,
     onCherryPickCommit = undefined,
     onCheckoutRemoteBranch = undefined,
+    onRebaseOntoBranch = undefined,
     showAvatars = true,
     remoteAvatars = undefined,
     class: className = "",
@@ -716,6 +723,17 @@
                 label: `Merge into ${currentBranch ?? "current branch"}`,
                 disabled: contextDisabled,
                 onSelect: () => onMergeBranch(ref.branchName),
+              },
+            ]
+          : []),
+        ...(onRebaseOntoBranch !== undefined && !isCurrent
+          ? [
+              {
+                kind: "action" as const,
+                id: "rebase-onto",
+                label: `Rebase ${currentBranch ?? "current branch"} onto This`,
+                disabled: contextDisabled,
+                onSelect: () => onRebaseOntoBranch(ref.branchName, commit.oid),
               },
             ]
           : []),

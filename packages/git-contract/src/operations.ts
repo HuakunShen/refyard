@@ -536,6 +536,38 @@ const OPERATION_SCHEMAS = {
       description:
         "Abort the cherry-pick in progress and restore the state it started from. When Git cannot restore it, the diagnostic is reported and nothing is reset.",
     }),
+
+  rebase: z
+    .strictObject({
+      kind: z.literal("rebase"),
+      upstreamOid: objectIdSchema,
+    })
+    .meta({
+      id: "RebaseOperation",
+      description:
+        "Replay the checked-out branch's own commits onto another commit. A conflict stops the operation into the same resolve-and-continue state a merge uses; finishing a replayed commit keeps its original message, and no editor is ever opened.",
+    }),
+
+  continueRebase: z
+    .strictObject({
+      kind: z.literal("continueRebase"),
+    })
+    .meta({
+      id: "ContinueRebaseOperation",
+      description:
+        "Resume the rebase in progress after its stopped commit was resolved and staged. Refused while any conflicted path is still unmerged.",
+    }),
+
+  abortRebase: z
+    .strictObject({
+      kind: z.literal("abortRebase"),
+      confirmed: confirmedField,
+    })
+    .meta({
+      id: "AbortRebaseOperation",
+      description:
+        "Abort the rebase in progress and restore the branch to where the rebase started. When Git cannot restore it, the diagnostic is reported and nothing is reset.",
+    }),
 } as const;
 
 export { OPERATION_SCHEMAS };
@@ -587,6 +619,9 @@ export const OPERATION_TARGET_LIST = [
   ["cherryPick", ["worktree"]],
   ["continueCherryPick", ["worktree"]],
   ["abortCherryPick", ["worktree"]],
+  ["rebase", ["worktree"]],
+  ["continueRebase", ["worktree"]],
+  ["abortRebase", ["worktree"]],
 ] as const;
 
 export type MutationKind = (typeof OPERATION_TARGET_LIST)[number][0];
@@ -635,9 +670,9 @@ type Expect<T extends true> = T;
 export type _SchemasMatchTargetList = Expect<
   Equal<keyof typeof OPERATION_SCHEMAS, MutationKind>
 >;
-/** The documented union has exactly 40 members; a list edit that changes that stops compiling. */
+/** The documented union has exactly 43 members; a list edit that changes that stops compiling. */
 export type _MutationCount = Expect<
-  Equal<(typeof OPERATION_TARGET_LIST)["length"], 40>
+  Equal<(typeof OPERATION_TARGET_LIST)["length"], 43>
 >;
 
 /** Operations that can destroy work and therefore require explicit confirmation. */

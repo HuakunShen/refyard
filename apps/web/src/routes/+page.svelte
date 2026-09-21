@@ -942,6 +942,7 @@
   const onWorktreeCreate = writeController.onWorktreeCreate;
   const onCommitCherryPick = writeController.onCommitCherryPick;
   const onRemoteBranchCheckout = writeController.onRemoteBranchCheckout;
+  const onBranchRebase = writeController.onBranchRebase;
 
   function onCommitCreateBranch(
     commit: CommitSummary,
@@ -1568,6 +1569,9 @@
                 : undefined}
               onResetBranch={graphMenuOperations.has("resetBranch")
                 ? (commit, mode) => onCommitReset(commit.oid, mode)
+                : undefined}
+              onRebaseOntoBranch={graphMenuOperations.has("rebase")
+                ? (branchName, tipOid) => onBranchRebase(tipOid)
                 : undefined}
               onCheckoutRemoteBranch={graphMenuOperations.has("createBranch")
                 ? onRemoteBranchCheckout

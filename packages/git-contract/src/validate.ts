@@ -656,6 +656,17 @@ export function validateOperationSemantics(
 
     case "abortCherryPick":
       return [];
+
+    case "rebase":
+      // One object name: the oid schema already refuses everything that is not
+      // a full object name.
+      return [];
+
+    case "continueRebase":
+      return [];
+
+    case "abortRebase":
+      return [];
   }
 }
 

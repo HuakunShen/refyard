@@ -48,6 +48,7 @@ import {
   createStashTagEffects,
   createMergeEffects,
   createCherryPickEffects,
+  createRebaseEffects,
   createTextCodec,
   createWorktreeEffects,
   kindsBlockedByGitFeatures,
@@ -288,6 +289,7 @@ export async function assembleService(
   });
   const mergeEffects = createMergeEffects({ engine, repositories });
   const cherryPickEffects = createCherryPickEffects({ engine, repositories });
+  const rebaseEffects = createRebaseEffects({ engine, repositories });
   const worktreeEffects = createWorktreeEffects({
     engine,
     repositories,
@@ -314,6 +316,7 @@ export async function assembleService(
     ...worktreeEffects,
     ...mergeEffects,
     ...cherryPickEffects,
+    ...rebaseEffects,
   ].filter((effect) => !blocked.has(effect.kind));
 
   const mutations = createMutationCoordinator({

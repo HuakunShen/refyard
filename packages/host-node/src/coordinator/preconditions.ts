@@ -244,26 +244,30 @@ export function indexFingerprint(input: {
  * - `unstagePaths` is that step in reverse — taking a wrong stage back out before
  *   continuing — and it cannot discard working-tree content.
  * - `continueMerge` and `abortMerge` are the two ways to end a merge, and they end
- *   only a merge; `continueCherryPick` and `abortCherryPick` end only a cherry-pick.
- *   Each operation's finish belongs to that operation alone.
+ *   only a merge; `continueCherryPick` and `abortCherryPick` end only a cherry-pick;
+ *   `continueRebase` and `abortRebase` end only a rebase. Each operation's finish
+ *   belongs to that operation alone.
  *
  * Everything else stays blocked, `commit` and `discardTrackedPaths` included: a plain
  * commit would write the wrong history in place of the stopped operation, and a
- * discard fights the conflict state. A rebase, bisect, revert or mailbox apply is
- * not on any list either — this build did not start it and must not be the thing that
- * ends it.
+ * discard fights the conflict state. A bisect, revert or mailbox apply started
+ * outside this build is not on any list either — this build must not be the thing
+ * that ends it.
  */
 export function mayRunDuringOperation(kind: string): readonly string[] {
   switch (kind) {
     case "stagePaths":
     case "unstagePaths":
-      return ["merge", "cherry-pick"];
+      return ["merge", "cherry-pick", "rebase"];
     case "continueMerge":
     case "abortMerge":
       return ["merge"];
     case "continueCherryPick":
     case "abortCherryPick":
       return ["cherry-pick"];
+    case "continueRebase":
+    case "abortRebase":
+      return ["rebase"];
     default:
       return [];
   }

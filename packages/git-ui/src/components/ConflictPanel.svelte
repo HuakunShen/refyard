@@ -54,11 +54,15 @@
    * Operations this build can finish: the sequencer states its own effects can
    * open. A rebase or a bisect is somebody else's state and offers nothing.
    */
-  const ours: readonly string[] = ["merge", "cherry-pick"];
+  const ours: readonly string[] = ["merge", "cherry-pick", "rebase"];
 
-  /** "merge" / "cherry-pick", for the buttons that finish either. */
+  /** The operation's own name, for the buttons that finish it. */
   const operationName = $derived(
-    operationInProgress === "cherry-pick" ? "cherry-pick" : "merge",
+    operationInProgress === "cherry-pick"
+      ? "cherry-pick"
+      : operationInProgress === "rebase"
+        ? "rebase"
+        : "merge",
   );
 
   const isOurs = $derived(

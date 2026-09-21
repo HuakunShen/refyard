@@ -32,6 +32,7 @@ import {
   createStashTagEffects,
   createMergeEffects,
   createCherryPickEffects,
+  createRebaseEffects,
   createTextCodec,
   createWorktreeEffects,
   createWorktreeRegistry,
@@ -252,6 +253,7 @@ export async function startTestService(
     ...createWorktreeEffects({ engine, repositories, roots, paths }),
     ...createMergeEffects({ engine, repositories }),
     ...createCherryPickEffects({ engine, repositories }),
+    ...createRebaseEffects({ engine, repositories }),
   ];
 
   // The same feature gate the CLI applies: an operation whose porcelain this machine's

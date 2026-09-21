@@ -927,6 +927,45 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     );
   }
 
+  /**
+   * Replay the checked-out branch's own commits onto another commit. A
+   * conflict stops into the resolve-and-continue state the sidebar's conflict
+   * panel finishes; a replayed commit keeps its original message.
+   */
+  function onBranchRebase(upstreamOid: string): void {
+    void performWrite(
+      "branch-rebase",
+      () => ({ kind: "rebase", upstreamOid }),
+      (message, context) => {
+        stagingMessage =
+          message === null || context === null ? null : { context, message };
+      },
+      "worktree",
+    );
+  }
+
+  function onRebaseContinue(): void {
+    void performWrite(
+      "continue-rebase",
+      () => ({ kind: "continueRebase" }),
+      (result) => {
+        mergeMessage = result;
+      },
+      "worktree",
+    );
+  }
+
+  function onRebaseAbort(): void {
+    void performWrite(
+      "abort-rebase",
+      () => ({ kind: "abortRebase", confirmed: true }),
+      (result) => {
+        mergeMessage = result;
+      },
+      "worktree",
+    );
+  }
+
   function onMergeContinue(): void {
     void performWrite(
       "continue-merge",
@@ -1423,6 +1462,9 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     onCommitCherryPick,
     onCherryPickContinue,
     onCherryPickAbort,
+    onBranchRebase,
+    onRebaseContinue,
+    onRebaseAbort,
     onRemoteAdd,
     onRemoteUpdate,
     onRemoteRemove,

@@ -52,6 +52,10 @@ import {
   planCherryPick,
   planCherryPickContinue,
   planCherryPickInProgress,
+  planRebaseAbort,
+  planRebase,
+  planRebaseContinue,
+  planRebaseInProgress,
   type GitCommandSpec,
 } from "@refyard/git-core";
 import { createRepo } from "../support/repo.js";
@@ -437,6 +441,56 @@ describe("revert planning", () => {
         .trim();
       expect(got).toEqual(author);
       expect((await repo.headOid()).trim()).not.toEqual(side);
+    } finally {
+      await repo.dispose();
+    }
+  });
+
+  it("plans the rebase family without ever opening an editor", () => {
+    expect(planRebase(context, { upstreamOid: "e".repeat(40) }).argv).toEqual([
+      "rebase",
+      "e".repeat(40),
+    ]);
+    // The continue's editor override is process-scoped (`-c`): no config file
+    // is touched, and the replayed commit keeps its original message.
+    expect(planRebaseContinue(context).argv).toEqual([
+      "-c",
+      "core.editor=true",
+      "rebase",
+      "--continue",
+    ]);
+    expect(planRebaseInProgress(context).argv).toEqual([
+      "rev-parse",
+      "--verify",
+      "REBASE_HEAD",
+    ]);
+    expect(planRebaseAbort(context).argv).toEqual(["rebase", "--abort"]);
+  });
+
+  it("rebases a real branch, replaying its commits onto the new base", async () => {
+    const repo = await createRepo({ initialCommit: true });
+    try {
+      await repo.git(["switch", "-c", "side"]);
+      await repo.write("side.txt", "from side\n");
+      await repo.commitAll("from side");
+      await repo.git(["switch", "main"]);
+      await repo.write("main.txt", "from main\n");
+      await repo.commitAll("from main");
+      const mainTip = await repo.headOid();
+      await repo.git(["switch", "side"]);
+
+      const spec = planRebase(context, { upstreamOid: mainTip });
+      await repo.git(spec.argv, { stdin: spec.stdin });
+
+      // The branch now sits on main's tip, with its own commit replayed after.
+      const parents = new TextDecoder()
+        .decode(await repo.git(["rev-list", "--parents", "-n", "1", "HEAD"]))
+        .trim()
+        .split(" ");
+      expect(parents.length).toBe(2);
+      expect(parents[1]).toEqual(mainTip);
+      expect(await repo.readText("side.txt")).toEqual("from side\n");
+      expect(await repo.readText("main.txt")).toEqual("from main\n");
     } finally {
       await repo.dispose();
     }

@@ -281,7 +281,28 @@
         "worktree"
       ],
       "payloadSchema": "AbortCherryPickOperation"
+    },
+    {
+      "kind": "rebase",
+      "targets": [
+        "worktree"
+      ],
+      "payloadSchema": "RebaseOperation"
+    },
+    {
+      "kind": "continueRebase",
+      "targets": [
+        "worktree"
+      ],
+      "payloadSchema": "ContinueRebaseOperation"
+    },
+    {
+      "kind": "abortRebase",
+      "targets": [
+        "worktree"
+      ],
+      "payloadSchema": "AbortRebaseOperation"
     }
   ],
-  "count": 40
+  "count": 43
 }
