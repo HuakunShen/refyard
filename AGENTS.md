@@ -1,8 +1,10 @@
 # Refyard — agent rules
 
-Refyard is a browser-based Git workbench: a Node CLI (`refyard open|serve|doctor`) serves an
+Refyard is a browser-based Git workbench: a Node CLI (`refyard open|serve|pair|doctor`) serves an
 authenticated loopback HTTP API plus a static SvelteKit SPA, and runs the machine's own `git`
-against approved repositories. `refyard` is a working name only — it is **not** a published npm
+against approved repositories. Pairing tickets are single-use and are minted only on trusted
+local channels — the `p` keystroke on the serving terminal, or `refyard pair` over a
+same-user-only control socket — never over HTTP. `refyard` is a working name only — it is **not** a published npm
 package, domain, or organization. Never run a remote package that happens to share the name;
 integration testing uses locally built tarballs.
 

@@ -133,9 +133,19 @@ explicit UI/API origin pair, for example:
 ```
 
 The ticket is single-use and expires (`--ticket-ttl`). For a second browser — or after
-the first one lost its session — press `p` and Enter in the serving terminal to print
-a fresh URL. Each printed URL is single use; the terminal is the channel, so a pairing
-URL never appears in the machine-readable output.
+the first one lost its session — mint another ticket on one of two trusted local channels:
+
+- Press `p` and Enter in the terminal that is serving; the fresh URL prints there.
+- Run `refyard pair` in any other terminal. It asks the *running* service over a
+  same-user-only control socket (a unix socket in the private state directory, mode 0600;
+  a named pipe on Windows) and prints one fresh URL. With several services running it names
+  the ports instead of guessing: `refyard pair --port 5995`. `--json` prints
+  `{ pairingUrl, port, url }` for scripts.
+
+Minting deliberately has no HTTP endpoint: an API that hands out credentials would widen the
+very authentication surface the ticket protects. Both channels are for the machine's own user,
+and every minted URL is still single-use. The terminal that serves also prints a line whenever
+a ticket is minted over the control socket, so a hand-out is never silent.
 
 ### Development launcher
 

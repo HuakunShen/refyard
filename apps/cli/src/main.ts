@@ -14,6 +14,7 @@
  */
 import { parseArgs, helpText, type CliCommand } from "./args.js";
 import { runDoctorCommand } from "./doctor.js";
+import { runPairCommand } from "./pair.js";
 import { runService, type RunningService } from "./serve.js";
 import { CLI_VERSION, reportedVersion } from "./version.js";
 import { localWebRoot } from "./web-root.js";
@@ -63,6 +64,15 @@ export async function main(
         json: parsed.command.json,
         gitPath: io.gitPath,
         write: io.write,
+      });
+      return { exitCode };
+    }
+    case "pair": {
+      const exitCode = await runPairCommand({
+        port: parsed.command.port,
+        json: parsed.command.json,
+        write: io.write,
+        writeError: io.writeError,
       });
       return { exitCode };
     }

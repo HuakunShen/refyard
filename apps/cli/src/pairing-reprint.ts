@@ -6,9 +6,10 @@
  * front of the same machine) needs a fresh ticket, and the service cannot hand those out
  * over HTTP without widening the very authentication surface the ticket protects.
  *
- * The safe channel is the one the service already has: its own standard input. The user
- * types `p` in the terminal where they started `refyard open`, a new ticket is minted and
- * printed there, and no unauthenticated request can ever trigger it.
+ * Two trusted local channels mint tickets: this keystroke, on the terminal that started
+ * the service, and `refyard pair`, which asks the running service over its same-user-only
+ * control socket (see `host-node/src/control/pairing-socket.ts`). Neither is reachable by
+ * a web page.
  */
 export function isPairingCommand(line: string): boolean {
   const trimmed = line.trim().toLowerCase();

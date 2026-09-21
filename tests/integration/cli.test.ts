@@ -42,6 +42,7 @@ import {
   type GitFixtureRepo,
 } from "../support/repo.js";
 import { isPairingCommand } from "../../apps/cli/src/pairing-reprint.js";
+import { runPairCommand } from "../../apps/cli/src/pair.js";
 import { ticketFrom } from "../support/service.js";
 
 const cliDirectory = join(
@@ -270,6 +271,31 @@ describe("argument parsing", () => {
     expect(isPairingCommand("")).toBe(false);
     expect(isPairingCommand("quit")).toBe(false);
     expect(isPairingCommand("repo")).toBe(false);
+  });
+
+  it("parses `pair` with an optional port and json output", () => {
+    expect(parseArgs(["pair"])).toEqual({
+      ok: true,
+      command: { kind: "pair", port: null, json: false },
+    });
+    expect(parseArgs(["pair", "--port", "5995"])).toEqual({
+      ok: true,
+      command: { kind: "pair", port: 5995, json: false },
+    });
+    expect(parseArgs(["pair", "--json"])).toEqual({
+      ok: true,
+      command: { kind: "pair", port: null, json: true },
+    });
+  });
+
+  it("refuses a repository path on `pair`", () => {
+    // pair addresses a running service, not a repository; accepting a path would
+    // suggest it starts one.
+    const parsed = parseArgs(["pair", "/tmp/somewhere"]);
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) {
+      expect(parsed.message).toContain("pair does not take a repository path");
+    }
   });
 
   it("rejects a ticket ttl that is missing, not a number, or outside 1..86400", () => {
@@ -1107,6 +1133,119 @@ describe("serving a repository", () => {
       );
     } finally {
       await running.close();
+    }
+  });
+});
+
+describe("`refyard pair` against live services", () => {
+  let repo: GitFixtureRepo;
+
+  beforeEach(async () => {
+    repo = await createRepo({ initialCommit: true });
+  });
+
+  afterEach(async () => {
+    await repo.dispose();
+  });
+
+  const stateRootFor = (): string => join(repo.scratchRoot, "state");
+
+  async function serve(): Promise<Awaited<ReturnType<typeof runService>>> {
+    return runService({
+      repositoryPath: repo.root,
+      gitPath: fixtureGitPath(),
+      port: 0,
+      portExplicit: true,
+      openBrowser: false,
+      ticketTtlSeconds: 60,
+      webRoot: null,
+      allowRoot: false,
+      installSignalHandlers: false,
+      write: () => {},
+      stateRootPath: stateRootFor(),
+    });
+  }
+
+  it("mints a fresh ticket over the control socket that pairs end to end", async () => {
+    // Real-world failure prevented: the only way to get a second browser paired
+    // was a keystroke on the service's own terminal. The control socket is that
+    // channel for a program, and the minted ticket must be a real one.
+    const running = await serve();
+    try {
+      const io = collect();
+      const exitCode = await runPairCommand({
+        port: null,
+        json: false,
+        write: io.write,
+        writeError: io.writeError,
+        stateRoot: stateRootFor(),
+      });
+      expect(exitCode).toBe(EXIT_OK);
+      const url = io.lines[0] ?? "";
+      expect(url).toContain("?pair=");
+      // The startup ticket and the minted one are different single-use tickets.
+      expect(ticketFrom(url)).not.toBe(ticketFrom(running.pairingUrl));
+
+      const origin = `http://127.0.0.1:${running.http.port}`;
+      const exchanged = await fetch(`${origin}/api/v1/session/exchange`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin },
+        body: JSON.stringify({ ticket: ticketFrom(url) }),
+      });
+      expect(exchanged.status).toBe(200);
+    } finally {
+      await running.close();
+    }
+
+    // With the service gone the record is cleaned up and pair says so instead of
+    // guessing at some other process.
+    const after = collect();
+    const code = await runPairCommand({
+      port: null,
+      json: false,
+      write: after.write,
+      writeError: after.writeError,
+      stateRoot: stateRootFor(),
+    });
+    expect(code).toBe(EXIT_FAILED);
+    expect(after.errors.join("\n")).toContain("no running refyard service");
+  });
+
+  it("names the ports when several services run and --port picks one", async () => {
+    const first = await serve();
+    const second = await serve();
+    try {
+      const ambiguous = collect();
+      const code = await runPairCommand({
+        port: null,
+        json: false,
+        write: ambiguous.write,
+        writeError: ambiguous.writeError,
+        stateRoot: stateRootFor(),
+      });
+      expect(code).toBe(EXIT_FAILED);
+      expect(ambiguous.errors.join("\n")).toContain("2 services are running");
+      expect(ambiguous.errors.join("\n")).toContain(String(first.http.port));
+      expect(ambiguous.errors.join("\n")).toContain(String(second.http.port));
+
+      const picked = collect();
+      const pickedCode = await runPairCommand({
+        port: first.http.port,
+        json: true,
+        write: picked.write,
+        writeError: picked.writeError,
+        stateRoot: stateRootFor(),
+      });
+      expect(pickedCode).toBe(EXIT_OK);
+      const parsed = JSON.parse(picked.lines[0] ?? "{}") as {
+        pairingUrl?: string;
+        port?: number;
+      };
+      expect(parsed.port).toBe(first.http.port);
+      expect(parsed.pairingUrl).toContain(`127.0.0.1:${first.http.port}`);
+    } finally {
+      await first.close();
+      await second.close();
     }
   });
 });

@@ -68,6 +68,12 @@ export type CliCommand =
       readonly json: boolean;
       readonly allowRoot: boolean;
     }
+  | {
+      /** Mint a fresh pairing URL for a running service, over its local control socket. */
+      readonly kind: "pair";
+      readonly port: number | null;
+      readonly json: boolean;
+    }
   | { readonly kind: "help" }
   | { readonly kind: "version" };
 
@@ -121,6 +127,7 @@ usage:
   refyard [path]                       open the workbench for a repository
   refyard open [path] [options]        same, spelled out
   refyard serve --repo <path>... [opts]  serve without opening a browser
+  refyard pair [--port <n>] [--json]   mint a fresh pairing URL for a running service
   refyard doctor [--json]              report what this machine can do
 
 options:
@@ -285,8 +292,13 @@ export function parseArgs(
 ): ParseResult {
   const words = [...argv];
   const first = words[0];
-  let kind: "open" | "serve" | "doctor" = "open";
-  if (first === "open" || first === "serve" || first === "doctor") {
+  let kind: "open" | "serve" | "doctor" | "pair" = "open";
+  if (
+    first === "open" ||
+    first === "serve" ||
+    first === "doctor" ||
+    first === "pair"
+  ) {
     kind = first;
     words.shift();
   } else if (first !== undefined && !first.startsWith("-")) {
@@ -417,6 +429,33 @@ export function parseArgs(
       return { ok: false, message: "doctor does not take a repository path" };
     }
     return { ok: true, command: { kind: "doctor", json, allowRoot } };
+  }
+
+  if (kind === "pair") {
+    if (path !== null || repoPath !== null || repoValues.values.length > 0) {
+      return {
+        ok: false,
+        message:
+          "pair does not take a repository path — it asks a running service for a ticket",
+      };
+    }
+    // Port selection is opt-in: absent means "the only service running", which
+    // the command reports honestly when that is ambiguous.
+    const selectedPort =
+      parsed.port === undefined
+        ? null
+        : optionalWholeNumber("--port", parsed.port, 0, 0, 65_535);
+    if (selectedPort !== null && !selectedPort.ok) {
+      return selectedPort;
+    }
+    return {
+      ok: true,
+      command: {
+        kind: "pair",
+        port: selectedPort === null ? null : selectedPort.value,
+        json,
+      },
+    };
   }
 
   const chosenPaths =

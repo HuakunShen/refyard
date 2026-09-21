@@ -65,6 +65,16 @@ export {
 export { createTextCodec, encodeExecutionPath } from "./filesystem/codec.js";
 export { expandUserPath } from "./filesystem/user-path.js";
 export {
+  controlDirectory,
+  listServiceInstances,
+  requestPairingUrl,
+  startPairingControl,
+  type PairingControlOptions,
+  type PairingControlServer,
+  type RequestPairingOptions,
+  type ServiceInstanceRecord,
+} from "./control/pairing-socket.js";
+export {
   createRecoveryStore,
   DEFAULT_RECOVERY_BUDGET,
   directorySize,

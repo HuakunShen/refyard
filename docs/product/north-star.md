@@ -57,6 +57,8 @@ refyard open ~/code/xross
    ├─ Node service on 127.0.0.1:9595 (loopback only, exact Host/Origin checks)
    ├─ single-use bootstrap ticket (60 s) in `?pair=`; legacy fragment accepted → bearer token
    ├─ static SvelteKit app served by the same service (one origin, so no CORS)
+   ├─ `p` in the serving terminal, or `refyard pair` over a same-user control socket
+   │  (private state dir, mode 0600), mints further single-use tickets — never over HTTP
    └─ reads plus capability-gated Git mutations through the same closed intention contract
 ```
 

@@ -57,6 +57,8 @@ import {
   runDoctor,
   PortInUseError,
   startHttpHost,
+  startPairingControl,
+  defaultStateRoot,
   type EventRing,
   type HttpHost,
   type HttpHostOptions,
@@ -518,6 +520,25 @@ export async function runService(
   const localUi = options.webRoot !== undefined && options.webRoot !== null;
 
   /**
+   * The trusted local channel for more tickets: `refyard pair` connects to this
+   * socket (same user only) and asks for a fresh pairing URL — the programmatic
+   * twin of the `p` keystroke. Minting stays off HTTP on purpose: an endpoint
+   * that hands out credentials would widen the surface the ticket protects.
+   */
+  const pairingControl = await startPairingControl({
+    stateRoot: options.stateRootPath ?? defaultStateRoot(),
+    instanceId: http.serviceInstanceId,
+    url: origin,
+    port: http.port,
+    mintPairingUrl: pairingUrlFor,
+    onMinted: () => {
+      // The ticket itself goes to the requester; the service's own terminal
+      // keeps a line so a human can see that one was handed out.
+      note("a fresh pairing URL was issued over the local control socket (`refyard pair`)");
+    },
+  });
+
+  /**
    * Two output modes, and the difference is who is reading.
    *
    * A terminal gets the banner, including the pairing URL — the user's own screen is
@@ -559,6 +580,7 @@ export async function runService(
       }
       jsonClosed = true;
       await http.close();
+      await pairingControl.close();
     };
     if (options.installSignalHandlers !== false) {
       const onJsonSignal = (): void => {
@@ -597,6 +619,9 @@ export async function runService(
   options.write(
     `  press p + Enter to print another pairing URL (each is single use)`,
   );
+  options.write(
+    `  or run \`refyard pair\` in another terminal for the same thing`,
+  );
   options.write(`  press Ctrl+C to stop`);
 
   if (options.openBrowser && (localUi || options.uiOrigin !== undefined)) {
@@ -625,6 +650,7 @@ export async function runService(
     // Stop accepting new requests first, then drop sessions: an in-flight read gets
     // to finish, and nothing new is paired after the user asked to stop.
     await http.close();
+    await pairingControl.close();
     consoleInterface?.close();
   };
 
