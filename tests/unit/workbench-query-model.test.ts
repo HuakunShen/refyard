@@ -129,7 +129,11 @@ describe("workbench query model", () => {
 describe("laneColorFor", () => {
   it("paints the checked-out branch the current-branch colour", () => {
     expect(laneColorFor("v2", ["refs/heads/v2"])).toBe("lane-current");
-    expect(laneColorFor("v2", ["refs/remotes/origin/v2"])).not.toBe(
+    // ...and so does its remote twin trailing behind: that segment is still the
+    // user's line, not another branch's history.
+    expect(laneColorFor("v2", ["refs/remotes/origin/v2"])).toBe("lane-current");
+    // A different branch's remote tip is a different line.
+    expect(laneColorFor("v2", ["refs/remotes/origin/next"])).not.toBe(
       "lane-current",
     );
   });
@@ -147,5 +151,28 @@ describe("laneColorFor", () => {
     // A tag landing on a trunk commit must not recolor the trunk below it.
     expect(laneColorFor(null, ["refs/tags/v1.0.0"])).toBeUndefined();
     expect(laneColorFor(null, [])).toBeUndefined();
+  });
+
+  it("keeps the checked-out branch's remote twin on the current colour", () => {
+    // Prevents: the trunk flipping to a hash hue at origin/<branch> where origin
+    // trails local — that segment is still the user's line.
+    expect(laneColorFor("main", ["refs/remotes/origin/main"])).toBe(
+      "lane-current",
+    );
+    expect(laneColorFor("main", ["refs/remotes/upstream/main"])).toBe(
+      "lane-current",
+    );
+    // Another branch's remote tip is a different line's history and hashes its name.
+    expect(laneColorFor("main", ["refs/remotes/origin/rc5"])).not.toBe(
+      "lane-current",
+    );
+  });
+
+  it("never colours by origin/HEAD, which is a pointer and not a branch", () => {
+    expect(laneColorFor(null, ["refs/remotes/origin/HEAD"])).toBeUndefined();
+    // ...even when it sits next to real refs: it must not win the hash pick.
+    expect(
+      laneColorFor(null, ["refs/remotes/origin/HEAD", "refs/tags/v1"]),
+    ).toBeUndefined();
   });
 });

@@ -43,6 +43,7 @@
   import Pencil from "@lucide/svelte/icons/pencil";
   import Settings2 from "@lucide/svelte/icons/settings-2";
   import TagIcon from "@lucide/svelte/icons/tag";
+  import { headSegmentFor } from "../lib/head-segment.js";
   import { Badge } from "./ui/badge/index.js";
   import AuthorAvatar from "./AuthorAvatar.svelte";
   import CommitGraph from "./CommitGraph.svelte";
@@ -360,6 +361,13 @@
       ? metrics
       : compressedMetrics(laneCount, graphCell.width, metrics),
   );
+  /**
+   * The rows where the checked-out branch still owns its line, GitKraken's tinted
+   * "what my branch adds" segment. Skipped when filtered: a filtered list does not
+   * start at HEAD, so rows[0] is not the branch tip the walk has to start from.
+   */
+  const headSegment = $derived(filtered ? null : headSegmentFor(rows));
+
   /**
    * GitHub photo URLs by commit oid, for the graph's avatar nodes. Authors the
    * commit email cannot map keep the plain coloured dot.
@@ -1081,6 +1089,12 @@
             {@const rowLane = rows[item.index]}
             {@const laneTint =
               rowLane === undefined ? undefined : lanePaint(rowLane.laneColor)}
+            {@const segmentTint =
+              headSegment !== null &&
+              commit !== undefined &&
+              headSegment.ids.has(commit.oid)
+                ? lanePaint(headSegment.token)
+                : undefined}
             {#if commit !== undefined}
               <div
                 role="presentation"
@@ -1088,7 +1102,10 @@
                   "absolute top-0 right-0 left-0 cursor-default",
                   selected ? "bg-primary/10" : "hover:bg-muted/50",
                 )}
-                style="height: {item.size}px; transform: translateY({item.start}px)"
+                style="height: {item.size}px; transform: translateY({item.start}px);{segmentTint !==
+                  undefined && !selected
+                  ? ` background-color: color-mix(in oklab, ${segmentTint} 12%, transparent);`
+                  : ''}"
                 onclick={() => onSelect(commit)}
                 oncontextmenu={(event) => openCommitMenu(event, commit)}
               >
@@ -1181,9 +1198,20 @@
                   {/if}
                   {#if graphCell !== undefined}
                     <div
-                      class="shrink-0 border-r border-border/25"
+                      class="relative shrink-0 border-r border-border/25"
                       style="width: {graphCell.width}px; min-width: {graphCell.width}px"
-                    ></div>
+                    >
+                      {#if laneTint !== undefined}
+                        <!-- GitKraken marks every row with its lane's colour at the
+                             graph's right edge, which keeps the lanes readable when
+                             the graph itself is squeezed or mostly straight. -->
+                        <span
+                          class="absolute top-1.5 bottom-1.5 right-0.5 w-1 rounded-full"
+                          style="background-color: {laneTint}"
+                          aria-hidden="true"
+                        ></span>
+                      {/if}
+                    </div>
                   {/if}
                   <button
                     type="button"

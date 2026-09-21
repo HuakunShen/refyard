@@ -120,10 +120,32 @@ export function laneColorFor(
   ) {
     return "lane-current";
   }
+  // The checked-out branch's remote twin trailing on an older commit is not another
+  // branch's history: its segment is still the user's line, so it keeps the current
+  // colour instead of flipping the trunk to a hash hue under the local tip.
+  if (currentBranch !== null && remoteTwinOf(refNames, currentBranch)) {
+    return "lane-current";
+  }
   return refColorFor(
     refNames.filter(
       (name) =>
-        name.startsWith("refs/heads/") || name.startsWith("refs/remotes/"),
+        (name.startsWith("refs/heads/") || name.startsWith("refs/remotes/")) &&
+        // `origin/HEAD` is a pointer to the default branch, not a branch of its
+        // own; colouring by it would paint a segment a hash of the literal
+        // string "origin/HEAD".
+        !name.endsWith("/HEAD"),
     ),
   );
+}
+
+/** Does `refNames` carry `<remote>/<branch>` for this local branch name? */
+function remoteTwinOf(refNames: readonly string[], branch: string): boolean {
+  return refNames.some((name) => {
+    if (!name.startsWith("refs/remotes/") || name.endsWith("/HEAD")) {
+      return false;
+    }
+    const rest = name.slice("refs/remotes/".length);
+    const slash = rest.indexOf("/");
+    return slash !== -1 && rest.slice(slash + 1) === branch;
+  });
 }

@@ -104,25 +104,28 @@ export function layoutGraph(
     let ownLaneOutputIndex = -1;
 
     // 2. The lane waiting for this commit becomes its first parent, in place, so the
-    //    lane keeps its index, colour and identity down the row. A LOCAL branch's tip
-    //    is the one exception — it is where that branch's line begins, so from here
-    //    down the lane takes the branch's colour (GitKraken paints the checked-out
-    //    branch from its tip down). Remote-tracking twins and tags share the commit
-    //    without owning the line: recolouring for them is what made a trunk flip
-    //    colour one commit under its own tip. Any other lane waiting for the same
-    //    commit is a convergence: it closes here rather than being duplicated.
+    //    lane keeps its index, colour and identity down the row. A branch tip sitting
+    //    on this commit takes ownership of that line from here down — GitKraken paints
+    //    every segment in the colour of the nearest branch tip above it, which is how
+    //    a trunk that absorbed other branches' history reads as theirs below the
+    //    point where it absorbed them. The callback decides what a tip means: it is
+    //    what lets a host keep its *own* branch's remote twin (origin ahead-of/behind
+    //    local) from splitting the trunk into two hues. Tags never own the line: a
+    //    tag landing on a trunk commit must not recolor anything.
     if (commit.parentIds.length > 0) {
       for (const lane of inputLanes) {
         if (lane.id === commit.id) {
           if (!firstParentPlaced) {
-            const localHeadColour = commit.refNames?.some((name) =>
-              name.startsWith("refs/heads/"),
+            const tipColour = commit.refNames?.some(
+              (name) =>
+                name.startsWith("refs/heads/") ||
+                name.startsWith("refs/remotes/"),
             )
               ? options.colorForRef?.(commit)
               : undefined;
             outputLanes.push({
               id: commit.parentIds[0] ?? "",
-              color: localHeadColour ?? lane.color,
+              color: tipColour ?? lane.color,
             });
             ownLaneOutputIndex = outputLanes.length - 1;
             firstParentPlaced = true;

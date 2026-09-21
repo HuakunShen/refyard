@@ -269,10 +269,18 @@ describe("adjacent branch lanes", () => {
 });
 
 describe("lane colour at branch tips", () => {
-  const colorForRef = (c: GraphCommit) =>
-    (c.refNames ?? []).includes("refs/heads/current")
-      ? "lane-current"
-      : refColorFor(c.refNames ?? []);
+  // Mirrors the real wiring (`laneColorFor` in apps/web): the checked-out branch and
+  // its remote twin keep the current colour; every other branch tip hashes its name.
+  const colorForRef = (c: GraphCommit) => {
+    const names = c.refNames ?? [];
+    if (
+      names.includes("refs/heads/current") ||
+      names.includes("refs/remotes/origin/current")
+    ) {
+      return "lane-current";
+    }
+    return refColorFor(names.filter((n) => !n.endsWith("/HEAD")));
+  };
 
   it("recolors the line at a local branch's tip, where that branch begins", () => {
     const result = layoutGraph(
@@ -291,9 +299,32 @@ describe("lane colour at branch tips", () => {
     expect(result.rows[2]?.outputLanes[0]?.color).toBe("lane-current");
   });
 
-  it("does not recolor for a remote-tracking twin or a tag alone", () => {
-    // Prevents: the trunk flipping to a hash colour one commit under its own tip,
-    // because origin/<branch> sits there and grabbed the line.
+  it("hands the trunk to another branch's remote tip where its history begins", () => {
+    // GitKraken paints each segment in the colour of the nearest branch tip above
+    // it, local or remote: a trunk that absorbed rc5's history reads as rc5's below
+    // the point where it absorbed it, instead of wearing HEAD's colour all the way
+    // down.
+    const result = layoutGraph(
+      [
+        commit("tip", ["merge"], ["refs/heads/current"]),
+        commit("merge", ["older"], ["refs/remotes/origin/rc5"]),
+        commit("older", ["oldest"]),
+        commit("oldest"),
+      ],
+      { colorForRef },
+    );
+    expect(result.rows[0]?.outputLanes[0]?.color).toBe("lane-current");
+    expect(result.rows[1]?.outputLanes[0]?.color).not.toBe("lane-current");
+    expect(result.rows[1]?.outputLanes[0]?.color).toBe(
+      refColorFor(["refs/remotes/origin/rc5"]),
+    );
+  });
+
+  it("does not recolor for the checked-out branch's remote twin or a tag alone", () => {
+    // Prevents: the trunk flipping to a hash colour one commit under its own tip.
+    // The tip asks its callback even at remote refs, so the guard is the callback's
+    // (see laneColorFor's unit tests); the layout only promises not to recolor for
+    // tags.
     const result = layoutGraph(
       [
         commit("tip", ["under"], ["refs/heads/current"]),
