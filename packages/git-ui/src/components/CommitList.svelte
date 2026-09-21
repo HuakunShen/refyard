@@ -53,6 +53,7 @@
   import {
     DEFAULT_METRICS,
     compressedMetrics,
+    lanePaint,
     type GraphMetrics,
   } from "../lib/geometry.js";
   import { authorAvatar } from "../lib/avatars.js";
@@ -990,6 +991,12 @@
             {@const authorCell = cellById.get("author")}
             {@const dateCell = cellById.get("date")}
             {@const shaCell = cellById.get("sha")}
+            <!-- The lane this row sits on, for tinting its ref labels: GitKraken paints a
+                 branch label in the colour of the line it names, which is what makes a
+                 colourful graph readable at a glance. -->
+            {@const rowLane = rows[item.index]}
+            {@const laneTint =
+              rowLane === undefined ? undefined : lanePaint(rowLane.laneColor)}
             {#if commit !== undefined}
               <div
                 role="presentation"
@@ -1042,7 +1049,13 @@
                             expandRefGroup(event, commit.oid, group)}
                           onmouseleave={() => clearExpandedRef(commit.oid)}
                         >
-                          <Badge tone={groupTone(group)} class="max-w-full">
+                          <Badge
+                            tone={groupTone(group)}
+                            class="max-w-full"
+                            style={laneTint === undefined || group.tag
+                              ? undefined
+                              : `border-color: color-mix(in oklab, ${laneTint} 45%, transparent); background-color: color-mix(in oklab, ${laneTint} 15%, transparent); color: ${laneTint}`}
+                          >
                             {#if group.head}
                               <Check />
                             {/if}
