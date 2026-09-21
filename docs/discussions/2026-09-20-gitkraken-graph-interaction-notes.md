@@ -146,12 +146,16 @@ rules out menu items whose operation does not exist. Adopted in this round:
   fields, which is what made right-click look like "refresh + highlight" in
   the desktop app.
 
-Adopted since this note was written: **revert** (2026-09-22, `revertCommit`
-operation end to end — merge commits refused, conflicts aborted by the host).
-Deliberately not adopted yet: cherry-pick/reset/drop/rebase/squash (no
-operations), AI actions, PR creation, Pin/Solo, commit drag, the WIP row,
-per-column sort/filter, rename-from-graph (BranchPanel owns rename; it needs
-an inline text field the graph menu does not have).
+Adopted since this note was written (2026-09-22): **revert** (`revertCommit` —
+merge commits refused, conflicts aborted by the host), **reset branch to here**
+(`resetBranch`, soft and mixed only — hard is unplannable by design), **cherry-pick**
+(`cherryPick` + `continueCherryPick` + `abortCherryPick` — the merge family's
+conflict lifecycle; the sidebar conflict panel finishes either operation), and
+**create worktree from here** (rides the existing `createWorktree` with a start
+commit). Deliberately not adopted yet: drop/rebase/squash (no operations), AI
+actions, PR creation, Pin/Solo, commit drag, the WIP row, per-column sort/filter,
+rename-from-graph (BranchPanel owns rename; it needs an inline text field the
+graph menu does not have).
 
 ## 7. Round three — segment ownership (2026-09-22)
 
