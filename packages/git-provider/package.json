@@ -11,6 +11,7 @@
     "check": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
-    "@refyard/git-contract": "workspace:*"
+    "@refyard/git-contract": "workspace:*",
+    "zod": "catalog:"
   }
 }

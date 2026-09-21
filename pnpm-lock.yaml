@@ -490,6 +490,9 @@ importers:
       '@refyard/git-contract':
         specifier: workspace:*
         version: link:../git-contract
+      zod:
+        specifier: 'catalog:'
+        version: 4.6.5
 
   packages/git-service:
     dependencies:
