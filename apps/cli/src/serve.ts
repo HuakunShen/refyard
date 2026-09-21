@@ -26,6 +26,7 @@ import {
 } from "node:readline";
 import { join } from "node:path";
 import { realpath, stat } from "node:fs/promises";
+import { createGitHubRestClient } from "@refyard/git-provider/github/rest";
 import { randomBytes } from "node:crypto";
 import {
   createEventRing,
@@ -55,6 +56,9 @@ import {
   unavailableForGitFeatures,
   unavailableMutations,
   createWorktreeRegistry,
+  createProviderManager,
+  createProviderService,
+  createProviderStore,
   DEFAULT_RETENTION,
   runDoctor,
   PortInUseError,
@@ -103,6 +107,7 @@ export interface ServiceAssembly {
   readonly roots: RootRegistry;
   readonly repositoryManagement: RepositoryApprovalManager;
   readonly accessJournal: AccessJournal;
+  readonly provider: ReturnType<typeof createProviderService>;
   readonly repositoryPaths: readonly string[];
   readonly repositoryIds: readonly string[];
   readonly allowedRootIds: readonly string[];
@@ -132,6 +137,8 @@ export interface AssembleOptions {
   readonly writeError?: (line: string) => void;
   /** Private state override used by isolated integration fixtures. */
   readonly stateRootPath?: string;
+  /** Test seam: point the provider client at a local stub upstream. */
+  readonly providerGithubBaseUrl?: string;
   /** Injected in tests so no real Git process is probed twice. */
   readonly skipDoctor?: boolean;
 }
@@ -202,6 +209,28 @@ export async function assembleService(
   await journal.load();
   const accessJournal = createAccessJournal({ stateRoot });
   await accessJournal.load();
+  // The provider axis: one connection store beside the journals, one manager,
+  // one service. The base URL stays the real GitHub API in the product; tests
+  // inject a local stub through AssembleOptions.
+  const providerStore = createProviderStore({ stateRoot });
+  await providerStore.load();
+  const providerClient = createGitHubRestClient({
+    fetch: (input, init) => fetch(input, init),
+    ...(options.providerGithubBaseUrl === undefined
+      ? {}
+      : { baseUrl: options.providerGithubBaseUrl }),
+    userAgentPrefix: "refyard",
+  });
+  const provider = createProviderService({
+    manager: createProviderManager({
+      store: providerStore,
+      journal: accessJournal,
+      client: providerClient,
+    }),
+    engine,
+    repositories,
+    client: providerClient,
+  });
   const recovery = createRecovery({ journal });
   await recovery.run();
   const events = createEventRing();
@@ -358,6 +387,7 @@ export async function assembleService(
     gitVersion: doctor?.gitVersion ?? "unknown",
     gitFeatures: features,
     unavailable,
+    providers: ["github"],
     reads,
     // The registry is the single source: a kind is advertised exactly when an
     // effect for it was registered above.
@@ -377,6 +407,7 @@ export async function assembleService(
     roots,
     repositoryManagement,
     accessJournal,
+    provider,
     repositoryPaths,
     repositoryIds: registrations.map(({ record }) => record.repositoryId),
     allowedRootIds: registrations.map(({ root }) => root.allowedRootId),
@@ -472,6 +503,7 @@ export async function runService(
       : { shutdownGraceMs: options.shutdownGraceMs }),
     repositoryRootOf: (repositoryId: string) =>
       assembly.repositories.get(repositoryId)?.allowedRootId ?? null,
+    provider: assembly.provider,
     grants: {
       allowedRootIds: [...assembly.allowedRootIds],
       repositoryIds: [...assembly.repositoryIds],

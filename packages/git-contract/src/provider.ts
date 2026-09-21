@@ -11,14 +11,27 @@
  */
 import { z } from "zod";
 import { LIMITS } from "./limits.js";
+import { repositoryIdSchema, timestampSchema } from "./ids.js";
 import { branchNameSchema } from "./names.js";
-import { timestampSchema } from "./ids.js";
 
 export const providerIdSchema = z.enum(["github"]).meta({
   id: "ProviderId",
   description:
     "A forge integration this build carries. The enum grows only when an integration ships; hosts without one omit it from capabilities.providers.",
 });
+
+/** The connection status read is global, not per repository: no query at all. */
+export const providerConnectionQuerySchema = z
+  .strictObject({})
+  .meta({ id: "ProviderConnectionQuery" });
+
+export const providerPullRequestsQuerySchema = z
+  .strictObject({ repositoryId: repositoryIdSchema })
+  .meta({
+    id: "ProviderPullRequestsQuery",
+    description:
+      "The repository whose own forge remote is queried. The host resolves the coordinates; the browser never names a provider repository.",
+  });
 
 export const providerConnectionSchema = z
   .strictObject({

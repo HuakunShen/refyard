@@ -59,9 +59,11 @@ import { problemResponseSchema, problemSchema } from "./errors.js";
 import {
   connectProviderRequestSchema,
   disconnectProviderRequestSchema,
+  providerConnectionQuerySchema,
   providerConnectionSchema,
   providerConnectionsResponseSchema,
   providerIdSchema,
+  providerPullRequestsQuerySchema,
   providerPullRequestSchema,
   providerPullRequestsResponseSchema,
 } from "./provider.js";
@@ -245,10 +247,12 @@ export const CONTRACT_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   ProviderId: providerIdSchema,
   ProviderConnection: providerConnectionSchema,
   ProviderConnectionsResponse: providerConnectionsResponseSchema,
+  ProviderConnectionQuery: providerConnectionQuerySchema,
   ConnectProviderRequest: connectProviderRequestSchema,
   DisconnectProviderRequest: disconnectProviderRequestSchema,
   ProviderPullRequest: providerPullRequestSchema,
   ProviderPullRequestsResponse: providerPullRequestsResponseSchema,
+  ProviderPullRequestsQuery: providerPullRequestsQuerySchema,
 };
 
 /** Names of the individual operation payload schemas, keyed by operation kind. */

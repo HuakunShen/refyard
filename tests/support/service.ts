@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import {
+  createAccessJournal,
   createEventRing,
   createGitHost,
   createHandleRegistry,
@@ -36,6 +37,9 @@ import {
   createTextCodec,
   createWorktreeEffects,
   createWorktreeRegistry,
+  createProviderManager,
+  createProviderService,
+  createProviderStore,
   kindsBlockedByGitFeatures,
   unavailableForGitFeatures,
   unavailableMutations,
@@ -50,6 +54,7 @@ import {
   type RecoveryBackupWriter,
 } from "@refyard/host-node";
 import { createHostEngine, type GitEngine } from "@refyard/git-core";
+import { createGitHubRestClient } from "@refyard/git-provider/github/rest";
 import {
   API_MAJOR,
   CONTRACT_VERSION,
@@ -157,6 +162,12 @@ export interface StartTestServiceOptions {
   readonly ungrantedRootPaths?: readonly string[];
   /** Session scopes; defaults to the complete local-workbench authority. */
   readonly scopes?: readonly string[];
+  /**
+   * Test seam: point the provider client at a local stub upstream. The store,
+   * manager and service are always assembled — a harness without the module
+   * could not prove that the capability honestly appears.
+   */
+  readonly providerGithubBaseUrl?: string;
   /** Exact hosted UI origins allowed to call the test service. */
   readonly allowedOrigins?: readonly string[];
   /** Secret used when the test exercises the password-gated hosted form. */
@@ -308,6 +319,7 @@ export async function startTestService(
       "submodules",
       "stashes",
     ],
+    providers: ["github"],
     // Derived from the live registry, as the CLI does: an operation is
     // advertised exactly when an effect for it is registered.
     operations: mutations.implementedKinds().map((kind) => ({
@@ -325,9 +337,30 @@ export async function startTestService(
     );
   }
 
+  const providerStore = createProviderStore({ stateRoot });
+  await providerStore.load();
+  const providerClient = createGitHubRestClient({
+    fetch: (input, init) => fetch(input, init),
+    ...(options.providerGithubBaseUrl === undefined
+      ? {}
+      : { baseUrl: options.providerGithubBaseUrl }),
+    userAgentPrefix: "refyard",
+  });
+  const provider = createProviderService({
+    manager: createProviderManager({
+      store: providerStore,
+      journal: createAccessJournal({ stateRoot }),
+      client: providerClient,
+    }),
+    engine,
+    repositories,
+    client: providerClient,
+  });
+
   const http = await startHttpHost({
     read,
     mutations,
+    provider,
     events,
     serviceInstanceId,
     port: 0,

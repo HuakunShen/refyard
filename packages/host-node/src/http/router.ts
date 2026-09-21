@@ -48,12 +48,21 @@ import type {
   RepositoryApprovalManager,
   RepositoryRevocationResult,
 } from "../registry/managed.js";
+import type { ProviderService } from "../provider/service.js";
+import {
+  connectProviderRequestSchema,
+  disconnectProviderRequestSchema,
+  providerConnectionQuerySchema,
+  providerPullRequestsQuerySchema,
+} from "@refyard/git-contract";
 
 /** What a route handler may use. The engine is absent in a read-only host. */
 export interface RouteServices {
   readonly read: ReadService;
   readonly mutations?: MutationCoordinator | undefined;
   readonly repositoryManagement?: RepositoryApprovalManager | undefined;
+  /** Forge connections and their one read, when this host carries the module. */
+  readonly provider?: ProviderService | undefined;
   readonly onRepositoryRegistered?: (input: {
     readonly sessionId: string;
     readonly approval: RepositoryApproval;
@@ -188,6 +197,17 @@ export function readRoutes(): readonly RouteDefinition[] {
       "/api/v1/stashes",
       repositoryQuerySchema,
       async (query, services) => services.read.stashes(query),
+    ),
+    readRoute(
+      "/api/v1/provider/connection",
+      providerConnectionQuerySchema,
+      async (_query, services) => requireProvider(services).status(),
+      "provider:manage",
+    ),
+    readRoute(
+      "/api/v1/provider/pull-requests",
+      providerPullRequestsQuerySchema,
+      async (query, services) => requireProvider(services).pullRequests(query),
     ),
     actionRoute(
       "/api/v1/previews",
@@ -358,6 +378,22 @@ function mutationRequestScope(
     : null;
 }
 
+/**
+ * A provider surface is honest about its absence: a host without the module
+ * answers UnsupportedOperation (501), exactly like a missing mutation, and no
+ * route pretends an empty integration into existence.
+ */
+function requireProvider(services: RouteServices): ProviderService {
+  const provider = services.provider;
+  if (provider === undefined) {
+    throw new ReadProblem({
+      code: "UnsupportedOperation",
+      message: "this host has no forge integration module",
+    });
+  }
+  return provider;
+}
+
 function cancellationScope(input: RouteScopeInput): AuthorizationScope | null {
   const parsed = cancelOperationRequestSchema.safeParse(input.body);
   if (!parsed.success) {
@@ -433,6 +469,32 @@ export function mutationRoutes(): readonly RouteDefinition[] {
           result,
         });
         return services.read.repositories();
+      },
+    ),
+    actionRoute(
+      "/api/v1/provider/github/connect",
+      connectProviderRequestSchema,
+      "provider:manage",
+      async (body, services) => {
+        const provider = requireProvider(services);
+        const outcome = await provider.connect(body);
+        if (!outcome.ok) {
+          throw new ReadProblem({
+            code: outcome.code,
+            message: outcome.message,
+          });
+        }
+        return provider.status();
+      },
+    ),
+    actionRoute(
+      "/api/v1/provider/disconnect",
+      disconnectProviderRequestSchema,
+      "provider:manage",
+      async (body, services) => {
+        const provider = requireProvider(services);
+        await provider.disconnect(body);
+        return provider.status();
       },
     ),
     {

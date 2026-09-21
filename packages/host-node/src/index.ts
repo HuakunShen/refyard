@@ -344,3 +344,16 @@ export {
   type EventRingOptions,
   type SseSession,
 } from "./http/events.js";
+export {
+  createProviderManager,
+  createProviderStore,
+  type ConnectOutcome,
+  type ProviderManager,
+  type ProviderStore,
+  type StoredProviderConnection,
+} from "./provider/manager.js";
+export {
+  createProviderService,
+  type ConnectResult,
+  type ProviderService,
+} from "./provider/service.js";

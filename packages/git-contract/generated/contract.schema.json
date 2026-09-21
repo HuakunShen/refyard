@@ -2004,6 +2004,11 @@
       "additionalProperties": false,
       "description": "One live forge connection, as the host stores it. Never contains the token."
     },
+    "ProviderConnectionQuery": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    },
     "ProviderConnectionsResponse": {
       "type": "object",
       "properties": {
@@ -2068,6 +2073,19 @@
       ],
       "additionalProperties": false,
       "description": "One open pull request, reduced to what the workbench shows. Draft and merge state that moved on are refreshed, not cached forever."
+    },
+    "ProviderPullRequestsQuery": {
+      "type": "object",
+      "properties": {
+        "repositoryId": {
+          "$ref": "#/$defs/RepositoryId"
+        }
+      },
+      "required": [
+        "repositoryId"
+      ],
+      "additionalProperties": false,
+      "description": "The repository whose own forge remote is queried. The host resolves the coordinates; the browser never names a provider repository."
     },
     "ProviderPullRequestsResponse": {
       "type": "object",

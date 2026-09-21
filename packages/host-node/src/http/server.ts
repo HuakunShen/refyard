@@ -24,6 +24,7 @@ import type { ReadService } from "../coordinator/reads.js";
 import type { MutationCoordinator } from "../coordinator/submit.js";
 import { createEventRing, type EventRing } from "./events.js";
 import type { RepositoryApprovalManager } from "../registry/managed.js";
+import type { ProviderService } from "../provider/service.js";
 import { createAuthStore, type AuthStore, type SessionGrants } from "./auth.js";
 import { createAssetServer, type AssetServer } from "./assets.js";
 import { DEFAULT_HTTP_LIMITS, logLine, type HttpLimits } from "./json.js";
@@ -103,6 +104,8 @@ export interface HttpHostOptions {
   readonly repositoryRootOf?: (repositoryId: string) => string | null;
   /** Runtime repository approval/revocation, when form 2 is enabled. */
   readonly repositoryManagement?: RepositoryApprovalManager;
+  /** Forge connections and their one read, when the provider module is wired. */
+  readonly provider?: ProviderService;
   readonly actor?: string;
   /**
    * Pairing-ticket lifetime in seconds. The 60-second default is the design; widening it
@@ -173,6 +176,7 @@ export async function startHttpHost(
     ...(options.mutations === undefined
       ? {}
       : { mutations: options.mutations }),
+    ...(options.provider === undefined ? {} : { provider: options.provider }),
     ...(options.repositoryManagement === undefined
       ? {}
       : {

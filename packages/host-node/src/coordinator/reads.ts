@@ -60,6 +60,7 @@ import {
   type SubmodulesResponse,
   type UnavailableReason,
   type WorktreesResponse,
+  type ProviderId,
 } from "@refyard/git-contract";
 import {
   CORE_LIMITS,
@@ -156,6 +157,8 @@ export interface ReadServiceOptions {
   readonly gitFeatures: GitCapabilities;
   readonly unavailable: readonly UnavailableReason[];
   readonly reads: readonly ReadKind[];
+  /** Forge integrations this host carries; a host without the module omits it. */
+  readonly providers?: readonly ProviderId[];
   readonly operations: readonly OperationCapability[];
   readonly now?: () => number;
 }
@@ -373,6 +376,10 @@ export function createReadService(options: ReadServiceOptions): ReadService {
             features: options.gitFeatures,
           },
           reads: [...options.reads],
+          // Forge integrations this host carries; omitted entirely from a host
+          // without the provider module, never an empty promise.
+          providers:
+            options.providers === undefined ? undefined : [...options.providers],
           // Only what this build actually implements. A write operation is absent
           // from this list until it runs for real, so a client can never be told an
           // operation is available and then be refused.
