@@ -66,7 +66,7 @@
     background,
     glass,
     avatars = true,
-    density = "comfortable",
+    density = "roomy",
     onAccentChange,
     onBackgroundChange,
     onGlassChange,

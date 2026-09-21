@@ -174,7 +174,7 @@ export function createBrowserStorage(stores: BrowserStores): BrowserStorage {
       writeTo(stores.local, AVATARS_KEY, enabled ? "true" : "false");
     },
     readStoredDensity(): string {
-      return readFrom(stores.local, DENSITY_KEY) ?? "comfortable";
+      return readFrom(stores.local, DENSITY_KEY) ?? "roomy";
     },
     storeDensity(density: string | null): void {
       writeTo(stores.local, DENSITY_KEY, density);

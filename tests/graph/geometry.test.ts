@@ -120,8 +120,8 @@ describe("row density", () => {
   });
 
   it("ships the roomy default GitKraken's spacing asks for", () => {
-    expect(DEFAULT_METRICS).toEqual(densityMetrics("comfortable"));
-    expect(DEFAULT_METRICS.rowHeight).toBe(36);
+    expect(DEFAULT_METRICS).toEqual(densityMetrics("roomy"));
+    expect(DEFAULT_METRICS.rowHeight).toBe(44);
   });
 });
 

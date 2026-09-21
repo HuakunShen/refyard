@@ -171,9 +171,9 @@
   let background = $state(browser ? readStoredBackground() : "none");
   let glass = $state(browser ? readStoredGlass() : false);
   let avatars = $state(browser ? readStoredAvatars() : true);
-  const storedDensity = browser ? readStoredDensity() : "comfortable";
+  const storedDensity = browser ? readStoredDensity() : "roomy";
   let density = $state<RowDensity>(
-    isRowDensity(storedDensity) ? storedDensity : "comfortable",
+    isRowDensity(storedDensity) ? storedDensity : "roomy",
   );
   // One value for the whole list: the virtualizer's row height and the graph's lane
   // spacing must be the same number, or a node stops sitting on its own row.

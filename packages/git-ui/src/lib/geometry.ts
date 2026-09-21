@@ -82,7 +82,7 @@ export function densityMetrics(density: RowDensity): GraphMetrics {
   return DENSITY_METRICS[density];
 }
 
-export const DEFAULT_METRICS: GraphMetrics = DENSITY_METRICS.comfortable;
+export const DEFAULT_METRICS: GraphMetrics = DENSITY_METRICS.roomy;
 
 /**
  * Avatar radius for a row: GitKraken's 26px photo in a 43px row is a 0.30 ratio, with
