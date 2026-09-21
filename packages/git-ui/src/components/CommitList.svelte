@@ -50,6 +50,7 @@
   import CommitRefDialog from "./CommitRefDialog.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
   import ResetBranchDialog from "./ResetBranchDialog.svelte";
+  import WorktreeFromCommitDialog from "./WorktreeFromCommitDialog.svelte";
   import ContextMenuLayer from "./ContextMenuLayer.svelte";
   import StateBanner from "./StateBanner.svelte";
   import {
@@ -151,6 +152,17 @@
      */
     onResetBranch?: (commit: CommitSummary, mode: "soft" | "mixed") => void;
     /**
+     * Add a linked worktree whose new branch starts at this commit. The
+     * component asks for the destination and branch name; the host's own
+     * validation refuses paths that leave the approved root. Absent means the
+     * host cannot.
+     */
+    onCreateWorktreeAt?: (
+      commit: CommitSummary,
+      relativeDestination: string,
+      branchName: string,
+    ) => void;
+    /**
      * Author photos from GitHub, keyed off noreply commit emails. On by
      * default; a privacy-conscious host can turn the column to initials only.
      */
@@ -192,6 +204,7 @@
     onDeleteTag = undefined,
     onRevertCommit = undefined,
     onResetBranch = undefined,
+    onCreateWorktreeAt = undefined,
     showAvatars = true,
     remoteAvatars = undefined,
     class: className = "",
@@ -507,6 +520,17 @@
               onSelect: () => openRefDialog("tag", commit),
             },
           ]),
+      ...(onCreateWorktreeAt === undefined
+        ? []
+        : [
+            {
+              kind: "action" as const,
+              id: "create-worktree",
+              label: "Create Worktree from Here…",
+              disabled: contextDisabled,
+              onSelect: () => askWorktree(commit),
+            },
+          ]),
       ...(onRevertCommit === undefined
         ? []
         : [
@@ -621,6 +645,14 @@
   function askReset(commit: CommitSummary): void {
     pendingReset = commit;
     resetDialogOpen = true;
+  }
+
+  let worktreeDialogOpen = $state(false);
+  let pendingWorktree = $state<CommitSummary | null>(null);
+
+  function askWorktree(commit: CommitSummary): void {
+    pendingWorktree = commit;
+    worktreeDialogOpen = true;
   }
 
   function refActionsFor(
@@ -1455,14 +1487,14 @@
     ? "Revert"
     : `Revert "${pendingRevert.subject}"`}
   disabled={pendingRevert === null || contextDisabled}
-    onConfirm={() => {
-      if (pendingRevert === null) {
-        return;
-      }
-      onRevertCommit?.(pendingRevert);
-      pendingRevert = null;
-    }}
-    data-testid="commit-revert-dialog"
+  onConfirm={() => {
+    if (pendingRevert === null) {
+      return;
+    }
+    onRevertCommit?.(pendingRevert);
+    pendingRevert = null;
+  }}
+  data-testid="commit-revert-dialog"
 />
 
 <ResetBranchDialog
@@ -1478,4 +1510,18 @@
     pendingReset = null;
   }}
   data-testid="commit-reset-dialog"
+/>
+
+<WorktreeFromCommitDialog
+  bind:open={worktreeDialogOpen}
+  subject={pendingWorktree?.subject ?? null}
+  disabled={pendingWorktree === null || contextDisabled}
+  onConfirm={(relativeDestination, branchName) => {
+    if (pendingWorktree === null) {
+      return;
+    }
+    onCreateWorktreeAt?.(pendingWorktree, relativeDestination, branchName);
+    pendingWorktree = null;
+  }}
+  data-testid="commit-worktree-dialog"
 />

@@ -939,6 +939,7 @@
   const onTagDelete = writeController.onTagDelete;
   const onCommitRevert = writeController.onCommitRevert;
   const onCommitReset = writeController.onCommitReset;
+  const onWorktreeCreate = writeController.onWorktreeCreate;
 
   function onCommitCreateBranch(
     commit: CommitSummary,
@@ -1565,6 +1566,14 @@
                 : undefined}
               onResetBranch={graphMenuOperations.has("resetBranch")
                 ? (commit, mode) => onCommitReset(commit.oid, mode)
+                : undefined}
+              onCreateWorktreeAt={graphMenuOperations.has("createWorktree")
+                ? (commit, relativeDestination, branchName) =>
+                    onWorktreeCreate(relativeDestination, {
+                      kind: "newBranch",
+                      branchName,
+                      startOid: commit.oid,
+                    })
                 : undefined}
               showAvatars={avatars}
               {remoteAvatars}

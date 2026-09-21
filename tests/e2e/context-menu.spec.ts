@@ -75,6 +75,42 @@ test.describe("Git context menus", () => {
     ).toBe(historicalOid);
   });
 
+  test("creates a worktree with a new branch from a commit context menu", async ({
+    page,
+  }) => {
+    await page.goto(service.pairingUrl);
+    const row = page.getByTestId(`commit-row-${historicalOid}`);
+    await expect(row).toBeVisible();
+
+    await row.click({ button: "right" });
+    const menu = page.getByTestId(`commit-context-${historicalOid}`);
+    await expect(
+      page.getByTestId(`commit-context-${historicalOid}-create-worktree`),
+    ).toHaveText("Create Worktree from Here…");
+    await page
+      .getByTestId(`commit-context-${historicalOid}-create-worktree`)
+      .click();
+
+    const dialog = page.getByTestId("commit-worktree-dialog");
+    await expect(dialog).toBeVisible();
+    await page
+      .getByTestId("commit-worktree-dialog-branch")
+      .fill("from-worktree");
+    await page
+      .getByTestId("commit-worktree-dialog-destination")
+      .fill("worktrees/from-historical");
+    await page.getByTestId("commit-worktree-dialog-confirm").click();
+
+    await expect(page.getByTestId("worktree-message-result")).toContainText(
+      /created worktree at/,
+    );
+    // The worktree exists, its branch starts at the clicked commit — not HEAD.
+    const headOf = await repo.git(["rev-parse", "refs/heads/from-worktree"]);
+    expect(new TextDecoder().decode(headOf).trim()).toBe(historicalOid);
+    const list = new TextDecoder().decode(await repo.git(["worktree", "list"]));
+    expect(list).toContain("from-historical");
+  });
+
   // Reading the clipboard back is a Chromium-only capability in Playwright: Firefox
   // rejects `clipboard-read` as an unknown permission and WebKit gates readText on a
   // user gesture, so on those engines this side effect is not assertable rather than

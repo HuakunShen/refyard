@@ -84,6 +84,12 @@ export interface WorktreeReferenceInput {
   readonly kind: "newBranch" | "existingBranch" | "detached";
   readonly branchName?: string;
   readonly oid?: string;
+  /**
+   * For a new branch: the commit it starts at. Absent means the worktree's
+   * current HEAD, which is what the worktree panel's form wants; the commit
+   * menu's "create worktree from here" passes the clicked commit instead.
+   */
+  readonly startOid?: string;
 }
 
 interface MutationContext {
@@ -1125,6 +1131,13 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     }
     if (reference.kind === "existingBranch") {
       return { kind: "existingBranch", branchName: reference.branchName ?? "" };
+    }
+    if (reference.startOid !== undefined && reference.startOid !== "") {
+      return {
+        kind: "newBranch",
+        branchName: reference.branchName ?? "",
+        startOid: reference.startOid,
+      };
     }
     const snapshot = await requireReads().status({
       repositoryId,
