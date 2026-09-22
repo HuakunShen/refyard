@@ -3,6 +3,16 @@
   "name": "refyard-web",
   "main": "./apps/web/src/worker.ts",
   "compatibility_date": "2026-09-16",
+  // The hosted UI (form 3) is served from the worker. Declaring the route here
+  // makes `wrangler deploy` authoritative for DNS and certificates — a domain
+  // configured only in the dashboard is exactly what a redeploy drifts away.
+  // Requires the huakun.tech zone to live in the same Cloudflare account.
+  "routes": [
+    { "pattern": "refyard.huakun.tech", "custom_domain": true }
+  ],
+  // Keep the workers.dev URL working alongside the custom domain; a deploy
+  // with routes present otherwise disables it.
+  "workers_dev": true,
   "assets": {
     "directory": "./apps/web/build",
     "binding": "ASSETS",
