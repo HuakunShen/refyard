@@ -7,6 +7,7 @@
 //! own.
 
 pub mod clock;
+pub mod embed;
 pub mod events;
 pub mod files;
 pub mod jobs;

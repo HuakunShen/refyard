@@ -33,6 +33,8 @@
 use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
 use std::io::Write;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -542,6 +544,9 @@ impl Journal {
                 records.display()
             ))
         })?;
+        set_private_directory(root)?;
+        set_private_directory(&directory)?;
+        set_private_directory(&records)?;
         let index_path = directory.join("index.json");
         let index: JournalIndex = match std::fs::read(&index_path) {
             Ok(bytes) => serde_json::from_slice(&bytes).map_err(|error| {
@@ -762,6 +767,27 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), Problem> {
         let _ = directory.sync_all();
     }
     Ok(())
+}
+
+#[cfg(unix)]
+fn set_private_directory(path: &Path) -> Result<(), Problem> {
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).map_err(|error| {
+        internal(format!(
+            "the journal directory {} could not be made private: {error}",
+            path.display()
+        ))
+    })
+}
+
+#[cfg(not(unix))]
+fn set_private_directory(path: &Path) -> Result<(), Problem> {
+    Err(Problem::new(
+        ProblemCode::Unavailable,
+        format!(
+            "cannot enforce private journal permissions on this platform: {}",
+            path.display()
+        ),
+    ))
 }
 
 fn internal(message: String) -> Problem {

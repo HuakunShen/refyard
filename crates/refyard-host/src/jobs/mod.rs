@@ -20,7 +20,7 @@ pub mod recovery;
 
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use refyard_contract::problem::{Problem, ProblemCode};
@@ -241,6 +241,7 @@ pub struct MutationEngine {
     effects: Vec<Box<dyn MutationEffect>>,
     queue: Queue<MutationRequest>,
     next_operation: AtomicU64,
+    closed: AtomicBool,
     /// Where state changes are announced. `None` is an engine nobody subscribed to —
     /// tests, and a host that has not wired its event transport — and it changes nothing
     /// about what is journalled.
@@ -270,13 +271,24 @@ impl MutationEngine {
         effects: Vec<Box<dyn MutationEffect>>,
         events: Option<Arc<EventSink>>,
     ) -> Arc<Self> {
+        Self::with_event_sink_and_limits(journal, recovery, effects, events, QueueLimits::default())
+    }
+
+    pub fn with_event_sink_and_limits(
+        journal: Arc<Journal>,
+        recovery: Arc<Recovery>,
+        effects: Vec<Box<dyn MutationEffect>>,
+        events: Option<Arc<EventSink>>,
+        queue_limits: QueueLimits,
+    ) -> Arc<Self> {
         let next_operation = next_operation_seed(&journal.records());
         Arc::new(Self {
             journal,
             recovery,
             effects,
-            queue: Queue::new(QueueLimits::default()),
+            queue: Queue::new(queue_limits),
             next_operation: AtomicU64::new(next_operation),
+            closed: AtomicBool::new(false),
             events,
         })
     }
@@ -320,6 +332,21 @@ impl MutationEngine {
         &self.recovery
     }
 
+    /// Stops accepting new work, durably cancels queued tickets, and waits for running
+    /// effects to reach their own observed outcome. Running effects are never relabelled
+    /// cancelled: they may already have changed the repository.
+    pub async fn shutdown(&self) -> Result<(), Problem> {
+        self.closed.store(true, Ordering::SeqCst);
+        for ticket in self.queue.close() {
+            let record = self.journal.mark_cancelled(&ticket.id, now_millis())?;
+            self.publish(&record);
+        }
+        while self.queue.running_count() != 0 {
+            tokio::task::yield_now().await;
+        }
+        Ok(())
+    }
+
     /// Submits one request, journalling it before it may run.
     ///
     /// The facts the write path cannot read on its own come from `source`, which the
@@ -331,6 +358,12 @@ impl MutationEngine {
         request: MutationRequest,
         source: &dyn PreconditionSource,
     ) -> Result<SubmitResult, Problem> {
+        if self.closed.load(Ordering::SeqCst) {
+            return Err(Problem::new(
+                ProblemCode::Unavailable,
+                "this host is closing and accepts no new mutations",
+            ));
+        }
         let digest = canonical_payload_digest(&request);
 
         // Idempotency: the same client request id and the same payload is the same
@@ -419,6 +452,15 @@ impl MutationEngine {
             QueueMode::Write,
             request,
         ) {
+            if refusal == EnqueueRefusal::Closed {
+                let cancelled = self.journal.mark_cancelled(&operation_id, now_millis())?;
+                self.publish(&cancelled);
+                return Err(Problem::new(
+                    ProblemCode::Cancelled,
+                    "the host closed before this operation started",
+                )
+                .for_operation(operation_id));
+            }
             let (code, message, retryable) = match refusal {
                 EnqueueRefusal::QueueFull => (
                     ProblemCode::ResourceBusy,
@@ -430,6 +472,7 @@ impl MutationEngine {
                     "that operation is already queued".to_string(),
                     false,
                 ),
+                EnqueueRefusal::Closed => unreachable!(),
             };
             let problem = Problem::new(code, message);
             let finished =
@@ -529,6 +572,9 @@ impl MutationEngine {
 
     /// Starts every queued operation the limits allow.
     fn pump(self: &Arc<Self>) {
+        if self.closed.load(Ordering::SeqCst) {
+            return;
+        }
         for ticket in self.queue.take_startable() {
             let engine = Arc::clone(self);
             tokio::spawn(async move {

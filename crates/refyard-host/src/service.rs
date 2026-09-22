@@ -21,6 +21,7 @@
 //! parsers accept; the format actually in use is detected per repository from
 //! `rev-parse --show-object-format` during registration, never assumed.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -46,6 +47,7 @@ use crate::files::preview::{PreviewClaim, PreviewStore};
 use crate::files::PREVIEW_MAX_BYTES;
 use crate::files::{self, FileRead};
 use crate::jobs::journal::Journal;
+use crate::jobs::queue::QueueLimits;
 use crate::jobs::recovery::Recovery;
 use crate::jobs::{MutationEngine, MutationRequest, PreconditionSource, SubmitResult};
 use crate::paths::{base36, PathRegistry};
@@ -100,6 +102,27 @@ fn build_engine(
         Arc::clone(recovery),
         effects,
         Some(Arc::clone(events)),
+    )
+}
+
+fn build_engine_with_options(
+    journal: &Arc<Journal>,
+    recovery: &Arc<Recovery>,
+    writes_host: &Arc<WriteHost>,
+    enabled: &BTreeSet<MutationKind>,
+    queue_limits: QueueLimits,
+    events: &Arc<EventSink>,
+) -> Arc<MutationEngine> {
+    let effects = WriteHost::effects(writes_host)
+        .into_iter()
+        .filter(|effect| enabled.contains(&effect.kind()))
+        .collect();
+    MutationEngine::with_event_sink_and_limits(
+        Arc::clone(journal),
+        Arc::clone(recovery),
+        effects,
+        Some(Arc::clone(events)),
+        queue_limits,
     )
 }
 
@@ -224,6 +247,11 @@ pub struct ApplicationService {
     writes_host: Arc<WriteHost>,
     /// The bounded ring of state changes and invalidations, with live subscriptions.
     events: Arc<EventSink>,
+    queue_limits: QueueLimits,
+    event_ring_max_events: usize,
+    event_ring_max_bytes: usize,
+    repository_max_count: usize,
+    enabled_mutations: BTreeSet<MutationKind>,
 }
 
 /// One approved root: the key it is unique by, and the text a client is shown.
@@ -549,6 +577,11 @@ impl ApplicationService {
             writes_enabled: false,
             writes_host,
             events,
+            queue_limits: QueueLimits::default(),
+            event_ring_max_events: crate::events::EVENT_RING_MAX_EVENTS,
+            event_ring_max_bytes: crate::events::EVENT_RING_MAX_BYTES,
+            repository_max_count: usize::MAX,
+            enabled_mutations: BTreeSet::new(),
         }
     }
 
@@ -566,11 +599,12 @@ impl ApplicationService {
         let journal = Arc::new(Journal::open(Some(root))?);
         let recovery = Arc::new(Recovery::new());
         recovery.reconcile(&journal, crate::clock::now_millis())?;
-        let engine = build_engine(
+        let engine = build_engine_with_options(
             &journal,
             &recovery,
             &self.writes_host,
-            self.writes_enabled,
+            &self.enabled_mutations,
+            self.queue_limits,
             &self.events,
         );
         Ok(Self {
@@ -596,11 +630,48 @@ impl ApplicationService {
     /// over SSH.
     pub fn with_writes(mut self) -> Self {
         self.writes_enabled = true;
-        self.engine = build_engine(
+        self.enabled_mutations = [
+            MutationKind::StagePaths,
+            MutationKind::UnstagePaths,
+            MutationKind::Commit,
+        ]
+        .into_iter()
+        .collect();
+        self.engine = build_engine_with_options(
             &self.journal,
             &self.recovery,
             &self.writes_host,
-            true,
+            &self.enabled_mutations,
+            self.queue_limits,
+            &self.events,
+        );
+        self
+    }
+
+    /// Applies the embedding policy before a durable journal is opened.
+    pub fn with_embed_options(
+        mut self,
+        queue_limits: QueueLimits,
+        event_ring_max_events: usize,
+        event_ring_max_bytes: usize,
+        repository_max_count: usize,
+        enabled_mutations: BTreeSet<MutationKind>,
+    ) -> Self {
+        self.queue_limits = queue_limits;
+        self.event_ring_max_events = event_ring_max_events;
+        self.event_ring_max_bytes = event_ring_max_bytes;
+        self.repository_max_count = repository_max_count;
+        self.enabled_mutations = enabled_mutations;
+        self.events = Arc::new(EventSink::with_limits(
+            event_ring_max_events,
+            event_ring_max_bytes,
+        ));
+        self.engine = build_engine_with_options(
+            &self.journal,
+            &self.recovery,
+            &self.writes_host,
+            &self.enabled_mutations,
+            self.queue_limits,
             &self.events,
         );
         self
@@ -660,6 +731,10 @@ impl ApplicationService {
     }
 
     /// The identity of this service instance, as capabilities reports it.
+    pub fn output_limits(&self) -> (usize, usize) {
+        self.git.output_limits()
+    }
+
     pub fn service_instance_id(&self) -> &str {
         &self.service_instance_id
     }
@@ -899,6 +974,13 @@ impl ApplicationService {
                 operations: remaining,
             }]
         };
+        let mut limits = runtime_limits();
+        limits.queued_operations_per_actor = self.queue_limits.max_queued_per_actor as u64;
+        limits.concurrent_git_processes = self.queue_limits.max_global_git_processes as u64;
+        limits.concurrent_readers_per_repository =
+            self.queue_limits.max_readers_per_repository as u64;
+        limits.event_ring_max_events = self.event_ring_max_events as u64;
+        limits.event_ring_max_bytes = self.event_ring_max_bytes as u64;
         Ok(CapabilitiesResponse {
             api_major: API_MAJOR,
             contract_version: CONTRACT_VERSION.to_string(),
@@ -924,7 +1006,7 @@ impl ApplicationService {
             // this build cannot run is absent from this list and named in `unavailable`
             // instead of being offered and then refused.
             operations,
-            limits: runtime_limits(),
+            limits,
             unavailable,
         })
     }
@@ -1047,6 +1129,12 @@ impl ApplicationService {
         path: &str,
         target: &TargetRecord,
     ) -> Result<RepositoriesResponse, Problem> {
+        if self.repositories.list().len() >= self.repository_max_count {
+            return Err(Problem::new(
+                ProblemCode::LimitExceeded,
+                "this embedded host has reached its repository limit",
+            ));
+        }
         let requested = PathBuf::from(path);
         let canonical = tokio::fs::canonicalize(&requested).await.map_err(|_| {
             Problem::new(
@@ -1128,6 +1216,12 @@ impl ApplicationService {
         path: &str,
         target: &TargetRecord,
     ) -> Result<RepositoriesResponse, Problem> {
+        if self.repositories.list().len() >= self.repository_max_count {
+            return Err(Problem::new(
+                ProblemCode::LimitExceeded,
+                "this embedded host has reached its repository limit",
+            ));
+        }
         // The path is used exactly as it arrived: trimming or normalising it would act on
         // a path the caller was never shown, and a remote path's spaces are its own.
         let directory = path;
@@ -1520,6 +1614,10 @@ impl ApplicationService {
         self.engine.submit(actor, request, &source).await
     }
 
+    pub async fn engine_shutdown(&self) -> Result<(), Problem> {
+        self.engine.shutdown().await
+    }
+
     /// Cancels an operation that has not started.
     pub fn cancel_operation(
         &self,
@@ -1554,6 +1652,16 @@ impl ApplicationService {
     /// The operation's outcome is never rewritten: the record stays `unknown` because that
     /// is what is true, and the acknowledgement only says a person has looked at the
     /// repository since.
+    pub fn acknowledge_uncertain_operation_for(
+        &self,
+        actor: &str,
+        operation_id: &str,
+        confirmed_snapshot_id: &str,
+    ) -> Result<OperationRecord, Problem> {
+        self.operation_for(actor, operation_id)?;
+        self.acknowledge_uncertain_operation(operation_id, confirmed_snapshot_id)
+    }
+
     pub fn acknowledge_uncertain_operation(
         &self,
         operation_id: &str,

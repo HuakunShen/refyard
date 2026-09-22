@@ -27,6 +27,8 @@ pub const STDERR_DIAGNOSTIC_MAX_BYTES: usize = 256 * 1024;
 pub struct LocalGit {
     program: PathBuf,
     env: Vec<(String, String)>,
+    stdout_limit: usize,
+    stderr_limit: usize,
 }
 
 impl LocalGit {
@@ -46,6 +48,8 @@ impl LocalGit {
                 return Ok(Self {
                     program: candidate,
                     env: git_environment(),
+                    stdout_limit: STRUCTURED_STDOUT_MAX_BYTES,
+                    stderr_limit: STDERR_DIAGNOSTIC_MAX_BYTES,
                 });
             }
         }
@@ -57,7 +61,19 @@ impl LocalGit {
         Self {
             program: program.into(),
             env,
+            stdout_limit: STRUCTURED_STDOUT_MAX_BYTES,
+            stderr_limit: STDERR_DIAGNOSTIC_MAX_BYTES,
         }
+    }
+
+    pub fn with_output_limits(mut self, stdout_limit: usize, stderr_limit: usize) -> Self {
+        self.stdout_limit = stdout_limit;
+        self.stderr_limit = stderr_limit;
+        self
+    }
+
+    pub fn output_limits(&self) -> (usize, usize) {
+        (self.stdout_limit, self.stderr_limit)
     }
 
     pub fn program(&self) -> &Path {
@@ -102,8 +118,8 @@ impl LocalGit {
             cwd: Some(directory.to_path_buf()),
             env: self.env.clone(),
             deadline: Duration::from_secs(plan.deadline_class.seconds()),
-            stdout_limit: stdout_limit.unwrap_or(STRUCTURED_STDOUT_MAX_BYTES),
-            stderr_limit: STDERR_DIAGNOSTIC_MAX_BYTES,
+            stdout_limit: stdout_limit.unwrap_or(self.stdout_limit),
+            stderr_limit: self.stderr_limit,
         };
         run(spec, cancel).await
     }
