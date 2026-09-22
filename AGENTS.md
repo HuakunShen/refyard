@@ -163,8 +163,8 @@ each carries, and which project to read for which question.
 apps/web/                  SvelteKit shell: routes, connection config, service worker (T07/T14)
 apps/cli/                  argv parsing, doctor, open/serve lifecycle
 apps/docs/                 the published documentation site: static Fumadocs-on-Astro build,
-                           deployed as a Cloudflare assets-only worker on
-                           docs.refyard.huakun.tech (declared in its wrangler.jsonc).
+                           GitHub Pages via .github/workflows/docs.yml, served on the custom
+                           domain docs.refyard.huakun.tech (CNAME file + Pages settings).
                            Build-time only — never a product runtime, and never a release gate.
 packages/git-contract/     public Zod schemas, inferred DTOs, semantic validation (single source)
 packages/git-core/         bytes/ parse/ plan/ workflows/ ports.ts — no host APIs
