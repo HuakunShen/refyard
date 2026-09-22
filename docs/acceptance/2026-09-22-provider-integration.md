@@ -69,6 +69,6 @@ Owner 注册了 OAuth App（client id `Ov23liKdOzoDRnsNFgBl`，公开值，已�
 | PV-T | host 编排：awaiting-user→connected 存储前强制 /user 校验；denied/expired 终态零存储；slow_down 间隔被遵守；过期前自动 refresh 并持久化轮换；refresh 被拒→连接删除 + journal 记录 | PASS | `tests/node/provider-device-flow.test.ts`（8/8） |
 | PV-U | HTTP 面：device/start 返回短码；status 携带短码与状态（页面刷新可恢复显示）；后台轮询在 stub 应答下完成整个交换，connection 读到 `authMethod: "oauth"` + 过期时间，token/refresh token 不出现在任何响应 | PASS | `tests/integration/provider.test.ts`（12/12） |
 | PV-V | 浏览器：Connect GitHub → 短码展示（`ABCD-1234` 样式）→ host 后台完成后自动出 PR 列表；被拒场景表单可用；token 不落 localStorage | PASS（Chromium） | `tests/e2e/provider.spec.ts` 2/2 |
-| PV-W | 真实 device flow（真 GitHub App，人输短码） | **NOT RUN** | owner 手动步骤：面板点 Connect GitHub → 浏览器打开 github.com/login/device → 输码 → 面板自动变已连接 |
+| PV-W | 真实 device flow（真 OAuth App，人输短码） | **PASS（2026-09-22 实测，owner 本人在面板输码完成授权）** | 连接读取：`authMethod: "oauth"`、`accountLogin: "HuakunShen"`、`tokenExpiresAt` = 连接时刻 + 8h（GitHub 的过期模型如实生效）；缓存过期后再次读取 `source: "upstream"`，证明 OAuth token 对真实 api.github.com 持续可用；audit journal 记录 `provider-connect / actor: device-flow`，无 token 字节；所有响应无 token 泄漏 |
 
 架构注记：device flow 是唯一同时满足三种形态且 token 不经过浏览器的方案，因此**无需 Tauri deeplink、无需 loopback 回调**；`/login/device/code` 与 `/login/oauth/access_token` 端点的 base URL 有独立测试缝（`REFYARD_PROVIDER_GITHUB_LOGIN_BASE_URL`），与 REST base（api.github.com）分开注入。已核实的 GitHub 语义：OAuth App 的 device flow 只需 client_id；slow_down 表示把轮询间隔加大 ~5s；GitHub App 应答带 `refresh_token`/`expires_in`，OAuth App 勾选 Expiry 后同样携带。
