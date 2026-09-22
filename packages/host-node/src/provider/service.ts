@@ -20,6 +20,8 @@ import type {
   ProblemCode,
   ProviderConnection,
   ProviderConnectionsResponse,
+  ProviderDeviceStatusResponse,
+  ProviderId,
   ProviderPullRequestsResponse,
 } from "@refyard/git-contract";
 import { providerRepoFromRemote } from "@refyard/git-provider/remotes";
@@ -49,10 +51,22 @@ export type ConnectResult =
       readonly retryable: boolean;
     };
 
+export type DeviceStartResult =
+  | {
+      readonly ok: true;
+      readonly userCode: string;
+      readonly verificationUri: string;
+    }
+  | { readonly ok: false; readonly message: string };
+
 export interface ProviderService {
   status(): ProviderConnectionsResponse;
   connect(input: ConnectProviderRequest): Promise<ConnectResult>;
   disconnect(input: DisconnectProviderRequest): Promise<void>;
+  /** Begin the device-flow exchange; the browser shows the returned code. */
+  deviceStart(provider: string): Promise<DeviceStartResult>;
+  /** One snapshot of the device exchange, for the panel's polling. */
+  deviceStatus(provider: string): ProviderDeviceStatusResponse;
   pullRequests(input: {
     readonly repositoryId: string;
   }): Promise<ProviderPullRequestsResponse>;
@@ -90,6 +104,43 @@ export function createProviderService(
       cache.clear();
     },
 
+    async deviceStart(provider): Promise<DeviceStartResult> {
+      const started = await options.manager.beginDeviceConnect({
+        provider: provider as ProviderId,
+      });
+      if (!started.ok) {
+        return { ok: false, message: started.message };
+      }
+      return {
+        ok: true,
+        userCode: started.userCode,
+        verificationUri: started.verificationUri,
+      };
+    },
+
+    deviceStatus(provider): ProviderDeviceStatusResponse {
+      void provider;
+      const state = options.manager.deviceConnectState();
+      switch (state.state) {
+        case "awaiting-user":
+          return {
+            state: "awaiting-user",
+            userCode: state.userCode,
+            verificationUri: state.verificationUri,
+          };
+        case "connected":
+          return { state: "connected" };
+        case "denied":
+          return { state: "denied" };
+        case "expired":
+          return { state: "expired" };
+        case "failed":
+          return { state: "failed", message: state.message };
+        default:
+          return { state: "idle" };
+      }
+    },
+
     async pullRequests({ repositoryId }) {
       const cached = cache.get(repositoryId);
       if (cached !== undefined && now() - cached.atMs < ttl) {
@@ -106,7 +157,7 @@ export function createProviderService(
             "this service is not connected to GitHub; connect an account to see pull requests",
         });
       }
-      const token = options.manager.tokenOf("github");
+      const token = await options.manager.validToken("github");
       if (token === null) {
         throw new ReadProblem({
           code: "ProviderNotConnected",

@@ -16,6 +16,7 @@ import {
 } from "@refyard/host-node/provider/manager";
 import { createAccessJournal } from "@refyard/host-node/journal/access";
 import type { GitHubRestClient } from "@refyard/git-provider/github/rest";
+import type { DeviceFlowClient } from "@refyard/git-provider/github/device-flow";
 
 const TOKEN = "github_pat_11TESTTOKEN000000000000000";
 
@@ -54,11 +55,32 @@ function freshRoot(): string {
 const CONNECTION = {
   provider: "github",
   token: TOKEN,
+  refreshToken: null,
+  expiresAtMs: null,
   accountLogin: "octocat",
   accountType: "User",
   scopes: ["repo:read"],
   connectedAt: "2026-09-22T09:00:00.000Z",
+  authMethod: "pat",
 } as const;
+
+/** A canned device-flow client whose poll always says "keep waiting". */
+function stubDeviceFlow(): DeviceFlowClient {
+  return {
+    start: async () => ({
+      ok: true,
+      value: {
+        deviceCode: "device_code_123",
+        userCode: "ABCD-1234",
+        verificationUri: "https://github.com/login/device",
+        expiresAtMs: Date.now() + 900_000,
+        intervalMs: 1000,
+      },
+    }),
+    poll: async () => ({ ok: true, value: { kind: "pending" } }),
+    refresh: async () => ({ ok: false, error: { code: "unused" } }),
+  };
+}
 
 describe("provider store", () => {
   it("writes the connections file with mode 0600 in a 0700 directory", async () => {
@@ -121,6 +143,8 @@ describe("provider manager", () => {
       store,
       journal,
       client: stubClient({ ok: false }),
+      deviceFlow: stubDeviceFlow(),
+      clientId: "Iv1_test",
       now: () => 1_000,
     });
     const refused = await rejecting.connect({ provider: "github", token: TOKEN });
@@ -131,6 +155,8 @@ describe("provider manager", () => {
       store,
       journal,
       client: stubClient({ ok: true }),
+      deviceFlow: stubDeviceFlow(),
+      clientId: "Iv1_test",
       now: () => 1_000,
     });
     const accepted = await accepting.connect({ provider: "github", token: TOKEN });
@@ -147,6 +173,8 @@ describe("provider manager", () => {
       store,
       journal: createAccessJournal({ stateRoot }),
       client: stubClient({ ok: true }),
+      deviceFlow: stubDeviceFlow(),
+      clientId: "Iv1_test",
       now: () => 1_000,
     });
     const status = manager.status();
@@ -169,6 +197,8 @@ describe("provider manager", () => {
       store,
       journal,
       client: stubClient({ ok: true }),
+      deviceFlow: stubDeviceFlow(),
+      clientId: "Iv1_test",
       now: () => 1_000,
     });
     await manager.connect({ provider: "github", token: TOKEN });
@@ -192,6 +222,8 @@ describe("provider manager", () => {
       store,
       journal,
       client: stubClient({ ok: true }),
+      deviceFlow: stubDeviceFlow(),
+      clientId: "Iv1_test",
       now: () => 1_000,
     });
     await manager.disconnect({ provider: "github" });

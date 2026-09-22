@@ -456,7 +456,7 @@
           "$ref": "#/$defs/ProviderId"
         },
         "token": {
-          "$ref": "#/$defs/__schema383"
+          "$ref": "#/$defs/__schema390"
         }
       },
       "required": [
@@ -1975,6 +1975,14 @@
       "additionalProperties": false,
       "description": "The body of any 4xx/5xx JSON response."
     },
+    "ProviderAuthMethod": {
+      "type": "string",
+      "enum": [
+        "pat",
+        "oauth"
+      ],
+      "description": "How the connection was established: a pasted personal access token, or the OAuth device flow. OAuth tokens carry an expiry and refresh themselves."
+    },
     "ProviderConnection": {
       "type": "object",
       "properties": {
@@ -1992,6 +2000,12 @@
         },
         "connectedAt": {
           "$ref": "#/$defs/Timestamp"
+        },
+        "authMethod": {
+          "$ref": "#/$defs/ProviderAuthMethod"
+        },
+        "tokenExpiresAt": {
+          "$ref": "#/$defs/__schema382"
         }
       },
       "required": [
@@ -1999,10 +2013,12 @@
         "accountLogin",
         "accountType",
         "scopes",
-        "connectedAt"
+        "connectedAt",
+        "authMethod",
+        "tokenExpiresAt"
       ],
       "additionalProperties": false,
-      "description": "One live forge connection, as the host stores it. Never contains the token."
+      "description": "One live forge connection, as the host stores it. Never contains the token or its refresh token."
     },
     "ProviderConnectionQuery": {
       "type": "object",
@@ -2013,7 +2029,7 @@
       "type": "object",
       "properties": {
         "connections": {
-          "$ref": "#/$defs/__schema382"
+          "$ref": "#/$defs/__schema389"
         }
       },
       "required": [
@@ -2021,6 +2037,69 @@
       ],
       "additionalProperties": false,
       "description": "The forge accounts this host is connected to."
+    },
+    "ProviderDeviceStartRequest": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/ProviderId"
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "additionalProperties": false
+    },
+    "ProviderDeviceStartResponse": {
+      "type": "object",
+      "properties": {
+        "userCode": {
+          "$ref": "#/$defs/__schema383"
+        },
+        "verificationUri": {
+          "$ref": "#/$defs/__schema384"
+        }
+      },
+      "required": [
+        "userCode",
+        "verificationUri"
+      ],
+      "additionalProperties": false,
+      "description": "Show the code, send the user to the URI. The host polls GitHub meanwhile; nothing else is required from the browser."
+    },
+    "ProviderDeviceStatusQuery": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "$ref": "#/$defs/ProviderId"
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "additionalProperties": false
+    },
+    "ProviderDeviceStatusResponse": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/__schema385"
+        },
+        "message": {
+          "$ref": "#/$defs/__schema386"
+        },
+        "userCode": {
+          "$ref": "#/$defs/__schema387"
+        },
+        "verificationUri": {
+          "$ref": "#/$defs/__schema388"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "additionalProperties": false,
+      "description": "`awaiting-user` means a device exchange is in flight; the terminal states name what happened."
     },
     "ProviderId": {
       "type": "string",
@@ -2033,16 +2112,16 @@
       "type": "object",
       "properties": {
         "number": {
-          "$ref": "#/$defs/__schema384"
+          "$ref": "#/$defs/__schema391"
         },
         "title": {
-          "$ref": "#/$defs/__schema385"
+          "$ref": "#/$defs/__schema392"
         },
         "authorLogin": {
-          "$ref": "#/$defs/__schema386"
+          "$ref": "#/$defs/__schema393"
         },
         "authorAvatarUrl": {
-          "$ref": "#/$defs/__schema387"
+          "$ref": "#/$defs/__schema394"
         },
         "headRef": {
           "$ref": "#/$defs/BranchName"
@@ -2051,10 +2130,10 @@
           "$ref": "#/$defs/BranchName"
         },
         "isDraft": {
-          "$ref": "#/$defs/__schema389"
+          "$ref": "#/$defs/__schema396"
         },
         "url": {
-          "$ref": "#/$defs/__schema388"
+          "$ref": "#/$defs/__schema395"
         },
         "updatedAt": {
           "$ref": "#/$defs/Timestamp"
@@ -2091,16 +2170,16 @@
       "type": "object",
       "properties": {
         "repository": {
-          "$ref": "#/$defs/__schema390"
+          "$ref": "#/$defs/__schema397"
         },
         "source": {
-          "$ref": "#/$defs/__schema391"
+          "$ref": "#/$defs/__schema398"
         },
         "cachedAt": {
-          "$ref": "#/$defs/__schema392"
+          "$ref": "#/$defs/__schema399"
         },
         "pullRequests": {
-          "$ref": "#/$defs/__schema393"
+          "$ref": "#/$defs/__schema400"
         }
       },
       "required": [
@@ -6371,50 +6450,56 @@
       "maxLength": 64
     },
     "__schema382": {
-      "maxItems": 8,
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/ProviderConnection"
-      }
-    },
-    "__schema383": {
-      "type": "string",
-      "minLength": 20,
-      "maxLength": 255
-    },
-    "__schema384": {
-      "type": "integer",
-      "exclusiveMinimum": 0,
-      "maximum": 9007199254740991
-    },
-    "__schema385": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 600
-    },
-    "__schema386": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 100
-    },
-    "__schema387": {
       "anyOf": [
         {
-          "$ref": "#/$defs/__schema388"
+          "$ref": "#/$defs/Timestamp"
         },
         {
           "type": "null"
         }
       ]
     },
+    "__schema383": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32
+    },
+    "__schema384": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "__schema385": {
+      "type": "string",
+      "enum": [
+        "idle",
+        "awaiting-user",
+        "connected",
+        "denied",
+        "expired",
+        "failed"
+      ]
+    },
+    "__schema386": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "__schema387": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32
+    },
     "__schema388": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 2048,
-      "pattern": "^https:\\/\\/(?:github\\.com|[\\w.-]+\\.githubusercontent\\.com|[\\w.-]+\\.github\\.com)(?:\\/|$)"
+      "maxLength": 2048
     },
     "__schema389": {
-      "type": "boolean"
+      "maxItems": 8,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ProviderConnection"
+      }
     },
     "__schema39": {
       "type": "object",
@@ -6437,6 +6522,45 @@
       "additionalProperties": false
     },
     "__schema390": {
+      "type": "string",
+      "minLength": 20,
+      "maxLength": 255
+    },
+    "__schema391": {
+      "type": "integer",
+      "exclusiveMinimum": 0,
+      "maximum": 9007199254740991
+    },
+    "__schema392": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 600
+    },
+    "__schema393": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "__schema394": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/__schema395"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema395": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "pattern": "^https:\\/\\/(?:github\\.com|[\\w.-]+\\.githubusercontent\\.com|[\\w.-]+\\.github\\.com)(?:\\/|$)"
+    },
+    "__schema396": {
+      "type": "boolean"
+    },
+    "__schema397": {
       "type": "object",
       "properties": {
         "provider": {
@@ -6460,14 +6584,14 @@
       ],
       "additionalProperties": false
     },
-    "__schema391": {
+    "__schema398": {
       "type": "string",
       "enum": [
         "upstream",
         "cache"
       ]
     },
-    "__schema392": {
+    "__schema399": {
       "anyOf": [
         {
           "$ref": "#/$defs/Timestamp"
@@ -6477,13 +6601,6 @@
         }
       ]
     },
-    "__schema393": {
-      "maxItems": 100,
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/ProviderPullRequest"
-      }
-    },
     "__schema4": {
       "type": "integer",
       "exclusiveMinimum": 0,
@@ -6492,6 +6609,13 @@
     "__schema40": {
       "type": "string",
       "const": "commit"
+    },
+    "__schema400": {
+      "maxItems": 100,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ProviderPullRequest"
+      }
     },
     "__schema41": {
       "type": "object",

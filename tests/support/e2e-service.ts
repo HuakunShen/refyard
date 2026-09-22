@@ -74,6 +74,8 @@ export interface E2eServiceOptions {
   readonly uiPort?: number;
   /** Test seam: point the CLI's provider client at a local stub upstream. */
   readonly providerGithubBaseUrl?: string;
+  /** Test seam: the device-flow login endpoints of the same stub. */
+  readonly providerGithubLoginBaseUrl?: string;
 }
 
 export async function startE2eService(
@@ -153,6 +155,12 @@ export async function startE2eService(
       ...(options.providerGithubBaseUrl === undefined
         ? {}
         : { REFYARD_PROVIDER_GITHUB_BASE_URL: options.providerGithubBaseUrl }),
+      ...(options.providerGithubLoginBaseUrl === undefined
+        ? {}
+        : {
+            REFYARD_PROVIDER_GITHUB_LOGIN_BASE_URL:
+              options.providerGithubLoginBaseUrl,
+          }),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

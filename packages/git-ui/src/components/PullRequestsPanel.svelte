@@ -16,6 +16,13 @@
   import AuthorAvatar from "./AuthorAvatar.svelte";
   import { cn } from "../lib/utils.js";
 
+  interface DeviceConnectState {
+    readonly state: "idle" | "awaiting-user" | "connected" | "denied" | "expired" | "failed";
+    readonly userCode?: string;
+    readonly verificationUri?: string;
+    readonly message?: string;
+  }
+
   interface Props {
     connections: readonly ProviderConnection[];
     pullRequests?: readonly ProviderPullRequest[] | undefined;
@@ -25,6 +32,9 @@
     loading?: boolean;
     busy?: boolean;
     error?: string | null;
+    /** The host-side device exchange snapshot; absent from older hosts. */
+    deviceState?: DeviceConnectState | null | undefined;
+    onStartDeviceConnect: () => void;
     onConnect: (token: string) => void;
     onDisconnect: () => void;
     onRefresh: () => void;
@@ -38,10 +48,14 @@
     loading = false,
     busy = false,
     error = null,
+    deviceState = null,
+    onStartDeviceConnect,
     onConnect,
     onDisconnect,
     onRefresh,
   }: Props = $props();
+
+  let showingTokenForm = $state(false);
 
   const connected = $derived(connections.length > 0);
   let tokenDraft = $state("");
@@ -87,30 +101,77 @@
 
 <div class="flex flex-col gap-2" data-testid="pull-requests-panel">
   {#if !connected}
-    <p class="text-xs text-ink-muted">
-      Connect a GitHub account to see this repository's open pull requests.
-      The token stays on this machine's service.
-    </p>
-    <form
-      class="flex flex-col gap-2"
-      onsubmit={(event) => {
-        event.preventDefault();
-        submit();
-      }}
-    >
-      <input
-        class="w-full rounded border bg-transparent px-2 py-1 font-mono text-xs"
-        type="password"
-        autocomplete="off"
-        placeholder="GitHub token (github_pat_… or ghp_…)"
-        aria-label="GitHub personal access token"
-        bind:value={tokenDraft}
-        data-testid="provider-token-input"
-      />
-      <Button size="sm" disabled={busy || tokenDraft.trim().length === 0} onclick={submit} data-testid="provider-connect">
+    {#if deviceState?.state === "awaiting-user" && deviceState.userCode !== undefined}
+      <div class="flex flex-col gap-2" data-testid="provider-device-awaiting">
+        <p class="text-xs text-ink-muted">
+          Enter this code at
+          <a
+            class="underline"
+            href={deviceState.verificationUri ?? "https://github.com/login/device"}
+            target="_blank"
+            rel="noreferrer"
+            data-testid="provider-device-link"
+          >
+            github.com/login/device
+          </a>
+        </p>
+        <p
+          class="self-start rounded border px-3 py-1.5 font-mono text-lg tracking-widest select-all"
+          data-testid="provider-device-code"
+        >
+          {deviceState.userCode}
+        </p>
+        <p class="text-xs text-ink-faint">Waiting for authorization…</p>
+      </div>
+    {:else}
+      <p class="text-xs text-ink-muted">
+        Connect a GitHub account to see this repository's open pull requests.
+        The token stays on this machine's service.
+      </p>
+      <Button
+        size="sm"
+        disabled={busy}
+        onclick={onStartDeviceConnect}
+        data-testid="provider-device-start"
+      >
         {busy ? "Connecting…" : "Connect GitHub"}
       </Button>
-    </form>
+      {#if deviceState?.state === "failed" || deviceState?.state === "denied"}
+        <p class="text-xs text-warn" data-testid="provider-device-error">
+          {deviceState.message ?? "GitHub denied the request."}
+        </p>
+      {/if}
+      {#if showingTokenForm}
+        <form
+          class="flex flex-col gap-2"
+          onsubmit={(event) => {
+            event.preventDefault();
+            submit();
+          }}
+        >
+          <input
+            class="w-full rounded border bg-transparent px-2 py-1 font-mono text-xs"
+            type="password"
+            autocomplete="off"
+            placeholder="GitHub token (github_pat_… or ghp_…)"
+            aria-label="GitHub personal access token"
+            bind:value={tokenDraft}
+            data-testid="provider-token-input"
+          />
+          <Button size="sm" disabled={busy || tokenDraft.trim().length === 0} onclick={submit} data-testid="provider-connect">
+            {busy ? "Connecting…" : "Connect with token"}
+          </Button>
+        </form>
+      {:else}
+        <button
+          class="self-start text-xs text-ink-faint underline"
+          onclick={() => (showingTokenForm = true)}
+          data-testid="provider-token-toggle"
+        >
+          use a personal access token instead
+        </button>
+      {/if}
+    {/if}
   {:else}
     <div class="flex items-center gap-2">
       <span class="min-w-0 flex-1 truncate text-xs text-ink-muted">

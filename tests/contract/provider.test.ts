@@ -100,14 +100,27 @@ describe("providerConnectionsResponseSchema", () => {
           accountType: "User",
           scopes: ["repo:read"],
           connectedAt: "2026-09-22T09:00:00.000Z",
+          authMethod: "oauth",
+          tokenExpiresAt: null,
         },
       ],
     });
     expect(response.connections).toHaveLength(1);
-    // The DTO shape has no token field at all; this is structural, not a filter.
+    // The DTO shape has no token or refresh-token field at all; this is
+    // structural, not a filter.
     expect(
       response.connections.map((connection) => Object.keys(connection).sort()),
-    ).toEqual([["accountLogin", "accountType", "connectedAt", "provider", "scopes"]]);
+    ).toEqual([
+      [
+        "accountLogin",
+        "accountType",
+        "authMethod",
+        "connectedAt",
+        "provider",
+        "scopes",
+        "tokenExpiresAt",
+      ],
+    ]);
   });
 
   it("rejects a connection entry with an unknown key", () => {

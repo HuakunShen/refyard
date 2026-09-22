@@ -334,6 +334,8 @@ export function createHttpBackendSession(
     status: () => guard(() => client.providerConnection()),
     connect: (name, token) => guard(() => client.connectProvider(name, token)),
     disconnect: (name) => guard(() => client.disconnectProvider(name)),
+    deviceStart: (name) => guard(() => client.providerDeviceStart(name)),
+    deviceStatus: (name) => guard(() => client.providerDeviceStatus(name)),
     pullRequests: (repositoryId) => guard(() => client.providerPullRequests(repositoryId)),
   };
 

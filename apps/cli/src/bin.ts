@@ -36,6 +36,12 @@ const result = await main(process.argv.slice(2), {
         providerGithubBaseUrl:
           process.env["REFYARD_PROVIDER_GITHUB_BASE_URL"],
       }),
+  ...(process.env["REFYARD_PROVIDER_GITHUB_LOGIN_BASE_URL"] === undefined
+    ? {}
+    : {
+        providerGithubLoginBaseUrl:
+          process.env["REFYARD_PROVIDER_GITHUB_LOGIN_BASE_URL"],
+      }),
 });
 
 process.exitCode = result.exitCode;

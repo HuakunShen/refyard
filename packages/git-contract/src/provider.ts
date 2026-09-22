@@ -33,6 +33,12 @@ export const providerPullRequestsQuerySchema = z
       "The repository whose own forge remote is queried. The host resolves the coordinates; the browser never names a provider repository.",
   });
 
+export const providerAuthMethodSchema = z.enum(["pat", "oauth"]).meta({
+  id: "ProviderAuthMethod",
+  description:
+    "How the connection was established: a pasted personal access token, or the OAuth device flow. OAuth tokens carry an expiry and refresh themselves.",
+});
+
 export const providerConnectionSchema = z
   .strictObject({
     provider: providerIdSchema,
@@ -41,11 +47,14 @@ export const providerConnectionSchema = z
     /** Scopes the provider reports for the token — display only. */
     scopes: z.array(z.string().min(1).max(64)).max(32),
     connectedAt: timestampSchema,
+    authMethod: providerAuthMethodSchema,
+    /** Present for OAuth connections: when the access token stops working. */
+    tokenExpiresAt: timestampSchema.nullable(),
   })
   .meta({
     id: "ProviderConnection",
     description:
-      "One live forge connection, as the host stores it. Never contains the token.",
+      "One live forge connection, as the host stores it. Never contains the token or its refresh token.",
   });
 
 export const providerConnectionsResponseSchema = z
@@ -74,9 +83,47 @@ export const disconnectProviderRequestSchema = z
   });
 
 /**
+ * The device flow connect: the host talks to GitHub, the browser only ever
+ * sees the short code to type and where to type it. The device code stays
+ * host-side by construction — it is the one secret of the exchange.
+ */
+export const providerDeviceStartRequestSchema = z
+  .strictObject({ provider: providerIdSchema })
+  .meta({ id: "ProviderDeviceStartRequest" });
+
+export const providerDeviceStartResponseSchema = z
+  .strictObject({
+    userCode: z.string().min(1).max(32),
+    verificationUri: z.string().min(1).max(2048),
+  })
+  .meta({
+    id: "ProviderDeviceStartResponse",
+    description:
+      "Show the code, send the user to the URI. The host polls GitHub meanwhile; nothing else is required from the browser.",
+  });
+
+export const providerDeviceStatusQuerySchema = z
+  .strictObject({ provider: providerIdSchema })
+  .meta({ id: "ProviderDeviceStatusQuery" });
+
+export const providerDeviceStatusResponseSchema = z
+  .strictObject({
+    state: z.enum(["idle", "awaiting-user", "connected", "denied", "expired", "failed"]),
+    message: z.string().max(500).optional(),
+    /** Present while `awaiting-user`, so a reloaded page can re-show the code. */
+    userCode: z.string().min(1).max(32).optional(),
+    verificationUri: z.string().min(1).max(2048).optional(),
+  })
+  .meta({
+    id: "ProviderDeviceStatusResponse",
+    description:
+      "`awaiting-user` means a device exchange is in flight; the terminal states name what happened.",
+  });
+
+/**
  * A forge URL this product itself may construct; anything else is a mapping bug.
  * The host part is anchored on both sides, so `github.com.evil.example` cannot
- * ride in on a suffix match. The contract compiles without DOM globals, so the
+ * ride in on an suffix match. The contract compiles without DOM globals, so the
  * check is textual, not `new URL`.
  */
 const GITHUB_URL = /^https:\/\/(?:github\.com|[\w.-]+\.githubusercontent\.com|[\w.-]+\.github\.com)(?:\/|$)/i;
@@ -124,6 +171,19 @@ export const providerPullRequestsResponseSchema = z
   });
 
 export type ProviderId = z.infer<typeof providerIdSchema>;
+export type ProviderAuthMethod = z.infer<typeof providerAuthMethodSchema>;
+export type ProviderDeviceStartRequest = z.infer<
+  typeof providerDeviceStartRequestSchema
+>;
+export type ProviderDeviceStartResponse = z.infer<
+  typeof providerDeviceStartResponseSchema
+>;
+export type ProviderDeviceStatusQuery = z.infer<
+  typeof providerDeviceStatusQuerySchema
+>;
+export type ProviderDeviceStatusResponse = z.infer<
+  typeof providerDeviceStatusResponseSchema
+>;
 export type ProviderConnection = z.infer<typeof providerConnectionSchema>;
 export type ProviderConnectionsResponse = z.infer<
   typeof providerConnectionsResponseSchema

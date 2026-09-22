@@ -56,6 +56,8 @@ export function createKunkunBackend(
     providerConnection: () => client.providerConnection(),
     connectProvider: (provider, token) => client.connectProvider(provider, token),
     disconnectProvider: (provider) => client.disconnectProvider(provider),
+    providerDeviceStart: (provider) => client.providerDeviceStart(provider),
+    providerDeviceStatus: (provider) => client.providerDeviceStatus(provider),
     providerPullRequests: (repositoryId) => client.providerPullRequests(repositoryId),
   };
   return {

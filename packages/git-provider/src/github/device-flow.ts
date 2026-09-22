@@ -83,6 +83,14 @@ export interface DeviceFlowClient {
 
 const DEFAULT_BASE_URL = "https://github.com";
 
+/**
+ * Refyard's public OAuth App client id. Public by design — GitHub's device
+ * flow requires only the client id (no secret) for a public client, exactly
+ * like the `gh` CLI ships its own. Overriding it is a test/deployment concern,
+ * not a user setting.
+ */
+export const GITHUB_OAUTH_CLIENT_ID = "Ov23liKdOzoDRnsNFgBl";
+
 const startSchema = z.object({
   device_code: z.string().min(1).max(256),
   user_code: z.string().min(1).max(32),

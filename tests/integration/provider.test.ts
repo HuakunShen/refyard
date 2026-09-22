@@ -50,6 +50,7 @@ describe("provider integration", () => {
     service = await startTestService({
       repo,
       providerGithubBaseUrl: stub.baseUrl,
+      providerGithubLoginBaseUrl: stub.baseUrl,
     });
   });
 
@@ -275,5 +276,116 @@ describe("provider integration", () => {
     });
     const body = (await response.json()) as { providers?: string[] };
     expect(body.providers).toEqual(["github"]);
+  });
+});
+
+describe("provider device flow over HTTP", () => {
+  let repo: GitFixtureRepo;
+  let service: TestService;
+  let stub: GitHubStub;
+
+  beforeEach(async () => {
+    stub = await startGitHubStub();
+    repo = await createRepo({ initialCommit: true });
+    await repo.git([
+      "remote",
+      "add",
+      "origin",
+      "https://github.com/octocat/Hello-World.git",
+    ]);
+    service = await startTestService({
+      repo,
+      providerGithubBaseUrl: stub.baseUrl,
+      providerGithubLoginBaseUrl: stub.baseUrl,
+    });
+  });
+
+  afterEach(async () => {
+    await service.close();
+    await repo.dispose();
+    await stub.close();
+  });
+
+  const token = async (): Promise<string> => service.pair();
+
+  it("hands the user code to the browser and completes on GitHub's answer", async () => {
+    // The stub's interval of 0 makes the host's background poll fire at once,
+    // which is how this test observes the whole exchange without waiting on
+    // real timers in the common path.
+    stub.set("POST /login/device/code", {
+      status: 200,
+      body: JSON.stringify({
+        device_code: "device_code_123",
+        user_code: "ABCD-1234",
+        verification_uri: "https://github.com/login/device",
+        expires_in: 900,
+        interval: 0,
+      }),
+    });
+    stub.set("POST /login/oauth/access_token", {
+      status: 200,
+      body: JSON.stringify({
+        access_token: "ghu_live_access_token_000000000000001",
+        refresh_token: "ghu_live_refresh_token_0000000000001",
+        expires_in: 28800,
+        token_type: "bearer",
+      }),
+    });
+    // The /user identity validation rides on the REST stub.
+    stub.set("GET /user", { status: 200, body: JSON.stringify({ login: "octocat", type: "User" }) });
+
+    const started = await service.fetch("/api/v1/provider/github/device/start", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      token: await token(),
+      body: JSON.stringify({ provider: "github" }),
+    });
+    expect(started.status).toBe(200);
+    const startBody = (await started.json()) as {
+      userCode: string;
+      verificationUri: string;
+    };
+    expect(startBody.userCode).toBe("ABCD-1234");
+    expect(startBody.verificationUri).toBe("https://github.com/login/device");
+
+    // The host's own poll completes the exchange; the connection read is the
+    // observable result. The access token must never ride on any response.
+    await expect
+      .poll(
+        async () => {
+          const response = await service.fetch("/api/v1/provider/connection", {
+            token: await token(),
+          });
+          const body = (await response.json()) as {
+            connections: Array<{ authMethod: string }>;
+          };
+          return body.connections.map((connection) => connection.authMethod).join();
+        },
+        { timeout: 5_000 },
+      )
+      .toBe("oauth");
+    const response = await service.fetch("/api/v1/provider/connection", {
+      token: await token(),
+    });
+    const body = (await response.json()) as { connections: Array<{ tokenExpiresAt: string | null }> };
+    expect(body.connections.map((connection) => connection.tokenExpiresAt !== null)).toEqual([true]);
+    expect(JSON.stringify(body)).not.toContain("ghu_live_access_token_000000000000001");
+    expect(JSON.stringify(body)).not.toContain("ghu_live_refresh_token_0000000000001");
+  });
+
+  it("keeps the device status gated behind provider:manage", async () => {
+    const limited = await startTestService({
+      repo,
+      providerGithubBaseUrl: stub.baseUrl,
+      scopes: ["repository:read", "repository:write", "repository:network", "workspace:manage"],
+    });
+    try {
+      const response = await limited.fetch("/api/v1/provider/device/status?provider=github", {
+        token: await limited.pair(),
+      });
+      expect(response.status).toBe(403);
+    } finally {
+      await limited.close();
+    }
   });
 });

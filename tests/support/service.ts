@@ -55,6 +55,7 @@ import {
 } from "@refyard/host-node";
 import { createHostEngine, type GitEngine } from "@refyard/git-core";
 import { createGitHubRestClient } from "@refyard/git-provider/github/rest";
+import { createDeviceFlowClient, GITHUB_OAUTH_CLIENT_ID } from "@refyard/git-provider/github/device-flow";
 import {
   API_MAJOR,
   CONTRACT_VERSION,
@@ -168,6 +169,8 @@ export interface StartTestServiceOptions {
    * could not prove that the capability honestly appears.
    */
   readonly providerGithubBaseUrl?: string;
+  /** The device-flow login endpoints, likewise for stubs. */
+  readonly providerGithubLoginBaseUrl?: string;
   /** Exact hosted UI origins allowed to call the test service. */
   readonly allowedOrigins?: readonly string[];
   /** Secret used when the test exercises the password-gated hosted form. */
@@ -351,6 +354,13 @@ export async function startTestService(
       store: providerStore,
       journal: createAccessJournal({ stateRoot }),
       client: providerClient,
+      deviceFlow: createDeviceFlowClient({
+        fetch: (input, init) => fetch(input, init),
+        ...(options.providerGithubLoginBaseUrl === undefined
+          ? {}
+          : { baseUrl: options.providerGithubLoginBaseUrl }),
+      }),
+      clientId: GITHUB_OAUTH_CLIENT_ID,
     }),
     engine,
     repositories,

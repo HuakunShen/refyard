@@ -27,6 +27,7 @@ import {
 import { join } from "node:path";
 import { realpath, stat } from "node:fs/promises";
 import { createGitHubRestClient } from "@refyard/git-provider/github/rest";
+import { createDeviceFlowClient, GITHUB_OAUTH_CLIENT_ID } from "@refyard/git-provider/github/device-flow";
 import { randomBytes } from "node:crypto";
 import {
   createEventRing,
@@ -139,6 +140,8 @@ export interface AssembleOptions {
   readonly stateRootPath?: string;
   /** Test seam: point the provider client at a local stub upstream. */
   readonly providerGithubBaseUrl?: string;
+  /** Test seam: the device-flow login endpoints, likewise for stubs. */
+  readonly providerGithubLoginBaseUrl?: string;
   /** Injected in tests so no real Git process is probed twice. */
   readonly skipDoctor?: boolean;
 }
@@ -226,6 +229,13 @@ export async function assembleService(
       store: providerStore,
       journal: accessJournal,
       client: providerClient,
+      deviceFlow: createDeviceFlowClient({
+        fetch: (input, init) => fetch(input, init),
+        ...(options.providerGithubLoginBaseUrl === undefined
+          ? {}
+          : { baseUrl: options.providerGithubLoginBaseUrl }),
+      }),
+      clientId: GITHUB_OAUTH_CLIENT_ID,
     }),
     engine,
     repositories,

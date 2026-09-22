@@ -154,6 +154,8 @@
   const onSubmoduleSync = $derived(mutations.onSubmoduleSync);
   const onProviderConnect = $derived(mutations.connectProvider);
   const onProviderDisconnect = $derived(mutations.disconnectProvider);
+  const onProviderDeviceStart = $derived(mutations.connectProviderDevice);
+  const deviceState = $derived(queries.providerDeviceStatus.data);
 
   const sidebarViews = $derived(
     availableSidebarViews({
@@ -575,6 +577,8 @@
                   ? describeProblem(queries.providerPullRequests.error)
                   : null
             }
+            deviceState={deviceState}
+            onStartDeviceConnect={() => void onProviderDeviceStart()}
             onConnect={onProviderConnect}
             onDisconnect={() => void onProviderDisconnect()}
             onRefresh={() => void queries.providerPullRequests.refetch()}

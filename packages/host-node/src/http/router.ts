@@ -53,6 +53,8 @@ import {
   connectProviderRequestSchema,
   disconnectProviderRequestSchema,
   providerConnectionQuerySchema,
+  providerDeviceStartRequestSchema,
+  providerDeviceStatusQuerySchema,
   providerPullRequestsQuerySchema,
 } from "@refyard/git-contract";
 
@@ -208,6 +210,12 @@ export function readRoutes(): readonly RouteDefinition[] {
       "/api/v1/provider/pull-requests",
       providerPullRequestsQuerySchema,
       async (query, services) => requireProvider(services).pullRequests(query),
+    ),
+    readRoute(
+      "/api/v1/provider/device/status",
+      providerDeviceStatusQuerySchema,
+      async (query, services) => requireProvider(services).deviceStatus(query.provider),
+      "provider:manage",
     ),
     actionRoute(
       "/api/v1/previews",
@@ -485,6 +493,22 @@ export function mutationRoutes(): readonly RouteDefinition[] {
           });
         }
         return provider.status();
+      },
+    ),
+    actionRoute(
+      "/api/v1/provider/github/device/start",
+      providerDeviceStartRequestSchema,
+      "provider:manage",
+      async (body, services) => {
+        const provider = requireProvider(services);
+        const started = await provider.deviceStart(body.provider);
+        if (!started.ok) {
+          throw new ReadProblem({
+            code: "UnsupportedOperation",
+            message: started.message,
+          });
+        }
+        return { userCode: started.userCode, verificationUri: started.verificationUri };
       },
     ),
     actionRoute(

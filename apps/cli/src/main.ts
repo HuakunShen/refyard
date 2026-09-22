@@ -30,6 +30,8 @@ export interface MainIO {
   readonly hostedPassword?: string;
   /** Forge API override from the environment; the default is the public GitHub API. */
   readonly providerGithubBaseUrl?: string;
+  /** Device-flow login endpoint override, same audience as the base URL override. */
+  readonly providerGithubLoginBaseUrl?: string;
 }
 
 export const EXIT_OK = 0;
@@ -116,6 +118,9 @@ async function runServeCommand(
       ...(io.providerGithubBaseUrl === undefined
         ? {}
         : { providerGithubBaseUrl: io.providerGithubBaseUrl }),
+      ...(io.providerGithubLoginBaseUrl === undefined
+        ? {}
+        : { providerGithubLoginBaseUrl: io.providerGithubLoginBaseUrl }),
       allowRoot: command.allowRoot,
       json: command.json,
       write: io.write,

@@ -32,8 +32,13 @@ import {
   submodulesResponseSchema,
   worktreesResponseSchema,
   providerConnectionsResponseSchema,
+  providerDeviceStartRequestSchema,
+  providerDeviceStartResponseSchema,
+  providerDeviceStatusResponseSchema,
   providerPullRequestsResponseSchema,
   type ProviderConnectionsResponse,
+  type ProviderDeviceStartResponse,
+  type ProviderDeviceStatusResponse,
   type ProviderId,
   type ProviderPullRequestsResponse,
   type CapabilitiesResponse,
@@ -175,6 +180,9 @@ export interface GitClient {
     token: string,
   ): Promise<ProviderConnectionsResponse>;
   disconnectProvider(provider: ProviderId): Promise<ProviderConnectionsResponse>;
+  /** Starts a device-flow exchange; the returned code is what the user types. */
+  providerDeviceStart(provider: ProviderId): Promise<ProviderDeviceStartResponse>;
+  providerDeviceStatus(provider: ProviderId): Promise<ProviderDeviceStatusResponse>;
   providerPullRequests(repositoryId: string): Promise<ProviderPullRequestsResponse>;
 }
 
@@ -432,6 +440,21 @@ export function createGitClient(options: GitClientOptions): GitClient {
         "GET",
         `/api/v1/provider/pull-requests${toQueryString({ repositoryId })}`,
         providerPullRequestsResponseSchema,
+      ),
+
+    providerDeviceStart: (provider) =>
+      send(
+        "POST",
+        "/api/v1/provider/github/device/start",
+        providerDeviceStartResponseSchema,
+        providerDeviceStartRequestSchema.parse({ provider }),
+      ),
+
+    providerDeviceStatus: (provider) =>
+      send(
+        "GET",
+        `/api/v1/provider/device/status${toQueryString({ provider })}`,
+        providerDeviceStatusResponseSchema,
       ),
   };
 }

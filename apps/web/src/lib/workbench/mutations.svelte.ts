@@ -521,6 +521,28 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     }
   }
 
+  /**
+   * Start the device-flow exchange. The browser only shows the returned code;
+   * the host polls GitHub and flips the connection when the user finishes.
+   */
+  async function connectProviderDevice(): Promise<void> {
+    const provider = input.provider?.();
+    if (provider === null || provider === undefined) {
+      return;
+    }
+    busy = true;
+    try {
+      await provider.deviceStart("github");
+      await input.queryClient.invalidateQueries({
+        queryKey: [...input.queries.providerDeviceStatusKey()],
+      });
+    } catch (error) {
+      repositoryMessage = describeBackendProblem(error);
+    } finally {
+      busy = false;
+    }
+  }
+
   function onRepositoryInit(request: RepositoryInitInput): void {
     void createRepository(
       "init-repository",
@@ -1439,6 +1461,23 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     );
   }
 
+  // A device exchange that just completed means fresh connection data on the
+  // host: invalidate everything provider-shaped and consume the terminal state
+  // so the panel's polling stops.
+  $effect(() => {
+    if (input.queries.providerDeviceStatus.data?.state !== "connected") {
+      return;
+    }
+    void (async () => {
+      for (const prefix of input.queries.providerCachePrefixes()) {
+        await input.queryClient.invalidateQueries({ queryKey: [...prefix] });
+      }
+      input.queryClient.setQueryData([...input.queries.providerDeviceStatusKey()], {
+        state: "idle",
+      });
+    })();
+  });
+
   return {
     get busy() {
       return busy;
@@ -1518,6 +1557,7 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     onRepositoryInit,
     connectProvider,
     disconnectProvider,
+    connectProviderDevice,
     onRepositoryClone,
     registerRepository,
     registerRemoteRepository,

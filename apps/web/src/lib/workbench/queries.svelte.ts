@@ -261,6 +261,24 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
     };
   });
 
+  const providerDeviceStatus = createQuery(() => {
+    const key = cacheKeyFor(input.cacheNamespace(), "provider-device-status");
+    const state = gate(providerAvailable, true);
+    return {
+      queryKey: key,
+      queryFn: timedRead({
+        key,
+        timer: readTimer,
+        run: () => requireProvider().deviceStatus("github"),
+      }),
+      enabled: state.enabled,
+      // While an exchange is in flight the panel is waiting on a human at
+      // github.com; this poll is bounded to exactly that window.
+      refetchInterval: (query) =>
+        query.state.data?.state === "awaiting-user" ? 3000 : false,
+    };
+  });
+
   const providerPullRequests = createQuery(() => {
     const key = [
       ...cacheKeyFor(input.cacheNamespace(), "provider-pull-requests"),
@@ -294,6 +312,11 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
       staleTime: 30_000,
     };
   });
+
+  /** The exact key of the device-status query, so a terminal state can be consumed. */
+  function providerDeviceStatusKey(): readonly unknown[] {
+    return cacheKeyFor(input.cacheNamespace(), "provider-device-status");
+  }
 
   /** The keys a connect/disconnect must invalidate, all repositories included. */
   function providerCachePrefixes(): readonly (readonly unknown[])[] {
@@ -937,6 +960,10 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
     get providerPullRequests() {
       return providerPullRequests;
     },
+    get providerDeviceStatus() {
+      return providerDeviceStatus;
+    },
+    providerDeviceStatusKey,
     providerCachePrefixes,
     get commits() {
       return commits;

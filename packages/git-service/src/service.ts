@@ -25,6 +25,8 @@ import type {
   SubmodulesResponse,
   WorktreesResponse,
   ProviderConnectionsResponse,
+  ProviderDeviceStartResponse,
+  ProviderDeviceStatusResponse,
   ProviderId,
   ProviderPullRequestsResponse,
 } from "@refyard/git-contract";
@@ -119,6 +121,9 @@ export interface ProviderBackendService {
     token: string,
   ): Promise<ProviderConnectionsResponse>;
   disconnect(provider: ProviderId): Promise<ProviderConnectionsResponse>;
+  /** Starts a device-flow exchange; the returned code is what the user types. */
+  deviceStart(provider: ProviderId): Promise<ProviderDeviceStartResponse>;
+  deviceStatus(provider: ProviderId): Promise<ProviderDeviceStatusResponse>;
   pullRequests(repositoryId: string): Promise<ProviderPullRequestsResponse>;
 }
 

@@ -59,6 +59,7 @@ test.describe("Provider integration", () => {
     service = await startE2eService({
       repo,
       providerGithubBaseUrl: stub.baseUrl,
+      providerGithubLoginBaseUrl: stub.baseUrl,
     });
   });
 
@@ -68,14 +69,32 @@ test.describe("Provider integration", () => {
     await stub.close();
   });
 
-  test("connects from the sidebar and lists open pull requests", async ({
+  test("connects from the sidebar with the device flow and lists open pull requests", async ({
     page,
   }) => {
-    stub.set("GET /user", {
+    stub.set("POST /login/device/code", {
       status: 200,
-      headers: { "x-oauth-scopes": "repo:read" },
-      body: USER_OK,
+      body: JSON.stringify({
+        device_code: "device_code_123",
+        user_code: "ABCD-1234",
+        verification_uri: "https://github.com/login/device",
+        expires_in: 900,
+        // The host's first poll lands 8s after start — long enough for the
+        // awaiting state to be observed calmly; the completion assertions
+        // below carry their own larger timeouts.
+        interval: 8,
+      }),
     });
+    stub.set("POST /login/oauth/access_token", {
+      status: 200,
+      body: JSON.stringify({
+        access_token: "ghu_e2e_access_token_0000000000000000001",
+        refresh_token: "ghu_e2e_refresh_token_000000000000000001",
+        expires_in: 28800,
+        token_type: "bearer",
+      }),
+    });
+    stub.set("GET /user", { status: 200, body: USER_OK });
     stub.set(
       "GET /repos/octocat/Hello-World/pulls?state=open&per_page=100&page=1",
       { status: 200, body: PULLS },
@@ -88,28 +107,29 @@ test.describe("Provider integration", () => {
     await expect(nav).toBeVisible();
     await nav.click();
 
-    // Not connected yet: the token form, and no pull-request rows at all.
-    const tokenInput = page.getByTestId("provider-token-input");
-    await expect(tokenInput).toBeVisible();
+    // Not connected yet: the one-click device flow, and no rows at all.
+    await expect(page.getByTestId("provider-device-start")).toBeVisible();
     await expect(page.getByTestId("provider-pull-requests")).toHaveCount(0);
 
-    await tokenInput.fill(TOKEN);
-    await page.getByTestId("provider-connect").click();
+    await page.getByTestId("provider-device-start").click();
+
+    // The device code is meant to be seen — it is the whole UX of the flow.
+    await expect(page.getByTestId("provider-device-code")).toHaveText(/\S+/);
 
     const rows = page.getByTestId("provider-pull-requests");
-    await expect(rows).toBeVisible();
+    await expect(rows).toBeVisible({ timeout: 20_000 });
     await expect(page.getByTestId("provider-pull-7")).toContainText(
       "Add provider panel",
     );
     await expect(page.getByTestId("provider-pull-6")).toContainText("draft");
-    // The connect form is gone once the account is connected.
-    await expect(tokenInput).toHaveCount(0);
+    // The connect flow is gone once the account is connected.
+    await expect(page.getByTestId("provider-device-start")).toHaveCount(0);
 
-    // The token is a one-exchange secret: it must not survive in this origin's storage.
+    // The token is a host-side secret: it must not survive in this origin's storage.
     const stored = await page.evaluate(() =>
       JSON.stringify([localStorage, sessionStorage].map((store) => ({ ...store }))),
     );
-    expect(stored).not.toContain(TOKEN);
+    expect(stored).not.toContain("ghu_e2e_access_token_0000000000000000001");
   });
 
   test("keeps the token form after a rejected token", async ({ page }) => {
@@ -120,6 +140,8 @@ test.describe("Provider integration", () => {
     await page.goto(service.pairingUrl);
     const nav = page.getByRole("button", { name: "Pull Requests" });
     await nav.click();
+    // The PAT path is the deliberate fallback behind the device flow.
+    await page.getByTestId("provider-token-toggle").click();
     await page.getByTestId("provider-token-input").fill(TOKEN);
     await page.getByTestId("provider-connect").click();
     // The refusal is visible and the form stays usable for a corrected paste.
