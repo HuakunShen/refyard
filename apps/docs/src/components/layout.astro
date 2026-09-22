@@ -7,10 +7,32 @@ import { ClientRouter } from "astro:transitions";
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <script is:inline>
+      // The theme class must exist on <html> before the first paint: the Fumadocs
+      // provider (next-themes) only sets it once React hydrates, and the client router
+      // resets <html> to this static, class-less markup on every navigation — without
+      // this script every page switch re-renders the sidebar light and then dark.
+      // Reads the same storage key and resolves "system" the same way next-themes does,
+      // so the two never disagree about the resolved theme.
+      (() => {
+        const apply = () => {
+          const stored = localStorage.getItem("theme");
+          const dark =
+            stored === "dark" ||
+            ((stored === null || stored === "system" || stored === "") &&
+              matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.classList.toggle("dark", dark);
+          document.documentElement.classList.toggle("light", !dark);
+          document.documentElement.style.colorScheme = dark ? "dark" : "light";
+        };
+        apply();
+        document.addEventListener("astro:after-swap", apply);
+      })();
+    </script>
     <ClientRouter />
   </head>
-  <!-- No hardcoded theme class: the Fumadocs provider sets it from the reader's OS
-       preference and their own choice, the way the product does. -->
+  <!-- Both themes are served; this script owns the pre-paint class and the provider
+       owns the switch — the comment above records the contract between them. -->
   <body
     class="flex flex-col min-h-screen"
     transition:persist
