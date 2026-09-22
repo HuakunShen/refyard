@@ -4,6 +4,10 @@ description: A local-first Git workbench that drives your machine's own git and 
 ---
 
 import { Cards, Card } from "fumadocs-ui/components/card";
+import { Image } from "astro:assets";
+import workbenchDark from "../../src/assets/workbench-dark.png";
+import commitDetailDark from "../../src/assets/commit-detail-dark.png";
+import pullRequestsDark from "../../src/assets/pull-requests-dark.png";
 
 Refyard is a Git workbench that runs **on your machine, against your repositories, with
 your `git`**. It opens the repository where it already is — with your hooks, your filters,
@@ -14,6 +18,17 @@ worktrees and submodules.
 It is not a hosted service. There is no account, no upload step, and no central copy of your
 code. The one thing it fetches over the network is GitHub profile pictures for the author
 column, and that is a setting you can turn off.
+
+<Image
+  src={workbenchDark}
+  alt="The Refyard workbench: a merge-dense commit graph with lane lines and author avatars, the working-copy pane, and the commit composer"
+  width={1600}
+  loading="eager"
+  class="rounded-lg border border-fd-border overflow-hidden"
+/>
+
+*The history graph of a real repository — the host machine's own `git` reads it, nothing
+is uploaded.*
 
 <Cards>
   <Card title="Your git, not ours">
@@ -34,6 +49,28 @@ column, and that is a setting you can turn off.
     reported as unknown, never as success.
   </Card>
 </Cards>
+
+## A closer look
+
+<Image
+  src={commitDetailDark}
+  alt="A selected commit: split diff of one file beside the commit's metadata — author avatar, signature, refs"
+  width={1600}
+  class="rounded-lg border border-fd-border overflow-hidden"
+/>
+
+*Selecting a commit opens its diff in the main workspace; patches are read one file at a
+time against the host's `git`.*
+
+<Image
+  src={pullRequestsDark}
+  alt="The pull-requests panel connected to GitHub, listing open pull requests with author avatars next to the graph"
+  width={1600}
+  class="rounded-lg border border-fd-border overflow-hidden"
+/>
+
+*The GitHub panel: connect once and open pull requests appear next to the history — the
+token stays on the machine, the browser never sees it.*
 
 ## Where to go next
 
