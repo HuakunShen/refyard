@@ -295,6 +295,26 @@ const WORKSPACE_WRITE_KEY_PREFIX: &str = "root:";
 /// execution target and the path of its worktree as the far side spells it. The client-facing
 /// repository id is deliberately not part of it — that id is minted per process, and a write
 /// block has to be findable again after a restart.
+fn stable_write_key_matches(left: &str, right: &str) -> bool {
+    let Some((left_target, left_identity)) = left.split_once('\u{0}') else {
+        return left == right;
+    };
+    let Some((right_target, right_identity)) = right.split_once('\u{0}') else {
+        return false;
+    };
+    if left_target != right_target {
+        return false;
+    }
+    if left_identity == right_identity {
+        return true;
+    }
+    let left_path = Path::new(left_identity);
+    let right_path = Path::new(right_identity);
+    left_path.is_absolute()
+        && right_path.is_absolute()
+        && left_path.canonicalize().ok() == right_path.canonicalize().ok()
+}
+
 fn repository_write_key(target_id: &str, record: &RepositoryRecord) -> String {
     // The design's key is "target + common Git directory". This record's common directory is
     // whatever the open read resolved; when that is empty — no read fills it in this slice —
@@ -1627,15 +1647,7 @@ impl ApplicationService {
             self.journal
                 .unacknowledged()
                 .into_iter()
-                .find(|record| match &record.target {
-                    MutationTarget::Repository {
-                        repository_id: rid, ..
-                    }
-                    | MutationTarget::Worktree {
-                        repository_id: rid, ..
-                    } => rid == repository_id,
-                    MutationTarget::Workspace { .. } => false,
-                })
+                .find(|record| stable_write_key_matches(record.write_key.as_str(), &key))
                 .and_then(|record| self.recovery.block_for(&record.write_key))
         });
         Ok(block.map(|block| crate::embed::EmbedRecoveryState {
@@ -1711,20 +1723,17 @@ impl ApplicationService {
                 ));
             }
         }
-        let record_repository_id = match &record.target {
-            MutationTarget::Repository { repository_id, .. }
-            | MutationTarget::Worktree { repository_id, .. } => repository_id,
-            MutationTarget::Workspace { .. } => {
-                return Err(Problem::new(ProblemCode::Conflict, "an uncertain workspace operation cannot be acknowledged through a repository snapshot"));
-            }
-        };
-        if snapshot.repository_id != *record_repository_id {
+        let snapshot_record = self.require_record(&snapshot.repository_id)?;
+        let snapshot_key =
+            repository_write_key(&snapshot_record.location.target_id, &snapshot_record);
+        let same_stable_identity = stable_write_key_matches(&snapshot_key, &record.write_key);
+        if !same_stable_identity {
             return Err(Problem::new(
                 ProblemCode::Conflict,
                 "the confirming snapshot is of a different repository than the one the operation touched; confirm the repository the operation changed",
             ));
         }
-        if !self.recovery.resolve_operation(&record.operation_id) {
+        if !self.recovery.resolve_block(&snapshot_key) {
             return Err(Problem::new(
                 ProblemCode::Conflict,
                 format!("operation {} left no write block to lift", operation_id),
