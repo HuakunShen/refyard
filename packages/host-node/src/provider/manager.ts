@@ -147,6 +147,12 @@ export type ConnectOutcome =
 
 export interface ProviderManager {
   status(): ProviderConnectionsResponse;
+  /**
+   * The stored credential, for host-side code about to call the provider —
+   * the same trust level as the manager itself. It must never reach a response,
+   * a log line or a journal entry; `status()` exists for everything else.
+   */
+  tokenOf(provider: ProviderId): string | null;
   connect(input: {
     readonly provider: ProviderId;
     readonly token: string;
@@ -178,6 +184,10 @@ export function createProviderManager(options: {
         }
       }
       return { connections };
+    },
+
+    tokenOf(provider): string | null {
+      return options.store.get(provider)?.token ?? null;
     },
 
     async connect({ provider, token }): Promise<ConnectOutcome> {
