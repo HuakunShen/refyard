@@ -28,6 +28,8 @@ export interface MainIO {
   readonly cwd: string;
   /** Optional hosted pairing secret supplied by the process environment, never argv. */
   readonly hostedPassword?: string;
+  /** Forge API override from the environment; the default is the public GitHub API. */
+  readonly providerGithubBaseUrl?: string;
 }
 
 export const EXIT_OK = 0;
@@ -111,6 +113,9 @@ async function runServeCommand(
       ...(io.hostedPassword === undefined
         ? {}
         : { hostedPassword: io.hostedPassword }),
+      ...(io.providerGithubBaseUrl === undefined
+        ? {}
+        : { providerGithubBaseUrl: io.providerGithubBaseUrl }),
       allowRoot: command.allowRoot,
       json: command.json,
       write: io.write,

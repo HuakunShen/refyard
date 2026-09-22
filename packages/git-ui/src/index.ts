@@ -201,3 +201,4 @@ export * from "./lib/context-actions.js";
 
 export { default as WorkingCopyPanel } from "./components/WorkingCopyPanel.svelte";
 export { default as WorktreeWipList } from "./components/WorktreeWipList.svelte";
+export { default as PullRequestsPanel } from "./components/PullRequestsPanel.svelte";

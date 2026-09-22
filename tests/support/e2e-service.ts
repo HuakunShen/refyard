@@ -72,6 +72,8 @@ export interface E2eServiceOptions {
   readonly port?: number;
   /** Reuse a hosted static UI authority when a test restarts only the backend. */
   readonly uiPort?: number;
+  /** Test seam: point the CLI's provider client at a local stub upstream. */
+  readonly providerGithubBaseUrl?: string;
 }
 
 export async function startE2eService(
@@ -148,6 +150,9 @@ export async function startE2eService(
       ...options.repo.env,
       REFYARD_STATE_DIR: join(options.repo.scratchRoot, "state"),
       NO_COLOR: "1",
+      ...(options.providerGithubBaseUrl === undefined
+        ? {}
+        : { REFYARD_PROVIDER_GITHUB_BASE_URL: options.providerGithubBaseUrl }),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

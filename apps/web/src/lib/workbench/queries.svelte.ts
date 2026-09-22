@@ -25,7 +25,11 @@
  *   the same path on two machines cannot share cached reads, and `[namespace, targetId]`
  *   can be invalidated for one target without touching another machine's data or this one's.
  */
-import type { GitReadService, HostService } from "@refyard/git-service";
+import type {
+  GitReadService,
+  HostService,
+  ProviderBackendService,
+} from "@refyard/git-service";
 import { BackendError, type ConnectionPhase } from "@refyard/git-service";
 import type {
   DiffResponse,
@@ -78,6 +82,11 @@ export interface WorkbenchQueryInputs {
    * simply has no targeted repositories to gate.
    */
   readonly host: () => HostService | null;
+  /**
+   * The session's forge-connection surface; null when the adapter or the host
+   * lacks the provider module, which is what keeps the panel from mounting.
+   */
+  readonly provider?: () => ProviderBackendService | null;
   /** Changes with the session and authorization round; never a credential. */
   readonly cacheNamespace: () => string;
   readonly phase: () => ConnectionPhase;
@@ -216,6 +225,84 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
   const selectedPath = $derived(input.selection.statusPath);
   const selectedStatusSide = $derived(input.selection.statusSide);
   const selectedDiffPathId = $derived(input.selection.diffPathId);
+
+  /* ------------------------------------------------- provider axis reads */
+
+  /** Forge integrations the host reports; unknown until capabilities arrive. */
+  const providerAvailable = $derived(
+    capabilities.data?.providers?.includes("github") ?? false,
+  );
+
+  function requireProvider(): ProviderBackendService {
+    const provider = input.provider?.();
+    if (provider === null || provider === undefined) {
+      throw new BackendError({
+        code: "UnsupportedOperation",
+        message: "this host has no forge integration module",
+        retryable: false,
+      });
+    }
+    return provider;
+  }
+
+  const providerConnection = createQuery(() => {
+    const key = cacheKeyFor(input.cacheNamespace(), "provider-connection");
+    const state = gate(providerAvailable, true);
+    return {
+      queryKey: key,
+      queryFn: timedRead({
+        key,
+        timer: readTimer,
+        run: () => requireProvider().status(),
+      }),
+      enabled: state.enabled,
+      // Connection state changes only by user act; invalidation drives refresh.
+      staleTime: Number.POSITIVE_INFINITY,
+    };
+  });
+
+  const providerPullRequests = createQuery(() => {
+    const key = [
+      ...cacheKeyFor(input.cacheNamespace(), "provider-pull-requests"),
+      selectedRepositoryId,
+    ];
+    const state = gate(
+      providerAvailable,
+      selectedRepositoryId !== null && targetReadyFor(selectedRepositoryId),
+    );
+    const repositoryId = selectedRepositoryId;
+    return {
+      queryKey: key,
+      queryFn: timedRead({
+        key,
+        timer: readTimer,
+        run: () => {
+          if (repositoryId === null) {
+            throw new BackendError({
+              code: "InvalidRequest",
+              message: "no repository is selected",
+              retryable: false,
+            });
+          }
+          return requireProvider().pullRequests(repositoryId);
+        },
+      }),
+      enabled: state.enabled,
+      // The host serves its own 60 s cache; the browser adds a smaller one so
+      // panel remounts do not re-enter the provider path at all. Deliberately
+      // absent from background polling — a forge read is not a cheap read.
+      staleTime: 30_000,
+    };
+  });
+
+  /** The keys a connect/disconnect must invalidate, all repositories included. */
+  function providerCachePrefixes(): readonly (readonly unknown[])[] {
+    return [
+      cacheKeyFor(input.cacheNamespace(), "provider-connection"),
+      cacheKeyFor(input.cacheNamespace(), "provider-pull-requests"),
+    ];
+  }
+
 
   const repositoryList = $derived(repositories.data?.repositories ?? []);
   const workspaceRoots = $derived(workspaceRootsFor(repositoryList));
@@ -841,6 +928,16 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
     get stashPanelAvailable() {
       return stashPanelAvailable;
     },
+    get providerAvailable() {
+      return providerAvailable;
+    },
+    get providerConnection() {
+      return providerConnection;
+    },
+    get providerPullRequests() {
+      return providerPullRequests;
+    },
+    providerCachePrefixes,
     get commits() {
       return commits;
     },

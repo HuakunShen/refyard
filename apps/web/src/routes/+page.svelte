@@ -355,6 +355,7 @@
   const queries = createWorkbenchQueries({
     service: () => backendSession?.git ?? null,
     host: () => backendSession?.host ?? null,
+    provider: () => backendSession?.provider ?? null,
     cacheNamespace: () =>
       backendSession?.metadata.cacheNamespace ?? "unconnected",
     phase: () => connectionState.phase,
@@ -916,6 +917,7 @@
     reads: () => backendSession?.git ?? null,
     mutations: () => backendSession?.mutations ?? null,
     host: () => backendSession?.host ?? null,
+    provider: () => backendSession?.provider ?? null,
     cacheNamespace: () =>
       backendSession?.metadata.cacheNamespace ?? "unconnected",
     browserOnline: () => browserOnline,

@@ -13,6 +13,7 @@ import {
   type GitReadService,
   type HostService,
   type MutationService,
+  type ProviderBackendService,
 } from "@refyard/git-service";
 import type {
   ExecutionTargetSummary,
@@ -53,6 +54,8 @@ export interface WorkbenchMutationInputs {
    * affordance fail closed rather than falling back to this machine.
    */
   readonly host: () => HostService | null;
+  /** The session's forge-connection surface; null when the module is absent. */
+  readonly provider?: () => ProviderBackendService | null;
   /** Part of every invalidation key; never a credential. */
   readonly cacheNamespace: () => string;
   readonly browserOnline: () => boolean;
@@ -470,6 +473,46 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
       if (created !== undefined) {
         selectRepository(input.selection, created.repositoryId);
         await invalidateRepositoryReads(created.repositoryId);
+      }
+    } catch (error) {
+      repositoryMessage = describeBackendProblem(error);
+    } finally {
+      busy = false;
+    }
+  }
+
+  /**
+   * Connect a forge account. The token is handed to the host once; on any
+   * refusal the message says what the provider said and nothing is stored.
+   */
+  async function connectProvider(token: string): Promise<void> {
+    const provider = input.provider?.();
+    if (provider === null || provider === undefined) {
+      return;
+    }
+    busy = true;
+    try {
+      await provider.connect("github", token);
+      for (const prefix of input.queries.providerCachePrefixes()) {
+        await input.queryClient.invalidateQueries({ queryKey: [...prefix] });
+      }
+    } catch (error) {
+      repositoryMessage = describeBackendProblem(error);
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function disconnectProvider(): Promise<void> {
+    const provider = input.provider?.();
+    if (provider === null || provider === undefined) {
+      return;
+    }
+    busy = true;
+    try {
+      await provider.disconnect("github");
+      for (const prefix of input.queries.providerCachePrefixes()) {
+        await input.queryClient.invalidateQueries({ queryKey: [...prefix] });
       }
     } catch (error) {
       repositoryMessage = describeBackendProblem(error);
@@ -1473,6 +1516,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     },
     onAcknowledgeUncertain,
     onRepositoryInit,
+    connectProvider,
+    disconnectProvider,
     onRepositoryClone,
     registerRepository,
     registerRemoteRepository,

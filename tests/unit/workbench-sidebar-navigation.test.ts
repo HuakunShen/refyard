@@ -17,6 +17,7 @@ function views(
     tagAvailable: true,
     worktreeAvailable: true,
     submoduleAvailable: true,
+    pullRequestsAvailable: true,
     repositoryCount: 2,
     changeCount: 3,
     branchCount: 4,
@@ -90,6 +91,7 @@ describe("repository sidebar navigation", () => {
       ["tags", 5],
       ["worktrees", 2],
       ["submodules", 1],
+      ["pull-requests", undefined],
     ]);
   });
 
@@ -138,5 +140,22 @@ describe("repository sidebar navigation", () => {
       selectSidebarView(state, "remotes", views({ networkAvailable: false })),
     ).toBe(false);
     expect(state.activeView).toBe("working-copy");
+  });
+});
+
+describe("pull requests view", () => {
+  it("appears only when the provider module is present", () => {
+    // Prevents: a pull-requests entry pointing at a host without the forge
+    // module, which would render an empty panel instead of honest absence.
+    const withProvider = views();
+    expect(
+      withProvider.some((entry) => entry.id === "pull-requests" && entry.available),
+    ).toBe(true);
+    const withoutProvider = views({ pullRequestsAvailable: false });
+    expect(
+      withoutProvider.some(
+        (entry) => entry.id === "pull-requests" && entry.available,
+      ),
+    ).toBe(false);
   });
 });

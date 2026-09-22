@@ -7,6 +7,7 @@ export type SidebarViewId =
   | "tags"
   | "worktrees"
   | "submodules"
+  | "pull-requests"
   | "refs";
 
 export interface SidebarView {
@@ -24,6 +25,7 @@ export interface SidebarAvailabilityInput {
   readonly tagAvailable: boolean;
   readonly worktreeAvailable: boolean;
   readonly submoduleAvailable: boolean;
+  readonly pullRequestsAvailable: boolean;
   readonly repositoryCount?: number;
   readonly changeCount?: number;
   readonly branchCount?: number;
@@ -87,6 +89,11 @@ export function availableSidebarViews(
       "Submodules",
       repo && input.submoduleAvailable,
       input.submoduleCount,
+    ),
+    view(
+      "pull-requests",
+      "Pull Requests",
+      repo && input.pullRequestsAvailable,
     ),
   ];
 }

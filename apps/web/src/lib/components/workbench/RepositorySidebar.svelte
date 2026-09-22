@@ -7,6 +7,7 @@
     FolderGit2,
     GitBranch,
     GitCommit,
+    GitPullRequest,
     Globe,
     Layers,
     Tag,
@@ -20,6 +21,7 @@
     RepositoryAccessPanel,
     RepositoryList,
     RepositoryPanel,
+    PullRequestsPanel,
     SectionCard,
     Separator,
     StashPanel,
@@ -87,6 +89,7 @@
   const tagAvailable = $derived(mutations.availability.tag);
   const worktreeAvailable = $derived(mutations.availability.worktree);
   const submoduleAvailable = $derived(mutations.availability.submodule);
+  const providerAvailable = $derived(queries.providerAvailable);
   const mergeAvailable = $derived(mutations.availability.merge);
   const repositoryCreationAvailable = $derived(
     mutations.availability.repositoryCreation,
@@ -149,6 +152,8 @@
   const onSubmoduleAdd = $derived(mutations.onSubmoduleAdd);
   const onSubmoduleUpdate = $derived(mutations.onSubmoduleUpdate);
   const onSubmoduleSync = $derived(mutations.onSubmoduleSync);
+  const onProviderConnect = $derived(mutations.connectProvider);
+  const onProviderDisconnect = $derived(mutations.disconnectProvider);
 
   const sidebarViews = $derived(
     availableSidebarViews({
@@ -159,6 +164,7 @@
       tagAvailable,
       worktreeAvailable,
       submoduleAvailable,
+      pullRequestsAvailable: providerAvailable,
       repositoryCount: repositoryList.length,
       changeCount: status.data?.entries.length,
       branchCount: refs.data?.branches.length,
@@ -223,6 +229,8 @@
           <Layers class="size-3.5" />
         {:else if item.id === "submodules"}
           <Boxes class="size-3.5" />
+        {:else if item.id === "pull-requests"}
+          <GitPullRequest class="size-3.5" />
         {/if}
       {/snippet}
     </WorkbenchNav>
@@ -541,6 +549,36 @@
               />
             {/if}
           </div>
+        </SectionCard>
+      {/if}
+
+      {#if providerAvailable}
+        <SectionCard
+          title="Pull Requests"
+          class={activeView !== "pull-requests" ? "hidden" : ""}
+          open={true}
+        >
+          {#snippet icon()}
+            <GitPullRequest class="size-3.5 text-muted-foreground" />
+          {/snippet}
+          <PullRequestsPanel
+            connections={queries.providerConnection.data?.connections ?? []}
+            pullRequests={queries.providerPullRequests.data?.pullRequests}
+            source={queries.providerPullRequests.data?.source}
+            cachedAt={queries.providerPullRequests.data?.cachedAt}
+            loading={queries.providerPullRequests.isPending}
+            busy={mutationBusy}
+            error={
+              queries.providerConnection.isError
+                ? describeProblem(queries.providerConnection.error)
+                : queries.providerPullRequests.isError
+                  ? describeProblem(queries.providerPullRequests.error)
+                  : null
+            }
+            onConnect={onProviderConnect}
+            onDisconnect={() => void onProviderDisconnect()}
+            onRefresh={() => void queries.providerPullRequests.refetch()}
+          />
         </SectionCard>
       {/if}
 

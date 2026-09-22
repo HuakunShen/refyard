@@ -27,6 +27,15 @@ const result = await main(process.argv.slice(2), {
   ...(process.env["REFYARD_HOSTED_PASSWORD"] === undefined
     ? {}
     : { hostedPassword: process.env["REFYARD_HOSTED_PASSWORD"] }),
+  // Where the forge API lives. The default is github.com's public API; the
+  // override exists so a self-hosted or proxied endpoint can be named, and so
+  // provider tests run against a local stub instead of egressing.
+  ...(process.env["REFYARD_PROVIDER_GITHUB_BASE_URL"] === undefined
+    ? {}
+    : {
+        providerGithubBaseUrl:
+          process.env["REFYARD_PROVIDER_GITHUB_BASE_URL"],
+      }),
 });
 
 process.exitCode = result.exitCode;
