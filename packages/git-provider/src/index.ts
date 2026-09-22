@@ -8,3 +8,4 @@
  * bundle entirely.
  */
 export * from "./remotes.js";
+export * from "./github/device-flow.js";
