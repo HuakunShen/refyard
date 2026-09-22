@@ -26,8 +26,7 @@ import {
 } from "node:readline";
 import { join } from "node:path";
 import { realpath, stat } from "node:fs/promises";
-import { createGitHubRestClient } from "@refyard/git-provider/github/rest";
-import { createDeviceFlowClient, GITHUB_OAUTH_CLIENT_ID } from "@refyard/git-provider/github/device-flow";
+import { createGitHubAdapter } from "@refyard/git-provider/github/adapter";
 import { randomBytes } from "node:crypto";
 import {
   createEventRing,
@@ -217,29 +216,25 @@ export async function assembleService(
   // inject a local stub through AssembleOptions.
   const providerStore = createProviderStore({ stateRoot });
   await providerStore.load();
-  const providerClient = createGitHubRestClient({
+  const providerAdapter = createGitHubAdapter({
     fetch: (input, init) => fetch(input, init),
     ...(options.providerGithubBaseUrl === undefined
       ? {}
-      : { baseUrl: options.providerGithubBaseUrl }),
+      : { apiBaseUrl: options.providerGithubBaseUrl }),
+    ...(options.providerGithubLoginBaseUrl === undefined
+      ? {}
+      : { loginBaseUrl: options.providerGithubLoginBaseUrl }),
     userAgentPrefix: "refyard",
   });
   const provider = createProviderService({
     manager: createProviderManager({
       store: providerStore,
       journal: accessJournal,
-      client: providerClient,
-      deviceFlow: createDeviceFlowClient({
-        fetch: (input, init) => fetch(input, init),
-        ...(options.providerGithubLoginBaseUrl === undefined
-          ? {}
-          : { baseUrl: options.providerGithubLoginBaseUrl }),
-      }),
-      clientId: GITHUB_OAUTH_CLIENT_ID,
+      adapter: providerAdapter,
     }),
     engine,
     repositories,
-    client: providerClient,
+    adapter: providerAdapter,
   });
   const recovery = createRecovery({ journal });
   await recovery.run();

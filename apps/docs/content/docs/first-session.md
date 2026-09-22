@@ -44,9 +44,9 @@ thing for whoever is sitting in front of it.
 | Area            | What it does                                                                                       |
 | --------------- | -------------------------------------------------------------------------------------------------- |
 | Repository tabs | One tab per approved repository, restored on reload.                                                |
-| History         | The commit graph, refs, search and filters — see [History](/refyard/workbench/history/).             |
-| Working copy    | Staged, unstaged and untracked paths, with per-file diffs — see [Working copy](/refyard/workbench/working-copy/). |
-| Panel rail      | Branches, Remotes, Stashes, Tags, Worktrees, Submodules — see [Panels](/refyard/workbench/panels/).  |
+| History         | The commit graph, refs, search and filters — see [History](/workbench/history/).             |
+| Working copy    | Staged, unstaged and untracked paths, with per-file diffs — see [Working copy](/workbench/working-copy/). |
+| Panel rail      | Branches, Remotes, Stashes, Tags, Worktrees, Submodules — see [Panels](/workbench/panels/).  |
 | Right panel     | The selected commit's details and diff, or the working copy's commit box.                            |
 | Status badge    | Live-update state: `live updates`, `connecting…`, or `no live updates`.                              |
 
@@ -58,4 +58,4 @@ IDE next to you.
 
 The workbench never guesses. When a read has no answer it says which read failed; when a
 write's outcome is unknown it says so and refuses to continue with dependent writes. See
-[Troubleshooting](/refyard/troubleshooting/).
+[Troubleshooting](/troubleshooting/).

@@ -25,7 +25,7 @@ import type {
   ProviderPullRequestsResponse,
 } from "@refyard/git-contract";
 import { providerRepoFromRemote } from "@refyard/git-provider/remotes";
-import type { GitHubError, GitHubRestClient } from "@refyard/git-provider/github/rest";
+import type { ForgeAdapter, ForgeError } from "@refyard/git-provider/adapter";
 import { readRefFacts, type GitEngine } from "@refyard/git-core";
 import type { RepositoryRegistry } from "../registry/repositories.js";
 import { ReadProblem } from "../coordinator/reads.js";
@@ -37,7 +37,7 @@ export interface ProviderServiceOptions {
   readonly manager: ProviderManager;
   readonly engine: GitEngine;
   readonly repositories: RepositoryRegistry;
-  readonly client: GitHubRestClient;
+  readonly adapter: ForgeAdapter;
   readonly now?: () => number;
   readonly cacheTtlMs?: number;
 }
@@ -178,14 +178,21 @@ export function createProviderService(
         });
       }
 
-      const listed = await options.client.listOpenPullRequests({
-        token,
-        owner: githubRemote.owner,
-        repo: githubRemote.repo,
-        maxEntries: LIMITS.providerPullRequestsMaxEntries,
-      });
+      const credential = await options.manager.validToken("github");
+      if (credential === null) {
+        throw new ReadProblem({
+          code: "ProviderUnauthorized",
+          message:
+            "the stored credential stopped working; reconnect the account to keep seeing pull requests",
+        });
+      }
+      const listed = await options.adapter.listPullRequests(
+        credential,
+        { owner: githubRemote.owner, repo: githubRemote.repo },
+        LIMITS.providerPullRequestsMaxEntries,
+      );
       if (!listed.ok) {
-        throw problemForGitHubError(listed.error);
+        throw problemForForgeError(listed.error);
       }
 
       let response: ProviderPullRequestsResponse;
@@ -220,7 +227,7 @@ export function createProviderService(
   }
 }
 
-function problemForGitHubError(error: GitHubError): ReadProblem {
+function problemForForgeError(error: ForgeError): ReadProblem {
   switch (error.kind) {
     case "unauthorized":
       return new ReadProblem({
@@ -240,7 +247,7 @@ function problemForGitHubError(error: GitHubError): ReadProblem {
     case "network":
       return new ReadProblem({
         code: "Unavailable",
-        message: `GitHub could not be reached (${error.reason})`,
+        message: `the forge could not be reached (${error.reason})`,
         retryable: true,
       });
     case "malformed":

@@ -54,8 +54,7 @@ import {
   type RecoveryBackupWriter,
 } from "@refyard/host-node";
 import { createHostEngine, type GitEngine } from "@refyard/git-core";
-import { createGitHubRestClient } from "@refyard/git-provider/github/rest";
-import { createDeviceFlowClient, GITHUB_OAUTH_CLIENT_ID } from "@refyard/git-provider/github/device-flow";
+import { createGitHubAdapter } from "@refyard/git-provider/github/adapter";
 import {
   API_MAJOR,
   CONTRACT_VERSION,
@@ -342,29 +341,25 @@ export async function startTestService(
 
   const providerStore = createProviderStore({ stateRoot });
   await providerStore.load();
-  const providerClient = createGitHubRestClient({
+  const providerAdapter = createGitHubAdapter({
     fetch: (input, init) => fetch(input, init),
     ...(options.providerGithubBaseUrl === undefined
       ? {}
-      : { baseUrl: options.providerGithubBaseUrl }),
+      : { apiBaseUrl: options.providerGithubBaseUrl }),
+    ...(options.providerGithubLoginBaseUrl === undefined
+      ? {}
+      : { loginBaseUrl: options.providerGithubLoginBaseUrl }),
     userAgentPrefix: "refyard",
   });
   const provider = createProviderService({
     manager: createProviderManager({
       store: providerStore,
       journal: createAccessJournal({ stateRoot }),
-      client: providerClient,
-      deviceFlow: createDeviceFlowClient({
-        fetch: (input, init) => fetch(input, init),
-        ...(options.providerGithubLoginBaseUrl === undefined
-          ? {}
-          : { baseUrl: options.providerGithubLoginBaseUrl }),
-      }),
-      clientId: GITHUB_OAUTH_CLIENT_ID,
+      adapter: providerAdapter,
     }),
     engine,
     repositories,
-    client: providerClient,
+    adapter: providerAdapter,
   });
 
   const http = await startHttpHost({

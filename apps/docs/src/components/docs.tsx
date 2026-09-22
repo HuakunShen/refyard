@@ -38,7 +38,7 @@ export function Docs({
         tree={tree}
         nav={{
           title: "Refyard",
-          url: "/refyard",
+          url: "/",
           transparentMode: "top",
         }}
         links={[

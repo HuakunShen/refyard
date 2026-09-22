@@ -22,8 +22,7 @@ import type {
   ProviderConnectionsResponse,
   ProviderId,
 } from "@refyard/git-contract";
-import type { GitHubRestClient } from "@refyard/git-provider/github/rest";
-import type { DeviceFlowClient } from "@refyard/git-provider/github/device-flow";
+import type { ForgeAdapter, ForgeCredential } from "@refyard/git-provider/adapter";
 import type { AccessJournal } from "../journal/access.js";
 
 /* ----------------------------------------------------------------- the store */
@@ -178,10 +177,10 @@ export interface ProviderManager {
   tokenOf(provider: ProviderId): string | null;
   /**
    * The credential, refreshed if it is about to expire. Null means "there is
-   * no working credential" — an OAuth refresh that GitHub rejected deletes the
-   * connection rather than letting every later read fail mysteriously.
+   * no working credential" — an OAuth refresh that the forge rejected deletes
+   * the connection rather than letting every later read fail mysteriously.
    */
-  validToken(provider: ProviderId): Promise<string | null>;
+  validToken(provider: ProviderId): Promise<ForgeCredential | null>;
   connect(input: {
     readonly provider: ProviderId;
     readonly token: string;
@@ -223,9 +222,8 @@ const REFRESH_WINDOW_MS = 5 * 60_000;
 export function createProviderManager(options: {
   readonly store: ProviderStore;
   readonly journal: AccessJournal;
-  readonly client: GitHubRestClient;
-  readonly deviceFlow: DeviceFlowClient;
-  readonly clientId: string;
+  /** The forge this manager connects to; everything forge-specific is behind it. */
+  readonly adapter: ForgeAdapter;
   readonly now?: () => number;
   /**
    * Injectable timer for the background polling loop. Defaults to setTimeout;
@@ -292,21 +290,39 @@ export function createProviderManager(options: {
       return options.store.get(provider)?.token ?? null;
     },
 
-    async validToken(provider): Promise<string | null> {
+    async validToken(provider): Promise<ForgeCredential | null> {
       const stored = options.store.get(provider);
       if (stored === null) {
         return null;
       }
       if (stored.authMethod === "pat" || stored.expiresAtMs === null) {
-        return stored.token;
+        return {
+          token: stored.token,
+          refreshToken: stored.refreshToken,
+          expiresAtMs: stored.expiresAtMs,
+        };
       }
       if (stored.expiresAtMs - now() > REFRESH_WINDOW_MS) {
-        return stored.token;
+        return {
+          token: stored.token,
+          refreshToken: stored.refreshToken,
+          expiresAtMs: stored.expiresAtMs,
+        };
       }
-      const refreshed = await options.deviceFlow.refresh({
-        clientId: options.clientId,
-        refreshToken: stored.refreshToken ?? "",
-      });
+      const flow = options.adapter.deviceFlow;
+      if (flow === undefined || stored.refreshToken === null) {
+        // No refresh path on this forge: an expired credential is a dead one.
+        await options.store.remove(provider);
+        await options.journal.append({
+          action: "provider-disconnect",
+          provider,
+          accountLogin: stored.accountLogin,
+          actor: "token-expiry",
+          atMs: now(),
+        });
+        return null;
+      }
+      const refreshed = await flow.refresh(stored.refreshToken);
       if (!refreshed.ok) {
         // A refresh GitHub refuses is a dead connection: delete it so the next
         // status read says "not connected" instead of failing on every call.
@@ -330,18 +346,24 @@ export function createProviderManager(options: {
             : now() + refreshed.value.expiresInSeconds * 1000,
       };
       await options.store.set(updated);
-      return updated.token;
+      return {
+        token: updated.token,
+        refreshToken: updated.refreshToken,
+        expiresAtMs: updated.expiresAtMs,
+      };
     },
 
     async beginDeviceConnect({ provider }): Promise<BeginDeviceOutcome> {
       if (provider !== "github") {
         return { ok: false, message: `this build has no ${provider} integration` };
       }
-      const started = await options.deviceFlow.start({
-        clientId: options.clientId,
-      });
+      const flow = options.adapter.deviceFlow;
+      if (flow === undefined) {
+        return { ok: false, message: "this forge has no device-flow connect; connect with a token instead" };
+      }
+      const started = await flow.start();
       if (!started.ok) {
-        return { ok: false, message: `GitHub could not start the device flow (${started.error.code})` };
+        return { ok: false, message: `the forge could not start the device flow (${started.error.kind})` };
       }
       pending = {
         deviceCode: started.value.deviceCode,
@@ -373,13 +395,15 @@ export function createProviderManager(options: {
         deviceState = { state: "expired" };
         return deviceState;
       }
-      const polled = await options.deviceFlow.poll({
-        clientId: options.clientId,
-        deviceCode: pending.deviceCode,
-      });
+      const polled = await options.adapter.deviceFlow?.poll(pending.deviceCode);
+      if (polled === undefined) {
+        clearPending();
+        deviceState = { state: "failed", message: "this forge lost its device flow" };
+        return deviceState;
+      }
       if (!polled.ok) {
         clearPending();
-        deviceState = { state: "failed", message: polled.error.code };
+        deviceState = { state: "failed", message: polled.error.kind };
         return deviceState;
       }
       switch (polled.value.kind) {
@@ -411,14 +435,16 @@ export function createProviderManager(options: {
           const accessToken = polled.value.accessToken;
           // The same rule as the PAT path: validate the identity before any
           // credential touches the store.
-          const verified = await options.client.authenticatedUser({
+          const verified = await options.adapter.authenticate({
             token: accessToken,
+            refreshToken: null,
+            expiresAtMs: null,
           });
           clearPending();
           if (!verified.ok) {
             deviceState = {
               state: "failed",
-              message: "GitHub accepted the device flow but rejected the token",
+              message: "the forge accepted the device flow but rejected the token",
             };
             return deviceState;
           }
@@ -431,7 +457,7 @@ export function createProviderManager(options: {
                 ? null
                 : now() + polled.value.expiresInSeconds * 1000,
             accountLogin: verified.value.login,
-            accountType: verified.value.type,
+            accountType: verified.value.accountType,
             scopes: verified.value.scopes,
             connectedAt: new Date(now()).toISOString(),
             authMethod: "oauth",
@@ -469,16 +495,20 @@ export function createProviderManager(options: {
           retryable: false,
         };
       }
-      // Validation comes first and success is required: only a token the
-      // provider has just accepted is ever written to disk.
-      const verified = await options.client.authenticatedUser({ token });
+      // Validation comes first and success is required: only a credential the
+      // forge has just accepted is ever written to disk.
+      const verified = await options.adapter.authenticate({
+        token,
+        refreshToken: null,
+        expiresAtMs: null,
+      });
       if (!verified.ok) {
         switch (verified.error.kind) {
           case "unauthorized":
             return {
               ok: false,
               code: "ProviderUnauthorized",
-              message: "GitHub rejected that token; create a new one and try again",
+              message: "that token was rejected by the forge; create a new one and try again",
               retryable: false,
             };
           case "rateLimited":
@@ -487,22 +517,22 @@ export function createProviderManager(options: {
               code: "ProviderRateLimited",
               message:
                 verified.error.retryAfterSeconds === null
-                  ? "GitHub rate-limited the connection attempt; try again later"
-                  : `GitHub rate-limited the connection attempt; retry after about ${verified.error.retryAfterSeconds}s`,
+                  ? "the forge rate-limited the connection attempt; try again later"
+                  : `the forge rate-limited the connection attempt; retry after about ${verified.error.retryAfterSeconds}s`,
               retryable: true,
             };
           case "network":
             return {
               ok: false,
               code: "Unavailable",
-              message: `GitHub could not be reached (${verified.error.reason}); check the network and try again`,
+              message: `the forge could not be reached (${verified.error.reason}); check the network and try again`,
               retryable: true,
             };
           case "malformed":
             return {
               ok: false,
               code: "Unavailable",
-              message: "GitHub's answer was not understood; nothing was stored",
+              message: "the forge's answer was not understood; nothing was stored",
               retryable: false,
             };
           case "forbidden":
@@ -510,7 +540,7 @@ export function createProviderManager(options: {
             return {
               ok: false,
               code: "Unavailable",
-              message: `GitHub refused the connection attempt (${verified.error.kind})`,
+              message: `the forge refused the connection attempt (${verified.error.kind})`,
               retryable: false,
             };
         }
@@ -521,7 +551,7 @@ export function createProviderManager(options: {
         refreshToken: null,
         expiresAtMs: null,
         accountLogin: verified.value.login,
-        accountType: verified.value.type,
+        accountType: verified.value.accountType,
         scopes: verified.value.scopes,
         connectedAt: new Date(now()).toISOString(),
         authMethod: "pat",

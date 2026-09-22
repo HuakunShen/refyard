@@ -56,7 +56,7 @@ refyard doctor --json     # what this machine can do
 ```
 
 The CLI needs Node 22 or newer; development and CI are pinned to Node 26. See
-[the command reference](/refyard/cli/) for every flag.
+[the command reference](/cli/) for every flag.
 
 ## From source
 

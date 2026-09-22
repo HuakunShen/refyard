@@ -40,7 +40,7 @@ The service blocks the next dependent write on purpose. Look at the repository w
 ## The desktop app will not open on macOS
 
 Gatekeeper quarantine on an ad-hoc signed build. See
-[Install](/refyard/install/#desktop-app) — `xattr -cr /Applications/Refyard.app` clears it
+[Install](/install/#desktop-app) — `xattr -cr /Applications/Refyard.app` clears it
 once.
 
 ## Doctor says the environment is unusable

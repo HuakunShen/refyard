@@ -1,0 +1,18 @@
+{
+  // The published documentation site: a static Astro build served as a
+  // Cloudflare assets-only worker on its own subdomain, so every link is
+  // root-relative and no base path can go missing. Declared here rather than
+  // in the dashboard so redeploys can never drift the domain away.
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "refyard-docs",
+  "compatibility_date": "2026-09-16",
+  "assets": {
+    "directory": "./dist",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "none"
+  },
+  "routes": [
+    { "pattern": "docs.refyard.huakun.tech", "custom_domain": true }
+  ],
+  "workers_dev": true
+}

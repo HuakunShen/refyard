@@ -21,4 +21,4 @@ What that service promises:
   keeps saying what failed — after the service exits. It never queues a write to replay later.
 
 The same static build is deployable elsewhere; see
-[Hosted UI and Cloudflare](/refyard/forms/hosted/).
+[Hosted UI and Cloudflare](/forms/hosted/).

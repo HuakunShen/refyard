@@ -13,8 +13,10 @@
  * may use a toolchain the runtime may not (AGENTS.md §5: build-time JS tooling is
  * allowed, product runtimes are not).
  *
- * `base` is `/refyard` because GitHub Pages serves a project site from a subpath; a
- * custom domain later means changing `site` and deleting `base` in one place.
+ * The site deploys to its own subdomain (docs.refyard.huakun.tech, a Cloudflare
+ * worker over the built assets), so there is no `base`: every link is root-relative
+ * and cannot lose a prefix. The GitHub Pages spelling lived here before and was
+ * dropped with the domain move.
  */
 // @ts-check
 import { defineConfig } from "astro/config";
@@ -39,8 +41,7 @@ const remarkPlugins = [
 const rehypePlugins = [rehypeCode];
 
 export default defineConfig({
-  site: "https://huakunshen.github.io",
-  base: "/refyard",
+  site: "https://docs.refyard.huakun.tech",
   markdown: {
     processor: unified({
       syntaxHighlight: false,
