@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use refyard_contract::problem::Problem;
+use refyard_contract::problem::{Problem, ProblemCode};
 use refyard_core::CoreError;
 
 use crate::paths::{base36, to_display_path};
@@ -313,17 +313,33 @@ impl RepositoryRegistry {
     /// A record for the same location on a *different* target, or for a previous build of
     /// the same target, is a different repository: it is replaced, so reads and the path
     /// ids minted for the old build cannot be answered from the new one.
-    pub fn register(&self, mut record: RepositoryRecord) -> RepositoryRecord {
+    pub fn register(&self, record: RepositoryRecord) -> RepositoryRecord {
+        self.register_with_limit(record, usize::MAX)
+            .expect("unbounded registry insertion cannot fail")
+    }
+
+    /// Inserts under the registry lock, deduplicating before consuming capacity.
+    pub fn register_with_limit(
+        &self,
+        mut record: RepositoryRecord,
+        max_count: usize,
+    ) -> Result<RepositoryRecord, Problem> {
         let mut state = self.inner.lock().expect("registry lock");
         let common = record.layout.common_dir.clone();
         let key = location_key(&record.location.target_id, &common);
         if let Some(existing) = state.id_by_location.get(&key).cloned() {
             if let Some(known) = state.by_id.get(&existing) {
                 if known.location.target_generation == record.location.target_generation {
-                    return known.clone();
+                    return Ok(known.clone());
                 }
             }
             revoke_locked(&mut state, &existing);
+        }
+        if state.by_id.len() >= max_count {
+            return Err(Problem::new(
+                ProblemCode::LimitExceeded,
+                "this embedded host has reached its repository limit",
+            ));
         }
         record.location.canonical_common_dir = common;
         state
@@ -333,7 +349,7 @@ impl RepositoryRegistry {
         state
             .by_id
             .insert(record.repository_id.clone(), record.clone());
-        record
+        Ok(record)
     }
 
     pub fn get(&self, repository_id: &str) -> Option<RepositoryRecord> {

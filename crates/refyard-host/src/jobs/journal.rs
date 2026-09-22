@@ -779,7 +779,45 @@ fn set_private_directory(path: &Path) -> Result<(), Problem> {
     })
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn set_private_directory(path: &Path) -> Result<(), Problem> {
+    let path = path.to_str().ok_or_else(|| {
+        Problem::new(
+            ProblemCode::Unavailable,
+            "journal state path is not valid Windows text",
+        )
+    })?;
+    let escaped = path.replace("'", "''");
+    let script = format!(
+        r#"$ErrorActionPreference = 'Stop'; $path = '{}'; $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; $sddl = 'D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;' + $sid + ')'; $acl = New-Object System.Security.AccessControl.DirectorySecurity; $acl.SetSecurityDescriptorSddlForm($sddl); Set-Acl -LiteralPath $path -AclObject $acl; $check = Get-Acl -LiteralPath $path; if ($check.GetSecurityDescriptorSddlForm("Access") -ne $sddl) {{ exit 2 }}; $rules = $check.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]); if ($rules.Count -ne 2) {{ exit 3 }}"#,
+        escaped,
+    );
+    let status = std::process::Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            &script,
+        ])
+        .status()
+        .map_err(|error| {
+            Problem::new(
+                ProblemCode::Unavailable,
+                format!("PowerShell could not secure journal state: {error}"),
+            )
+        })?;
+    if !status.success() {
+        return Err(Problem::new(
+            ProblemCode::Unavailable,
+            format!("Windows journal state ACL verification failed for {path}"),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(not(any(unix, windows)))]
 fn set_private_directory(path: &Path) -> Result<(), Problem> {
     Err(Problem::new(
         ProblemCode::Unavailable,

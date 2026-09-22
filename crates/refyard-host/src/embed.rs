@@ -16,9 +16,7 @@ use crate::events::EventSubscription;
 use crate::jobs::queue::QueueLimits;
 use crate::jobs::{MutationRequest, SubmitResult};
 use crate::providers::local::LocalGit;
-use crate::service::{
-    ApplicationService, ApplicationServiceConfig, PreviewSubmission, StatusQuery,
-};
+use crate::service::{ApplicationService, ApplicationServiceConfig, StatusQuery};
 
 #[derive(Debug, Clone)]
 pub struct EmbedLimits {
@@ -41,6 +39,13 @@ pub struct EmbedConfig {
     pub service_instance_id: String,
     pub target_id: String,
     pub target_generation: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmbedRecoveryState {
+    pub operation_ids: Vec<String>,
+    pub reason: String,
+    pub since_ms: i64,
 }
 
 pub struct EmbeddedRefyard {
@@ -91,10 +96,6 @@ impl EmbeddedRefyard {
         Ok(())
     }
 
-    pub fn output_limits(&self) -> (usize, usize) {
-        self.service.output_limits()
-    }
-
     pub fn capabilities(&self) -> Result<CapabilitiesResponse, Problem> {
         std::thread::scope(|scope| {
             let handle = scope.spawn(|| {
@@ -124,6 +125,12 @@ impl EmbeddedRefyard {
     pub async fn register_repository(&self, path: &str) -> Result<RepositoriesResponse, Problem> {
         self.service.register_repository(path).await
     }
+    pub async fn revoke_repository(
+        &self,
+        repository_id: &str,
+    ) -> Result<RepositoriesResponse, Problem> {
+        self.service.revoke_repository(repository_id).await
+    }
     pub async fn status(&self, query: &StatusQuery) -> Result<StatusSnapshot, Problem> {
         self.service.status(query).await
     }
@@ -146,9 +153,6 @@ impl EmbeddedRefyard {
     }
     pub async fn previews(&self, query: &PreviewsRequest) -> Result<PreviewsResponse, Problem> {
         self.service.previews(query).await
-    }
-    pub async fn redeem_previews(&self, submission: &PreviewSubmission) -> Result<(), Problem> {
-        self.service.redeem_previews(submission).await
     }
     pub async fn submit_mutation(
         &self,
@@ -174,14 +178,20 @@ impl EmbeddedRefyard {
     ) -> Result<OperationRecord, Problem> {
         self.service.cancel_operation(actor, operation_id)
     }
+
+    pub fn recovery_for_repository(
+        &self,
+        repository_id: &str,
+    ) -> Result<Option<EmbedRecoveryState>, Problem> {
+        self.service.recovery_for_repository(repository_id)
+    }
     pub fn acknowledge_uncertain_operation(
         &self,
-        actor: &str,
         operation_id: &str,
         confirmed_snapshot_id: &str,
     ) -> Result<OperationRecord, Problem> {
         self.service
-            .acknowledge_uncertain_operation_for(actor, operation_id, confirmed_snapshot_id)
+            .acknowledge_uncertain_operation(operation_id, confirmed_snapshot_id)
     }
     pub fn subscribe_events(&self) -> EventSubscription {
         self.service.subscribe_events()

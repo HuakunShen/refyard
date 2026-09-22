@@ -731,10 +731,6 @@ impl ApplicationService {
     }
 
     /// The identity of this service instance, as capabilities reports it.
-    pub fn output_limits(&self) -> (usize, usize) {
-        self.git.output_limits()
-    }
-
     pub fn service_instance_id(&self) -> &str {
         &self.service_instance_id
     }
@@ -1129,12 +1125,6 @@ impl ApplicationService {
         path: &str,
         target: &TargetRecord,
     ) -> Result<RepositoriesResponse, Problem> {
-        if self.repositories.list().len() >= self.repository_max_count {
-            return Err(Problem::new(
-                ProblemCode::LimitExceeded,
-                "this embedded host has reached its repository limit",
-            ));
-        }
         let requested = PathBuf::from(path);
         let canonical = tokio::fs::canonicalize(&requested).await.map_err(|_| {
             Problem::new(
@@ -1181,7 +1171,8 @@ impl ApplicationService {
         .await;
         match outcome {
             OpenOutcome::Opened(record) => {
-                self.repositories.register(*record);
+                self.repositories
+                    .register_with_limit(*record, self.repository_max_count)?;
                 // The row's HEAD comes from the registry read, so registration itself does
                 // not need a second command.
                 Ok(self.repositories().await)
@@ -1216,12 +1207,6 @@ impl ApplicationService {
         path: &str,
         target: &TargetRecord,
     ) -> Result<RepositoriesResponse, Problem> {
-        if self.repositories.list().len() >= self.repository_max_count {
-            return Err(Problem::new(
-                ProblemCode::LimitExceeded,
-                "this embedded host has reached its repository limit",
-            ));
-        }
         // The path is used exactly as it arrived: trimming or normalising it would act on
         // a path the caller was never shown, and a remote path's spaces are its own.
         let directory = path;
@@ -1252,7 +1237,8 @@ impl ApplicationService {
             &mut next_id,
         )
         .await?;
-        self.repositories.register(*record);
+        self.repositories
+            .register_with_limit(*record, self.repository_max_count)?;
         Ok(self.repositories().await)
     }
 
@@ -1632,6 +1618,33 @@ impl ApplicationService {
         self.recovery.blocked_keys()
     }
 
+    pub fn recovery_for_repository(
+        &self,
+        repository_id: &str,
+    ) -> Result<Option<crate::embed::EmbedRecoveryState>, Problem> {
+        let key = self.write_key_for_repository(repository_id)?;
+        let block = self.recovery.block_for(&key).or_else(|| {
+            self.journal
+                .unacknowledged()
+                .into_iter()
+                .find(|record| match &record.target {
+                    MutationTarget::Repository {
+                        repository_id: rid, ..
+                    }
+                    | MutationTarget::Worktree {
+                        repository_id: rid, ..
+                    } => rid == repository_id,
+                    MutationTarget::Workspace { .. } => false,
+                })
+                .and_then(|record| self.recovery.block_for(&record.write_key))
+        });
+        Ok(block.map(|block| crate::embed::EmbedRecoveryState {
+            operation_ids: block.operation_ids,
+            reason: block.reason,
+            since_ms: block.since_ms,
+        }))
+    }
+
     /// The key an operation on this repository is serialised and blocked under.
     ///
     /// The repository's *stable* identity — its target and common Git directory — and not
@@ -1698,24 +1711,23 @@ impl ApplicationService {
                 ));
             }
         }
-        let recorded_key =
-            match self.write_key_for_repository(&snapshot.repository_id) {
-                Ok(key) => key,
-                Err(_) => return Err(Problem::new(
-                    ProblemCode::Conflict,
-                    "the confirming snapshot does not belong to a repository this service holds",
-                )),
-            };
-        if recorded_key != record.write_key {
+        let record_repository_id = match &record.target {
+            MutationTarget::Repository { repository_id, .. }
+            | MutationTarget::Worktree { repository_id, .. } => repository_id,
+            MutationTarget::Workspace { .. } => {
+                return Err(Problem::new(ProblemCode::Conflict, "an uncertain workspace operation cannot be acknowledged through a repository snapshot"));
+            }
+        };
+        if snapshot.repository_id != *record_repository_id {
             return Err(Problem::new(
                 ProblemCode::Conflict,
                 "the confirming snapshot is of a different repository than the one the operation touched; confirm the repository the operation changed",
             ));
         }
-        if !self.recovery.resolve_block(&record.write_key) {
+        if !self.recovery.resolve_operation(&record.operation_id) {
             return Err(Problem::new(
                 ProblemCode::Conflict,
-                format!("operation {operation_id} left no write block to lift"),
+                format!("operation {} left no write block to lift", operation_id),
             )
             .for_operation(operation_id));
         }
