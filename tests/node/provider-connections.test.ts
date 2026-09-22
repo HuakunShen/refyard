@@ -32,6 +32,8 @@ function stubClient(behavior: { ok: boolean }): GitHubRestClient {
           }
         : { ok: false, error: { kind: "unauthorized" } },
     listOpenPullRequests: async () => ({ ok: true, value: [] }),
+    listOpenIssues: async () => ({ ok: true, value: [] }),
+    listWorkflowRuns: async () => ({ ok: true, value: [] }),
   };
 }
 

@@ -275,3 +275,103 @@ describe("listOpenPullRequests", () => {
     );
   });
 });
+
+describe("listOpenIssues", () => {
+  const issue = (number: number, extra: object = {}) => ({
+    number,
+    title: `Issue ${number}`,
+    user: { login: "octocat", avatar_url: "https://avatars.githubusercontent.com/u/1" },
+    html_url: `https://github.com/octocat/Hello-World/issues/${number}`,
+    updated_at: "2026-09-22T10:00:00Z",
+    ...extra,
+  });
+
+  it("lists issues and filters out pull requests", async () => {
+    stubs.set("GET /repos/octocat/Hello-World/issues?state=open&per_page=100&page=1", {
+      status: 200,
+      body: JSON.stringify([
+        issue(1),
+        // GitHub's issues list includes PRs, marked by a `pull_request` key:
+        // the client filters them so callers never double-list a PR as an issue.
+        issue(2, { pull_request: { url: "https://api.github.com/repos/octocat/Hello-World/pulls/2" } }),
+        issue(3),
+      ]),
+    });
+    const result = await clientFor().listOpenIssues({
+      token: TOKEN,
+      owner: "octocat",
+      repo: "Hello-World",
+      maxEntries: 100,
+    });
+    if (result.ok === false) {
+      throw new Error(`expected issues, got ${JSON.stringify(result.error)}`);
+    }
+    expect(result.value.map((entry) => entry.number)).toEqual([1, 3]);
+  });
+
+  it("propagates error classes", async () => {
+    stubs.set("GET /repos/octocat/Hello-World/issues?state=open&per_page=100&page=1", {
+      status: 403,
+      headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": "1" },
+      body: JSON.stringify({}),
+    });
+    const result = await clientFor().listOpenIssues({
+      token: TOKEN,
+      owner: "octocat",
+      repo: "Hello-World",
+      maxEntries: 100,
+    });
+    expect(result).toMatchObject({ ok: false, error: { kind: "rateLimited" } });
+  });
+});
+
+describe("listWorkflowRuns", () => {
+  const run = (id: number, overrides: object = {}) => ({
+    id,
+    name: "release",
+    head_branch: "main",
+    status: "completed",
+    conclusion: "success",
+    html_url: `https://github.com/octocat/Hello-World/actions/runs/${id}`,
+    run_number: id,
+    event: "push",
+    created_at: "2026-09-22T09:00:00Z",
+    ...overrides,
+  });
+
+  it("lists the most recent workflow runs", async () => {
+    stubs.set("GET /repos/octocat/Hello-World/actions/runs?per_page=5", {
+      status: 200,
+      body: JSON.stringify({
+        total_count: 2,
+        workflow_runs: [run(1), run(2, { conclusion: null, status: "in_progress", name: null })],
+      }),
+    });
+    const result = await clientFor().listWorkflowRuns({
+      token: TOKEN,
+      owner: "octocat",
+      repo: "Hello-World",
+      maxEntries: 5,
+    });
+    if (result.ok === false) {
+      throw new Error(`expected runs, got ${JSON.stringify(result.error)}`);
+    }
+    expect(result.value.map((entry) => entry.id)).toEqual([1, 2]);
+    expect(result.value[1]?.conclusion).toBeNull();
+    expect(result.value[1]?.name).toBeNull();
+  });
+
+  it("classifies a malformed envelope as malformed", async () => {
+    stubs.set("GET /repos/octocat/Hello-World/actions/runs?per_page=5", {
+      status: 200,
+      body: JSON.stringify({ unexpected: true }),
+    });
+    const result = await clientFor().listWorkflowRuns({
+      token: TOKEN,
+      owner: "octocat",
+      repo: "Hello-World",
+      maxEntries: 5,
+    });
+    expect(result).toMatchObject({ ok: false, error: { kind: "malformed" } });
+  });
+});

@@ -64,6 +64,7 @@ export type GitHubResult<T> =
 
 const DEFAULT_BASE_URL = "https://api.github.com";
 const API_VERSION = "2022-11-28";
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 
 /** GitHub wire shapes, validated on arrival. Unknown fields are stripped. */
 const userSchema = z.object({
@@ -82,8 +83,58 @@ const pullSchema = z.object({
   base: z.object({ ref: z.string().min(1).max(350) }),
   draft: z.boolean(),
   html_url: z.string().min(1).max(2048),
-  updated_at: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/),
+  updated_at: z.string().regex(ISO_INSTANT),
 });
+
+const issueSchema = z.object({
+  number: z.number().int().positive(),
+  title: z.string().min(1).max(600),
+  user: z
+    .object({ login: z.string().min(1).max(100), avatar_url: z.string().max(2048) })
+    .nullable()
+    .optional(),
+  html_url: z.string().min(1).max(2048),
+  updated_at: z.string().regex(ISO_INSTANT),
+  // GitHub's issues list also returns pull requests; this key is the marker.
+  pull_request: z.object({ url: z.string() }).optional(),
+});
+
+const workflowRunsSchema = z.object({
+  workflow_runs: z.array(
+    z.object({
+      id: z.number().int().positive(),
+      name: z.string().min(1).max(200).nullable(),
+      head_branch: z.string().min(1).max(350),
+      status: z.string().min(1).max(32),
+      conclusion: z.string().min(1).max(32).nullable(),
+      html_url: z.string().min(1).max(2048),
+      run_number: z.number().int(),
+      event: z.string().min(1).max(32),
+      created_at: z.string().regex(ISO_INSTANT),
+    }),
+  ),
+});
+
+export interface GitHubIssue {
+  readonly number: number;
+  readonly title: string;
+  readonly authorLogin: string;
+  readonly authorAvatarUrl: string | null;
+  readonly url: string;
+  readonly updatedAt: string;
+}
+
+export interface GitHubWorkflowRun {
+  readonly id: number;
+  readonly name: string | null;
+  readonly headBranch: string;
+  readonly status: string;
+  readonly conclusion: string | null;
+  readonly url: string;
+  readonly runNumber: number;
+  readonly event: string;
+  readonly createdAt: string;
+}
 
 export interface GitHubRestClient {
   readonly baseUrl: string;
@@ -100,6 +151,23 @@ export interface GitHubRestClient {
     readonly perPage?: number;
     readonly signal?: AbortSignal;
   }): Promise<GitHubResult<GitHubPullRequest[]>>;
+  /** Open issues without pull requests — GitHub's own list mixes them in. */
+  listOpenIssues(init: {
+    readonly token: string;
+    readonly owner: string;
+    readonly repo: string;
+    readonly maxEntries: number;
+    readonly perPage?: number;
+    readonly signal?: AbortSignal;
+  }): Promise<GitHubResult<GitHubIssue[]>>;
+  /** The most recent Actions workflow runs, newest first, one bounded page. */
+  listWorkflowRuns(init: {
+    readonly token: string;
+    readonly owner: string;
+    readonly repo: string;
+    readonly maxEntries: number;
+    readonly signal?: AbortSignal;
+  }): Promise<GitHubResult<GitHubWorkflowRun[]>>;
 }
 
 export function createGitHubRestClient(
@@ -233,6 +301,88 @@ export function createGitHubRestClient(
           isDraft: pull.draft,
           url: pull.html_url,
           updatedAt: pull.updated_at,
+        })),
+      };
+    },
+
+    async listOpenIssues({ token, owner, repo, maxEntries, perPage, signal }) {
+      const issues: z.infer<typeof issueSchema>[] = [];
+      const size = perPage ?? 100;
+      // Filtering shrinks each page, so the loop is bounded by a hard page cap
+      // as well as the entry cap: a repo with thousands of PR-shaped entries
+      // cannot turn one read into an unbounded walk.
+      const maxPages = 10;
+      let pageNumber = 1;
+      while (issues.length < maxEntries && pageNumber <= maxPages) {
+        const path =
+          `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues` +
+          `?state=open&per_page=${size}&page=${pageNumber}`;
+        const result = await getJson(token, path, signal);
+        if (!result.ok) {
+          return result;
+        }
+        const parsed = z.array(issueSchema).safeParse(result.value.value);
+        if (!parsed.success) {
+          return {
+            ok: false,
+            error: { kind: "malformed", reason: "unexpected issues shape" },
+          };
+        }
+        for (const issue of parsed.data) {
+          if (issues.length === maxEntries) {
+            break;
+          }
+          if (issue.pull_request === undefined) {
+            issues.push(issue);
+          }
+        }
+        if (parsed.data.length < size) {
+          break;
+        }
+        pageNumber += 1;
+      }
+      return {
+        ok: true,
+        value: issues.map((issue) => ({
+          number: issue.number,
+          title: issue.title,
+          authorLogin: issue.user?.login ?? "ghost",
+          authorAvatarUrl: issue.user?.avatar_url ?? null,
+          url: issue.html_url,
+          updatedAt: issue.updated_at,
+        })),
+      };
+    },
+
+    async listWorkflowRuns({ token, owner, repo, maxEntries, signal }) {
+      // Newest first from GitHub; one page is the whole contract here, so the
+      // entry cap only bounds what we keep, not how many requests we send.
+      const path =
+        `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs` +
+        `?per_page=${Math.min(maxEntries, 100)}`;
+      const result = await getJson(token, path, signal);
+      if (!result.ok) {
+        return result;
+      }
+      const parsed = workflowRunsSchema.safeParse(result.value.value);
+      if (!parsed.success) {
+        return {
+          ok: false,
+          error: { kind: "malformed", reason: "unexpected workflow runs shape" },
+        };
+      }
+      return {
+        ok: true,
+        value: parsed.data.workflow_runs.slice(0, maxEntries).map((run) => ({
+          id: run.id,
+          name: run.name,
+          headBranch: run.head_branch,
+          status: run.status,
+          conclusion: run.conclusion,
+          url: run.html_url,
+          runNumber: run.run_number,
+          event: run.event,
+          createdAt: run.created_at,
         })),
       };
     },

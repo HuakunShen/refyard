@@ -39,7 +39,8 @@
 | PV-N | 浏览器：capability 门控出现 Pull Requests 视图、连接流程、PR 行（含 draft 标记）、token 不落 localStorage | PASS（Chromium） | `tests/e2e/provider.spec.ts` 2/2 |
 | PV-O | 浏览器：被拒 token 后表单保持可用 | PASS（Chromium） | 同文件第二例 |
 | PV-P | 浏览器宿主无 provider 模块时视图完全缺席 | PASS（单测门控） | `tests/unit/workbench-sidebar-navigation.test.ts` "appears only when the provider module is present" |
-| PV-Q | 真实 api.github.com 全流程（真 PAT → 真实 PR 数据） | **NOT RUN** | owner 手动步骤：`refyard open <repo>` → 面板粘贴 fine-grained PAT（Read: metadata + pull requests） |
+| PV-Q | 真实 api.github.com 全流程（owner 提供的 fine-grained PAT，仅授权一个仓库） | **PASS（2026-09-22 实测）** | `bun scripts/live-github-probe.ts`：GET /user → `HuakunShen (User)`；/user/repos 自动发现 `HuakunShen/refyard`；workflow runs 返回真实数据（ci #37 failure、release #7 success 等 5 条，含 name/status/conclusion/head_branch/event/created_at）；rate limit `5000/5000 remaining`。fine-grained token 按预期不报告 x-oauth-scopes。补充探针：`pulls?state=all` 与 `issues?state=all` 均 200（该仓库历史上无 PR/issue，条目级映射的活体证据由 workflow runs 与 stub 测试共同覆盖） |
+| PV-Q2 | 语义注记：细粒度 token 对**公开仓库**的只读不受单仓库授权限制（对未授权公开仓库的 issues 读取返回 200） | PASS（观察记录） | 同一探针对 `octocat/Hello-World` 的请求返回 200。单仓库授权真正约束的是私有仓库与写操作——这是 GitHub 的 token 语义，不是本实现的边界；产品 UI 不依赖它做隔离 |
 | PV-R | 桌面（Rust/Tauri）端 provider 缺席的 `capabilities` 如实报告 | PASS（间接） | Rust `capabilities` 无 providers 字段（optional），Rust 测试 0 failed；UI 门控在 `capabilities.providers` 缺省时隐藏面板（PV-P） |
 
 ## 3. 设计红线核查
