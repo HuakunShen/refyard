@@ -549,7 +549,13 @@ async fn restart_recovers_without_retry_and_keeps_actor_isolation() {
     let repository_id = &registered
         .repositories
         .iter()
-        .find(|summary| summary.display_path == canonical_repo.to_string_lossy())
+        .find(|summary| {
+            Path::new(&summary.display_path)
+                .canonicalize()
+                .ok()
+                .as_deref()
+                == Some(canonical_repo.as_path())
+        })
         .expect("recovered repository summary")
         .repository_id;
     assert_eq!(repository_id, "repo_2");
@@ -1014,7 +1020,10 @@ async fn events_replay_or_report_gap_while_operation_lookup_stays_authoritative(
 async fn queued_cancel_is_cancelled_but_running_mutation_is_not() {
     let root = tempfile::tempdir().expect("root");
     let repo = init_repository(root.path(), "queue-repo");
+    #[cfg(unix)]
     let gate = root.path().join("queue-gate");
+    #[cfg(windows)]
+    let gate = repo.join(".git/queue-gate");
     std::fs::write(repo.join("file.txt"), "first\n").expect("change");
     let git = |args: &[&str]| {
         let output = std::process::Command::new("git")
@@ -1047,6 +1056,12 @@ async fn queued_cancel_is_cancelled_but_running_mutation_is_not() {
         permissions.set_mode(0o755);
         std::fs::set_permissions(hook, permissions).expect("hook permissions");
     }
+    #[cfg(windows)]
+    std::fs::write(
+        repo.join(".git/hooks/pre-commit"),
+        "#!/bin/sh\nwhile [ ! -f .git/queue-gate ]; do sleep 0.02; done\n",
+    )
+    .expect("Windows holding hook");
     let mut cfg = config(root.path());
     cfg.limits.queue.max_global_git_processes = 1;
     cfg.limits.queue.max_queued_per_actor = 1;
