@@ -1,4 +1,5 @@
-//! The four write effects this build implements: stage, unstage, commit and merge.
+//! The ten write effects this build implements: stage, unstage, commit, branch create
+//! and switch, tag create, merge, revert, reset and cherry-pick.
 //!
 //! One workflow per effect, run through whatever executor the repository's target names —
 //! the local provider or the SSH provider. There is no second implementation for SSH: the
@@ -23,8 +24,10 @@
 //! visible as "the commit exists and Git complained" rather than as a failure, and what
 //! stops a dropped connection from being reported as a clean no-op.
 
+pub mod branch;
 pub mod commit;
 pub mod merge;
+pub mod replay;
 pub mod stage;
 
 use std::sync::Arc;
@@ -40,7 +43,8 @@ use crate::jobs::journal::EffectOutcome;
 use crate::jobs::{MutationEffect, MutationRequest};
 use crate::paths::PathRegistry;
 use crate::providers::GitExecutor;
-use crate::reads::status::{read_write_facts, WriteFacts};
+use crate::reads::status::read_write_facts;
+pub(crate) use crate::reads::status::WriteFacts;
 use crate::registry::{RepositoryRecord, RepositoryRegistry};
 use crate::targets::{TargetRecord, TargetRegistry};
 
@@ -91,7 +95,7 @@ impl WriteHost {
         }
     }
 
-    /// The four effects this build registers, in the order the contract lists them.
+    /// The ten effects this build registers, in the order the contract lists them.
     pub fn effects(host: &Arc<Self>) -> Vec<Box<dyn MutationEffect>> {
         vec![
             Box::new(stage::StageEffect {
@@ -103,7 +107,25 @@ impl WriteHost {
             Box::new(commit::CommitEffect {
                 host: Arc::clone(host),
             }),
+            Box::new(branch::CreateBranchEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(branch::SwitchBranchEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(branch::CreateTagEffect {
+                host: Arc::clone(host),
+            }),
             Box::new(merge::MergeEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(replay::RevertCommitEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(replay::ResetBranchEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(replay::CherryPickEffect {
                 host: Arc::clone(host),
             }),
         ]
@@ -474,7 +496,7 @@ pub(crate) fn refusal_problem(command: &'static str, outcome: &RunOutcome) -> Pr
 }
 
 /// The reason an outcome is unknown, in the one vocabulary the journal keeps.
-fn unknown_problem(command: &'static str, message: &str) -> Problem {
+pub(crate) fn unknown_problem(command: &'static str, message: &str) -> Problem {
     Problem::new(
         ProblemCode::UncertainOutcome,
         format!("{command}: {message}"),
@@ -534,6 +556,53 @@ pub(crate) fn selected_paths(selected: &[ResolvedPath]) -> Vec<Vec<u8>> {
         }
     }
     paths
+}
+
+/// A completed run that Git finished and reported zero on.
+pub(crate) fn clean_exit(outcome: &RunOutcome) -> bool {
+    outcome.state == ExecutionState::Completed
+        && outcome.output_complete
+        && outcome.exit_code == Some(0)
+}
+
+/// Whether one read-only probe answers "yes" (`true`), "no" (`false`), or could not be
+/// read at all (`None`) — through the same executor the write itself will use, so a
+/// repository on another machine answers about itself.
+pub(crate) async fn probe(target: &WriteTarget, plan: &GitPlan) -> Option<bool> {
+    let outcome = target
+        .executor
+        .try_run(
+            target.record.location.canonical_worktree.as_str(),
+            plan,
+            None,
+        )
+        .await
+        .ok()?;
+    Some(clean_exit(&outcome))
+}
+
+/// Distinct paths with unmerged index stages, deduplicated by raw path bytes: two byte
+/// sequences that render as the same text are still two paths.
+pub(crate) async fn conflicted_count(target: &WriteTarget) -> Option<u64> {
+    let plan = refyard_core::plan::merge::plan_ls_files_unmerged();
+    let outcome = target
+        .executor
+        .try_run(
+            target.record.location.canonical_worktree.as_str(),
+            &plan,
+            None,
+        )
+        .await
+        .ok()?;
+    if !clean_exit(&outcome) {
+        return None;
+    }
+    let stages = refyard_core::parse::lsfiles::parse_ls_files_unmerged(&outcome.stdout).ok()?;
+    let mut paths = std::collections::HashSet::new();
+    for stage in stages {
+        paths.insert(stage.path);
+    }
+    Some(paths.len() as u64)
 }
 
 /// The paths a stage plans over: the selected paths plus, when it can be addressed, the

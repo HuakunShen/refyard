@@ -66,6 +66,23 @@ pub enum MergeMode {
     NoFF,
 }
 
+/// The reset modes the contract offers — the two that cannot lose working-tree content.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ResetMode {
+    /// The branch moves; the index stays exactly as it is.
+    Soft,
+    /// The branch and the index move to the target; staged work becomes unstaged.
+    Mixed,
+}
+
+/// The message of an annotated tag, as the contract's `annotation` object carries it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TagAnnotation {
+    pub message: String,
+}
+
 /// The mutation the write path can carry, as the host understands it.
 ///
 /// A projection of the contract's closed union: only the operations this slice can reason
@@ -91,10 +108,33 @@ pub enum MutationOperation {
     Commit {
         message: String,
     },
+    CreateBranch {
+        branch_name: String,
+        start_oid: Option<String>,
+        switch_to_it: bool,
+    },
+    SwitchBranch {
+        branch_name: String,
+    },
+    CreateTag {
+        tag_name: String,
+        target_oid: Option<String>,
+        annotation: Option<TagAnnotation>,
+    },
     Merge {
         source_oid: String,
         mode: MergeMode,
         message: Option<String>,
+    },
+    RevertCommit {
+        oid: String,
+    },
+    ResetBranch {
+        oid: String,
+        mode: ResetMode,
+    },
+    CherryPick {
+        oid: String,
     },
 }
 
@@ -104,7 +144,13 @@ impl MutationOperation {
             Self::StagePaths { .. } => MutationKind::StagePaths,
             Self::UnstagePaths { .. } => MutationKind::UnstagePaths,
             Self::Commit { .. } => MutationKind::Commit,
+            Self::CreateBranch { .. } => MutationKind::CreateBranch,
+            Self::SwitchBranch { .. } => MutationKind::SwitchBranch,
+            Self::CreateTag { .. } => MutationKind::CreateTag,
             Self::Merge { .. } => MutationKind::Merge,
+            Self::RevertCommit { .. } => MutationKind::RevertCommit,
+            Self::ResetBranch { .. } => MutationKind::ResetBranch,
+            Self::CherryPick { .. } => MutationKind::CherryPick,
         }
     }
 
@@ -112,7 +158,14 @@ impl MutationOperation {
     pub fn path_ids(&self) -> Vec<String> {
         match self {
             Self::StagePaths { path_ids, .. } | Self::UnstagePaths { path_ids } => path_ids.clone(),
-            Self::Commit { .. } | Self::Merge { .. } => Vec::new(),
+            Self::Commit { .. }
+            | Self::CreateBranch { .. }
+            | Self::SwitchBranch { .. }
+            | Self::CreateTag { .. }
+            | Self::Merge { .. }
+            | Self::RevertCommit { .. }
+            | Self::ResetBranch { .. }
+            | Self::CherryPick { .. } => Vec::new(),
         }
     }
 
@@ -293,6 +346,83 @@ mod seed_tests {
             }))
             .is_err()
         );
+    }
+
+    #[test]
+    fn the_branch_tag_revert_reset_and_pick_payloads_round_trip_on_the_wire() {
+        // Prevents: a browser sending a payload the host cannot read (or the reverse),
+        // because one of these projections drifted from the contract's spelling.
+        let oid = "0123456789abcdef0123456789abcdef01234567";
+        for (json, expected) in [
+            (
+                serde_json::json!({
+                    "kind": "createBranch",
+                    "branchName": "feature",
+                    "startOid": oid,
+                    "switchToIt": true
+                }),
+                MutationOperation::CreateBranch {
+                    branch_name: "feature".to_string(),
+                    start_oid: Some(oid.to_string()),
+                    switch_to_it: true,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "switchBranch",
+                    "branchName": "main"
+                }),
+                MutationOperation::SwitchBranch {
+                    branch_name: "main".to_string(),
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "createTag",
+                    "tagName": "v1",
+                    "targetOid": null,
+                    "annotation": { "message": "release" }
+                }),
+                MutationOperation::CreateTag {
+                    tag_name: "v1".to_string(),
+                    target_oid: None,
+                    annotation: Some(TagAnnotation {
+                        message: "release".to_string(),
+                    }),
+                },
+            ),
+            (
+                serde_json::json!({ "kind": "revertCommit", "oid": oid }),
+                MutationOperation::RevertCommit {
+                    oid: oid.to_string(),
+                },
+            ),
+            (
+                serde_json::json!({ "kind": "resetBranch", "oid": oid, "mode": "mixed" }),
+                MutationOperation::ResetBranch {
+                    oid: oid.to_string(),
+                    mode: ResetMode::Mixed,
+                },
+            ),
+            (
+                serde_json::json!({ "kind": "cherryPick", "oid": oid }),
+                MutationOperation::CherryPick {
+                    oid: oid.to_string(),
+                },
+            ),
+        ] {
+            assert_eq!(
+                serde_json::from_value::<MutationOperation>(json.clone())
+                    .unwrap_or_else(|error| panic!("{json} must parse: {error}")),
+                expected,
+                "{json}"
+            );
+            assert_eq!(
+                serde_json::to_value(&expected).unwrap(),
+                json,
+                "the host's own payload must round-trip"
+            );
+        }
     }
 }
 

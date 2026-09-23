@@ -759,7 +759,7 @@ async fn naming_a_state_directory_after_registering_the_writes_keeps_them() {
     let capabilities = service.capabilities().await.expect("capabilities");
     assert_eq!(
         capabilities.operations.len(),
-        4,
+        10,
         "the write path must survive a later state directory being named"
     );
 
@@ -1280,7 +1280,7 @@ async fn a_replayed_request_is_not_executed_twice() {
 }
 
 #[tokio::test]
-async fn capabilities_name_exactly_the_four_implemented_writes() {
+async fn capabilities_name_exactly_the_ten_implemented_writes() {
     // Prevents: a capability answer that offers a write this build cannot run, or hides
     // one it can — the UI enables controls from this list.
     let fixture = Fixture::new();
@@ -1297,7 +1297,13 @@ async fn capabilities_name_exactly_the_four_implemented_writes() {
             (MutationKind::StagePaths, vec![TargetKind::Worktree]),
             (MutationKind::UnstagePaths, vec![TargetKind::Worktree]),
             (MutationKind::Commit, vec![TargetKind::Worktree]),
+            (MutationKind::CreateBranch, vec![TargetKind::Repository]),
+            (MutationKind::SwitchBranch, vec![TargetKind::Worktree]),
+            (MutationKind::CreateTag, vec![TargetKind::Repository]),
             (MutationKind::Merge, vec![TargetKind::Worktree]),
+            (MutationKind::RevertCommit, vec![TargetKind::Worktree]),
+            (MutationKind::ResetBranch, vec![TargetKind::Worktree]),
+            (MutationKind::CherryPick, vec![TargetKind::Worktree]),
         ]
     );
     let unavailable = capabilities
@@ -1307,13 +1313,19 @@ async fn capabilities_name_exactly_the_four_implemented_writes() {
         .collect::<Vec<MutationKind>>();
     assert_eq!(
         unavailable.len(),
-        refyard_contract::reads::MUTATION_KINDS.len() - 4
+        refyard_contract::reads::MUTATION_KINDS.len() - 10
     );
     for offered in [
         MutationKind::StagePaths,
         MutationKind::UnstagePaths,
         MutationKind::Commit,
+        MutationKind::CreateBranch,
+        MutationKind::SwitchBranch,
+        MutationKind::CreateTag,
         MutationKind::Merge,
+        MutationKind::RevertCommit,
+        MutationKind::ResetBranch,
+        MutationKind::CherryPick,
     ] {
         assert!(
             !unavailable.contains(&offered),

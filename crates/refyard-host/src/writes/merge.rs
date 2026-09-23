@@ -12,7 +12,6 @@
 //! Nothing here resolves a conflict, continues a merge or aborts one: those are their
 //! own operations, and a conflicted path is a path a human has to look at.
 
-use std::collections::HashSet;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -20,16 +19,14 @@ use std::sync::Arc;
 use refyard_contract::problem::{DetailValue, Problem, ProblemCode};
 use refyard_contract::reads::{HeadKind, MutationKind};
 
-use refyard_core::outcome::{ExecutionState, RunOutcome};
-use refyard_core::parse::lsfiles::parse_ls_files_unmerged;
-use refyard_core::plan::GitPlan;
+use refyard_core::outcome::ExecutionState;
 
 use crate::jobs::journal::EffectOutcome;
 use crate::jobs::{EffectRequest, MergeMode, MutationEffect, MutationOperation};
 
 use super::{
-    classify_write, diagnostic_of, effect_outcome, invalid_payload, refused, wrong_payload,
-    Postcondition, Verdict, WriteHost, WriteTarget,
+    classify_write, conflicted_count, diagnostic_of, effect_outcome, invalid_payload, probe,
+    refused, wrong_payload, Postcondition, Verdict, WriteHost,
 };
 
 /// `git merge [--no-ff] (--no-edit | -m <message>) <object>`.
@@ -49,29 +46,6 @@ impl MutationEffect for MergeEffect {
         let host = Arc::clone(&self.host);
         Box::pin(async move { merge(&host, &request).await })
     }
-}
-
-/// Whether one read-only probe answers "yes" (`true`), "no" (`false`), or could not be
-/// read at all (`None`) — through the same executor the merge itself will use, so a
-/// repository on another machine answers about itself.
-async fn probe(target: &WriteTarget, plan: &GitPlan) -> Option<bool> {
-    let outcome = target
-        .executor
-        .try_run(
-            target.record.location.canonical_worktree.as_str(),
-            plan,
-            None,
-        )
-        .await
-        .ok()?;
-    Some(clean_exit(&outcome))
-}
-
-/// A completed run that Git finished and reported zero on.
-fn clean_exit(outcome: &RunOutcome) -> bool {
-    outcome.state == ExecutionState::Completed
-        && outcome.output_complete
-        && outcome.exit_code == Some(0)
 }
 
 async fn merge(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> EffectOutcome {
@@ -175,7 +149,7 @@ async fn merge(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> EffectOutc
         let diagnostic = diagnostic_of(&outcome);
         let mut problem = Problem::new(
             ProblemCode::NeedsAttention,
-            conflicted_message(&target, &outcome).await,
+            conflicted_message(&target).await,
         )
         .with_detail("diagnostic", DetailValue::Text(diagnostic));
         if let Some(count) = conflicted_count(&target).await {
@@ -221,7 +195,7 @@ async fn merge(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> EffectOutc
 /// The message a stopped merge reports, with the distinct conflicted-path count when the
 /// unmerged listing can be read. The count is evidence from the index, not from Git's
 /// prose.
-async fn conflicted_message(target: &WriteTarget, _outcome: &RunOutcome) -> String {
+async fn conflicted_message(target: &super::WriteTarget) -> String {
     match conflicted_count(target).await {
         Some(1) => "the merge stopped with conflicts: 1 conflicted path; resolve it, stage the resolution, and continue the merge".to_string(),
         Some(count) => format!(
@@ -229,28 +203,4 @@ async fn conflicted_message(target: &WriteTarget, _outcome: &RunOutcome) -> Stri
         ),
         None => "the merge stopped with conflicts; resolve them, stage the resolution, and continue the merge".to_string(),
     }
-}
-
-/// Distinct paths with unmerged index stages, deduplicated by raw path bytes: two byte
-/// sequences that render as the same text are still two paths.
-async fn conflicted_count(target: &WriteTarget) -> Option<u64> {
-    let plan = refyard_core::plan::merge::plan_ls_files_unmerged();
-    let outcome = target
-        .executor
-        .try_run(
-            target.record.location.canonical_worktree.as_str(),
-            &plan,
-            None,
-        )
-        .await
-        .ok()?;
-    if !clean_exit(&outcome) {
-        return None;
-    }
-    let stages = parse_ls_files_unmerged(&outcome.stdout).ok()?;
-    let mut paths = HashSet::new();
-    for stage in stages {
-        paths.insert(stage.path);
-    }
-    Some(paths.len() as u64)
 }
