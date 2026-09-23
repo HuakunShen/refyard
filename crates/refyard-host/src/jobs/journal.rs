@@ -170,11 +170,18 @@ impl Journal {
     /// read is refused here, at startup, rather than at the moment an operation needs to be
     /// recorded.
     pub fn open(root: Option<PathBuf>) -> Result<Self, Problem> {
+        Self::open_with_security(root, set_private_directory)
+    }
+
+    fn open_with_security(
+        root: Option<PathBuf>,
+        secure: fn(&Path) -> Result<(), Problem>,
+    ) -> Result<Self, Problem> {
         let journal = Self {
             inner: Mutex::new(JournalState::default()),
             root,
         };
-        journal.load()?;
+        journal.load(secure)?;
         Ok(journal)
     }
 
@@ -532,21 +539,21 @@ impl Journal {
 
     /* ------------------------------------------------------------ the files */
 
-    fn load(&self) -> Result<(), Problem> {
+    fn load(&self, secure: fn(&Path) -> Result<(), Problem>) -> Result<(), Problem> {
         let Some(root) = &self.root else {
             return Ok(());
         };
         let directory = root.join("journal");
         let records = directory.join("records");
-        std::fs::create_dir_all(&records).map_err(|error| {
-            internal(format!(
-                "the journal directory {} could not be created: {error}",
-                records.display()
-            ))
-        })?;
-        set_private_directory(root)?;
-        set_private_directory(&directory)?;
-        set_private_directory(&records)?;
+        for path in [root, &directory, &records] {
+            std::fs::create_dir_all(path).map_err(|error| {
+                internal(format!(
+                    "the journal directory {} could not be created: {error}",
+                    path.display()
+                ))
+            })?;
+            secure(path)?;
+        }
         let index_path = directory.join("index.json");
         let index: JournalIndex = match std::fs::read(&index_path) {
             Ok(bytes) => serde_json::from_slice(&bytes).map_err(|error| {
@@ -780,41 +787,12 @@ fn set_private_directory(path: &Path) -> Result<(), Problem> {
 }
 
 #[cfg(windows)]
+#[path = "windows_acl.rs"]
+mod windows_acl;
+
+#[cfg(windows)]
 fn set_private_directory(path: &Path) -> Result<(), Problem> {
-    let path = path.to_str().ok_or_else(|| {
-        Problem::new(
-            ProblemCode::Unavailable,
-            "journal state path is not valid Windows text",
-        )
-    })?;
-    let escaped = path.replace("'", "''");
-    let script = format!(
-        r#"$ErrorActionPreference = 'Stop'; $path = '{}'; $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; $sddl = 'D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;' + $sid + ')'; $acl = New-Object System.Security.AccessControl.DirectorySecurity; $acl.SetSecurityDescriptorSddlForm($sddl); Set-Acl -LiteralPath $path -AclObject $acl; $check = Get-Acl -LiteralPath $path; if ($check.GetSecurityDescriptorSddlForm("Access") -ne $sddl) {{ exit 2 }}; $rules = $check.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]); if ($rules.Count -ne 2) {{ exit 3 }}"#,
-        escaped,
-    );
-    let status = std::process::Command::new("powershell.exe")
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            &script,
-        ])
-        .status()
-        .map_err(|error| {
-            Problem::new(
-                ProblemCode::Unavailable,
-                format!("PowerShell could not secure journal state: {error}"),
-            )
-        })?;
-    if !status.success() {
-        return Err(Problem::new(
-            ProblemCode::Unavailable,
-            format!("Windows journal state ACL verification failed for {path}"),
-        ));
-    }
-    Ok(())
+    windows_acl::secure_private_directory(path)
 }
 
 #[cfg(not(any(unix, windows)))]
@@ -1050,5 +1028,46 @@ mod tests {
             .expect("append");
         assert!(!reopened.get("op_2").expect("stored").blocks_writes());
         assert!(reopened.unacknowledged().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod private_directory_tests {
+    use super::*;
+
+    fn fail_apply(_: &Path) -> Result<(), Problem> {
+        Err(Problem::new(
+            ProblemCode::Unavailable,
+            "injected ACL apply failure",
+        ))
+    }
+
+    fn fail_readback(_: &Path) -> Result<(), Problem> {
+        Err(Problem::new(
+            ProblemCode::Unavailable,
+            "injected ACL readback failure",
+        ))
+    }
+
+    #[test]
+    fn security_failures_stop_before_journal_index_is_read() {
+        for (phase, secure) in [
+            ("apply", fail_apply as fn(&Path) -> Result<(), Problem>),
+            (
+                "readback",
+                fail_readback as fn(&Path) -> Result<(), Problem>,
+            ),
+        ] {
+            let temp = tempfile::tempdir().expect("isolated state");
+            let root = temp.path().join(phase);
+            let journal_dir = root.join("journal");
+            std::fs::create_dir_all(&journal_dir).expect("journal dir");
+            std::fs::write(journal_dir.join("index.json"), b"{invalid index")
+                .expect("unreadable index fixture");
+            let problem = Journal::open_with_security(Some(root), secure)
+                .expect_err("ACL failure must stop journal startup");
+            assert_eq!(problem.code, ProblemCode::Unavailable);
+            assert!(problem.message.contains(phase));
+        }
     }
 }
