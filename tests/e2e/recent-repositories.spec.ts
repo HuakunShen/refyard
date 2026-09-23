@@ -70,6 +70,67 @@ async function openSecondRepositoryThroughLauncher(
   await expect(page.getByTestId("repository-launcher")).toHaveCount(0);
 }
 
+/**
+ * Serves the desktop host's published shape at the routes the page really calls: an
+ * extended capability answer, a target list in which this machine is itself a target,
+ * and a repositories answer that carries that target id on every row. The registration,
+ * the filesystem read and the Git reads stay real.
+ */
+function installDesktopShapeRoutes(page: Page): void {
+  void page.route("**/api/v1/host/capabilities", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        sshConfig: false,
+        localFolderPicker: false,
+        uncertainOperationAcknowledgement: false,
+        targetKinds: ["local"],
+      }),
+    });
+  });
+  void page.route("**/api/v1/host/ssh-hosts", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        hosts: [],
+        warnings: [],
+        revision: "rev-e2e-local-1",
+      }),
+    });
+  });
+  void page.route("**/api/v1/host/targets", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        {
+          targetId: LOCAL_TARGET_ID,
+          kind: "local",
+          label: "This machine",
+          state: "ready",
+          remotePathBrowse: false,
+          generation: "gen-e2e-local-1",
+        },
+      ]),
+    });
+  });
+  void page.route("**/api/v1/repositories**", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({
+      status: response.status(),
+      contentType: "application/json",
+      body: JSON.stringify(
+        withEveryRepositoryOnLocalTarget(
+          await response.json(),
+          LOCAL_TARGET_ID,
+        ),
+      ),
+    });
+  });
+}
+
 test.describe("recent repositories", () => {
   let approved: GitFixtureRepo;
   let unapproved: GitFixtureRepo;
@@ -143,58 +204,7 @@ test.describe("recent repositories", () => {
       // calls; the registration, the filesystem read and the Git reads stay real. A
       // repository whose target is this machine is still opened on this machine, so
       // the target id must not stop it being remembered.
-      await page.route("**/api/v1/host/capabilities", async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({
-            sshConfig: false,
-            localFolderPicker: false,
-            uncertainOperationAcknowledgement: false,
-            targetKinds: ["local"],
-          }),
-        });
-      });
-      await page.route("**/api/v1/host/ssh-hosts", async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify({
-            hosts: [],
-            warnings: [],
-            revision: "rev-e2e-local-1",
-          }),
-        });
-      });
-      await page.route("**/api/v1/host/targets", async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          body: JSON.stringify([
-            {
-              targetId: LOCAL_TARGET_ID,
-              kind: "local",
-              label: "This machine",
-              state: "ready",
-              remotePathBrowse: false,
-              generation: "gen-e2e-local-1",
-            },
-          ]),
-        });
-      });
-      await page.route("**/api/v1/repositories**", async (route) => {
-        const response = await route.fetch();
-        await route.fulfill({
-          status: response.status(),
-          contentType: "application/json",
-          body: JSON.stringify(
-            withEveryRepositoryOnLocalTarget(
-              await response.json(),
-              LOCAL_TARGET_ID,
-            ),
-          ),
-        });
-      });
+      installDesktopShapeRoutes(page);
 
       await page.goto(service.pairingUrl);
       await expect(page.getByTestId("build-badge")).toBeVisible();
@@ -230,6 +240,49 @@ test.describe("recent repositories", () => {
           expect.objectContaining({ displayPath: unapprovedPath }),
         ]),
       );
+      // Closing the page stops its background polls before the service stops; a route
+      // that fetches through must not outlive the origin it fetches from.
+      await page.close();
+    });
+
+    test("selects a tab when its machine chip is clicked, and icons this machine", async ({
+      page,
+    }) => {
+      // Prevents: the machine marker sitting beside the tab's button instead of inside
+      // it, where a click on the chip selected text and did nothing else. On the
+      // desktop every tab carries the chip, so every tab was half dead to the pointer.
+      // The chip's shape is asserted too: this machine is an icon alone — the label's
+      // two words travel in the tooltip — because "This machine" is the longest thing a
+      // tab has to say about itself.
+      installDesktopShapeRoutes(page);
+
+      await page.goto(service.pairingUrl);
+      await expect(page.getByTestId("build-badge")).toBeVisible();
+      await expect(page.getByTestId("repository-tabs")).toBeVisible();
+
+      await openSecondRepositoryThroughLauncher(page, unapprovedPath);
+
+      const tabs = page.getByTestId("repository-tabs");
+      const tabRows = tabs.locator('[data-testid^="repository-tab-"]');
+      await expect(tabRows).toHaveCount(2);
+
+      // The newly opened tab is active; the first tab's chip is a machine marker with
+      // no label text, named fully in its tooltip.
+      const firstTab = tabRows.first();
+      const firstChip = firstTab.locator('[data-testid^="repository-target-"]');
+      await expect(firstChip).toHaveAttribute(
+        "title",
+        "Git runs on This machine",
+      );
+      await expect(firstChip).not.toContainText("This machine");
+
+      // Clicking the chip selects the tab — the whole body of a tab is its button.
+      await firstChip.click();
+      await expect(firstTab.getByRole("button").first()).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+
       // Closing the page stops its background polls before the service stops; a route
       // that fetches through must not outlive the origin it fetches from.
       await page.close();

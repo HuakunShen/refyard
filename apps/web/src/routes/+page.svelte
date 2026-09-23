@@ -1108,9 +1108,10 @@
                   ? tab.displayName
                   : `${tab.displayName} · ${selected.label}`,
               displayPath: selected?.path ?? tab.displayPath,
-              // Only a repository on another machine carries one, so two tabs for the
-              // same path are told apart by the machine, not by reading the tooltip.
+              // Only a named target carries the machine chip, and its kind decides the
+              // icon: this machine is a laptop alone, a host is an icon plus its name.
               targetLabel: queries.targetLabelFor(tab.targetId),
+              targetKind: queries.targetKindFor(tab.targetId),
             };
           })}
           activeRepositoryId={repositoryTabs.activeRepositoryId}
