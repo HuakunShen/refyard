@@ -162,6 +162,9 @@ brew audit --cask refyard
 brew install --cask HuakunShen/tap/refyard
 ```
 
+The cask intentionally omits `auto_updates true` so `brew upgrade refyard` includes it by
+default. The app's signed in-app updater remains available in Settings → Updates.
+
 The app updates itself from the release feed, so a machine already running 0.1.x will offer
 0.2.0 through Settings → Check for updates without Homebrew.
 

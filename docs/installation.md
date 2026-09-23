@@ -248,8 +248,7 @@ an unsigned feed is refused.
 
 ## Homebrew (macOS desktop app)
 
-After the first `app-v*` release is published, the desktop app installs through the
-owner's tap:
+The desktop app installs through the owner's tap:
 
 ```sh
 brew install --cask HuakunShen/tap/refyard
@@ -264,8 +263,8 @@ Each release, the person publishing:
    itself never pushes);
 3. verifies with `brew audit --cask refyard` and a clean `brew install`.
 
-`auto_updates true` is deliberate: once the app's built-in updater ships, Homebrew
-recognises the newer installed version instead of fighting it.
+Use `brew upgrade refyard` to update the cask through Homebrew. The app's Settings → Updates
+page also supports manual updates from the signed release feed.
 
 ## Uninstalling
 
