@@ -1,6 +1,7 @@
 //! Transport-neutral embedding facade for Refyard.
 use std::collections::BTreeSet;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use refyard_contract::diff::{DiffQuery, DiffResponse};
 use refyard_contract::history::{HistoryPage, HistoryQuery};
@@ -48,8 +49,9 @@ pub struct EmbedRecoveryState {
     pub since_ms: i64,
 }
 
+#[derive(Clone)]
 pub struct EmbeddedRefyard {
-    service: ApplicationService,
+    service: Arc<ApplicationService>,
 }
 
 impl EmbeddedRefyard {
@@ -87,7 +89,9 @@ impl EmbeddedRefyard {
             config.enabled_mutations,
         )
         .with_state_root(config.state_root)?;
-        Ok(Self { service })
+        Ok(Self {
+            service: Arc::new(service),
+        })
     }
 
     pub async fn close(self) -> Result<(), Problem> {

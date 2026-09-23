@@ -1,16 +1,19 @@
 use std::collections::BTreeSet;
+#[cfg(unix)]
 use std::future::Future;
 use std::path::Path;
 
 use refyard_contract::diff::{DiffKind, DiffQuery};
 use refyard_contract::history::HistoryQuery;
+#[cfg(unix)]
+use refyard_contract::problem::DetailValue;
 use refyard_contract::problem::ProblemCode;
 use refyard_contract::reads::{
     EventPayload, FilesystemEntriesQuery, MutationKind, MutationTarget, OperationStatus,
     PreviewsRequest,
 };
 use refyard_host::embed::{EmbedConfig, EmbedLimits, EmbeddedRefyard};
-use refyard_host::events::{EventSink, SubscriberEvent};
+use refyard_host::events::SubscriberEvent;
 use refyard_host::jobs::journal::Journal;
 use refyard_host::jobs::queue::QueueLimits;
 use refyard_host::jobs::{MutationOperation, MutationRequest};
@@ -42,6 +45,23 @@ fn config(state_root: &Path) -> EmbedConfig {
     }
 }
 
+fn history_query(repository_id: &str) -> HistoryQuery {
+    HistoryQuery {
+        repository_id: repository_id.to_string(),
+        worktree_id: None,
+        cursor: None,
+        limit: None,
+        detail_oid: None,
+        first_parent_only: None,
+        message: None,
+        author: None,
+        oid_prefix: None,
+        ref_full_name: None,
+        committed_after: None,
+        committed_before: None,
+        path_id: None,
+    }
+}
 fn init_repository(root: &Path, name: &str) -> std::path::PathBuf {
     let repo = root.join(name);
     std::fs::create_dir_all(&repo).expect("repo");
@@ -66,6 +86,47 @@ fn init_repository(root: &Path, name: &str) -> std::path::PathBuf {
     repo
 }
 
+async fn submit_commit_and_wait(
+    host: &EmbeddedRefyard,
+    actor: &str,
+    client_request_id: &str,
+    repository_id: &str,
+    worktree_id: &str,
+) -> String {
+    let snapshot = host
+        .status(&StatusQuery::new(repository_id))
+        .await
+        .expect("status before commit");
+    let mut events = host.subscribe_events();
+    let submitted = host
+        .submit_mutation(
+            actor,
+            MutationRequest {
+                client_request_id: client_request_id.to_string(),
+                target: MutationTarget::Worktree {
+                    repository_id: repository_id.to_string(),
+                    worktree_id: worktree_id.to_string(),
+                    expected_snapshot_id: snapshot.snapshot_id,
+                },
+                operation: MutationOperation::Commit {
+                    message: client_request_id.to_string(),
+                },
+            },
+        )
+        .await
+        .expect("submit commit");
+    let operation_id = submitted.record.operation_id;
+    loop {
+        let Some(SubscriberEvent::Event(event)) = events.recv().await else {
+            panic!("events closed")
+        };
+        if let EventPayload::Operation { operation } = event.payload {
+            if operation.operation_id == operation_id && operation.finished_at.is_some() {
+                return operation_id;
+            }
+        }
+    }
+}
 #[test]
 fn open_uses_only_explicit_state_root() {
     let first = tempfile::tempdir().expect("first root");
@@ -97,6 +158,78 @@ fn open_uses_only_explicit_state_root() {
     assert_ne!(first.path(), second.path());
     drop(first_host);
     drop(second_host);
+}
+
+#[cfg(windows)]
+fn assert_windows_private_directory(path: &Path) {
+    let script = r#"$ErrorActionPreference = 'Stop'; $path = $args[0]; $current = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; $system = 'S-1-5-18'; $acl = Get-Acl -LiteralPath $path; if (-not $acl.AreAccessRulesProtected) { exit 2 }; if ($acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $current) { exit 3 }; $rules = @($acl.GetAccessRules($true, $false, [System.Security.Principal.SecurityIdentifier])); if ($rules.Count -ne 2) { exit 4 }; $seen = @{}; foreach ($rule in $rules) { if ($rule.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow) { exit 5 }; if (($rule.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -ne [System.Security.AccessControl.FileSystemRights]::FullControl) { exit 6 }; $required = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit; if (($rule.InheritanceFlags -band $required) -ne $required) { exit 7 }; if ($rule.PropagationFlags -ne [System.Security.AccessControl.PropagationFlags]::None) { exit 8 }; $seen[$rule.IdentityReference.Value] = $true }; if (-not $seen.ContainsKey($current) -or -not $seen.ContainsKey($system)) { exit 9 }"#;
+    let status = std::process::Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            script,
+        ])
+        .arg(path)
+        .status()
+        .expect("inspect Windows private-state ACL");
+    assert!(
+        status.success(),
+        "private-state ACL assertion failed for {}",
+        path.display()
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_private_state_persists_and_open_fails_closed_without_acl_enforcement() {
+    if std::env::var_os("REFYARD_WINDOWS_ACL_FAIL_CHILD").is_some() {
+        let good_path = std::env::var("REFYARD_GOOD_PATH").expect("good PATH");
+        std::env::set_var("PATH", &good_path);
+        let root = tempfile::tempdir().expect("fail-closed root");
+        let cfg = config(root.path());
+        std::env::set_var("PATH", "Z:\\refyard-no-powershell");
+        let problem = match EmbeddedRefyard::open(cfg) {
+            Ok(_) => panic!("open must fail without ACL enforcement"),
+            Err(problem) => problem,
+        };
+        assert_eq!(problem.code, ProblemCode::Unavailable);
+        return;
+    }
+
+    let root = tempfile::tempdir().expect("Windows private root");
+    let host = EmbeddedRefyard::open(config(root.path())).expect("first Windows open");
+    for path in [
+        root.path(),
+        &root.path().join("journal"),
+        &root.path().join("journal/records"),
+    ] {
+        assert_windows_private_directory(path);
+    }
+    drop(host);
+    let reopened = EmbeddedRefyard::open(config(root.path())).expect("reopen Windows state");
+    for path in [
+        root.path(),
+        &root.path().join("journal"),
+        &root.path().join("journal/records"),
+    ] {
+        assert_windows_private_directory(path);
+    }
+    drop(reopened);
+
+    let status = std::process::Command::new(std::env::current_exe().expect("test executable"))
+        .args([
+            "--exact",
+            "windows_private_state_persists_and_open_fails_closed_without_acl_enforcement",
+            "--nocapture",
+        ])
+        .env("REFYARD_WINDOWS_ACL_FAIL_CHILD", "1")
+        .env("REFYARD_GOOD_PATH", std::env::var("PATH").expect("PATH"))
+        .status()
+        .expect("Windows fail-closed child");
+    assert!(status.success(), "Windows fail-closed child failed");
 }
 
 #[test]
@@ -176,6 +309,91 @@ async fn limits_are_published_and_enforced() {
             .count(),
         1
     );
+    host.close().await.expect("close repository-limit host");
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let bounded_root = tempfile::tempdir().expect("bounded root");
+        let bounded_repo = init_repository(bounded_root.path(), "bounded-repo");
+        let real_git = LocalGit::discover().expect("real git");
+        let escaped_git = real_git.program().to_string_lossy().replace('\'', "'\\''");
+        let wrapper = bounded_root.path().join("facade-git");
+        std::fs::write(
+            &wrapper,
+            format!(
+                "#!/bin/sh\ncase \" $* \" in *\" status \"*) printf stdout-over-limit; exit 0;; esac\nif [ \"$1\" = rev-list ]; then printf stderr-over-limit >&2; exit 9; fi\nexec '{escaped_git}' \"$@\"\n"
+            ),
+        )
+        .expect("git wrapper");
+        let mut permissions = std::fs::metadata(&wrapper)
+            .expect("wrapper metadata")
+            .permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&wrapper, permissions).expect("wrapper permissions");
+
+        let mut bounded_cfg = config(bounded_root.path());
+        bounded_cfg.git = LocalGit::at(&wrapper, real_git.environment().to_vec());
+        bounded_cfg.limits.structured_stdout_max_bytes = 8;
+        bounded_cfg.limits.output_max_bytes = 8;
+        bounded_cfg.limits.stderr_diagnostic_max_bytes = 6;
+        let bounded = EmbeddedRefyard::open(bounded_cfg).expect("bounded host");
+        let registered = bounded
+            .register_repository(bounded_repo.to_str().expect("utf8 bounded repo"))
+            .await
+            .expect("register through wrapper");
+        let repository_id = &registered.repositories[0].repository_id;
+        let stdout_problem = bounded
+            .status(&StatusQuery::new(repository_id))
+            .await
+            .expect_err("configured stdout cap");
+        assert_eq!(stdout_problem.code, ProblemCode::LimitExceeded);
+        bounded.close().await.expect("close stdout-bounded host");
+
+        let stderr_state = bounded_root.path().join("stderr-state");
+        let mut stderr_cfg = config(&stderr_state);
+        stderr_cfg.git = LocalGit::at(&wrapper, real_git.environment().to_vec());
+        stderr_cfg.limits.structured_stdout_max_bytes = 4_096;
+        stderr_cfg.limits.output_max_bytes = 4_096;
+        stderr_cfg.limits.stderr_diagnostic_max_bytes = 6;
+        let stderr_host = EmbeddedRefyard::open(stderr_cfg).expect("stderr-bounded host");
+        let stderr_registered = stderr_host
+            .register_repository(bounded_repo.to_str().expect("utf8 bounded repo"))
+            .await
+            .expect("register for stderr check");
+        let stderr_repository_id = &stderr_registered.repositories[0].repository_id;
+        let stderr_problem = stderr_host
+            .history(&HistoryQuery {
+                repository_id: stderr_repository_id.clone(),
+                worktree_id: None,
+                cursor: None,
+                limit: None,
+                detail_oid: None,
+                first_parent_only: None,
+                message: None,
+                author: None,
+                oid_prefix: None,
+                ref_full_name: None,
+                committed_after: None,
+                committed_before: None,
+                path_id: None,
+            })
+            .await
+            .expect_err("configured stderr cap");
+        assert_eq!(stderr_problem.code, ProblemCode::LimitExceeded);
+        assert_eq!(
+            stderr_problem
+                .details
+                .as_ref()
+                .and_then(|details| details.get("diagnostic")),
+            Some(&DetailValue::Text("stderr".to_string()))
+        );
+        stderr_host
+            .close()
+            .await
+            .expect("close stderr-bounded host");
+    }
 }
 
 #[test]
@@ -199,6 +417,7 @@ fn only_enabled_closed_mutations_are_capable() {
 async fn restart_recovers_without_retry_and_keeps_actor_isolation() {
     let root = tempfile::tempdir().expect("root");
     let repo = init_repository(root.path(), "recovery-repo");
+    let other_repo = init_repository(root.path(), "other-repo");
     std::fs::write(repo.join("file.txt"), "crash\n").expect("change");
     std::process::Command::new("git")
         .args(["add", "file.txt"])
@@ -318,11 +537,42 @@ async fn restart_recovers_without_retry_and_keeps_actor_isolation() {
     let mut recovery_cfg = config(root.path());
     recovery_cfg.enabled_mutations.insert(MutationKind::Commit);
     let reopened = EmbeddedRefyard::open(recovery_cfg).expect("reopen");
+    let other_registered = reopened
+        .register_repository(other_repo.to_str().expect("utf8 other repo"))
+        .await
+        .expect("register other repository first after restart");
+    let other_repository_id = &other_registered.repositories[0].repository_id;
+    assert_eq!(
+        other_repository_id, "repo_1",
+        "the unrelated repository must reuse the crashed process's client id"
+    );
+    assert!(reopened
+        .recovery_for_repository(other_repository_id)
+        .expect("other recovery read")
+        .is_none());
+    let other_snapshot = reopened
+        .status(&StatusQuery::new(other_repository_id))
+        .await
+        .expect("other fresh snapshot");
+    assert_eq!(
+        reopened
+            .acknowledge_uncertain_operation("op_1", &other_snapshot.snapshot_id)
+            .expect_err("another repository must not acknowledge the crashed operation")
+            .code,
+        ProblemCode::Conflict
+    );
     let registered = reopened
         .register_repository(repo.to_str().expect("utf8 repo"))
         .await
         .expect("register after crash");
-    let repository_id = &registered.repositories[0].repository_id;
+    let canonical_repo = std::fs::canonicalize(&repo).expect("canonical recovered repository");
+    let repository_id = &registered
+        .repositories
+        .iter()
+        .find(|summary| summary.display_path == canonical_repo.to_string_lossy())
+        .expect("recovered repository summary")
+        .repository_id;
+    assert_eq!(repository_id, "repo_2");
     let recovery = reopened
         .recovery_for_repository(repository_id)
         .expect("recovery read")
@@ -374,6 +624,7 @@ async fn reads_require_registered_repository_and_snapshot_preconditions() {
     std::fs::create_dir_all(root.path().join("home")).expect("home");
     let mut read_cfg = config(root.path());
     read_cfg.enabled_mutations.insert(MutationKind::Commit);
+    read_cfg.enabled_mutations.insert(MutationKind::StagePaths);
     let host = EmbeddedRefyard::open(read_cfg).expect("host");
     assert_eq!(
         host.status(&StatusQuery::new("repo_missing"))
@@ -452,11 +703,160 @@ async fn reads_require_registered_repository_and_snapshot_preconditions() {
         .await
         .expect("register");
     let summary = response.repositories[0].clone();
+    let history = host
+        .history(&history_query(&summary.repository_id))
+        .await
+        .expect("minted-id history");
+    assert_eq!(history.repository_id, summary.repository_id);
+    assert_eq!(history.commits.len(), 1);
+    assert!(!history.snapshot_id.is_empty());
+    let refs = host
+        .refs(&summary.repository_id)
+        .await
+        .expect("minted-id refs");
+    assert_eq!(refs.repository_id, summary.repository_id);
+    assert!(refs.branches.iter().any(|branch| branch.name == "main"));
     let snapshot = host
         .status(&StatusQuery::new(&summary.repository_id))
         .await
         .expect("valid status");
     std::fs::write(repo.join("file.txt"), "changed\n").expect("change");
+    let changed_status = host
+        .status(&StatusQuery::new(&summary.repository_id))
+        .await
+        .expect("minted-id changed status");
+    let path_id = changed_status.entries[0].path_id.clone();
+    let diff = host
+        .diff(&DiffQuery {
+            repository_id: summary.repository_id.clone(),
+            worktree_id: Some(summary.primary_worktree_id.clone()),
+            kind: DiffKind::Unstaged,
+            oid: None,
+            from: None,
+            to: None,
+            path_id: Some(path_id.clone()),
+            max_bytes: None,
+        })
+        .await
+        .expect("minted-id diff");
+    assert_eq!(diff.repository_id, summary.repository_id);
+    assert_eq!(
+        diff.worktree_id.as_deref(),
+        Some(summary.primary_worktree_id.as_str())
+    );
+    assert_eq!(diff.files.len(), 1);
+    assert!(!diff.snapshot_id.is_empty());
+    let preview = host
+        .previews(&PreviewsRequest {
+            repository_id: summary.repository_id.clone(),
+            worktree_id: summary.primary_worktree_id.clone(),
+            path_ids: vec![path_id.clone()],
+        })
+        .await
+        .expect("minted-id preview");
+    assert_eq!(preview.repository_id, summary.repository_id);
+    assert_eq!(preview.tokens.len(), 1);
+    assert_eq!(preview.tokens[0].path_id, path_id);
+    assert!(!preview.tokens[0].preview_token.is_empty());
+
+    let other_repo = init_repository(root.path(), "registered-other");
+    std::fs::write(other_repo.join("file.txt"), "other changed\n").expect("other change");
+    let other_response = host
+        .register_repository(other_repo.to_str().expect("utf8 other repo"))
+        .await
+        .expect("register other");
+    let other_summary = other_response
+        .repositories
+        .last()
+        .expect("other summary")
+        .clone();
+    let other_status = host
+        .status(&StatusQuery::new(&other_summary.repository_id))
+        .await
+        .expect("other status");
+    let other_path_id = other_status.entries[0].path_id.clone();
+    let other_preview = host
+        .previews(&PreviewsRequest {
+            repository_id: other_summary.repository_id.clone(),
+            worktree_id: other_summary.primary_worktree_id.clone(),
+            path_ids: vec![other_path_id.clone()],
+        })
+        .await
+        .expect("other preview");
+    let cross_snapshot = MutationRequest {
+        client_request_id: "cross-snapshot".to_string(),
+        target: MutationTarget::Worktree {
+            repository_id: other_summary.repository_id.clone(),
+            worktree_id: other_summary.primary_worktree_id.clone(),
+            expected_snapshot_id: preview.snapshot_id.clone(),
+        },
+        operation: MutationOperation::StagePaths {
+            path_ids: vec![other_path_id.clone()],
+            preview_tokens: vec![other_preview.tokens[0].preview_token.clone()],
+        },
+    };
+    assert_eq!(
+        host.submit_mutation("actor", cross_snapshot)
+            .await
+            .expect_err("cross-repository snapshot")
+            .code,
+        ProblemCode::StaleSnapshot
+    );
+    assert!(std::process::Command::new("git")
+        .args(["diff", "--cached", "--quiet"])
+        .current_dir(&other_repo)
+        .status()
+        .expect("cached diff after cross snapshot")
+        .success());
+
+    let mut cross_token_events = host.subscribe_events();
+    let cross_token = host
+        .submit_mutation(
+            "actor",
+            MutationRequest {
+                client_request_id: "cross-token".to_string(),
+                target: MutationTarget::Worktree {
+                    repository_id: other_summary.repository_id.clone(),
+                    worktree_id: other_summary.primary_worktree_id.clone(),
+                    expected_snapshot_id: other_preview.snapshot_id.clone(),
+                },
+                operation: MutationOperation::StagePaths {
+                    path_ids: vec![other_path_id],
+                    preview_tokens: vec![preview.tokens[0].preview_token.clone()],
+                },
+            },
+        )
+        .await
+        .expect("cross-token submission is journalled before the effect refuses it");
+    let cross_token_id = cross_token.record.operation_id;
+    let cross_token_terminal = loop {
+        let Some(SubscriberEvent::Event(event)) = cross_token_events.recv().await else {
+            panic!("cross-token events closed")
+        };
+        if let EventPayload::Operation { operation } = event.payload {
+            if operation.operation_id == cross_token_id && operation.finished_at.is_some() {
+                break operation;
+            }
+        }
+    };
+    assert_eq!(
+        cross_token_terminal
+            .problem
+            .expect("cross-token problem")
+            .code,
+        ProblemCode::StalePreview
+    );
+    assert!(std::process::Command::new("git")
+        .args(["diff", "--cached", "--quiet"])
+        .current_dir(&other_repo)
+        .status()
+        .expect("cached diff after cross token")
+        .success());
+    let after_other_revoke = host
+        .revoke_repository(&other_summary.repository_id)
+        .await
+        .expect("revoke other");
+    assert_eq!(after_other_revoke.repositories.len(), 1);
     std::process::Command::new("git")
         .args(["add", "file.txt"])
         .current_dir(&repo)
@@ -549,38 +949,74 @@ async fn events_replay_or_report_gap_while_operation_lookup_stays_authoritative(
         }
     }
     let replay = host.replay_events(Some(0));
-    assert!(!replay.is_empty());
-    let (gap_from, gap_to) = match replay[0].payload {
+    assert_eq!(replay.len(), 3);
+    assert!(matches!(
+        replay[0].payload,
         EventPayload::EventGap {
-            from_sequence,
-            to_sequence,
-        } => (from_sequence, to_sequence),
-        _ => panic!("replay behind the ring must report an exact gap"),
-    };
-    assert_eq!(gap_from, 1);
-    assert!(gap_to >= gap_from);
-    assert!(replay.iter().skip(1).all(|event| event.sequence > gap_to));
-    assert!(replay
-        .iter()
-        .skip(1)
-        .any(|event| matches!(event.payload, EventPayload::Operation { .. })));
-    let byte_only = EventSink::with_limits(128, 64);
-    byte_only.publish(EventPayload::EventGap {
-        from_sequence: 1,
-        to_sequence: 2,
-    });
-    byte_only.publish(EventPayload::EventGap {
-        from_sequence: 3,
-        to_sequence: 4,
-    });
-    let byte_replay = byte_only.replay(Some(0));
+            from_sequence: 1,
+            to_sequence: 2,
+        }
+    ));
+    assert_eq!(
+        replay
+            .iter()
+            .skip(1)
+            .map(|event| event.sequence)
+            .collect::<Vec<_>>(),
+        vec![3, 4]
+    );
+    assert!(matches!(replay[1].payload, EventPayload::Operation { .. }));
+    assert!(matches!(
+        replay[2].payload,
+        EventPayload::RepositoryChanged { .. }
+    ));
+
+    let byte_repo = init_repository(root.path(), "byte-event-repo");
+    std::fs::write(byte_repo.join("file.txt"), "byte event\n").expect("byte change");
+    std::process::Command::new("git")
+        .args(["add", "file.txt"])
+        .current_dir(&byte_repo)
+        .status()
+        .expect("byte git add");
+    let mut byte_cfg = config(&root.path().join("byte-state"));
+    byte_cfg.enabled_mutations.insert(MutationKind::Commit);
+    byte_cfg.limits.event_ring_max_events = 128;
+    byte_cfg.limits.event_ring_max_bytes = 256;
+    let byte_host = EmbeddedRefyard::open(byte_cfg).expect("byte-bounded host");
+    let byte_response = byte_host
+        .register_repository(byte_repo.to_str().expect("utf8 byte repo"))
+        .await
+        .expect("register byte repo");
+    let byte_summary = &byte_response.repositories[0];
+    let byte_operation_id = submit_commit_and_wait(
+        &byte_host,
+        "byte-actor",
+        "byte-event-request",
+        &byte_summary.repository_id,
+        &byte_summary.primary_worktree_id,
+    )
+    .await;
+    let byte_replay = byte_host.replay_events(Some(0));
+    assert_eq!(byte_replay.len(), 2);
     assert!(matches!(
         byte_replay[0].payload,
         EventPayload::EventGap {
             from_sequence: 1,
-            ..
+            to_sequence: 3,
         }
     ));
+    assert_eq!(byte_replay[1].sequence, 4);
+    assert!(matches!(
+        byte_replay[1].payload,
+        EventPayload::RepositoryChanged { .. }
+    ));
+    assert!(byte_host
+        .operation_for("byte-actor", &byte_operation_id)
+        .expect("byte journal authority")
+        .finished_at
+        .is_some());
+    byte_host.close().await.expect("close byte-bounded host");
+
     let record = host
         .operation_for("actor", &operation_id)
         .expect("journal authority");
@@ -734,6 +1170,102 @@ async fn queued_cancel_is_cancelled_but_running_mutation_is_not() {
 
 #[tokio::test]
 async fn close_does_not_fabricate_a_terminal_result() {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        let race_root = tempfile::tempdir().expect("race root");
+        let race_repo = init_repository(race_root.path(), "race-repo");
+        std::fs::write(race_repo.join("file.txt"), "race\n").expect("race change");
+        std::process::Command::new("git")
+            .args(["add", "file.txt"])
+            .current_dir(&race_repo)
+            .status()
+            .expect("race git add");
+        let real_git = LocalGit::discover().expect("real git");
+        let escaped_git = real_git.program().to_string_lossy().replace('\'', "'\\''");
+        let arm = race_root.path().join("race-arm");
+        let entered = race_root.path().join("race-entered");
+        let release = race_root.path().join("race-release");
+        let wrapper = race_root.path().join("race-git");
+        std::fs::write(
+            &wrapper,
+            format!(
+                "#!/bin/sh\ncase \" $* \" in *\" status \"*) if [ -f '{}' ]; then touch '{}'; while [ ! -f '{}' ]; do sleep 0.02; done; fi;; esac\nexec '{escaped_git}' \"$@\"\n",
+                arm.display(),
+                entered.display(),
+                release.display(),
+            ),
+        )
+        .expect("race git wrapper");
+        let mut permissions = std::fs::metadata(&wrapper)
+            .expect("race wrapper metadata")
+            .permissions();
+        permissions.set_mode(0o755);
+        std::fs::set_permissions(&wrapper, permissions).expect("race wrapper permissions");
+        let mut race_cfg = config(race_root.path());
+        race_cfg.git = LocalGit::at(&wrapper, real_git.environment().to_vec());
+        race_cfg.enabled_mutations.insert(MutationKind::Commit);
+        let race_host = EmbeddedRefyard::open(race_cfg).expect("race host");
+        let race_registered = race_host
+            .register_repository(race_repo.to_str().expect("utf8 race repo"))
+            .await
+            .expect("register race repo");
+        let race_summary = race_registered.repositories[0].clone();
+        let race_snapshot = race_host
+            .status(&StatusQuery::new(&race_summary.repository_id))
+            .await
+            .expect("race snapshot");
+        std::fs::write(&arm, b"armed").expect("arm submit gate");
+        let submit_host = race_host.clone();
+        let submit_task = tokio::spawn(async move {
+            submit_host
+                .submit_mutation(
+                    "race-actor",
+                    MutationRequest {
+                        client_request_id: "submit-close-race".to_string(),
+                        target: MutationTarget::Worktree {
+                            repository_id: race_summary.repository_id,
+                            worktree_id: race_summary.primary_worktree_id,
+                            expected_snapshot_id: race_snapshot.snapshot_id,
+                        },
+                        operation: MutationOperation::Commit {
+                            message: "submit close race".to_string(),
+                        },
+                    },
+                )
+                .await
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while !entered.exists() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("submit reached gated precondition read");
+        race_host.close().await.expect("close wins admission race");
+        std::fs::write(release, b"release").expect("release submit gate");
+        let refusal = submit_task
+            .await
+            .expect("submit task")
+            .expect_err("close must refuse or terminally cancel the raced submit");
+        assert_eq!(refusal.code, ProblemCode::Cancelled);
+        let raced_operation_id = refusal.operation_id.expect("cancelled operation id");
+        let race_journal =
+            Journal::open(Some(race_root.path().to_path_buf())).expect("race journal after close");
+        assert_eq!(
+            race_journal
+                .get(&raced_operation_id)
+                .expect("raced durable record")
+                .status,
+            OperationStatus::Cancelled
+        );
+        assert!(race_journal
+            .records()
+            .iter()
+            .all(|record| record.status != OperationStatus::Accepted));
+    }
+
     let root = tempfile::tempdir().expect("root");
     let repo = root.path().join("repo");
     std::fs::create_dir_all(&repo).expect("repo");

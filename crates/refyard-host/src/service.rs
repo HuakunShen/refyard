@@ -319,6 +319,36 @@ fn stable_write_key_matches(left: &str, right: &str) -> bool {
     }
 }
 
+#[cfg(test)]
+mod stable_write_key_tests {
+    use super::stable_write_key_matches;
+
+    #[cfg(unix)]
+    #[test]
+    fn local_aliases_match_only_after_both_paths_canonicalize() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().expect("root");
+        let repository = root.path().join("repository");
+        let alias = root.path().join("alias");
+        std::fs::create_dir(&repository).expect("repository directory");
+        symlink(&repository, &alias).expect("repository alias");
+
+        assert!(stable_write_key_matches(
+            &format!("target-local\0{}", repository.display()),
+            &format!("target-local\0{}", alias.display()),
+        ));
+    }
+
+    #[test]
+    fn distinct_ssh_paths_never_alias_when_local_canonicalization_fails() {
+        assert!(!stable_write_key_matches(
+            "target-ssh\0/refyard-test/remote-a/repository",
+            "target-ssh\0/refyard-test/remote-b/repository",
+        ));
+    }
+}
+
 fn repository_write_key(target_id: &str, record: &RepositoryRecord) -> String {
     // The design's key is "target + common Git directory". This record's common directory is
     // whatever the open read resolved; when that is empty — no read fills it in this slice —
