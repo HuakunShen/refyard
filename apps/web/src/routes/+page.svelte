@@ -643,12 +643,19 @@
       executionTarget !== null && executionTarget.kind !== "local"
         ? executionTarget
         : null;
-    // A recent entry is what reopens a repository, and it restores a machine with the
-    // path. A repository the host places on a target, opened without a selection that
-    // names that machine, would reopen on this one — the wrong repository at the same
-    // path — so it is not remembered as a recent rather than remembered wrongly.
-    if (entry.targetId !== undefined && remoteChoice === null) return;
-    const target = entry.targetId === undefined ? null : remoteChoice;
+    // A target reported as `local` is this machine under a target id, not another
+    // machine — a host may name every repository's target, this one included. Only a
+    // repository on another machine depends on the open's choice: reopened without it,
+    // it would run on this one — the wrong repository at the same path — so it is not
+    // remembered rather than remembered wrongly.
+    const onThisMachine =
+      entry.targetId === undefined ||
+      queries.targets.some(
+        (candidate) =>
+          candidate.targetId === entry.targetId && candidate.kind === "local",
+      );
+    if (!onThisMachine && remoteChoice === null) return;
+    const target = onThisMachine ? null : remoteChoice;
     const remembered: RecentRepository = {
       repositoryId: entry.repositoryId,
       ...(entry.targetId === undefined ? {} : { targetId: entry.targetId }),
