@@ -1,3 +1,7 @@
+#[cfg(windows)]
+#[path = "support/windows_acl.rs"]
+mod windows_acl;
+
 use std::collections::BTreeSet;
 #[cfg(unix)]
 use std::future::Future;
@@ -161,75 +165,45 @@ fn open_uses_only_explicit_state_root() {
 }
 
 #[cfg(windows)]
-fn assert_windows_private_directory(path: &Path) {
-    let script = r#"$ErrorActionPreference = 'Stop'; $path = $args[0]; $current = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value; $system = 'S-1-5-18'; $acl = Get-Acl -LiteralPath $path; if (-not $acl.AreAccessRulesProtected) { exit 2 }; if ($acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $current) { exit 3 }; $rules = @($acl.GetAccessRules($true, $false, [System.Security.Principal.SecurityIdentifier])); if ($rules.Count -ne 2) { exit 4 }; $seen = @{}; foreach ($rule in $rules) { if ($rule.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow) { exit 5 }; if (($rule.FileSystemRights -band [System.Security.AccessControl.FileSystemRights]::FullControl) -ne [System.Security.AccessControl.FileSystemRights]::FullControl) { exit 6 }; $required = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit; if (($rule.InheritanceFlags -band $required) -ne $required) { exit 7 }; if ($rule.PropagationFlags -ne [System.Security.AccessControl.PropagationFlags]::None) { exit 8 }; $seen[$rule.IdentityReference.Value] = $true }; if (-not $seen.ContainsKey($current) -or -not $seen.ContainsKey($system)) { exit 9 }"#;
-    let status = std::process::Command::new("powershell.exe")
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            script,
-        ])
-        .arg(path)
-        .status()
-        .expect("inspect Windows private-state ACL");
-    assert!(
-        status.success(),
-        "private-state ACL assertion failed for {}",
-        path.display()
-    );
-}
-
-#[cfg(windows)]
 #[test]
-fn windows_private_state_persists_and_open_fails_closed_without_acl_enforcement() {
-    if std::env::var_os("REFYARD_WINDOWS_ACL_FAIL_CHILD").is_some() {
-        let good_path = std::env::var("REFYARD_GOOD_PATH").expect("good PATH");
-        std::env::set_var("PATH", &good_path);
-        let root = tempfile::tempdir().expect("fail-closed root");
+fn windows_private_state_survives_without_shell_and_repairs_acl_drift() {
+    if std::env::var_os("REFYARD_WINDOWS_ACL_CHILD").is_some() {
+        let root = tempfile::tempdir().expect("Windows private root");
         let cfg = config(root.path());
-        std::env::set_var("PATH", "Z:\\refyard-no-powershell");
-        let problem = match EmbeddedRefyard::open(cfg) {
-            Ok(_) => panic!("open must fail without ACL enforcement"),
-            Err(problem) => problem,
-        };
-        assert_eq!(problem.code, ProblemCode::Unavailable);
+        let again = cfg.clone();
+        // An embedded host must enforce privacy even when no shell is resolvable.
+        std::env::set_var("PATH", "Z:\\refyard-no-shell");
+        let host = EmbeddedRefyard::open(cfg).expect("open without a shell");
+        for path in [
+            root.path(),
+            &root.path().join("journal"),
+            &root.path().join("journal/records"),
+        ] {
+            windows_acl::assert_private(path);
+        }
+        drop(host);
+        windows_acl::loosen_dacl(&root.path().join("journal"));
+        let reopened = EmbeddedRefyard::open(again).expect("repair drift on reopen");
+        for path in [
+            root.path(),
+            &root.path().join("journal"),
+            &root.path().join("journal/records"),
+        ] {
+            windows_acl::assert_private(path);
+        }
+        drop(reopened);
         return;
     }
-
-    let root = tempfile::tempdir().expect("Windows private root");
-    let host = EmbeddedRefyard::open(config(root.path())).expect("first Windows open");
-    for path in [
-        root.path(),
-        &root.path().join("journal"),
-        &root.path().join("journal/records"),
-    ] {
-        assert_windows_private_directory(path);
-    }
-    drop(host);
-    let reopened = EmbeddedRefyard::open(config(root.path())).expect("reopen Windows state");
-    for path in [
-        root.path(),
-        &root.path().join("journal"),
-        &root.path().join("journal/records"),
-    ] {
-        assert_windows_private_directory(path);
-    }
-    drop(reopened);
-
     let status = std::process::Command::new(std::env::current_exe().expect("test executable"))
         .args([
             "--exact",
-            "windows_private_state_persists_and_open_fails_closed_without_acl_enforcement",
+            "windows_private_state_survives_without_shell_and_repairs_acl_drift",
             "--nocapture",
         ])
-        .env("REFYARD_WINDOWS_ACL_FAIL_CHILD", "1")
-        .env("REFYARD_GOOD_PATH", std::env::var("PATH").expect("PATH"))
+        .env("REFYARD_WINDOWS_ACL_CHILD", "1")
         .status()
-        .expect("Windows fail-closed child");
-    assert!(status.success(), "Windows fail-closed child failed");
+        .expect("Windows ACL child");
+    assert!(status.success(), "Windows ACL child failed");
 }
 
 #[test]
