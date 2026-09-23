@@ -780,7 +780,10 @@
               {
                 kind: "action" as const,
                 id: "merge",
-                label: `Merge into ${currentBranch ?? "current branch"}`,
+                // GitKraken names both sides — "Merge feature into main" — because a
+                // menu opened on a ref label sits between other rows and the direction
+                // is the one thing a misread click cannot undo.
+                label: `Merge ${ref.branchName} into ${currentBranch ?? "current branch"}`,
                 disabled: contextDisabled,
                 onSelect: () => onMergeBranch(ref.branchName),
               },
@@ -791,7 +794,7 @@
               {
                 kind: "action" as const,
                 id: "rebase-onto",
-                label: `Rebase ${currentBranch ?? "current branch"} onto This`,
+                label: `Rebase ${currentBranch ?? "current branch"} onto ${ref.branchName}`,
                 disabled: contextDisabled,
                 onSelect: () => onRebaseOntoBranch(ref.branchName, commit.oid),
               },

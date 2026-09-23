@@ -225,7 +225,7 @@ test.describe("Git context menus", () => {
     ).toBeVisible();
     await expect(
       branchMenu.getByTestId("commit-ref-context-refs/heads/graph-ref-merge"),
-    ).toHaveText("Merge into main");
+    ).toHaveText("Merge graph-ref into main");
     await expect(
       branchMenu.getByTestId("commit-ref-context-refs/heads/graph-ref-delete"),
     ).toBeVisible();

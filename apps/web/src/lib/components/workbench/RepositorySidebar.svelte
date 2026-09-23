@@ -505,6 +505,8 @@
                 activeWorktreeId={queries.activeWorktreeId}
                 {onOpenWorktree}
                 {onOpenWorktreeInTab}
+                currentBranch={status.data?.head?.branchName ?? null}
+                onMergeBranch={mergeAvailable ? onBranchMerge : undefined}
                 disabled={mutationBusy}
                 busy={mutationBusy}
                 message={worktreeMessage}
