@@ -252,7 +252,7 @@ After the first `app-v*` release is published, the desktop app installs through 
 owner's tap:
 
 ```sh
-brew install --cask HuakunShen/refyard/refyard
+brew install --cask HuakunShen/tap/refyard
 ```
 
 The cask source of truth is [`packaging/homebrew/Casks/refyard.rb`](../packaging/homebrew/Casks/refyard.rb).

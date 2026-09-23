@@ -9,7 +9,7 @@
 #   shasum -a 256 <(curl -sL <dmg url>)   # or: brew fetch --cask after tapping
 # then verify locally with:
 #   brew audit --cask refyard
-#   brew install --cask HuakunShen/refyard/refyard
+#   brew install --cask HuakunShen/tap/refyard
 #
 # `auto_updates true` is load-bearing: the app updates itself from the release feed
 # (tauri updater), so `brew upgrade` must not fight it — Homebrew will recognise the

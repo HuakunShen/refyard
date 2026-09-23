@@ -8,8 +8,9 @@ self-contained npm package.
 
 - **Package:** `refyard` from `packages/npm-dist`.
 - **Published so far:** npm `0.1.1` (the owner published `0.1.0` and `0.1.1` by hand);
-  desktop app `0.1.2`, with the matching cask in `HuakunShen/homebrew-tap`.
-- **Prepared by this checkout:** `0.2.0`, for both the npm package and the desktop app.
+  desktop app `0.2.0`, with the matching cask in `HuakunShen/homebrew-tap`.
+- **Version metadata:** `0.2.0` for both the npm package and desktop app. The desktop
+  release is published; the npm version remains pending.
   The npm package version lives in `packages/npm-dist/package.json`; the desktop version
   lives in `apps/desktop/src-tauri/tauri.conf.json` (and is mirrored in that crate's
   `Cargo.toml`/`Cargo.lock` and `apps/desktop/package.json`). The tag names are `v0.2.0`
@@ -158,7 +159,7 @@ pushes). Then verify the install path end to end:
 
 ```sh
 brew audit --cask refyard
-brew install --cask HuakunShen/refyard/refyard
+brew install --cask HuakunShen/tap/refyard
 ```
 
 The app updates itself from the release feed, so a machine already running 0.1.x will offer
