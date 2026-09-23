@@ -34,8 +34,7 @@ test.describe("Git context menus", () => {
     await expect(menu).toBeVisible();
     await expect(
       page.getByTestId(`commit-context-${historicalOid}-create-branch`),
-    ).toHaveText("Create Branch Here…");
-    await expect(
+    ).toHaveText("Create Branch Here…");    await expect(
       page.getByTestId(`commit-context-${historicalOid}-create-tag`),
     ).toHaveText("Create Tag Here…");
     await expect(
@@ -520,5 +519,42 @@ test.describe("Git context menus", () => {
     } finally {
       await remote.dispose();
     }
+  });
+
+  test("opening a commit menu leaves no text selected behind it", async ({
+    page,
+  }) => {
+    // Prevents: WebKit placing the caret — and with it a selection — when the right
+    // button goes down, so right-clicking a commit highlighted the words under and
+    // below the pointer. The row must refuse that mousedown default; the menu itself
+    // still opens, which is asserted first so this cannot pass by not opening.
+    await page.goto(service.pairingUrl);
+    const row = page.getByTestId(`commit-row-${historicalOid}`);
+    await expect(row).toBeVisible();
+
+    await row.click({ button: "right" });
+    await expect(
+      page.getByTestId(`commit-context-${historicalOid}`),
+    ).toBeVisible();
+    // The expression travels as a string: the specs' TypeScript has no DOM types, and
+    // the selection lives in the page.
+    const rowSelection = await page.evaluate<string>(
+      "window.getSelection()?.toString() ?? ''",
+    );
+    expect(rowSelection).toBe("");
+
+    // The same right-press must be refused on a ref badge, whose menu opens over the
+    // row's own.
+    await page.keyboard.press("Escape");
+    const badge = page.getByTestId("commit-ref-refs/heads/main");
+    await expect(badge).toBeVisible();
+    await badge.click({ button: "right" });
+    await expect(
+      page.getByTestId("commit-ref-context-refs/heads/main"),
+    ).toBeVisible();
+    const badgeSelection = await page.evaluate<string>(
+      "window.getSelection()?.toString() ?? ''",
+    );
+    expect(badgeSelection).toBe("");
   });
 });

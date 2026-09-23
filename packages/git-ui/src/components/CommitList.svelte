@@ -686,6 +686,19 @@
       : githubCommitUrl(githubRemoteUrl, commit.oid);
   }
 
+  /**
+   * The right button's *press* must not start anything. WebKit places the caret on
+   * right-mouse-down, so right-clicking a commit highlighted the words under and below
+   * the pointer; the `contextmenu` event's own preventDefault is too late, because the
+   * selection began one event earlier. Refusing the press's default stops exactly that,
+   * and the `contextmenu` event still fires, which is what opens the menu.
+   */
+  function refuseRightPress(event: MouseEvent): void {
+    if (event.button === 2) {
+      event.preventDefault();
+    }
+  }
+
   function openCommitMenu(event: MouseEvent, commit: CommitSummary): void {
     const actions = commitActionsFor(commit);
     if (actions.length === 0) {
@@ -1312,6 +1325,7 @@
                   ? ` background-color: color-mix(in oklab, ${segmentTint} 12%, transparent);`
                   : ''}"
                 onclick={() => onSelect(commit)}
+                onmousedown={refuseRightPress}
                 oncontextmenu={(event) => openCommitMenu(event, commit)}
               >
                 {#if selected}
@@ -1350,6 +1364,7 @@
                             .map((entry) => entry.refName)
                             .join(" ")}
                           onclick={() => onSelect(commit)}
+                          onmousedown={refuseRightPress}
                           oncontextmenu={(event) =>
                             openRefMenu(event, group, commit)}
                           onmouseenter={(event) =>
