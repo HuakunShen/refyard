@@ -172,10 +172,15 @@ packages/git-graph/        pure-TS DAG lane layout + fixtures
 packages/host-node/        process/ filesystem/ registry/ coordinator/ journal/ http/ + adapters
 packages/git-client/       browser/Node HTTP + SSE client for GitService
 packages/git-ui/           Svelte 5 components; injected GitService; no $app/*
+packages/git-provider/     opt-in forge axis: remote->forge parser, GitHub REST client, device flow, ForgeAdapter
 packages/npm-dist/         publication staging (T13)
 scripts/                   TypeScript dev scripts (boundaries, contract, portable, pack, bench)
 tests/{support,contract,core,node,integration,portable,graph,e2e,pack,security,compat,fixtures}
 docs/                      product/north-star.md, discussions/, plans/, goals/, evidence/, installation.md, browser-support.md
+.repowiki/                 agent-maintained wiki and generated artifacts: en/content/ wiki pages,
+                           en/meta/repowiki-metadata.json, en/diagrams/ diagram specs + HTML +
+                           visual-check receipts. Wiki syncs and rendered diagrams (archify etc.)
+                           go here — never new files loose at the repository root.
 references/                the delivered v2 design package (read-only)
 ```
 
