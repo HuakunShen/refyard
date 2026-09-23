@@ -398,8 +398,15 @@ async fn restart_recovers_without_retry_and_keeps_actor_isolation() {
         .current_dir(&repo)
         .status()
         .expect("git add");
+    #[cfg(unix)]
     let entered = root.path().join("recovery-entered");
+    #[cfg(windows)]
+    let entered = repo.join(".git/recovery-entered");
+    #[cfg(unix)]
     let invocation = root.path().join("recovery-invocation");
+    #[cfg(windows)]
+    let invocation = repo.join(".git/recovery-invocation");
+    #[cfg(unix)]
     let release = root.path().join("recovery-release");
     #[cfg(unix)]
     {
@@ -424,12 +431,8 @@ async fn restart_recovers_without_retry_and_keeps_actor_isolation() {
     #[cfg(windows)]
     std::fs::write(
         repo.join(".git/hooks/pre-commit"),
-        format!(
-            "@echo 1>>{}\r\necho entered>{}\r\n:wait\rif not exist {} goto wait\r\n",
-            invocation.display(),
-            entered.display(),
-            release.display()
-        ),
+        // Git for Windows runs extensionless hooks as POSIX shell scripts.
+        "#!/bin/sh\nprintf 1 >> .git/recovery-invocation\nprintf entered > .git/recovery-entered\nwhile [ ! -f .git/recovery-release ]; do sleep 0.02; done\n",
     )
     .expect("hook");
     if std::env::var_os("REFYARD_RECOVERY_CHILD").is_some() {
@@ -474,7 +477,10 @@ async fn restart_recovers_without_retry_and_keeps_actor_isolation() {
                 }
             }
         }
+        #[cfg(unix)]
         let child_entered = child_root.join("recovery-entered");
+        #[cfg(windows)]
+        let child_entered = child_repo.join(".git/recovery-entered");
         tokio::time::timeout(std::time::Duration::from_secs(5), async {
             while !child_entered.exists() {
                 tokio::task::yield_now().await;
