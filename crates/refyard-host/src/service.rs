@@ -310,9 +310,13 @@ fn stable_write_key_matches(left: &str, right: &str) -> bool {
     }
     let left_path = Path::new(left_identity);
     let right_path = Path::new(right_identity);
-    left_path.is_absolute()
-        && right_path.is_absolute()
-        && left_path.canonicalize().ok() == right_path.canonicalize().ok()
+    if !left_path.is_absolute() || !right_path.is_absolute() {
+        return false;
+    }
+    match (left_path.canonicalize(), right_path.canonicalize()) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => false,
+    }
 }
 
 fn repository_write_key(target_id: &str, record: &RepositoryRecord) -> String {
@@ -1733,7 +1737,7 @@ impl ApplicationService {
                 "the confirming snapshot is of a different repository than the one the operation touched; confirm the repository the operation changed",
             ));
         }
-        if !self.recovery.resolve_block(&snapshot_key) {
+        if !self.recovery.resolve_operation(&record.operation_id) {
             return Err(Problem::new(
                 ProblemCode::Conflict,
                 format!("operation {} left no write block to lift", operation_id),
