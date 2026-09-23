@@ -18,6 +18,7 @@
 pub mod commit;
 pub mod diff;
 pub mod history;
+pub mod merge;
 pub mod paths;
 pub mod refs;
 pub mod status;

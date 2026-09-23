@@ -52,6 +52,20 @@ fn next_operation_seed(records: &[JournalRecord]) -> u64 {
         .unwrap_or(0)
 }
 
+/// The merge modes the contract's merge operation carries, as the wire spells them.
+///
+/// The spellings are pinned per variant: a derived case conversion turns `NoFF` into
+/// `no-f-f`, which no client sends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MergeMode {
+    /// Git's own decision: fast-forward when the history allows it.
+    #[serde(rename = "default")]
+    Default,
+    /// `--no-ff`: the merge is a merge commit even when a fast-forward is possible.
+    #[serde(rename = "no-ff")]
+    NoFF,
+}
+
 /// The mutation the write path can carry, as the host understands it.
 ///
 /// A projection of the contract's closed union: only the operations this slice can reason
@@ -77,6 +91,11 @@ pub enum MutationOperation {
     Commit {
         message: String,
     },
+    Merge {
+        source_oid: String,
+        mode: MergeMode,
+        message: Option<String>,
+    },
 }
 
 impl MutationOperation {
@@ -85,6 +104,7 @@ impl MutationOperation {
             Self::StagePaths { .. } => MutationKind::StagePaths,
             Self::UnstagePaths { .. } => MutationKind::UnstagePaths,
             Self::Commit { .. } => MutationKind::Commit,
+            Self::Merge { .. } => MutationKind::Merge,
         }
     }
 
@@ -92,7 +112,7 @@ impl MutationOperation {
     pub fn path_ids(&self) -> Vec<String> {
         match self {
             Self::StagePaths { path_ids, .. } | Self::UnstagePaths { path_ids } => path_ids.clone(),
-            Self::Commit { .. } => Vec::new(),
+            Self::Commit { .. } | Self::Merge { .. } => Vec::new(),
         }
     }
 
@@ -223,6 +243,56 @@ mod seed_tests {
         // A foreign id is skipped, not parsed as zero: the counter only avoids what is
         // demonstrably present.
         assert_eq!(next_operation_seed(&[record_with_id("operation-9")]), 0);
+    }
+
+    #[test]
+    fn a_merge_payload_round_trips_with_the_wire_spelling_the_contract_publishes() {
+        // Prevents: a payload the browser could send and the host could not read (or the
+        // reverse), because the projection's field or mode spelling drifted from the
+        // contract's `merge` operation.
+        let json = serde_json::json!({
+            "kind": "merge",
+            "sourceOid": "0123456789abcdef0123456789abcdef01234567",
+            "mode": "no-ff",
+            "message": null
+        });
+        let parsed: MutationOperation =
+            serde_json::from_value(json.clone()).expect("the contract's merge payload parses");
+        assert_eq!(
+            parsed,
+            MutationOperation::Merge {
+                source_oid: "0123456789abcdef0123456789abcdef01234567".to_string(),
+                mode: MergeMode::NoFF,
+                message: None,
+            }
+        );
+        assert_eq!(
+            serde_json::from_value::<MutationOperation>(serde_json::json!({
+                "kind": "merge",
+                "sourceOid": "0123456789abcdef0123456789abcdef01234567",
+                "mode": "default",
+                "message": "merge it"
+            }))
+            .expect("the default mode parses"),
+            MutationOperation::Merge {
+                source_oid: "0123456789abcdef0123456789abcdef01234567".to_string(),
+                mode: MergeMode::Default,
+                message: Some("merge it".to_string()),
+            }
+        );
+        assert_eq!(serde_json::to_value(&parsed).unwrap(), json);
+        // An unknown field is a payload the host does not understand, not one it
+        // half-understands.
+        assert!(
+            serde_json::from_value::<MutationOperation>(serde_json::json!({
+                "kind": "merge",
+                "sourceOid": "0123456789abcdef0123456789abcdef01234567",
+                "mode": "no-ff",
+                "message": null,
+                "extra": true
+            }))
+            .is_err()
+        );
     }
 }
 

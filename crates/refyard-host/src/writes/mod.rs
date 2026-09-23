@@ -1,4 +1,4 @@
-//! The three write effects this build implements: stage, unstage and commit.
+//! The four write effects this build implements: stage, unstage, commit and merge.
 //!
 //! One workflow per effect, run through whatever executor the repository's target names —
 //! the local provider or the SSH provider. There is no second implementation for SSH: the
@@ -24,6 +24,7 @@
 //! stops a dropped connection from being reported as a clean no-op.
 
 pub mod commit;
+pub mod merge;
 pub mod stage;
 
 use std::sync::Arc;
@@ -90,7 +91,7 @@ impl WriteHost {
         }
     }
 
-    /// The three effects this build registers, in the order the contract lists them.
+    /// The four effects this build registers, in the order the contract lists them.
     pub fn effects(host: &Arc<Self>) -> Vec<Box<dyn MutationEffect>> {
         vec![
             Box::new(stage::StageEffect {
@@ -100,6 +101,9 @@ impl WriteHost {
                 host: Arc::clone(host),
             }),
             Box::new(commit::CommitEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(merge::MergeEffect {
                 host: Arc::clone(host),
             }),
         ]
@@ -422,7 +426,7 @@ pub fn classify_write(
 }
 
 /// The refusal a failed command carries, with the read-back stated as its evidence.
-fn refusal_problem(command: &'static str, outcome: &RunOutcome) -> Problem {
+pub(crate) fn refusal_problem(command: &'static str, outcome: &RunOutcome) -> Problem {
     let unchanged = "; the index and HEAD were re-read and are unchanged";
     let (code, message) = match (outcome.state, outcome.termination) {
         (ExecutionState::NotStarted, _) => (
@@ -478,7 +482,7 @@ fn unknown_problem(command: &'static str, message: &str) -> Problem {
 }
 
 /// Git's diagnostic text, bounded for the wire.
-fn diagnostic_of(outcome: &RunOutcome) -> String {
+pub(crate) fn diagnostic_of(outcome: &RunOutcome) -> String {
     String::from_utf8_lossy(&outcome.stderr)
         .trim_end()
         .chars()
