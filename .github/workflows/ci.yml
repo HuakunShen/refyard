@@ -72,6 +72,11 @@ jobs:
           pnpm check:boundaries
           pnpm check:contract
 
+      # The embedding facade includes platform privacy behavior; pnpm's native suites do
+      # not execute its Rust integration test, so Windows DACL assertions live here.
+      - name: Native embedding facade contract
+        run: cargo test -p refyard-host --test embed
+
       - name: Unit and integration suites
         run: |
           pnpm test:unit
