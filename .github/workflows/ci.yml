@@ -77,6 +77,12 @@ jobs:
       - name: Native embedding facade contract
         run: cargo test -p refyard-host --test embed
 
+      # Fail-closed ordering is a Rust library unit test, not part of the embedding integration
+      # binary; execute it on Windows so the platform-specific host build has runtime evidence.
+      - name: Windows fail-closed journal startup
+        if: runner.os == 'Windows'
+        run: cargo test -p refyard-host --lib security_failures_stop_before_journal_index_is_read
+
       - name: Unit and integration suites
         run: |
           pnpm test:unit
