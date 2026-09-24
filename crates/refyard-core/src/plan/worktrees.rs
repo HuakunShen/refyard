@@ -93,6 +93,12 @@ pub fn plan_worktree_add_detached(destination: &str, oid: &str) -> Result<GitPla
 pub struct WorktreeEntry {
     pub path: Vec<u8>,
     pub locked: bool,
+    /// The commit and branch the worktree holds — the recreation info a destructive remove
+    /// reads as its backup before anything is destroyed.
+    pub head_oid: Option<String>,
+    pub branch: Option<String>,
+    /// The primary worktree (Git lists it first); never a remove's target.
+    pub is_primary: bool,
 }
 
 /// A stable, host-derived worktree id: `wt_<fnv1a-64 of the canonical path bytes>`.
@@ -112,25 +118,27 @@ pub fn worktree_id_for_path(path: &[u8]) -> String {
 
 /// Parse `git worktree list --porcelain -z`. Attributes are NUL-terminated within a block
 /// and an extra NUL separates blocks; `<key> <value>` splits on the first space (the value
-/// may itself hold spaces, e.g. a lock reason). A frame that is not `<key>[ <value>]` is
-/// skipped rather than guessed at.
+/// may itself hold spaces, e.g. a lock reason). The first block is the primary worktree. A
+/// frame that is not `<key>[ <value>]` is skipped rather than guessed at.
 pub fn parse_worktree_list(bytes: &[u8]) -> Vec<WorktreeEntry> {
-    let mut entries = Vec::new();
-    let mut current_path: Option<Vec<u8>> = None;
-    let mut current_locked = false;
-    let flush =
-        |path: &mut Option<Vec<u8>>, locked: &mut bool, entries: &mut Vec<WorktreeEntry>| {
-            if let Some(p) = path.take() {
-                entries.push(WorktreeEntry {
-                    path: p,
-                    locked: *locked,
-                });
-            }
-            *locked = false;
-        };
+    let mut entries: Vec<WorktreeEntry> = Vec::new();
+    let mut path: Option<Vec<u8>> = None;
+    let mut locked = false;
+    let mut head_oid: Option<String> = None;
+    let mut branch: Option<String> = None;
     for frame in bytes.split(|b| *b == 0) {
         if frame.is_empty() {
-            flush(&mut current_path, &mut current_locked, &mut entries);
+            if let Some(p) = path.take() {
+                let is_primary = entries.is_empty();
+                entries.push(WorktreeEntry {
+                    path: p,
+                    locked,
+                    head_oid: head_oid.take(),
+                    branch: branch.take(),
+                    is_primary,
+                });
+            }
+            locked = false;
             continue;
         }
         let (key, value) = match frame.iter().position(|b| *b == b' ') {
@@ -138,12 +146,25 @@ pub fn parse_worktree_list(bytes: &[u8]) -> Vec<WorktreeEntry> {
             None => (frame, None),
         };
         if key == b"worktree" {
-            current_path = value.map(|v| v.to_vec());
+            path = value.map(|v| v.to_vec());
         } else if key == b"locked" {
-            current_locked = true;
+            locked = true;
+        } else if key == b"HEAD" {
+            head_oid = value.map(|v| String::from_utf8_lossy(v).to_string());
+        } else if key == b"branch" {
+            branch = value.map(|v| String::from_utf8_lossy(v).to_string());
         }
     }
-    flush(&mut current_path, &mut current_locked, &mut entries);
+    if let Some(p) = path.take() {
+        let is_primary = entries.is_empty();
+        entries.push(WorktreeEntry {
+            path: p,
+            locked,
+            head_oid,
+            branch,
+            is_primary,
+        });
+    }
     entries
 }
 
@@ -185,6 +206,18 @@ pub fn plan_worktree_unlock(path: &[u8]) -> Result<GitPlan, CoreError> {
     let path = validated_worktree_path(path)?;
     Ok(GitPlan {
         argv: vec!["worktree".to_string(), "unlock".to_string(), path],
+        stdin: Vec::new(),
+        deadline_class: DeadlineClass::Hook,
+    })
+}
+
+/// `git worktree remove <path>` — never forced. Git's own refusal (a dirty worktree, the
+/// main worktree, a locked one) is reported as-is; this build never falls back to a
+/// recursive delete and never passes `--force`.
+pub fn plan_worktree_remove(path: &[u8]) -> Result<GitPlan, CoreError> {
+    let path = validated_worktree_path(path)?;
+    Ok(GitPlan {
+        argv: vec!["worktree".to_string(), "remove".to_string(), path],
         stdin: Vec::new(),
         deadline_class: DeadlineClass::Hook,
     })
@@ -274,6 +307,26 @@ mod lock_tests {
         assert!(!entries[0].locked);
         assert_eq!(entries[1].path, b"/repo-wt");
         assert!(entries[1].locked, "the locked flag is read");
+    }
+
+    #[test]
+    fn the_worktree_list_carries_the_recreation_info() {
+        let list = b"worktree /repo\0HEAD 1111\0branch refs/heads/main\0\0worktree /repo-wt\0HEAD 2222\0detached\0\0";
+        let entries = parse_worktree_list(list);
+        assert!(entries[0].is_primary, "the first block is the primary");
+        assert_eq!(entries[0].head_oid.as_deref(), Some("1111"));
+        assert_eq!(entries[0].branch.as_deref(), Some("refs/heads/main"));
+        assert!(!entries[1].is_primary);
+        assert_eq!(entries[1].head_oid.as_deref(), Some("2222"));
+    }
+
+    #[test]
+    fn a_remove_names_one_path_and_is_never_forced() {
+        assert_eq!(
+            plan_worktree_remove(b"/repo-wt").expect("a plan").argv,
+            vec!["worktree", "remove", "/repo-wt"]
+        );
+        assert!(plan_worktree_remove(b"").is_err());
     }
 
     #[test]

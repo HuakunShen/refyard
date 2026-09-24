@@ -257,6 +257,10 @@ pub enum MutationOperation {
         relative_destination: String,
         reference: WorktreeReference,
     },
+    RemoveWorktree {
+        worktree_id: String,
+        confirmed: bool,
+    },
     LockWorktree {
         worktree_id: String,
         reason: Option<String>,
@@ -346,6 +350,7 @@ impl MutationOperation {
             Self::DeleteTag { .. } => MutationKind::DeleteTag,
             Self::PushTag { .. } => MutationKind::PushTag,
             Self::CreateWorktree { .. } => MutationKind::CreateWorktree,
+            Self::RemoveWorktree { .. } => MutationKind::RemoveWorktree,
             Self::LockWorktree { .. } => MutationKind::LockWorktree,
             Self::UnlockWorktree { .. } => MutationKind::UnlockWorktree,
             Self::AddSubmodule { .. } => MutationKind::AddSubmodule,
@@ -407,6 +412,7 @@ impl MutationOperation {
             | Self::PushTag { .. }
             | Self::Fetch { .. }
             | Self::Pull { .. }
+            | Self::RemoveWorktree { .. }
             | Self::LockWorktree { .. }
             | Self::UnlockWorktree { .. }
             | Self::CreateWorktree { .. }
@@ -910,6 +916,17 @@ mod seed_tests {
                     reference: WorktreeReference::ExistingBranch {
                         branch_name: "feature".to_string(),
                     },
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "removeWorktree",
+                    "worktreeId": "wt_abc",
+                    "confirmed": true
+                }),
+                MutationOperation::RemoveWorktree {
+                    worktree_id: "wt_abc".to_string(),
+                    confirmed: true,
                 },
             ),
             (

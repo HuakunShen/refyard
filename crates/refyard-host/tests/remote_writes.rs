@@ -1416,3 +1416,159 @@ async fn a_worktree_lock_and_unlock_toggle_the_lock_and_refuse_the_wrong_state()
         finished.problem
     );
 }
+
+/* ------------------------------------------------ removeWorktree */
+
+#[tokio::test]
+async fn a_worktree_remove_needs_confirmation_then_clears_the_worktree() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let (repository_id, _worktree_id) = fixture.open(&service).await;
+    let head = String::from_utf8(fixture.git(&["rev-parse", "HEAD"]))
+        .expect("utf8")
+        .trim()
+        .to_string();
+    let wt_str = fixture
+        .temp
+        .path()
+        .join("rm-wt")
+        .to_str()
+        .expect("utf8")
+        .to_string();
+    run_git_in(
+        &fixture,
+        &fixture.repo,
+        &["worktree", "add", "--detach", &wt_str, &head],
+    );
+    let list = run_git_in(
+        &fixture,
+        &fixture.repo,
+        &["worktree", "list", "--porcelain", "-z"],
+    );
+    let entries = refyard_core::plan::worktrees::parse_worktree_list(&list);
+    let wt_id = refyard_core::plan::worktrees::worktree_id_for_path(&entries[1].path);
+
+    // Unconfirmed: refused, and the worktree is still there.
+    let snapshot_id = fixture.status(&service, &repository_id).await.snapshot_id;
+    let request = fixture.repository_request(
+        &repository_id,
+        &snapshot_id,
+        MutationOperation::RemoveWorktree {
+            worktree_id: wt_id.clone(),
+            confirmed: false,
+        },
+        "crid-wt-rm-unconfirmed",
+    );
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Failed,
+        "{:?}",
+        finished.problem
+    );
+    let list = run_git_in(
+        &fixture,
+        &fixture.repo,
+        &["worktree", "list", "--porcelain", "-z"],
+    );
+    assert_eq!(
+        refyard_core::plan::worktrees::parse_worktree_list(&list).len(),
+        2,
+        "nothing was removed without confirmation"
+    );
+
+    // Confirmed: it goes.
+    let snapshot_id = fixture.status(&service, &repository_id).await.snapshot_id;
+    let request = fixture.repository_request(
+        &repository_id,
+        &snapshot_id,
+        MutationOperation::RemoveWorktree {
+            worktree_id: wt_id.clone(),
+            confirmed: true,
+        },
+        "crid-wt-rm",
+    );
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Succeeded,
+        "{:?}",
+        finished.problem
+    );
+    let list = run_git_in(
+        &fixture,
+        &fixture.repo,
+        &["worktree", "list", "--porcelain", "-z"],
+    );
+    assert_eq!(
+        refyard_core::plan::worktrees::parse_worktree_list(&list).len(),
+        1,
+        "the linked worktree is gone, the primary remains"
+    );
+}
+
+#[tokio::test]
+async fn a_locked_worktree_refuses_to_be_removed() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let (repository_id, _worktree_id) = fixture.open(&service).await;
+    let head = String::from_utf8(fixture.git(&["rev-parse", "HEAD"]))
+        .expect("utf8")
+        .trim()
+        .to_string();
+    let wt_path = fixture.temp.path().join("locked-rm");
+    let wt_str = wt_path.to_str().expect("utf8").to_string();
+    run_git_in(
+        &fixture,
+        &fixture.repo,
+        &["worktree", "add", "--detach", &wt_str, &head],
+    );
+    run_git_in(&fixture, &fixture.repo, &["worktree", "lock", &wt_str]);
+    let list = run_git_in(
+        &fixture,
+        &fixture.repo,
+        &["worktree", "list", "--porcelain", "-z"],
+    );
+    let entries = refyard_core::plan::worktrees::parse_worktree_list(&list);
+    let wt_id = refyard_core::plan::worktrees::worktree_id_for_path(&entries[1].path);
+
+    let snapshot_id = fixture.status(&service, &repository_id).await.snapshot_id;
+    let request = fixture.repository_request(
+        &repository_id,
+        &snapshot_id,
+        MutationOperation::RemoveWorktree {
+            worktree_id: wt_id,
+            confirmed: true,
+        },
+        "crid-wt-rm-locked",
+    );
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Failed,
+        "{:?}",
+        finished.problem
+    );
+    // Still there — a locked worktree is never removed behind the user's back.
+    let list = run_git_in(
+        &fixture,
+        &fixture.repo,
+        &["worktree", "list", "--porcelain", "-z"],
+    );
+    assert_eq!(
+        refyard_core::plan::worktrees::parse_worktree_list(&list).len(),
+        2
+    );
+}

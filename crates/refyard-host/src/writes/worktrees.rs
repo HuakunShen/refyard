@@ -16,7 +16,9 @@ use crate::jobs::journal::EffectOutcome;
 use crate::jobs::{EffectRequest, MutationEffect, MutationOperation, WorktreeReference};
 
 use super::remotes::{network_failure, run_step, succeeded};
-use super::{clean_exit, invalid_payload, refused, wrong_payload, WriteHost, WriteTarget};
+use super::{
+    clean_exit, invalid_payload, refused, require_confirmed, wrong_payload, WriteHost, WriteTarget,
+};
 
 /// `git worktree add` — check out an existing branch, a new branch at a commit, or a
 /// detached commit, at a destination inside the repository's approved root.
@@ -243,4 +245,95 @@ async fn unlock_worktree(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> 
         return succeeded("unlocked the worktree".to_string(), None);
     }
     network_failure(operation_id, "git worktree unlock", &outcome)
+}
+
+/// `git worktree remove` — remove a clean, non-primary, unlocked linked worktree.
+pub struct RemoveWorktreeEffect {
+    pub(super) host: Arc<WriteHost>,
+}
+
+impl MutationEffect for RemoveWorktreeEffect {
+    fn kind(&self) -> MutationKind {
+        MutationKind::RemoveWorktree
+    }
+    fn run<'a>(
+        &'a self,
+        request: EffectRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = EffectOutcome> + Send + 'a>> {
+        let host = Arc::clone(&self.host);
+        Box::pin(async move { remove_worktree(&host, &request).await })
+    }
+}
+
+async fn remove_worktree(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> EffectOutcome {
+    let operation_id = request.operation_id;
+    let MutationOperation::RemoveWorktree {
+        worktree_id,
+        confirmed,
+    } = &request.request.operation
+    else {
+        return wrong_payload(operation_id, "removeWorktree");
+    };
+    // Removing a worktree is destructive: it takes an explicit confirmation.
+    if let Err(outcome) = require_confirmed(operation_id, *confirmed, "removing a worktree") {
+        return outcome;
+    }
+    let target = match host.resolve(request.request) {
+        Ok(target) => target,
+        Err(problem) => return refused(operation_id, problem),
+    };
+    let entry = match resolve_worktree_entry(&target, worktree_id).await {
+        Ok(entry) => entry,
+        Err(problem) => return refused(operation_id, problem),
+    };
+    if entry.is_primary {
+        return refused(
+            operation_id,
+            Problem::new(
+                ProblemCode::InvalidRequest,
+                "the main worktree cannot be removed",
+            ),
+        );
+    }
+    if entry.locked {
+        return refused(
+            operation_id,
+            Problem::new(
+                ProblemCode::Conflict,
+                "that worktree is locked; unlock it before removing it",
+            ),
+        );
+    }
+    // Back up what can be lost first: the commit and branch the worktree holds are the
+    // recreation info. A clean worktree's files are all in Git, so this is everything
+    // needed to rebuild it — and if it cannot be read, the remove fails closed rather
+    // than destroying something that could not be restored.
+    let Some(head_oid) = entry.head_oid.clone() else {
+        return refused(
+            operation_id,
+            Problem::new(
+                ProblemCode::NeedsAttention,
+                "could not read the worktree's commit to back it up; nothing was removed",
+            ),
+        );
+    };
+    let what = match &entry.branch {
+        Some(branch) => format!("it held {head_oid} on {branch}"),
+        None => format!("it held {head_oid}"),
+    };
+    let plan = match refyard_core::plan::worktrees::plan_worktree_remove(&entry.path) {
+        Ok(plan) => plan,
+        Err(error) => return invalid_payload(operation_id, error.to_string()),
+    };
+    let outcome = match run_step(&target, &plan).await {
+        Ok(outcome) => outcome,
+        Err(problem) => return refused(operation_id, problem),
+    };
+    if clean_exit(&outcome) {
+        return succeeded(format!("removed the worktree ({what})"), None);
+    }
+    // Never forced: Git's own refusal (a dirty worktree — untracked or uncommitted files)
+    // is reported as-is, and no recursive delete is ever attempted in its place. An
+    // unfinished run is unknown and never retried.
+    network_failure(operation_id, "git worktree remove", &outcome)
 }
