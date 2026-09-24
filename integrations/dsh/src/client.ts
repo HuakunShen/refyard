@@ -13,7 +13,7 @@
  */
 
 window.__ModuleLoader__.load({
-  id: '@refyard/dsh-plugin',
+  id: 'dsh-plugin-refyard',
   factory(require) {
     const React = require('react')
     const h = React.createElement
@@ -21,7 +21,7 @@ window.__ModuleLoader__.load({
     /** Slot id, sidebar entry key, main-panel key and right-tab kind. */
     const PANEL_ID = 'refyard'
     /** The right-Sidebar tab type's identity; also the key its body registers under. */
-    const TAB_ID = '@refyard/dsh-plugin'
+    const TAB_ID = 'dsh-plugin-refyard'
     const TAB_KIND = 'refyard-git'
     const NS = 'refyard'
     /** The host half mounts the workbench here. */

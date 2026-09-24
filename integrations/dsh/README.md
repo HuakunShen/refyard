@@ -83,7 +83,7 @@ profile's bundle list in the same step. Check the list, and enable it explicitly
 missing — a bundle that is a dependency but not a bundle is installed, inactive, and silent:
 
 ```
-plugin_manager set_bundle  enabled=true  target=@refyard/dsh-plugin
+plugin_manager set_bundle  enabled=true  target=dsh-plugin-refyard
 ```
 
 ## Reloading it while developing

@@ -4,4 +4,4 @@
 # removed together.
 - insert:
     - id: refyard
-      name: '@refyard/dsh-plugin'
+      name: 'dsh-plugin-refyard'

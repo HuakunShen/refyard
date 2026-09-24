@@ -1,5 +1,5 @@
 {
-  "name": "@refyard/dsh-plugin",
+  "name": "dsh-plugin-refyard",
   "version": "0.1.0",
   "private": true,
   "type": "module",
