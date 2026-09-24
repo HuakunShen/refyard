@@ -57,6 +57,7 @@
     Server,
   } from "@lucide/svelte";
   import {
+    m,
     resolveUiLocale,
     setLocale,
     type UiLanguage,
@@ -249,18 +250,23 @@
    * rendered a string; re-mounting the page is the honest way to do that, and it is what the
    * reader expects a language change to feel like anyway.
    */
-  let language = $state<UiLanguage>(
-    browser ? (readStoredLanguage() as UiLanguage) : "auto",
-  );
+  /** The stored preference, narrowed honestly: anything unknown means "follow the browser". */
+  function storedLanguage(): UiLanguage {
+    const stored = readStoredLanguage();
+    return stored === "en" || stored === "zh" ? stored : "auto";
+  }
+
+  let language = $state<UiLanguage>(browser ? storedLanguage() : "auto");
   let localeEpoch = $state(0);
 
   /**
    * Set the locale before the first string is read, not in an effect after it: effects run
    * once the render has already happened, so a reader whose browser is Chinese would get a
-   * frame of English that nothing ever re-draws.
+   * frame of English that nothing ever re-draws. Only the boot preference is read here —
+   * later changes go through {@link applyLanguage}, which re-renders.
    */
   if (browser) {
-    void setLocale(resolveUiLocale(language, navigator.language), { reload: false });
+    void setLocale(resolveUiLocale(storedLanguage(), navigator.language), { reload: false });
   }
 
   /** One writer for the preference: resolve it, set it, then re-render the page. */
@@ -1733,7 +1739,7 @@
           data-testid="history-panel"
         >
           <div class="shrink-0 flex items-center gap-2">
-            <h2 class="text-sm font-semibold">History</h2>
+            <h2 class="text-sm font-semibold">{m.history_title()}</h2>
             {#if repository !== null}
               <span
                 class="truncate font-mono text-xs text-ink-faint"
@@ -1753,7 +1759,7 @@
               <RefreshCw
                 class={cn("size-3.5", history.isFetching && "animate-spin")}
               />
-              Refresh
+              {m.common_refresh()}
             </Button>
           </div>
 
@@ -1783,13 +1789,13 @@
           {#if queries.historyTopology === "sparse"}<p
               class="shrink-0 text-xs text-muted-foreground"
             >
-              Filtered history · graph hidden
+              {m.history_filtered_graph_hidden()}
             </p>{/if}
 
           {#if selectedRepositoryId === null}
-            <StateBanner state="empty" title="No repository selected" />
+            <StateBanner state="empty" title={m.history_no_repository()} />
           {:else if history.isPending}
-            <StateBanner state="loading" title="Reading history…" />
+            <StateBanner state="loading" title={m.history_reading()} />
           {:else if history.isError}
             <StateBanner
               state="error"

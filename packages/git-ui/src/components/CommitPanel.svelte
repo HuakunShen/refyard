@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /**
    * The commit surface: message, commit, amend.
    *
@@ -6,7 +7,7 @@
    * host reported, not what the UI believes), and it refuses to offer a commit when
    * that count is zero: Git would refuse it too, and a button that produces a
    * refusal is worse than no button. Amend is a two-step confirm because it rewrites
-   * the tip, and its "keep the existing message" form is a separate explicit choice
+   * the tip, and its {m.commit_keep_message()} form is a separate explicit choice
    * rather than an empty textarea that means something different here than it does
    * for a normal commit.
    */
@@ -74,7 +75,7 @@
       class="flex items-center gap-1.5 text-xs font-medium text-ink-muted"
       for="commit-message"
     >
-      <span>Commit message</span>
+      <span>{m.working_copy_commit_message()}</span>
       <kbd
         class="rounded border border-border/60 bg-muted/40 px-1 py-0.5 text-[10px] font-sans text-ink-faint"
         >⌘↵</kbd
@@ -89,7 +90,7 @@
     id="commit-message"
     data-testid="commit-message"
     class="min-h-16 w-full rounded-lg border border-input bg-transparent px-2.5 py-1.5 font-mono text-xs shadow-2xs outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50 transition-all placeholder:text-ink-faint"
-    placeholder="What changed, and why"
+    placeholder={m.working_copy_what_changed()}
     value={draft}
     oninput={handleInput}
     onkeydown={handleKeydown}
@@ -108,8 +109,8 @@
     </Button>
 
     <ConfirmAction
-      label="Amend…"
-      confirmLabel="Rewrite the tip commit"
+      label={m.working_copy_amend()}
+      confirmLabel={m.commit_rewrite_tip()}
       description="Amend rewrites the last commit. This version performs no follow-up push."
       disabled={disabled || busy || !canAmend || trimmed.length === 0}
       {busy}
@@ -118,8 +119,8 @@
     />
 
     <ConfirmAction
-      label="Amend, keep message"
-      confirmLabel="Rewrite the tip, same message"
+      label={m.working_copy_amend_keep()}
+      confirmLabel={m.commit_rewrite_tip_same()}
       disabled={disabled || busy || !canAmend}
       {busy}
       onConfirm={() => onAmend(null)}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /** Compact explicit-submit history controls, with host-observed ref and file choices. */
   import { Badge } from "./ui/badge/index.js";
   import { Button } from "./ui/button/index.js";
@@ -51,7 +52,7 @@
 </script>
 
 <form
-  aria-label="History search"
+  aria-label={m.filters_search_aria()}
   aria-describedby={error === null ? undefined : "history-filter-error"}
   data-testid="history-filters"
   class="shrink-0 flex min-w-0 flex-col gap-2"
@@ -61,16 +62,16 @@
   }}
 >
   <div class="flex min-w-0 flex-wrap items-center gap-1.5">
-    <label for="history-message" class="sr-only">Search commit messages</label>
+    <label for="history-message" class="sr-only">{m.history_search_placeholder()}</label>
     <Input
       id="history-message"
       class="min-w-36 flex-1 basis-40 text-xs"
-      placeholder="Search commit messages…"
+      placeholder={m.history_search_placeholder()}
       value={draft.message}
       oninput={(event) => updateDraft({ message: event.currentTarget.value })}
       {disabled}
     />
-    <Button type="submit" size="sm" class="h-8 text-xs" {disabled}>Apply</Button
+    <Button type="submit" size="sm" class="h-8 text-xs" {disabled}>{m.history_apply()}</Button
     >
     <Button
       type="button"
@@ -82,7 +83,7 @@
       aria-controls="history-secondary-filters"
       onclick={() => (expanded = !expanded)}
     >
-      <SlidersHorizontal data-icon="inline-start" />Filters<ChevronDown
+      <SlidersHorizontal data-icon="inline-start" />{m.history_filters()}<ChevronDown
         data-icon="inline-end"
         class={expanded ? "rotate-180" : ""}
       />
@@ -93,7 +94,7 @@
       variant="ghost"
       class="h-8 text-xs"
       {disabled}
-      onclick={onClear}>Clear</Button
+      onclick={onClear}>{m.history_clear()}</Button
     >
   </div>
   {#if expanded}
@@ -102,14 +103,14 @@
       class="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))] gap-2 rounded-lg border border-border bg-muted/20 p-2.5"
       {disabled}
     >
-      <legend class="sr-only">Additional history filters</legend>
+      <legend class="sr-only">{m.filters_additional()}</legend>
       <div class="flex min-w-0 flex-col gap-1">
         <label class="text-xs text-muted-foreground" for="history-author"
-          >Author</label
+          >{m.filters_author()}</label
         ><Input
           id="history-author"
           class="text-xs"
-          placeholder="Name or email"
+          placeholder={m.filters_name_or_email()}
           value={draft.author}
           oninput={(event) =>
             updateDraft({ author: event.currentTarget.value })}
@@ -117,14 +118,14 @@
       </div>
       <div class="flex min-w-0 flex-col gap-1">
         <label class="text-xs text-muted-foreground" for="history-ref"
-          >Ref</label
+          >{m.filters_ref()}</label
         ><select
           id="history-ref"
           class={selectClass}
           value={draft.refFullName}
           onchange={(event) =>
             updateDraft({ refFullName: event.currentTarget.value })}
-          ><option value="">All refs</option
+          ><option value="">{m.filters_all_refs()}</option
           >{#each refs as ref (ref.fullName)}<option value={ref.fullName}
               >{ref.displayName}</option
             >{/each}</select
@@ -132,11 +133,11 @@
       </div>
       <div class="flex min-w-0 flex-col gap-1">
         <label class="text-xs text-muted-foreground" for="history-sha"
-          >Commit SHA</label
+          >{m.filters_commit_sha()}</label
         ><Input
           id="history-sha"
           class="font-mono text-xs"
-          placeholder="At least 4 hex digits"
+          placeholder={m.filters_sha_placeholder()}
           value={draft.oidPrefix}
           oninput={(event) =>
             updateDraft({ oidPrefix: event.currentTarget.value })}
@@ -144,7 +145,7 @@
       </div>
       <div class="flex min-w-0 flex-col gap-1">
         <label class="text-xs text-muted-foreground" for="history-after"
-          >Committed after (UTC)</label
+          >{m.filters_committed_after()}</label
         ><Input
           id="history-after"
           type="datetime-local"
@@ -156,7 +157,7 @@
       </div>
       <div class="flex min-w-0 flex-col gap-1">
         <label class="text-xs text-muted-foreground" for="history-before"
-          >Committed before (UTC)</label
+          >{m.filters_committed_before()}</label
         ><Input
           id="history-before"
           type="datetime-local"
@@ -168,7 +169,7 @@
       </div>
       <div class="flex min-w-0 flex-col gap-1">
         <label class="text-xs text-muted-foreground" for="history-file"
-          >Known file</label
+          >{m.filters_known_file()}</label
         ><select
           id="history-file"
           class={selectClass}
@@ -181,7 +182,7 @@
                 ) ?? null,
             });
           }}
-          ><option value="">All files</option
+          ><option value="">{m.filters_all_files()}</option
           >{#each knownPaths as path (path.pathId)}<option value={path.pathId}
               >{path.displayPath}</option
             >{/each}</select
@@ -202,7 +203,7 @@
     </p>{/if}
   {#if appliedLabels.length > 0}
     <div
-      aria-label="Applied history filters"
+      aria-label={m.filters_applied_aria()}
       class="flex min-w-0 flex-wrap gap-1"
     >
       {#each appliedLabels as label (label)}<Badge

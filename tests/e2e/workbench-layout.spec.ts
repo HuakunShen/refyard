@@ -323,4 +323,27 @@ test.describe("Workbench layout", () => {
     }
     expect(bandNav.width).toBeGreaterThan(bandNav.height);
   });
+
+  test("renders the interface in Chinese when the reader picks it", async ({
+    page,
+  }) => {
+    // Prevents: a language row that changes the preference without changing the interface —
+    // which is what happened when the locale was set in an effect that ran after the render.
+    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.goto(service.pairingUrl);
+
+    const workingCopy = page.getByTestId("workbench-nav-working-copy");
+    await expect(workingCopy).toContainText("Working Copy");
+
+    await page.getByTestId("settings-open").click();
+    await page.getByTestId("settings-language-zh").click();
+
+    // The switch re-mounts the page, so the whole interface follows, not just the dialog.
+    await expect(workingCopy).toContainText("工作副本");
+    await expect(page.getByTestId("history-panel")).toContainText("历史");
+    await expect(page.getByTestId("workbench-nav")).toHaveAttribute(
+      "data-collapsed",
+      "false",
+    );
+  });
 });

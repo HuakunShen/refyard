@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /**
    * The commit history table: columns, the graph gutter, and the context menus.
    *
@@ -379,12 +380,12 @@
   const graphLeft = $derived(cellById.get("refs")?.width ?? 0);
   const refsColumn = $derived(cellById.get("refs"));
   const headerLabels: Record<HistoryColumnId, string> = {
-    refs: "Branch / Tag",
-    graph: "Graph",
-    message: "Commit message",
-    author: "Author",
-    date: "Date / Time",
-    sha: "Sha",
+    refs: m.history_column_branch(),
+    graph: m.history_column_graph(),
+    message: m.history_column_message(),
+    author: m.history_column_author(),
+    date: m.history_column_date(),
+    sha: m.history_column_sha(),
   };
 
   /**

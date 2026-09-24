@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /**
    * GitKraken-style working-copy surface: two independently scrollable XY views,
    * explicit per-file staging controls, and a commit composer kept mounted while
@@ -123,14 +124,14 @@
       {
         kind: "action",
         id: "stage",
-        label: "Stage",
+        label: m.copy_stage(),
         disabled: disabledAction || !canStage(entry),
         onSelect: () => onStage([entry.pathId]),
       },
       {
         kind: "action",
         id: "unstage",
-        label: "Unstage",
+        label: m.copy_unstage(),
         disabled: disabledAction || !canUnstage(entry),
         onSelect: () => onUnstage([entry.pathId]),
       },
@@ -138,7 +139,7 @@
       {
         kind: "action",
         id: "discard",
-        label: "Discard…",
+        label: m.copy_discard(),
         destructive: true,
         disabled: disabledAction || !canDiscard(entry),
         onSelect: () => askDiscard(entry),
@@ -206,14 +207,14 @@
       data-testid="working-copy-conflict-warning"
     >
       <AlertTriangle class="mt-0.5 size-3.5 shrink-0 text-destructive" />
-      <span>Resolve and stage every conflicted file before committing.</span>
+      <span>{m.copy_resolve_first_hint()}</span>
     </div>
   {/if}
 
   <div
     class="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-2"
   >
-    {#each [{ side: "unstaged" as const, label: "Unstaged Files", entries: groups.unstaged }, { side: "staged" as const, label: "Staged Files", entries: groups.staged }] as group (group.side)}
+    {#each [{ side: "unstaged" as const, label: m.working_copy_unstaged(), entries: groups.unstaged }, { side: "staged" as const, label: m.working_copy_staged(), entries: groups.staged }] as group (group.side)}
       <section
         class="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40"
         data-testid={`${group.side}-files`}
@@ -245,10 +246,10 @@
                 onUnstage(paths);
               }
             }}
-            aria-label={`${group.side === "unstaged" ? "Stage" : "Unstage"} all ${group.label.toLowerCase()}`}
+            aria-label={`${group.side === "unstaged" ? m.copy_stage() : m.copy_unstage()} ${group.label.toLowerCase()}`}
             data-testid={`${group.side}-all`}
           >
-            {group.side === "unstaged" ? "Stage all" : "Unstage all"}
+            {group.side === "unstaged" ? m.working_copy_stage_all() : m.working_copy_unstage_all()}
           </Button>
         </div>
 
@@ -256,11 +257,11 @@
           {#if group.entries.length === 0}
             <p class="px-2 py-4 text-center text-xs italic text-ink-faint">
               {#if status === null}
-                Waiting for status…
+                {m.wip_loading()}
               {:else if group.side === "unstaged"}
-                Working tree is clean.
+                {m.working_copy_clean()}
               {:else}
-                Nothing staged.
+                {m.working_copy_nothing_staged()}
               {/if}
             </p>
           {:else}
@@ -303,7 +304,7 @@
                                 ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
                                 : "bg-amber-500/15 text-amber-600 dark:text-amber-400",
                             )}
-                            title="index / worktree status"
+                            title={m.copy_index_worktree_aria()}
                           >
                             {entry.indexStatus}{entry.worktreeStatus}
                           </span>
@@ -379,7 +380,7 @@
       <Check class="size-3.5" />
       Commit
       {#if conflicts.length > 0}
-        <span class="font-normal text-destructive">Resolve conflicts first</span
+        <span class="font-normal text-destructive">{m.copy_resolve_first()}</span
         >
       {/if}
     </div>
@@ -410,10 +411,10 @@
 <ConfirmDialog
   bind:open={discardDialogOpen}
   title={pendingDiscardEntry === null
-    ? "Discard path"
-    : `Discard ${pendingDiscardEntry.displayPath}?`}
-  description="Restore this tracked path to the index version. Refyard writes a recovery backup before changing the working tree."
-  confirmLabel="Discard path"
+    ? m.copy_discard_path()
+    : `${m.copy_discard_path()}: ${pendingDiscardEntry.displayPath}?`}
+  description={m.copy_discard_hint()}
+  confirmLabel={m.copy_discard_path()}
   disabled={pendingDiscardEntry === null || disabled || busy}
   {busy}
   onConfirm={() => {

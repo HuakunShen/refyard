@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /**
    * Compact worktree WIP switcher for the workbench.
    *
@@ -63,18 +64,18 @@
 {#if visibleWorktrees.length > 0}
   <section
     class={cn("flex min-w-0 flex-col gap-1.5", className)}
-    aria-label="Worktree changes"
+    aria-label={m.wip_aria()}
     data-testid="worktree-wip-list"
   >
     <div class="flex items-center gap-2 px-0.5">
       <span
         class="text-[11px] font-semibold tracking-wider text-ink-muted uppercase"
-        >WIP</span
+        >{m.wip_title()}</span
       >
       <Badge tone="muted" class="h-4.5 px-1.5 text-[10px] font-mono"
         >{visibleWorktrees.length}</Badge
       >
-      <span class="text-[11px] text-ink-faint">Working copies</span>
+      <span class="text-[11px] text-ink-faint">{m.wip_working_copies()}</span>
     </div>
 
     <ul
@@ -141,10 +142,10 @@
             {:else if record?.error !== null && record?.error !== undefined}
               <span
                 class="shrink-0 text-[10px] text-ink-faint"
-                title={record.error}>Unavailable</span
+                title={record.error}>{m.wip_unavailable()}</span
               >
             {:else}
-              <span class="shrink-0 text-[10px] text-ink-faint">Loading…</span>
+              <span class="shrink-0 text-[10px] text-ink-faint">{m.wip_loading()}</span>
             {/if}
           </button>
         </li>
