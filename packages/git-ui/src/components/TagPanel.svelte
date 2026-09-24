@@ -81,7 +81,7 @@
         }}
         data-testid="create-tag"
       >
-        Create
+        {m.common_create()}
       </Button>
     </div>
   </div>
@@ -125,7 +125,7 @@
                 onclick={() => onPush(tag.name)}
                 data-testid={`push-tag-${tag.name}`}
               >
-                Push
+                {m.common_push()}
               </Button>
             {/if}
             <ConfirmAction

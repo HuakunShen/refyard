@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /**
    * Light / dark / system, as a dropdown.
    *
@@ -42,15 +43,15 @@
   <DropdownMenu.Content align="end">
     <DropdownMenu.Item onclick={() => setMode("light")}>
       <SunIcon class="size-4" />
-      Light
+      {m.mode_light()}
     </DropdownMenu.Item>
     <DropdownMenu.Item onclick={() => setMode("dark")}>
       <MoonIcon class="size-4" />
-      Dark
+      {m.mode_dark()}
     </DropdownMenu.Item>
     <DropdownMenu.Item onclick={resetMode}>
       <MonitorIcon class="size-4" />
-      System
+      {m.mode_system()}
     </DropdownMenu.Item>
   </DropdownMenu.Content>
 </DropdownMenu.Root>

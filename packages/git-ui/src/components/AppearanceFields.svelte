@@ -132,7 +132,7 @@
   <!-- Accent Color Selection -->
   <div class="flex flex-col gap-2">
     <span class="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-      Accent Color
+      {m.appearance_accent()}
     </span>
     <div class="grid grid-cols-3 gap-2">
       {#each ACCENTS as item (item.id)}
@@ -169,7 +169,7 @@
       <span
         class="text-xs font-semibold uppercase tracking-wider text-ink-muted"
       >
-        Workbench Background
+        {m.appearance_background()}
       </span>
       {#if background !== "none"}
         <Badge tone="branch" class="text-[10px]">Active</Badge>
@@ -229,7 +229,7 @@
         disabled={customUrlInput.trim().length === 0}
         onclick={applyCustomUrl}
       >
-        Apply URL
+        {m.appearance_apply_url()}
       </Button>
       {#if background !== "none"}
         <Button
@@ -241,7 +241,7 @@
             customUrlInput = "";
           }}
         >
-          Clear
+          {m.common_clear()}
         </Button>
       {/if}
     </div>

@@ -72,7 +72,7 @@
         }}
         data-testid="create-stash"
       >
-        Stash
+        {m.stash_stash()}
       </Button>
     </div>
     <label
@@ -128,7 +128,7 @@
               onclick={() => onApply(stash)}
               data-testid={`apply-stash-${stash.locator}`}
             >
-              Apply
+              {m.stash_apply()}
             </Button>
             <ConfirmAction
               label="Pop"

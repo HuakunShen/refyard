@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   import type { CommitSummary } from "@refyard/git-contract";
   import { Button } from "./ui/button/index.js";
   import * as Dialog from "./ui/dialog/index.js";
@@ -75,7 +76,7 @@
 
     {#if kind === "tag"}
       <label class="flex flex-col gap-1.5 text-xs text-ink-muted">
-        Annotation (optional)
+        {m.commitref_annotation()}
         <textarea
           class="min-h-20 resize-y rounded border border-input bg-transparent px-2.5 py-1.5 text-sm text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
           bind:value={annotation}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /**
    * Where Git runs: this machine, or a host the user's own SSH configuration names.
    *
@@ -217,7 +218,7 @@
 
     {#if load === null}
       <p class="p-6 text-center text-xs text-muted-foreground">
-        Reading the host's SSH configuration…
+        {m.exec_reading_ssh()}
       </p>
     {:else if visible.length === 0}
       <p

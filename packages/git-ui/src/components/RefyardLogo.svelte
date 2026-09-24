@@ -3,6 +3,7 @@
   Supports mark-only (square icon) and full logo (mark + stylized wordmark).
 -->
 <script lang="ts">
+  import { m } from "../i18n.js";
   import { cn } from "../lib/utils.js";
 
   interface Props {
@@ -142,7 +143,7 @@
       <span
         class="text-[9px] font-medium tracking-wider text-muted-foreground uppercase"
       >
-        Workbench
+        {m.logo_workbench()}
       </span>
     </div>
   </div>

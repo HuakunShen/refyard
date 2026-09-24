@@ -214,7 +214,7 @@
                   onclick={() => beginRemoteEdit(remote.name)}
                   data-testid={`edit-remote-${remote.name}`}
                 >
-                  Edit
+                  {m.common_edit_short()}
                 </Button>
                 <span class="shrink-0">
                   <ConfirmAction
@@ -237,7 +237,7 @@
                     <label
                       class="flex min-w-0 flex-col gap-1 text-[11px] text-ink-muted"
                     >
-                      Name
+                      {m.remote_name_label()}
                       <input
                         class="min-w-0 rounded border border-input bg-transparent px-2 py-1 font-mono text-xs text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
                         aria-label={`remote name for ${remote.name}`}
@@ -248,7 +248,7 @@
                     <label
                       class="flex min-w-0 flex-col gap-1 text-[11px] text-ink-muted"
                     >
-                      Fetch URL
+                      {m.remote_fetch_url()}
                       <input
                         class="min-w-0 rounded border border-input bg-transparent px-2 py-1 font-mono text-xs text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
                         aria-label={`fetch URL for ${remote.name}`}
@@ -260,7 +260,7 @@
                     <label
                       class="flex min-w-0 flex-col gap-1 text-[11px] text-ink-muted"
                     >
-                      Push URL
+                      {m.remote_push_url()}
                       <input
                         class="min-w-0 rounded border border-input bg-transparent px-2 py-1 font-mono text-xs text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
                         aria-label={`push URL for ${remote.name}`}
@@ -296,7 +296,7 @@
                       onclick={() => (editing = null)}
                       data-testid={`cancel-edit-remote-${remote.name}`}
                     >
-                      Cancel
+                      {m.common_cancel()}
                     </Button>
                   </div>
                 </div>
@@ -362,7 +362,7 @@
     <span
       class="text-[11px] font-semibold tracking-wider text-ink-muted uppercase"
     >
-      Add remote
+      {m.remote_add()}
     </span>
     <div class="flex items-center gap-2">
       <input
@@ -393,7 +393,7 @@
         }}
         data-testid="add-remote"
       >
-        Add
+        {m.common_add()}
       </Button>
     </div>
   </div>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /**
    * Explicitly add or revoke a repository grant.
    *
@@ -56,7 +57,7 @@
 >
   <div class="flex items-center gap-2">
     <h3 class="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-      Managed repositories
+      {m.access_managed()}
     </h3>
     <Badge tone="muted">approval required</Badge>
   </div>
@@ -107,7 +108,7 @@
             onclick={() => onRevoke(repository.repositoryId)}
             data-testid={`repository-revoke-${repository.repositoryId}`}
           >
-            Revoke
+            {m.access_revoke()}
           </Button>
         </li>
       {/each}

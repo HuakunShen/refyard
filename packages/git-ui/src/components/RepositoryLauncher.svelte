@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /** GitKraken-style repository entry screen for local Open, Recent, Clone and Create. */
   import {
     Clock3,
@@ -305,7 +306,7 @@
       data-testid="launcher-drop-overlay"
     >
       <p class="rounded-md bg-background px-4 py-2 text-sm font-medium">
-        Drop the folder to open it as a repository
+        {m.launcher_drop_folder()}
       </p>
     </div>
   {/if}
@@ -313,7 +314,7 @@
     <p
       class="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground"
     >
-      Workspace
+      {m.launcher_workspace()}
     </p>
     <h1 class="mt-1 text-2xl font-semibold tracking-tight">Repositories</h1>
     <p class="mt-1 max-w-2xl text-sm text-muted-foreground">
@@ -612,7 +613,7 @@
       {/if}
     {:else if pickerBusy}
       <p class="p-6 text-center text-xs text-muted-foreground">
-        Reading directories…
+        {m.launcher_reading_dirs()}
       </p>
     {/if}
 
@@ -624,7 +625,7 @@
         disabled={pickerData === null}
         onclick={() => chooseRepository(pickerData?.path ?? "")}
       >
-        Use this folder
+        {m.launcher_use_folder()}
       </Button>
     </Dialog.Footer>
   </Dialog.Content>

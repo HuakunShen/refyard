@@ -1588,7 +1588,7 @@
                 });
             }}
           >
-            Install and restart
+            {m.page_install_restart()}
           </Button>
         {/snippet}
       </StateBanner>
@@ -1808,7 +1808,7 @@
                   variant="outline"
                   onclick={() => void history.refetch()}
                 >
-                  Retry
+                  {m.common_retry()}
                 </Button>
               {/snippet}
             </StateBanner>

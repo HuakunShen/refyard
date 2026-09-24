@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /**
    * Open pull requests from the repository's forge, and the one form that
    * creates the connection.
@@ -104,7 +105,7 @@
     {#if deviceState?.state === "awaiting-user" && deviceState.userCode !== undefined}
       <div class="flex flex-col gap-2" data-testid="provider-device-awaiting">
         <p class="text-xs text-ink-muted">
-          Enter this code at
+          {m.pr_enter_code_at()}
           <a
             class="underline"
             href={deviceState.verificationUri ?? "https://github.com/login/device"}

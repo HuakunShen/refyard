@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /**
    * Ask where a worktree created from a commit should live and what its new
    * branch is named. The destination is relative to an approved root — the
@@ -73,7 +74,7 @@
       </label>
       <label class="flex flex-col gap-1.5 text-sm">
         <span class="text-muted-foreground">
-          Worktree folder, relative to the approved root
+          {m.worktree_folder_label()}
         </span>
         <input
           bind:value={relativeDestination}
@@ -87,7 +88,7 @@
     </div>
     <Dialog.Footer>
       <Button variant="ghost" disabled={busy} onclick={() => (open = false)}>
-        Cancel
+        {m.common_cancel()}
       </Button>
       <Button
         variant="default"

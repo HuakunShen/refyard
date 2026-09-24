@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /**
    * Submodules: what the parent records, what its index has, what is checked out.
    *
@@ -90,7 +91,7 @@
     <span
       class="text-[11px] font-semibold tracking-wider text-ink-muted uppercase"
     >
-      Add submodule
+      {m.submodule_add()}
     </span>
     <input
       class="w-full rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
@@ -134,7 +135,7 @@
         }}
         data-testid="add-submodule"
       >
-        Add
+        {m.common_add()}
       </Button>
     </div>
   </div>
@@ -164,7 +165,7 @@
         onclick={() => onUpdate(targets, recursive)}
         data-testid="update-submodule"
       >
-        Update
+        {m.common_update()}
       </Button>
       <Button
         size="sm"
@@ -174,7 +175,7 @@
         onclick={() => onSync(targets, recursive)}
         data-testid="sync-submodule"
       >
-        Sync URL
+        {m.submodule_sync_url()}
       </Button>
     </div>
   </div>

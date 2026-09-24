@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /**
    * Confirm resetting the checked-out branch to a commit, with a mode choice.
    *
@@ -112,7 +113,7 @@
     </div>
     <Dialog.Footer>
       <Button variant="ghost" disabled={busy} onclick={() => (open = false)}>
-        Cancel
+        {m.common_cancel()}
       </Button>
       <Button
         variant="destructive"

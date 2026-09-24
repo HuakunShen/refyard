@@ -345,7 +345,7 @@
                     onclick={() => onUnlock(worktree.worktreeId)}
                     data-testid={`unlock-worktree-${worktree.worktreeId}`}
                   >
-                    Unlock
+                    {m.worktree_unlock()}
                   </Button>
                 {:else}
                   <Button

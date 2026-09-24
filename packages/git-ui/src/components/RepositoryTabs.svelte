@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /** Top-level repository tabs; one tab is active while the session may keep many open. */
   import { Laptop, Plus, Server, X } from "@lucide/svelte";
   import { cn } from "../lib/utils.js";
@@ -108,6 +109,6 @@
     onclick={onNew}
   >
     <Plus class="size-3" />
-    New Tab
+    {m.tabs_new_tab()}
   </button>
 </div>

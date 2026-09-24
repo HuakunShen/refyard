@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /**
    * Pairing the page with a running service.
    *
@@ -112,7 +113,7 @@
           class="text-xs font-medium text-ink-muted"
           for="refyard-base-url"
         >
-          Service address
+          {m.connection_service_address()}
         </label>
         <Input
           id="refyard-base-url"
@@ -133,7 +134,7 @@
             class="text-xs font-medium text-ink-muted"
             for="refyard-hosted-password"
           >
-            Hosted service password
+            {m.connection_password()}
           </label>
           <Input
             id="refyard-hosted-password"
@@ -159,7 +160,7 @@
 
       <div class="flex flex-col gap-1">
         <label class="text-xs font-medium text-ink-muted" for="refyard-ticket">
-          Pairing ticket
+          {m.connection_pairing_ticket()}
         </label>
         <Input
           id="refyard-ticket"

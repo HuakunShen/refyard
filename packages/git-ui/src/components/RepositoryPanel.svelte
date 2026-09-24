@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /**
    * Create a repository: `git init` at a destination, or clone a remote into one.
    *
@@ -151,7 +152,7 @@
         onclick={() => (mode = "init")}
         data-testid="repository-mode-init"
       >
-        Create new
+        {m.repo_create_new()}
       </button>
       <button
         type="button"
@@ -166,7 +167,7 @@
         onclick={() => (mode = "clone")}
         data-testid="repository-mode-clone"
       >
-        Clone
+        {m.repo_clone()}
       </button>
     </div>
     {#if available === "unknown"}
@@ -224,7 +225,7 @@
         disabled={locked}
         data-testid="repository-submodules"
       />
-      Initialise submodules
+      {m.repo_init_submodules()}
     </label>
   {:else}
     <input

@@ -105,7 +105,7 @@
       data-testid="commit-button"
     >
       <GitCommit class="size-3.5" />
-      Commit
+      {m.commit_commit()}
     </Button>
 
     <ConfirmAction

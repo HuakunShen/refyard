@@ -251,7 +251,7 @@
             <h3
               class="text-xs font-semibold uppercase tracking-wider text-ink-muted"
             >
-              Updates
+              {m.settings_updates()}
             </h3>
             <div class="flex items-center gap-2">
               {#if updatesBusy}
@@ -271,7 +271,7 @@
                   onclick={() => void runUpdatesStep()}
                   data-testid="updates-install"
                 >
-                  Download and install
+                  {m.updates_download_install()}
                   {availableUpdate.version === null
                     ? ""
                     : `v${availableUpdate.version}`}
@@ -282,7 +282,7 @@
                   onclick={() => void readyOffer.relaunch()}
                   data-testid="updates-restart"
                 >
-                  Restart to finish
+                  {m.updates_restart()}
                 </Button>
               {:else}
                 <Button
@@ -291,7 +291,7 @@
                   onclick={() => void runUpdatesStep()}
                   data-testid="updates-check"
                 >
-                  Check for updates
+                  {m.updates_check()}
                 </Button>
               {/if}
               {#if updatesPhase.state === "up-to-date"}
@@ -317,7 +317,7 @@
                     onAutoCheckChange(event.currentTarget.checked)}
                   data-testid="updates-auto-check"
                 />
-                Check automatically when the app starts
+                {m.updates_check_auto()}
               </label>
             {/if}
           </section>
@@ -328,7 +328,7 @@
             <h3
               class="text-xs font-semibold uppercase tracking-wider text-ink-muted"
             >
-              About & connection
+              {m.settings_about_connection()}
             </h3>
             <div
               class="flex flex-col gap-1 rounded-lg border border-border/60 bg-card/50 p-3"

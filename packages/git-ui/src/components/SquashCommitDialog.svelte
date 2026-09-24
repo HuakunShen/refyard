@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /**
    * Confirm squashing the checked-out branch's top commit into the one below
    * it. An empty message keeps the parent's message; a typed one replaces it.
@@ -67,7 +68,7 @@
     </label>
     <Dialog.Footer>
       <Button variant="ghost" disabled={busy} onclick={() => (open = false)}>
-        Cancel
+        {m.common_cancel()}
       </Button>
       <Button
         variant="destructive"

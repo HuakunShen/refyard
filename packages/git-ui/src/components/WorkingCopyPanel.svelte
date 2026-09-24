@@ -188,7 +188,7 @@
       {/if}
       {#if status === null}
         <span class="rounded-full border border-border/50 px-2 py-0.5">
-          Status unavailable
+          {m.copy_status_unavailable()}
         </span>
       {:else}
         <span
@@ -378,7 +378,7 @@
       class="mb-2 flex items-center gap-2 text-xs font-semibold text-ink-muted"
     >
       <Check class="size-3.5" />
-      Commit
+      {m.commit_commit()}
       {#if conflicts.length > 0}
         <span class="font-normal text-destructive">{m.copy_resolve_first()}</span
         >

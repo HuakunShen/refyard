@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /**
    * A two-step confirm for a destructive action.
    *
@@ -63,7 +64,7 @@
       {busy ? "Working…" : confirmLabel}
     </Button>
     <Button size="sm" variant="ghost" onclick={() => (armed = false)}>
-      Cancel
+      {m.common_cancel()}
     </Button>
   </span>
 {:else}

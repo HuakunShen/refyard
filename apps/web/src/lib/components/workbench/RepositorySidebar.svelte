@@ -316,7 +316,7 @@
                 variant="outline"
                 onclick={() => void repositories.refetch()}
               >
-                Retry
+                {m.common_retry()}
               </Button>
             {/snippet}
           </StateBanner>

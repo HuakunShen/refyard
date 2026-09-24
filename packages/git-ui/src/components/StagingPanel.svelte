@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /**
    * The staging surface: choose paths, then stage, unstage or discard exactly those.
    *
@@ -111,7 +112,7 @@
           disabled={disabled || busy || effectiveSelection.length === 0}
           onclick={clearSelection}
         >
-          Clear
+          {m.common_clear()}
         </Button>
       </div>
       <span class="text-[11px] text-ink-faint font-mono">
