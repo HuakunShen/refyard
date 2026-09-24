@@ -258,6 +258,66 @@ pub fn plan_remote_get_url(name: &str, push: bool) -> Result<GitPlan, CoreError>
     Ok(GitPlan::read(argv))
 }
 
+/// `git fetch --porcelain [--prune] [--tags|--no-tags] <remote>`.
+///
+/// `tags` is explicit both ways so a fetch never sweeps in tags the user did not ask
+/// about, and `--prune` only when asked. Per-ref outcomes come from the porcelain
+/// table, not from the exit code.
+pub fn plan_fetch(
+    remote_name: &str,
+    prune: bool,
+    tags_following: bool,
+) -> Result<GitPlan, CoreError> {
+    validated_remote_name(remote_name)?;
+    let mut argv = vec!["fetch".to_string(), "--porcelain".to_string()];
+    if prune {
+        argv.push("--prune".to_string());
+    }
+    argv.push(if tags_following {
+        "--tags".to_string()
+    } else {
+        "--no-tags".to_string()
+    });
+    argv.push(remote_name.to_string());
+    Ok(GitPlan {
+        argv,
+        stdin: Vec::new(),
+        deadline_class: DeadlineClass::Network,
+    })
+}
+
+/// `git rev-parse --abbrev-ref --symbolic-full-name <branch>@{upstream}` — Git's own
+/// answer to "what does this branch track", or a non-zero exit when it tracks nothing.
+pub fn plan_branch_upstream_ref(branch_name: &str) -> Result<GitPlan, CoreError> {
+    validated_ref_name(branch_name)?;
+    Ok(GitPlan::read(vec![
+        "rev-parse".to_string(),
+        "--abbrev-ref".to_string(),
+        "--symbolic-full-name".to_string(),
+        format!("{branch_name}@{{upstream}}"),
+    ]))
+}
+
+/// `git merge --ff-only --no-edit <ref>` — the branch half of a pull.
+///
+/// `--ff-only` is not configurable: a divergence fails and the branch is left alone.
+/// No `--autostash`, no editor, `--no-edit` in case a merge message would be asked for.
+/// The `ref` is Git's own upstream answer (for example `origin/main`), re-validated as
+/// a ref name before it becomes argv.
+pub fn plan_fast_forward_merge(reference: &str) -> Result<GitPlan, CoreError> {
+    validated_ref_name(reference)?;
+    Ok(GitPlan {
+        argv: vec![
+            "merge".to_string(),
+            "--ff-only".to_string(),
+            "--no-edit".to_string(),
+            reference.to_string(),
+        ],
+        stdin: Vec::new(),
+        deadline_class: DeadlineClass::Hook,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -392,5 +452,47 @@ mod push_tests {
             plan_remote_get_url("origin", false).expect("a plan").argv,
             vec!["remote", "get-url", "origin"]
         );
+    }
+}
+
+#[cfg(test)]
+mod fetch_pull_tests {
+    use super::*;
+
+    #[test]
+    fn a_fetch_names_its_tags_and_prune_explicitly() {
+        assert_eq!(
+            plan_fetch("origin", false, false).expect("a plan").argv,
+            vec!["fetch", "--porcelain", "--no-tags", "origin"]
+        );
+        assert_eq!(
+            plan_fetch("origin", true, true).expect("a plan").argv,
+            vec!["fetch", "--porcelain", "--prune", "--tags", "origin"]
+        );
+        assert_eq!(
+            plan_fetch("origin", false, false)
+                .expect("a plan")
+                .deadline_class,
+            DeadlineClass::Network
+        );
+    }
+
+    #[test]
+    fn the_upstream_probe_and_the_fast_forward_are_git_own_answers() {
+        assert_eq!(
+            plan_branch_upstream_ref("main").expect("a plan").argv,
+            vec![
+                "rev-parse",
+                "--abbrev-ref",
+                "--symbolic-full-name",
+                "main@{upstream}"
+            ]
+        );
+        assert_eq!(
+            plan_fast_forward_merge("origin/main").expect("a plan").argv,
+            vec!["merge", "--ff-only", "--no-edit", "origin/main"]
+        );
+        // Never a plain merge: --ff-only is fixed and a divergence must fail.
+        assert!(plan_fast_forward_merge("").is_err());
     }
 }

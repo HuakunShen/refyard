@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use refyard_contract::problem::ProblemCode;
 use refyard_contract::reads::{MutationTarget, OperationStatus, StatusSnapshot};
-use refyard_host::jobs::{MutationOperation, MutationRequest};
+use refyard_host::jobs::{FetchTagMode, MutationOperation, MutationRequest, PullMode};
 use refyard_host::providers::local::LocalGit;
 use refyard_host::service::{ApplicationService, ApplicationServiceConfig, StatusQuery};
 
@@ -692,4 +692,266 @@ async fn a_push_refuses_to_contact_an_unsafe_configured_remote() {
         "the refusal names the unsafe remote: {}",
         problem.message
     );
+}
+
+/* ------------------------------------------------------------ fetch / pull */
+
+/// Run git in `cwd` under the fixture's isolated environment (own HOME/config).
+fn run_git_in(fixture: &Fixture, cwd: &Path, args: &[&str]) -> Vec<u8> {
+    let output = Command::new(git_program())
+        .args(args)
+        .current_dir(cwd)
+        .env_clear()
+        .envs(fixture.env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+        .output()
+        .expect("run git");
+    assert!(
+        output.status.success(),
+        "git {} failed: {}",
+        args.join(" "),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    output.stdout
+}
+
+/// Does a ref exist in the fixture's own working repository?
+fn worktree_ref_exists(fixture: &Fixture, refname: &str) -> bool {
+    Command::new(git_program())
+        .args(["rev-parse", "--verify", "--quiet", refname])
+        .current_dir(&fixture.repo)
+        .env_clear()
+        .envs(fixture.env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+        .output()
+        .expect("run git")
+        .status
+        .success()
+}
+
+/// Advance a bare remote's `main` by one commit, through a throwaway clone.
+fn advance_remote(fixture: &Fixture, remote_path: &str, name: &str, msg: &str) {
+    let work = fixture.temp.path().join(name);
+    let work_str = work.to_str().expect("utf8").to_string();
+    run_git_in(
+        fixture,
+        &fixture.repo,
+        &["clone", "--quiet", remote_path, &work_str],
+    );
+    std::fs::write(work.join("new.txt"), "advanced\n").expect("write");
+    run_git_in(fixture, &work, &["add", "--", "new.txt"]);
+    run_git_in(fixture, &work, &["commit", "--quiet", "-m", msg]);
+    run_git_in(fixture, &work, &["push", "--quiet", "origin", "main:main"]);
+}
+
+/// Add `origin` and push `main` (optionally setting upstream) through the effects.
+async fn add_and_push_main(
+    fixture: &Fixture,
+    service: &ApplicationService,
+    repository_id: &str,
+    remote_path: &str,
+    set_upstream: bool,
+) {
+    let snapshot_id = fixture.status(service, repository_id).await.snapshot_id;
+    let request = fixture.repository_request(
+        repository_id,
+        &snapshot_id,
+        MutationOperation::AddRemote {
+            remote_name: "origin".to_string(),
+            fetch_url: remote_path.to_string(),
+            push_url: None,
+        },
+        "crid-setup-add",
+    );
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    wait_terminal(service, &accepted.record.operation_id).await;
+
+    let snapshot_id = fixture.status(service, repository_id).await.snapshot_id;
+    let request = fixture.repository_request(
+        repository_id,
+        &snapshot_id,
+        MutationOperation::Push {
+            remote_name: "origin".to_string(),
+            source_ref: "refs/heads/main".to_string(),
+            destination_ref: "refs/heads/main".to_string(),
+            set_upstream,
+        },
+        "crid-setup-push",
+    );
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    wait_terminal(service, &accepted.record.operation_id).await;
+}
+
+/// A bare clone of the fixture's own repository — a remote that already has `main`
+/// and whose HEAD points at `main`, so it clones cleanly. (An empty `git init --bare`
+/// has HEAD referring to `master`, which does not exist yet, and clones of it produce
+/// no branch at all — which is exactly what broke the first cut of these tests.)
+fn cloned_remote(fixture: &Fixture, name: &str) -> String {
+    let path = fixture.temp.path().join(name);
+    let path_str = path.to_str().expect("utf8").to_string();
+    let repo_str = fixture.repo.to_str().expect("utf8").to_string();
+    run_git_in(
+        fixture,
+        &fixture.repo,
+        &["clone", "--bare", "--quiet", &repo_str, &path_str],
+    );
+    path_str
+}
+
+#[tokio::test]
+async fn a_fetch_brings_remote_tracking_refs_in() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let (repository_id, _worktree_id) = fixture.open(&service).await;
+    // The remote already carries `main`; the local repo has never touched it, so there
+    // is genuinely no `origin/main` until a fetch brings one in.
+    let remote_path = cloned_remote(&fixture, "remote.git");
+
+    let snapshot_id = fixture.status(&service, &repository_id).await.snapshot_id;
+    let request = fixture.repository_request(
+        &repository_id,
+        &snapshot_id,
+        MutationOperation::AddRemote {
+            remote_name: "origin".to_string(),
+            fetch_url: remote_path.clone(),
+            push_url: None,
+        },
+        "crid-setup-add",
+    );
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    wait_terminal(&service, &accepted.record.operation_id).await;
+
+    assert!(
+        !worktree_ref_exists(&fixture, "refs/remotes/origin/main"),
+        "no tracking ref before the fetch"
+    );
+    let snapshot_id = fixture.status(&service, &repository_id).await.snapshot_id;
+    let request = fixture.repository_request(
+        &repository_id,
+        &snapshot_id,
+        MutationOperation::Fetch {
+            remote_name: "origin".to_string(),
+            prune: false,
+            tags: FetchTagMode::None,
+        },
+        "crid-fetch",
+    );
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Succeeded,
+        "{:?}",
+        finished.problem
+    );
+    assert!(
+        worktree_ref_exists(&fixture, "refs/remotes/origin/main"),
+        "the fetch created the remote-tracking ref"
+    );
+}
+
+#[tokio::test]
+async fn a_pull_fast_forwards_the_branch_when_the_remote_is_ahead() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let (repository_id, _worktree_id) = fixture.open(&service).await;
+    let remote_path = cloned_remote(&fixture, "remote.git");
+    add_and_push_main(&fixture, &service, &repository_id, &remote_path, true).await;
+    // Make the upstream explicit rather than trusting `push --set-upstream` semantics.
+    fixture.git(&["branch", "--set-upstream-to=origin/main", "main"]);
+    advance_remote(&fixture, &remote_path, "adv", "advanced work");
+
+    let snapshot_id = fixture.status(&service, &repository_id).await.snapshot_id;
+    let request = fixture.repository_request(
+        &repository_id,
+        &snapshot_id,
+        MutationOperation::Pull {
+            remote_name: "origin".to_string(),
+            mode: PullMode::FfOnly,
+        },
+        "crid-pull",
+    );
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Succeeded,
+        "{:?}",
+        finished.problem
+    );
+    let subject = String::from_utf8(fixture.git(&["log", "-1", "--format=%s"])).expect("utf8");
+    assert_eq!(
+        subject.trim(),
+        "advanced work",
+        "the branch moved to the remote tip"
+    );
+}
+
+#[tokio::test]
+async fn a_pull_that_cannot_fast_forward_keeps_the_two_facts_apart() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let (repository_id, _worktree_id) = fixture.open(&service).await;
+    let remote_path = cloned_remote(&fixture, "remote.git");
+    add_and_push_main(&fixture, &service, &repository_id, &remote_path, true).await;
+    fixture.git(&["branch", "--set-upstream-to=origin/main", "main"]);
+    advance_remote(&fixture, &remote_path, "adv", "advanced work");
+
+    // A local commit the remote does not have: the histories now diverge, so the fetch
+    // half will move tracking refs but the fast-forward half must not move the branch.
+    std::fs::write(fixture.repo.join("local.txt"), "local\n").expect("write");
+    fixture.git(&["add", "--", "local.txt"]);
+    fixture.git(&["commit", "--quiet", "-m", "local work"]);
+
+    let snapshot_id = fixture.status(&service, &repository_id).await.snapshot_id;
+    let request = fixture.repository_request(
+        &repository_id,
+        &snapshot_id,
+        MutationOperation::Pull {
+            remote_name: "origin".to_string(),
+            mode: PullMode::FfOnly,
+        },
+        "crid-pull-diverged",
+    );
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    // Not a silent failure: the fetch half happened and the branch half refused — two
+    // facts kept apart, and nothing was merged or rebased.
+    assert_eq!(
+        finished.status,
+        OperationStatus::NeedsAttention,
+        "{:?}",
+        finished.problem
+    );
+    let problem = finished
+        .problem
+        .expect("needs attention carries the reason");
+    assert!(
+        problem.message.contains("remote-tracking ref"),
+        "reports the fetch half: {}",
+        problem.message
+    );
+    assert!(
+        problem.message.contains("not fast-forwarded"),
+        "reports the branch half: {}",
+        problem.message
+    );
+    let subject = String::from_utf8(fixture.git(&["log", "-1", "--format=%s"])).expect("utf8");
+    assert_eq!(subject.trim(), "local work", "the branch did not move");
 }

@@ -308,7 +308,8 @@ fn operation_targets(kind: MutationKind) -> Vec<TargetKind> {
         | MutationKind::ContinueRebase
         | MutationKind::AbortRebase
         | MutationKind::DropCommit
-        | MutationKind::SquashCommit => vec![TargetKind::Worktree],
+        | MutationKind::SquashCommit
+        | MutationKind::Pull => vec![TargetKind::Worktree],
         _ => vec![TargetKind::Repository],
     }
 }

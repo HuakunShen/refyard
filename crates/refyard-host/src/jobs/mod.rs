@@ -76,6 +76,24 @@ pub enum ResetMode {
     Mixed,
 }
 
+/// Which tags a fetch follows: `none` disables tag fetching entirely, `following`
+/// allows Git's default behaviour — explicit both ways, so a fetch never sweeps in tags
+/// the user did not ask about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FetchTagMode {
+    None,
+    Following,
+}
+
+/// How a pull moves the branch. This build offers only `ff-only`: a divergence fails
+/// and nothing is merged or rebased implicitly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PullMode {
+    #[serde(rename = "ff-only")]
+    FfOnly,
+}
+
 /// The remote and branch an upstream names, as the contract's `setUpstream` carries it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -166,11 +184,20 @@ pub enum MutationOperation {
         remote_name: String,
         confirmed: bool,
     },
+    Fetch {
+        remote_name: String,
+        prune: bool,
+        tags: FetchTagMode,
+    },
     Push {
         remote_name: String,
         source_ref: String,
         destination_ref: String,
         set_upstream: bool,
+    },
+    Pull {
+        remote_name: String,
+        mode: PullMode,
     },
     CreateStash {
         message: Option<String>,
@@ -259,7 +286,9 @@ impl MutationOperation {
             Self::AddRemote { .. } => MutationKind::AddRemote,
             Self::UpdateRemote { .. } => MutationKind::UpdateRemote,
             Self::RemoveRemote { .. } => MutationKind::RemoveRemote,
+            Self::Fetch { .. } => MutationKind::Fetch,
             Self::Push { .. } => MutationKind::Push,
+            Self::Pull { .. } => MutationKind::Pull,
             Self::CreateStash { .. } => MutationKind::CreateStash,
             Self::ApplyStash { .. } => MutationKind::ApplyStash,
             Self::PopStash { .. } => MutationKind::PopStash,
@@ -317,7 +346,9 @@ impl MutationOperation {
             | Self::UpdateRemote { .. }
             | Self::RemoveRemote { .. }
             | Self::Push { .. }
-            | Self::PushTag { .. } => Vec::new(),
+            | Self::PushTag { .. }
+            | Self::Fetch { .. }
+            | Self::Pull { .. } => Vec::new(),
         }
     }
 
@@ -791,6 +822,30 @@ mod seed_tests {
                 MutationOperation::PushTag {
                     remote_name: "origin".to_string(),
                     tag_name: "v1".to_string(),
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "fetch",
+                    "remoteName": "origin",
+                    "prune": true,
+                    "tags": "following"
+                }),
+                MutationOperation::Fetch {
+                    remote_name: "origin".to_string(),
+                    prune: true,
+                    tags: FetchTagMode::Following,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "pull",
+                    "remoteName": "origin",
+                    "mode": "ff-only"
+                }),
+                MutationOperation::Pull {
+                    remote_name: "origin".to_string(),
+                    mode: PullMode::FfOnly,
                 },
             ),
         ] {

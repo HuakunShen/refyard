@@ -1,5 +1,7 @@
-//! Remote configuration: add, update and remove a remote. Local config only — nothing
-//! here talks to a server.
+//! Remote configuration and the network writes: add/update/remove a remote, and
+//! fetch/push/pull/pushTag over one explicit ref. The config writes never leave the
+//! machine; the network writes contact exactly one named remote after its *configured*
+//! URL has been safety-checked.
 //!
 //! The one security-critical rule is that a remote URL can name a *command* (Git's
 //! `ext::` transport helper, an `--upload-pack=` option), so every URL is validated at
@@ -18,7 +20,8 @@ use refyard_contract::reads::MutationKind;
 use refyard_core::outcome::{ExecutionState, RunOutcome};
 
 use crate::jobs::journal::EffectOutcome;
-use crate::jobs::{EffectRequest, MutationEffect, MutationOperation};
+use crate::jobs::{EffectRequest, FetchTagMode, MutationEffect, MutationOperation, PullMode};
+use refyard_core::parse::network::parse_fetch_porcelain;
 
 use super::{
     clean_exit, diagnostic_of, effect_outcome, invalid_payload, refusal_problem, refused,
@@ -303,6 +306,42 @@ pub struct PushEffect {
     pub(super) host: Arc<WriteHost>,
 }
 
+/// `git fetch --porcelain` one remote: tracking refs only.
+pub struct FetchEffect {
+    pub(super) host: Arc<WriteHost>,
+}
+
+/// Pull as its two real halves — fetch, then `--ff-only` — keeping the facts separate.
+pub struct PullEffect {
+    pub(super) host: Arc<WriteHost>,
+}
+
+impl MutationEffect for FetchEffect {
+    fn kind(&self) -> MutationKind {
+        MutationKind::Fetch
+    }
+    fn run<'a>(
+        &'a self,
+        request: EffectRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = EffectOutcome> + Send + 'a>> {
+        let host = Arc::clone(&self.host);
+        Box::pin(async move { fetch(&host, &request).await })
+    }
+}
+
+impl MutationEffect for PullEffect {
+    fn kind(&self) -> MutationKind {
+        MutationKind::Pull
+    }
+    fn run<'a>(
+        &'a self,
+        request: EffectRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = EffectOutcome> + Send + 'a>> {
+        let host = Arc::clone(&self.host);
+        Box::pin(async move { pull(&host, &request).await })
+    }
+}
+
 /// `git push` one tag by name.
 pub struct PushTagEffect {
     pub(super) host: Arc<WriteHost>,
@@ -373,7 +412,11 @@ async fn check_configured_remote(
 /// A push that did not finish cleanly: a clean non-zero is a refusal (the single ref
 /// was rejected), while a timeout, signal or truncated stream is `unknown` — a network
 /// write may have half-reached the remote and is never retried.
-fn push_failure(operation_id: &str, command: &'static str, outcome: &RunOutcome) -> EffectOutcome {
+fn network_failure(
+    operation_id: &str,
+    command: &'static str,
+    outcome: &RunOutcome,
+) -> EffectOutcome {
     let finished = outcome.state == ExecutionState::Completed && outcome.output_complete;
     if finished || outcome.state == ExecutionState::NotStarted {
         refused(operation_id, refusal_problem(command, outcome))
@@ -386,6 +429,200 @@ fn push_failure(operation_id: &str, command: &'static str, outcome: &RunOutcome)
             )
             .for_operation(operation_id.to_string()),
         }
+    }
+}
+
+/// A success whose `changed_refs` names the refs that actually moved — the honest
+/// per-ref answer a fetch owes the user, not a bare "done".
+fn succeeded_with_refs(
+    summary: String,
+    changed_refs: Vec<String>,
+    head: Option<String>,
+) -> EffectOutcome {
+    EffectOutcome::Succeeded {
+        result: super::result_of_refs(summary, changed_refs, None, head),
+    }
+}
+
+/// The first line of stdout, trimmed — for the one-line answers `rev-parse` gives.
+fn first_line(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes)
+        .lines()
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_string()
+}
+
+async fn fetch(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> EffectOutcome {
+    let operation_id = request.operation_id;
+    let MutationOperation::Fetch {
+        remote_name,
+        prune,
+        tags,
+    } = &request.request.operation
+    else {
+        return wrong_payload(operation_id, "fetch");
+    };
+    let tags_following = matches!(tags, FetchTagMode::Following);
+    let plan = match refyard_core::plan::remotes::plan_fetch(remote_name, *prune, tags_following) {
+        Ok(plan) => plan,
+        Err(error) => return invalid_payload(operation_id, error.to_string()),
+    };
+    let target = match host.resolve(request.request) {
+        Ok(target) => target,
+        Err(problem) => return refused(operation_id, problem),
+    };
+    let before = match host.read_facts(&target).await {
+        Ok(facts) => facts,
+        Err(problem) => return refused(operation_id, problem),
+    };
+    let head = before.head.oid.clone();
+    if let Err(problem) = check_configured_remote(&target, remote_name, false).await {
+        return refused(operation_id, problem);
+    }
+    let outcome = match run_step(&target, &plan).await {
+        Ok(outcome) => outcome,
+        Err(problem) => return refused(operation_id, problem),
+    };
+    if clean_exit(&outcome) {
+        let parsed = parse_fetch_porcelain(&outcome.stdout);
+        let moved: Vec<String> = parsed
+            .refs
+            .iter()
+            .filter(|r| r.moved())
+            .map(|r| r.local_ref.clone())
+            .collect();
+        let summary = if moved.is_empty() {
+            format!("fetch {remote_name}: already up to date")
+        } else {
+            format!(
+                "fetch {remote_name}: {} remote-tracking ref(s) updated",
+                moved.len()
+            )
+        };
+        return succeeded_with_refs(summary, moved, head);
+    }
+    network_failure(operation_id, "git fetch", &outcome)
+}
+
+async fn pull(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> EffectOutcome {
+    let operation_id = request.operation_id;
+    let MutationOperation::Pull { remote_name, mode } = &request.request.operation else {
+        return wrong_payload(operation_id, "pull");
+    };
+    // `ff-only` is the only mode this build offers; a divergence fails, never merges.
+    let PullMode::FfOnly = mode;
+    let target = match host.resolve(request.request) {
+        Ok(target) => target,
+        Err(problem) => return refused(operation_id, problem),
+    };
+    let before = match host.read_facts(&target).await {
+        Ok(facts) => facts,
+        Err(problem) => return refused(operation_id, problem),
+    };
+    // Pull fast-forwards the *current branch*; on a detached HEAD there is none.
+    if before.head.detached || before.head.branch_name.is_none() {
+        return refused(
+            operation_id,
+            Problem::new(
+                ProblemCode::Conflict,
+                "there is no branch to pull into; HEAD is detached or unborn — switch to a branch first",
+            ),
+        );
+    }
+    let branch_name = before.head.branch_name.clone().unwrap_or_default();
+    if let Err(problem) = check_configured_remote(&target, remote_name, false).await {
+        return refused(operation_id, problem);
+    }
+
+    // Which ref the branch tracks is Git's answer, not ours.
+    let upstream_plan = match refyard_core::plan::remotes::plan_branch_upstream_ref(&branch_name) {
+        Ok(plan) => plan,
+        Err(error) => return invalid_payload(operation_id, error.to_string()),
+    };
+    let upstream_outcome = match run_step(&target, &upstream_plan).await {
+        Ok(outcome) => outcome,
+        Err(problem) => return refused(operation_id, problem),
+    };
+    if !clean_exit(&upstream_outcome) {
+        return refused(
+            operation_id,
+            Problem::new(
+                ProblemCode::Conflict,
+                format!("the branch {branch_name} has no upstream to pull from"),
+            ),
+        );
+    }
+    let upstream_ref = first_line(&upstream_outcome.stdout);
+    let upstream_remote = upstream_ref.split('/').next().unwrap_or("");
+    if upstream_remote != remote_name {
+        return refused(
+            operation_id,
+            Problem::new(
+                ProblemCode::Conflict,
+                format!(
+                    "the branch {branch_name} tracks {upstream_ref}, which is on {upstream_remote}; the pull named {remote_name}"
+                ),
+            ),
+        );
+    }
+
+    // The fetch half: tracking refs only, no tag sweep, no prune.
+    let fetch_plan = match refyard_core::plan::remotes::plan_fetch(remote_name, false, false) {
+        Ok(plan) => plan,
+        Err(error) => return invalid_payload(operation_id, error.to_string()),
+    };
+    let fetch_outcome = match run_step(&target, &fetch_plan).await {
+        Ok(outcome) => outcome,
+        Err(problem) => return refused(operation_id, problem),
+    };
+    if !clean_exit(&fetch_outcome) {
+        return network_failure(operation_id, "git fetch", &fetch_outcome);
+    }
+    let parsed = parse_fetch_porcelain(&fetch_outcome.stdout);
+    let moved: Vec<String> = parsed
+        .refs
+        .iter()
+        .filter(|r| r.moved())
+        .map(|r| r.local_ref.clone())
+        .collect();
+
+    // The branch half: fast-forward only.
+    let ff_plan = match refyard_core::plan::remotes::plan_fast_forward_merge(&upstream_ref) {
+        Ok(plan) => plan,
+        Err(error) => return invalid_payload(operation_id, error.to_string()),
+    };
+    let ff_outcome = match run_step(&target, &ff_plan).await {
+        Ok(outcome) => outcome,
+        Err(problem) => return refused(operation_id, problem),
+    };
+    if clean_exit(&ff_outcome) {
+        let after = host.read_facts(&target).await.ok();
+        let new_head = after.and_then(|facts| facts.head.oid.clone());
+        let summary = if moved.is_empty() {
+            format!("pulled {remote_name}: already up to date")
+        } else {
+            format!(
+                "pulled {remote_name}: {} tracking ref(s) updated and the branch fast-forwarded",
+                moved.len()
+            )
+        };
+        return succeeded_with_refs(summary, moved, new_head);
+    }
+    // The two facts, kept apart: the fetch half moved tracking refs, the branch half did
+    // not (diverged or dirty). This build never merges or rebases implicitly, so there is
+    // work for a human here — not a silent "failed".
+    EffectOutcome::NeedsAttention {
+        problem: Problem::new(
+            ProblemCode::NeedsAttention,
+            format!(
+                "the fetch updated {} remote-tracking ref(s), but the branch {branch_name} was not fast-forwarded (diverged or dirty); nothing was merged or rebased: {}",
+                moved.len(),
+                diagnostic_of(&ff_outcome)
+            ),
+        )
+        .for_operation(operation_id.to_string()),
     }
 }
 
@@ -431,7 +668,7 @@ async fn push(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> EffectOutco
             head,
         );
     }
-    push_failure(operation_id, "git push", &outcome)
+    network_failure(operation_id, "git push", &outcome)
 }
 
 async fn push_tag(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> EffectOutcome {
@@ -466,5 +703,5 @@ async fn push_tag(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> EffectO
     if clean_exit(&outcome) {
         return succeeded(format!("pushed tag {tag_name} to {remote_name}"), head);
     }
-    push_failure(operation_id, "git push", &outcome)
+    network_failure(operation_id, "git push", &outcome)
 }

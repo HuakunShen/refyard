@@ -1,4 +1,4 @@
-//! The thirty-three write effects this build implements: stage, unstage, commit and
+//! The thirty-five write effects this build implements: stage, unstage, commit and
 //! amend, the ref writes (branch create/switch/rename/delete, upstream, tag
 //! create/delete), the remote config writes (add/update/remove), the stash family
 //! (create/apply/pop/drop), merge with its continue and abort, revert, reset,
@@ -102,7 +102,7 @@ impl WriteHost {
         }
     }
 
-    /// The thirty-three effects this build registers, in the order the contract lists
+    /// The thirty-five effects this build registers, in the order the contract lists
     /// them. The contract's own order is what `implemented_kinds` publishes, so the
     /// capability answer the UI gates its menus on is stable across builds.
     pub fn effects(host: &Arc<Self>) -> Vec<Box<dyn MutationEffect>> {
@@ -143,7 +143,13 @@ impl WriteHost {
             Box::new(remotes::RemoveRemoteEffect {
                 host: Arc::clone(host),
             }),
+            Box::new(remotes::FetchEffect {
+                host: Arc::clone(host),
+            }),
             Box::new(remotes::PushEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(remotes::PullEffect {
                 host: Arc::clone(host),
             }),
             Box::new(stash::CreateStashEffect {
@@ -599,6 +605,23 @@ pub fn result_of(
     OperationResult {
         summary,
         changed_refs: Vec::new(),
+        changed_paths,
+        snapshot_invalidated: true,
+        new_head_oid,
+    }
+}
+
+/// A result that names which refs changed — the per-ref answer a fetch/push owes,
+/// beyond what a bare `result_of` reports.
+pub(crate) fn result_of_refs(
+    summary: String,
+    changed_refs: Vec<String>,
+    changed_paths: Option<u64>,
+    new_head_oid: Option<String>,
+) -> OperationResult {
+    OperationResult {
+        summary,
+        changed_refs,
         changed_paths,
         snapshot_invalidated: true,
         new_head_oid,

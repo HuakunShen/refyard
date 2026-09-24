@@ -759,7 +759,7 @@ async fn naming_a_state_directory_after_registering_the_writes_keeps_them() {
     let capabilities = service.capabilities().await.expect("capabilities");
     assert_eq!(
         capabilities.operations.len(),
-        33,
+        35,
         "the write path must survive a later state directory being named"
     );
 
@@ -1280,7 +1280,7 @@ async fn a_replayed_request_is_not_executed_twice() {
 }
 
 #[tokio::test]
-async fn capabilities_name_exactly_the_thirty_three_implemented_writes() {
+async fn capabilities_name_exactly_the_thirty_five_implemented_writes() {
     // Prevents: a capability answer that offers a write this build cannot run, or hides
     // one it can — the UI enables controls from this list.
     let fixture = Fixture::new();
@@ -1309,7 +1309,9 @@ async fn capabilities_name_exactly_the_thirty_three_implemented_writes() {
             (MutationKind::AddRemote, vec![TargetKind::Repository]),
             (MutationKind::UpdateRemote, vec![TargetKind::Repository]),
             (MutationKind::RemoveRemote, vec![TargetKind::Repository]),
+            (MutationKind::Fetch, vec![TargetKind::Repository]),
             (MutationKind::Push, vec![TargetKind::Repository]),
+            (MutationKind::Pull, vec![TargetKind::Worktree]),
             (MutationKind::CreateStash, vec![TargetKind::Worktree]),
             (MutationKind::ApplyStash, vec![TargetKind::Worktree]),
             (MutationKind::PopStash, vec![TargetKind::Worktree]),
@@ -1339,7 +1341,7 @@ async fn capabilities_name_exactly_the_thirty_three_implemented_writes() {
         .collect::<Vec<MutationKind>>();
     assert_eq!(
         unavailable.len(),
-        refyard_contract::reads::MUTATION_KINDS.len() - 33
+        refyard_contract::reads::MUTATION_KINDS.len() - 35
     );
     for offered in [
         MutationKind::StagePaths,
@@ -1354,7 +1356,9 @@ async fn capabilities_name_exactly_the_thirty_three_implemented_writes() {
         MutationKind::AddRemote,
         MutationKind::UpdateRemote,
         MutationKind::RemoveRemote,
+        MutationKind::Fetch,
         MutationKind::Push,
+        MutationKind::Pull,
         MutationKind::CreateStash,
         MutationKind::ApplyStash,
         MutationKind::PopStash,
@@ -1382,7 +1386,7 @@ async fn capabilities_name_exactly_the_thirty_three_implemented_writes() {
         );
     }
     assert!(unavailable.contains(&MutationKind::DiscardTrackedPaths));
-    assert!(unavailable.contains(&MutationKind::Fetch));
+    assert!(unavailable.contains(&MutationKind::CreateWorktree));
 }
 
 /* ------------------------------------------------------------------ the fixture-backed cases */
