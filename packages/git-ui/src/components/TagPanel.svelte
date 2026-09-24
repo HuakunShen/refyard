@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /**
    * Tags: create (lightweight or annotated), delete locally, push one.
    *
@@ -54,15 +55,15 @@
     <div class="flex items-center gap-2">
       <input
         class="w-28 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
-        placeholder="v1.0.0"
-        aria-label="tag name"
+        placeholder={m.tag_placeholder_name()}
+        aria-label={m.tag_aria_name()}
         bind:value={tagName}
         disabled={disabled || busy}
       />
       <input
         class="min-w-0 flex-1 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-        placeholder="annotation (empty = lightweight)"
-        aria-label="tag annotation"
+        placeholder={m.tag_placeholder_annotation()}
+        aria-label={m.tag_aria_annotation()}
         bind:value={annotation}
         disabled={disabled || busy}
       />
@@ -86,9 +87,9 @@
   </div>
 
   {#if tags === null}
-    <p class="text-xs text-ink-faint">No tags loaded.</p>
+    <p class="text-xs text-ink-faint">{m.tag_none()}</p>
   {:else if tags.length === 0}
-    <p class="text-xs text-ink-faint italic py-1">No tags.</p>
+    <p class="text-xs text-ink-faint italic py-1">{m.tag_none_short()}</p>
   {:else}
     <ul
       class="flex max-h-60 flex-col gap-1.5 overflow-y-auto pr-0.5"
@@ -128,7 +129,7 @@
               </Button>
             {/if}
             <ConfirmAction
-              label="Delete"
+              label={m.common_delete()}
               confirmLabel={`Delete ${tag.name} locally`}
               description="A remote tag is never touched."
               disabled={disabled || busy}

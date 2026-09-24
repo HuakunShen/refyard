@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /**
    * Worktrees: create a linked checkout, remove it, lock or unlock it.
    *
@@ -150,7 +151,7 @@
             {
               kind: "action" as const,
               id: "open",
-              label: "Open this worktree",
+              label: m.worktree_open_this(),
               disabled: actionDisabled,
               onSelect: () => onOpenWorktree(worktree.worktreeId),
             },
@@ -161,7 +162,7 @@
             {
               kind: "action" as const,
               id: "open-new-tab",
-              label: "Open worktree in new tab",
+              label: m.worktree_open_tab(),
               disabled: actionDisabled,
               onSelect: () => onOpenWorktreeInTab(worktree.worktreeId),
             },
@@ -189,19 +190,19 @@
       <input
         class="min-w-0 flex-1 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
         placeholder="relative/path"
-        aria-label="worktree destination"
+        aria-label={m.worktree_aria_destination()}
         bind:value={relativeDestination}
         disabled={disabled || busy}
       />
       <select
         class="w-32 rounded border border-input bg-panel px-2 py-1 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
-        aria-label="worktree reference kind"
+        aria-label={m.worktree_aria_ref_kind()}
         bind:value={referenceKind}
         disabled={disabled || busy}
       >
-        <option value="newBranch">new branch</option>
-        <option value="existingBranch">existing branch</option>
-        <option value="detached">detached commit</option>
+        <option value="newBranch">{m.worktree_new_branch_label()}</option>
+        <option value="existingBranch">{m.worktree_existing_branch()}</option>
+        <option value="detached">{m.worktree_detached()}</option>
       </select>
     </div>
 
@@ -210,18 +211,18 @@
         <input
           class="min-w-0 flex-1 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
           placeholder="commit object name"
-          aria-label="worktree commit"
+          aria-label={m.worktree_aria_commit()}
           bind:value={oid}
           disabled={disabled || busy}
         />
       {:else if referenceKind === "existingBranch"}
         <select
           class="min-w-0 flex-1 rounded border border-input bg-panel px-2 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          aria-label="worktree branch"
+          aria-label={m.worktree_aria_branch()}
           bind:value={branchName}
           disabled={disabled || busy}
         >
-          <option value="">choose a branch</option>
+          <option value="">{m.worktree_choose_branch()}</option>
           {#each branches as branch (branch)}
             <option value={branch}>{branch}</option>
           {/each}
@@ -230,7 +231,7 @@
         <input
           class="min-w-0 flex-1 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
           placeholder="new branch name"
-          aria-label="worktree new branch"
+          aria-label={m.worktree_aria_new_branch()}
           bind:value={branchName}
           disabled={disabled || busy}
         />
@@ -250,7 +251,7 @@
     <input
       class="w-full rounded border border-input bg-transparent px-2.5 py-1 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring placeholder:text-ink-faint"
       placeholder="lock reason (optional)"
-      aria-label="worktree lock reason"
+      aria-label={m.worktree_aria_lock_reason()}
       bind:value={lockReason}
       disabled={disabled || busy}
     />
@@ -258,7 +259,7 @@
 
   <!-- Worktree List -->
   {#if worktrees === null}
-    <p class="text-xs text-ink-faint">No worktrees loaded.</p>
+    <p class="text-xs text-ink-faint">{m.worktree_none()}</p>
   {:else}
     <ul
       class="flex max-h-60 flex-col gap-1.5 overflow-y-auto pr-0.5"
@@ -368,7 +369,7 @@
                 {#if !worktree.isMain}
                   <span class="ml-auto">
                     <ConfirmAction
-                      label="Remove"
+                      label={m.common_remove()}
                       confirmLabel={`Remove ${worktree.displayPath}`}
                       description="Refused when the checkout has changes."
                       disabled={disabled || busy}

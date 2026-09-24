@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /**
    * Stashes: create, apply, pop, drop.
    *
@@ -55,8 +56,8 @@
     <div class="flex items-center gap-2">
       <input
         class="min-w-0 flex-1 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-        placeholder="stash message (optional)"
-        aria-label="stash message"
+        placeholder={m.stash_placeholder_message()}
+        aria-label={m.stash_aria_message()}
         bind:value={stashMessage}
         disabled={disabled || busy}
       />
@@ -80,7 +81,7 @@
       <input
         type="checkbox"
         class="size-3.5 accent-primary rounded"
-        aria-label="include untracked files"
+        aria-label={m.stash_aria_untracked()}
         bind:checked={includeUntracked}
         disabled={disabled || busy}
       />
@@ -89,9 +90,9 @@
   </div>
 
   {#if stashes === null}
-    <p class="text-xs text-ink-faint">No stashes loaded.</p>
+    <p class="text-xs text-ink-faint">{m.stash_none()}</p>
   {:else if stashes.length === 0}
-    <p class="text-xs text-ink-faint italic py-1">No stashes.</p>
+    <p class="text-xs text-ink-faint italic py-1">{m.stash_none_short()}</p>
   {:else}
     <ul
       class="flex max-h-60 flex-col gap-1.5 overflow-y-auto pr-0.5"
@@ -131,7 +132,7 @@
             </Button>
             <ConfirmAction
               label="Pop"
-              confirmLabel="Pop and drop the entry"
+              confirmLabel={m.stash_pop()}
               description="Applies, and drops only if it applies cleanly."
               disabled={disabled || busy}
               {busy}
@@ -140,8 +141,8 @@
             />
             <span class="ml-auto">
               <ConfirmAction
-                label="Drop"
-                confirmLabel="Drop for good"
+                label={m.common_delete()}
+                confirmLabel={m.stash_drop_forever()}
                 description="Removes the entry without applying it."
                 disabled={disabled || busy}
                 {busy}

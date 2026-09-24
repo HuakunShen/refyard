@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /**
    * Remotes and the three network operations.
    *
@@ -93,7 +94,7 @@
       {
         kind: "action",
         id: "edit",
-        label: "Edit…",
+        label: m.common_edit_ellipsis(),
         disabled: actionDisabled,
         onSelect: () => beginRemoteEdit(remoteName),
       },
@@ -101,7 +102,7 @@
       {
         kind: "action",
         id: "fetch",
-        label: "Fetch",
+        label: m.remote_fetch(),
         disabled: actionDisabled,
         onSelect: () => onFetch(remoteName),
       },
@@ -111,7 +112,7 @@
             {
               kind: "action" as const,
               id: "pull",
-              label: "Pull (ff-only)",
+              label: m.remote_pull_ff(),
               disabled: actionDisabled,
               onSelect: () => onPull(remoteName),
             },
@@ -127,7 +128,7 @@
       {
         kind: "action",
         id: "remove",
-        label: "Remove…",
+        label: m.remote_remove_ellipsis(),
         destructive: true,
         disabled: actionDisabled,
         onSelect: () => askRemove(remoteName),
@@ -161,9 +162,9 @@
 
 <div class={cn("flex flex-col gap-2.5", className)} data-testid="remote-panel">
   {#if refs === null}
-    <p class="text-xs text-ink-faint">No refs loaded.</p>
+    <p class="text-xs text-ink-faint">{m.common_no_refs()}</p>
   {:else if remotes.length === 0}
-    <p class="text-xs text-ink-faint italic py-1">No remotes configured.</p>
+    <p class="text-xs text-ink-faint italic py-1">{m.remote_none()}</p>
   {:else}
     <!-- Remote list -->
     <ul class="flex flex-col gap-1.5" data-testid="remote-list">
@@ -217,7 +218,7 @@
                 </Button>
                 <span class="shrink-0">
                   <ConfirmAction
-                    label="Remove"
+                    label={m.common_remove()}
                     confirmLabel={`Remove ${remote.name}`}
                     description="Local branches are untouched; remote-tracking refs go with it."
                     disabled={disabled || busy}
@@ -366,15 +367,15 @@
     <div class="flex items-center gap-2">
       <input
         class="w-24 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
-        placeholder="origin"
-        aria-label="remote name"
+        placeholder={m.remote_placeholder_origin()}
+        aria-label={m.remote_aria_name()}
         bind:value={remoteName}
         disabled={disabled || busy}
       />
       <input
         class="min-w-0 flex-1 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
         placeholder="https://… or /path/to/repo.git"
-        aria-label="remote url"
+        aria-label={m.remote_aria_url()}
         bind:value={remoteUrl}
         disabled={disabled || busy}
       />
@@ -405,11 +406,11 @@
 <ConfirmDialog
   bind:open={removeDialogOpen}
   title={pendingRemoveRemote === null
-    ? "Remove remote"
+    ? m.remote_remove()
     : `Remove ${pendingRemoveRemote}?`}
   description="Remove this remote and its remote-tracking refs. Local branches are untouched."
   confirmLabel={pendingRemoveRemote === null
-    ? "Remove remote"
+    ? m.remote_remove()
     : `Remove ${pendingRemoveRemote}`}
   disabled={pendingRemoveRemote === null || disabled}
   {busy}

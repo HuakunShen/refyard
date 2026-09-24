@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /**
    * Branches: list, create, switch, rename, delete.
    *
@@ -98,14 +99,14 @@
             {
               kind: "action" as const,
               id: "switch",
-              label: "Switch",
+              label: m.branch_switch(),
               disabled: actionDisabled,
               onSelect: () => onSwitch(branch.name),
             },
             {
               kind: "action" as const,
               id: "merge",
-              label: "Merge into Current",
+              label: m.branch_merge_current(),
               disabled: actionDisabled,
               onSelect: () => onMerge(branch.name, mergeNoFf),
             },
@@ -114,14 +115,14 @@
       {
         kind: "action" as const,
         id: "upstream",
-        label: "Upstream…",
+        label: m.branch_upstream(),
         disabled: actionDisabled,
         onSelect: () => editUpstream(branch),
       },
       {
         kind: "action" as const,
         id: "rename",
-        label: "Rename…",
+        label: m.branch_rename(),
         disabled: actionDisabled,
         onSelect: () => {
           renaming = branch.name;
@@ -136,7 +137,7 @@
             {
               kind: "action" as const,
               id: "delete",
-              label: "Delete…",
+              label: m.branch_delete_ellipsis(),
               destructive: true,
               disabled: actionDisabled,
               onSelect: () => askDelete(branch.name),
@@ -167,7 +168,7 @@
 
 <div class={cn("flex flex-col gap-2.5", className)} data-testid="branch-panel">
   {#if refs === null}
-    <p class="text-xs text-ink-faint">No refs loaded.</p>
+    <p class="text-xs text-ink-faint">{m.common_no_refs()}</p>
   {:else}
     <ul
       class="flex max-h-60 flex-col gap-1.5 overflow-y-auto pr-0.5"
@@ -238,7 +239,7 @@
                     <Badge
                       tone="head"
                       class="shrink-0 text-[10px] h-4.5 px-1.5 font-mono"
-                      >HEAD</Badge
+                      >{m.common_head()}</Badge
                     >
                   {/if}
                   {#if branch.upstream !== null}
@@ -260,7 +261,7 @@
                       bind:value={upstreamValue}
                       disabled={disabled || busy}
                     >
-                      <option value="">No upstream</option>
+                      <option value="">{m.branch_no_upstream()}</option>
                       {#each remoteBranches as remoteBranch (remoteBranch.fullName)}
                         <option value={remoteBranch.name}
                           >{remoteBranch.name}</option
@@ -272,13 +273,13 @@
                       class="h-7 px-2.5 text-xs"
                       disabled={disabled || busy}
                       onclick={() => saveUpstream(branch.name)}
-                      data-testid={`save-upstream-${branch.name}`}>Save</Button
+                      data-testid={`save-upstream-${branch.name}`}>{m.common_save()}</Button
                     >
                     <Button
                       size="sm"
                       variant="ghost"
                       class="h-7 px-2 text-xs"
-                      onclick={() => (editingUpstream = null)}>Cancel</Button
+                      onclick={() => (editingUpstream = null)}>{m.common_cancel()}</Button
                     >
                   </div>
                 {/if}
@@ -288,7 +289,7 @@
                 >
                   {#if branch.isCurrent}
                     <span class="text-[11px] text-ink-faint italic py-0.5"
-                      >Current branch</span
+                      >{m.branch_current()}</span
                     >
                   {:else}
                     <Button
@@ -337,7 +338,7 @@
                   </Button>
                   {#if !branch.isCurrent}
                     <ConfirmAction
-                      label="Delete"
+                      label={m.common_delete()}
                       confirmLabel={`Delete ${branch.name}`}
                       description="Merged branches only; an unmerged branch is refused."
                       disabled={disabled || busy}
@@ -399,11 +400,11 @@
 <ConfirmDialog
   bind:open={deleteDialogOpen}
   title={pendingDeleteBranch === null
-    ? "Delete branch"
+    ? m.branch_delete()
     : `Delete ${pendingDeleteBranch}?`}
   description="Only fully merged branches can be deleted; unmerged work is refused by Git."
   confirmLabel={pendingDeleteBranch === null
-    ? "Delete branch"
+    ? m.branch_delete()
     : `Delete ${pendingDeleteBranch}`}
   disabled={pendingDeleteBranch === null || disabled}
   {busy}
