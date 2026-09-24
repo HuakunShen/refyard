@@ -22,7 +22,7 @@ use crate::jobs::{EffectRequest, MutationEffect, MutationOperation};
 
 use super::{
     clean_exit, diagnostic_of, effect_outcome, invalid_payload, refusal_problem, refused,
-    require_confirmed, wrong_payload, Verdict, WriteHost, WriteTarget,
+    require_confirmed, unknown_problem, wrong_payload, Verdict, WriteHost, WriteTarget,
 };
 
 /// `git remote add <name> <fetchUrl>` (+ `set-url --push` when a push URL is given).
@@ -296,4 +296,175 @@ async fn remove_remote(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> Ef
         return refused(operation_id, refusal_problem("git remote remove", &outcome));
     }
     succeeded(format!("removed remote {remote_name}"), head)
+}
+
+/// `git push --porcelain --no-follow-tags` one explicit ref to one remote.
+pub struct PushEffect {
+    pub(super) host: Arc<WriteHost>,
+}
+
+/// `git push` one tag by name.
+pub struct PushTagEffect {
+    pub(super) host: Arc<WriteHost>,
+}
+
+impl MutationEffect for PushEffect {
+    fn kind(&self) -> MutationKind {
+        MutationKind::Push
+    }
+    fn run<'a>(
+        &'a self,
+        request: EffectRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = EffectOutcome> + Send + 'a>> {
+        let host = Arc::clone(&self.host);
+        Box::pin(async move { push(&host, &request).await })
+    }
+}
+
+impl MutationEffect for PushTagEffect {
+    fn kind(&self) -> MutationKind {
+        MutationKind::PushTag
+    }
+    fn run<'a>(
+        &'a self,
+        request: EffectRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = EffectOutcome> + Send + 'a>> {
+        let host = Arc::clone(&self.host);
+        Box::pin(async move { push_tag(&host, &request).await })
+    }
+}
+
+/// Refuse to contact a remote whose *configured* URL names a command.
+///
+/// A remote configured outside this app (a hand-edited `.git/config`, a shared repo)
+/// could carry an `ext::` or `--upload-pack=` URL that runs code when pushed to. This
+/// reads the URL the push would actually use and safety-checks it first — a URL that
+/// names a command is refused before anything is sent.
+async fn check_configured_remote(
+    target: &WriteTarget,
+    name: &str,
+    push: bool,
+) -> Result<String, Problem> {
+    let plan = refyard_core::plan::remotes::plan_remote_get_url(name, push)
+        .map_err(|error| Problem::new(ProblemCode::InvalidRequest, error.to_string()))?;
+    let outcome = run_step(target, &plan).await?;
+    if !clean_exit(&outcome) {
+        return Err(Problem::new(
+            ProblemCode::NotFound,
+            format!("remote {name} is not configured in this repository"),
+        ));
+    }
+    let text = String::from_utf8(outcome.stdout).unwrap_or_default();
+    let url = text
+        .split(['\n', '\r'])
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if let Err(error) = refyard_core::plan::remotes::validated_remote_url(&url) {
+        return Err(Problem::new(
+            ProblemCode::InvalidRequest,
+            format!("remote {name} has an unsafe configured URL, so it was not contacted: {error}"),
+        ));
+    }
+    Ok(url)
+}
+
+/// A push that did not finish cleanly: a clean non-zero is a refusal (the single ref
+/// was rejected), while a timeout, signal or truncated stream is `unknown` — a network
+/// write may have half-reached the remote and is never retried.
+fn push_failure(operation_id: &str, command: &'static str, outcome: &RunOutcome) -> EffectOutcome {
+    let finished = outcome.state == ExecutionState::Completed && outcome.output_complete;
+    if finished || outcome.state == ExecutionState::NotStarted {
+        refused(operation_id, refusal_problem(command, outcome))
+    } else {
+        EffectOutcome::Unknown {
+            reason: format!("{command} did not finish cleanly"),
+            problem: unknown_problem(
+                command,
+                "the push did not finish cleanly; whether it reached the remote is not known, and nothing was retried",
+            )
+            .for_operation(operation_id.to_string()),
+        }
+    }
+}
+
+async fn push(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> EffectOutcome {
+    let operation_id = request.operation_id;
+    let MutationOperation::Push {
+        remote_name,
+        source_ref,
+        destination_ref,
+        set_upstream,
+    } = &request.request.operation
+    else {
+        return wrong_payload(operation_id, "push");
+    };
+    let plan = match refyard_core::plan::remotes::plan_push(
+        remote_name,
+        source_ref,
+        destination_ref,
+        *set_upstream,
+    ) {
+        Ok(plan) => plan,
+        Err(error) => return invalid_payload(operation_id, error.to_string()),
+    };
+    let target = match host.resolve(request.request) {
+        Ok(target) => target,
+        Err(problem) => return refused(operation_id, problem),
+    };
+    let before = match host.read_facts(&target).await {
+        Ok(facts) => facts,
+        Err(problem) => return refused(operation_id, problem),
+    };
+    let head = before.head.oid.clone();
+    if let Err(problem) = check_configured_remote(&target, remote_name, true).await {
+        return refused(operation_id, problem);
+    }
+    let outcome = match run_step(&target, &plan).await {
+        Ok(outcome) => outcome,
+        Err(problem) => return refused(operation_id, problem),
+    };
+    if clean_exit(&outcome) {
+        return succeeded(
+            format!("pushed {source_ref} to {remote_name} {destination_ref}"),
+            head,
+        );
+    }
+    push_failure(operation_id, "git push", &outcome)
+}
+
+async fn push_tag(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> EffectOutcome {
+    let operation_id = request.operation_id;
+    let MutationOperation::PushTag {
+        remote_name,
+        tag_name,
+    } = &request.request.operation
+    else {
+        return wrong_payload(operation_id, "pushTag");
+    };
+    let plan = match refyard_core::plan::remotes::plan_push_tag(remote_name, tag_name) {
+        Ok(plan) => plan,
+        Err(error) => return invalid_payload(operation_id, error.to_string()),
+    };
+    let target = match host.resolve(request.request) {
+        Ok(target) => target,
+        Err(problem) => return refused(operation_id, problem),
+    };
+    let before = match host.read_facts(&target).await {
+        Ok(facts) => facts,
+        Err(problem) => return refused(operation_id, problem),
+    };
+    let head = before.head.oid.clone();
+    if let Err(problem) = check_configured_remote(&target, remote_name, true).await {
+        return refused(operation_id, problem);
+    }
+    let outcome = match run_step(&target, &plan).await {
+        Ok(outcome) => outcome,
+        Err(problem) => return refused(operation_id, problem),
+    };
+    if clean_exit(&outcome) {
+        return succeeded(format!("pushed tag {tag_name} to {remote_name}"), head);
+    }
+    push_failure(operation_id, "git push", &outcome)
 }

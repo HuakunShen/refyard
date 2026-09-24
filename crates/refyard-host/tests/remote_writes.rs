@@ -547,3 +547,149 @@ async fn a_remove_without_confirmation_is_refused() {
         "nothing was removed"
     );
 }
+
+/* ------------------------------------------------------------ push / pushTag */
+
+/// A bare repository at `<temp>/<name>`, to act as a local file remote (no network).
+fn bare_remote(fixture: &Fixture, name: &str) -> String {
+    let path = fixture.temp.path().join(name);
+    let path_str = path.to_str().expect("utf8").to_string();
+    fixture.git(&["init", "--bare", "--quiet", &path_str]);
+    path_str
+}
+
+/// Read one ref from a remote repository's object database, without cloning.
+fn remote_has(git_dir: &str, refname: &str) -> bool {
+    Command::new(git_program())
+        .args([
+            "--git-dir",
+            git_dir,
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            refname,
+        ])
+        .output()
+        .expect("run git")
+        .status
+        .success()
+}
+
+#[tokio::test]
+async fn a_push_moves_one_ref_and_a_tag_push_publishes_one_tag() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let (repository_id, _worktree_id) = fixture.open(&service).await;
+    let remote_path = bare_remote(&fixture, "remote.git");
+
+    // Configure the remote (an absolute local path is an approved URL form).
+    let snapshot_id = fixture.status(&service, &repository_id).await.snapshot_id;
+    let request = fixture.repository_request(
+        &repository_id,
+        &snapshot_id,
+        MutationOperation::AddRemote {
+            remote_name: "origin".to_string(),
+            fetch_url: remote_path.clone(),
+            push_url: None,
+        },
+        "crid-remote-add",
+    );
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    wait_terminal(&service, &accepted.record.operation_id).await;
+
+    // Push exactly one explicit ref.
+    let snapshot_id = fixture.status(&service, &repository_id).await.snapshot_id;
+    let request = fixture.repository_request(
+        &repository_id,
+        &snapshot_id,
+        MutationOperation::Push {
+            remote_name: "origin".to_string(),
+            source_ref: "refs/heads/main".to_string(),
+            destination_ref: "refs/heads/main".to_string(),
+            set_upstream: false,
+        },
+        "crid-push",
+    );
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Succeeded,
+        "{:?}",
+        finished.problem
+    );
+    assert!(
+        remote_has(&remote_path, "refs/heads/main"),
+        "the remote has the branch"
+    );
+
+    // Push one tag by name.
+    fixture.git(&["tag", "v1"]);
+    let snapshot_id = fixture.status(&service, &repository_id).await.snapshot_id;
+    let request = fixture.repository_request(
+        &repository_id,
+        &snapshot_id,
+        MutationOperation::PushTag {
+            remote_name: "origin".to_string(),
+            tag_name: "v1".to_string(),
+        },
+        "crid-push-tag",
+    );
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Succeeded,
+        "{:?}",
+        finished.problem
+    );
+    assert!(
+        remote_has(&remote_path, "refs/tags/v1"),
+        "the remote has the tag"
+    );
+}
+
+#[tokio::test]
+async fn a_push_refuses_to_contact_an_unsafe_configured_remote() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let (repository_id, _worktree_id) = fixture.open(&service).await;
+    // A remote configured *outside* the app with a transport-helper URL (names a
+    // command). The push must refuse to contact it even though the request itself is
+    // well-formed.
+    fixture.git(&["remote", "add", "origin", "ext::evil-helper"]);
+
+    let snapshot_id = fixture.status(&service, &repository_id).await.snapshot_id;
+    let request = fixture.repository_request(
+        &repository_id,
+        &snapshot_id,
+        MutationOperation::Push {
+            remote_name: "origin".to_string(),
+            source_ref: "refs/heads/main".to_string(),
+            destination_ref: "refs/heads/main".to_string(),
+            set_upstream: false,
+        },
+        "crid-push-unsafe",
+    );
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(finished.status, OperationStatus::Failed);
+    let problem = finished.problem.expect("a refusal carries the reason");
+    assert!(
+        problem.message.contains("unsafe configured URL"),
+        "the refusal names the unsafe remote: {}",
+        problem.message
+    );
+}

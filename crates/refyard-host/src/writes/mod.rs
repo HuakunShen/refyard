@@ -1,4 +1,4 @@
-//! The thirty-one write effects this build implements: stage, unstage, commit and
+//! The thirty-three write effects this build implements: stage, unstage, commit and
 //! amend, the ref writes (branch create/switch/rename/delete, upstream, tag
 //! create/delete), the remote config writes (add/update/remove), the stash family
 //! (create/apply/pop/drop), merge with its continue and abort, revert, reset,
@@ -102,7 +102,7 @@ impl WriteHost {
         }
     }
 
-    /// The thirty-one effects this build registers, in the order the contract lists
+    /// The thirty-three effects this build registers, in the order the contract lists
     /// them. The contract's own order is what `implemented_kinds` publishes, so the
     /// capability answer the UI gates its menus on is stable across builds.
     pub fn effects(host: &Arc<Self>) -> Vec<Box<dyn MutationEffect>> {
@@ -143,6 +143,9 @@ impl WriteHost {
             Box::new(remotes::RemoveRemoteEffect {
                 host: Arc::clone(host),
             }),
+            Box::new(remotes::PushEffect {
+                host: Arc::clone(host),
+            }),
             Box::new(stash::CreateStashEffect {
                 host: Arc::clone(host),
             }),
@@ -159,6 +162,9 @@ impl WriteHost {
                 host: Arc::clone(host),
             }),
             Box::new(branch::DeleteTagEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(remotes::PushTagEffect {
                 host: Arc::clone(host),
             }),
             Box::new(merge::MergeEffect {

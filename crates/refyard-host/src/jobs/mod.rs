@@ -166,6 +166,12 @@ pub enum MutationOperation {
         remote_name: String,
         confirmed: bool,
     },
+    Push {
+        remote_name: String,
+        source_ref: String,
+        destination_ref: String,
+        set_upstream: bool,
+    },
     CreateStash {
         message: Option<String>,
         include_untracked: bool,
@@ -192,6 +198,10 @@ pub enum MutationOperation {
     DeleteTag {
         tag_name: String,
         confirmed: bool,
+    },
+    PushTag {
+        remote_name: String,
+        tag_name: String,
     },
     Merge {
         source_oid: String,
@@ -249,12 +259,14 @@ impl MutationOperation {
             Self::AddRemote { .. } => MutationKind::AddRemote,
             Self::UpdateRemote { .. } => MutationKind::UpdateRemote,
             Self::RemoveRemote { .. } => MutationKind::RemoveRemote,
+            Self::Push { .. } => MutationKind::Push,
             Self::CreateStash { .. } => MutationKind::CreateStash,
             Self::ApplyStash { .. } => MutationKind::ApplyStash,
             Self::PopStash { .. } => MutationKind::PopStash,
             Self::DropStash { .. } => MutationKind::DropStash,
             Self::CreateTag { .. } => MutationKind::CreateTag,
             Self::DeleteTag { .. } => MutationKind::DeleteTag,
+            Self::PushTag { .. } => MutationKind::PushTag,
             Self::Merge { .. } => MutationKind::Merge,
             Self::ContinueMerge { .. } => MutationKind::ContinueMerge,
             Self::AbortMerge { .. } => MutationKind::AbortMerge,
@@ -303,7 +315,9 @@ impl MutationOperation {
             | Self::DropStash { .. }
             | Self::AddRemote { .. }
             | Self::UpdateRemote { .. }
-            | Self::RemoveRemote { .. } => Vec::new(),
+            | Self::RemoveRemote { .. }
+            | Self::Push { .. }
+            | Self::PushTag { .. } => Vec::new(),
         }
     }
 
@@ -751,6 +765,32 @@ mod seed_tests {
                 MutationOperation::RemoveRemote {
                     remote_name: "origin".to_string(),
                     confirmed: true,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "push",
+                    "remoteName": "origin",
+                    "sourceRef": "refs/heads/main",
+                    "destinationRef": "refs/heads/main",
+                    "setUpstream": true
+                }),
+                MutationOperation::Push {
+                    remote_name: "origin".to_string(),
+                    source_ref: "refs/heads/main".to_string(),
+                    destination_ref: "refs/heads/main".to_string(),
+                    set_upstream: true,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "pushTag",
+                    "remoteName": "origin",
+                    "tagName": "v1"
+                }),
+                MutationOperation::PushTag {
+                    remote_name: "origin".to_string(),
+                    tag_name: "v1".to_string(),
                 },
             ),
         ] {

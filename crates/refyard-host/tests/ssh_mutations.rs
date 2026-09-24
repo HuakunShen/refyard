@@ -759,7 +759,7 @@ async fn naming_a_state_directory_after_registering_the_writes_keeps_them() {
     let capabilities = service.capabilities().await.expect("capabilities");
     assert_eq!(
         capabilities.operations.len(),
-        31,
+        33,
         "the write path must survive a later state directory being named"
     );
 
@@ -1280,7 +1280,7 @@ async fn a_replayed_request_is_not_executed_twice() {
 }
 
 #[tokio::test]
-async fn capabilities_name_exactly_the_thirty_one_implemented_writes() {
+async fn capabilities_name_exactly_the_thirty_three_implemented_writes() {
     // Prevents: a capability answer that offers a write this build cannot run, or hides
     // one it can — the UI enables controls from this list.
     let fixture = Fixture::new();
@@ -1309,12 +1309,14 @@ async fn capabilities_name_exactly_the_thirty_one_implemented_writes() {
             (MutationKind::AddRemote, vec![TargetKind::Repository]),
             (MutationKind::UpdateRemote, vec![TargetKind::Repository]),
             (MutationKind::RemoveRemote, vec![TargetKind::Repository]),
+            (MutationKind::Push, vec![TargetKind::Repository]),
             (MutationKind::CreateStash, vec![TargetKind::Worktree]),
             (MutationKind::ApplyStash, vec![TargetKind::Worktree]),
             (MutationKind::PopStash, vec![TargetKind::Worktree]),
             (MutationKind::DropStash, vec![TargetKind::Repository]),
             (MutationKind::CreateTag, vec![TargetKind::Repository]),
             (MutationKind::DeleteTag, vec![TargetKind::Repository]),
+            (MutationKind::PushTag, vec![TargetKind::Repository]),
             (MutationKind::Merge, vec![TargetKind::Worktree]),
             (MutationKind::ContinueMerge, vec![TargetKind::Worktree]),
             (MutationKind::AbortMerge, vec![TargetKind::Worktree]),
@@ -1337,7 +1339,7 @@ async fn capabilities_name_exactly_the_thirty_one_implemented_writes() {
         .collect::<Vec<MutationKind>>();
     assert_eq!(
         unavailable.len(),
-        refyard_contract::reads::MUTATION_KINDS.len() - 31
+        refyard_contract::reads::MUTATION_KINDS.len() - 33
     );
     for offered in [
         MutationKind::StagePaths,
@@ -1352,12 +1354,14 @@ async fn capabilities_name_exactly_the_thirty_one_implemented_writes() {
         MutationKind::AddRemote,
         MutationKind::UpdateRemote,
         MutationKind::RemoveRemote,
+        MutationKind::Push,
         MutationKind::CreateStash,
         MutationKind::ApplyStash,
         MutationKind::PopStash,
         MutationKind::DropStash,
         MutationKind::CreateTag,
         MutationKind::DeleteTag,
+        MutationKind::PushTag,
         MutationKind::Merge,
         MutationKind::ContinueMerge,
         MutationKind::AbortMerge,
@@ -1378,7 +1382,7 @@ async fn capabilities_name_exactly_the_thirty_one_implemented_writes() {
         );
     }
     assert!(unavailable.contains(&MutationKind::DiscardTrackedPaths));
-    assert!(unavailable.contains(&MutationKind::Push));
+    assert!(unavailable.contains(&MutationKind::Fetch));
 }
 
 /* ------------------------------------------------------------------ the fixture-backed cases */

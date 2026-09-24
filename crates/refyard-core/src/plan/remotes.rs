@@ -9,7 +9,7 @@
 //! ref-component so it cannot be read as a switch. A URL that names a command is
 //! refused here, at the trusted boundary, never configured for a later surprise.
 
-use super::{DeadlineClass, GitPlan};
+use super::{branches::validated_ref_name, DeadlineClass, GitPlan};
 use crate::problem::CoreError;
 
 /// A remote name is 1–64 chars, `[A-Za-z0-9]` then `[A-Za-z0-9._-]` — the same closed
@@ -174,6 +174,90 @@ pub fn plan_remote_remove(name: &str) -> Result<GitPlan, CoreError> {
     ]))
 }
 
+/// A fully qualified ref (`refs/heads/main`, `refs/tags/v1`) — the contract's
+/// `fullRefNameSchema`. After `refs/`, no control character, space, or any of
+/// `~^:?*[\` is allowed: `:` in particular would corrupt the `src:dst` refspec, and a
+/// leading `-` or embedded space would smuggle an argument.
+pub fn validated_full_ref_name(name: &str) -> Result<(), CoreError> {
+    let rest = match name.strip_prefix("refs/") {
+        Some(rest) if !rest.is_empty() => rest,
+        _ => {
+            return Err(CoreError::invalid_input(
+                "a push ref must be fully qualified under refs/ (for example refs/heads/main)",
+            ))
+        }
+    };
+    if name.len() > 1024 {
+        return Err(CoreError::invalid_input(
+            "a push ref must not exceed 1024 bytes",
+        ));
+    }
+    let bad = rest.bytes().any(|b| {
+        b <= 0x20 || b == 0x7f || matches!(b, b'~' | b'^' | b':' | b'?' | b'*' | b'[' | b'\\')
+    });
+    if bad {
+        return Err(CoreError::invalid_input(
+            "a push ref must not contain control characters, spaces, or any of ~^:?*[\\",
+        ));
+    }
+    Ok(())
+}
+
+/// `git push --porcelain --no-follow-tags [--set-upstream] <remote> <src>:<dst>`.
+///
+/// Exactly one explicit source to one explicit destination — no mirroring, no
+/// `--force`, and `--no-follow-tags` so the user's `push.followTags` can never turn
+/// one selected ref into a tag sweep. The `src:dst` pair is one argv element and each
+/// half is validated to contain no `:`, so the split is unambiguous.
+pub fn plan_push(
+    remote_name: &str,
+    source_ref: &str,
+    destination_ref: &str,
+    set_upstream: bool,
+) -> Result<GitPlan, CoreError> {
+    validated_remote_name(remote_name)?;
+    validated_full_ref_name(source_ref)?;
+    validated_full_ref_name(destination_ref)?;
+    let mut argv = vec![
+        "push".to_string(),
+        "--porcelain".to_string(),
+        "--no-follow-tags".to_string(),
+    ];
+    if set_upstream {
+        argv.push("--set-upstream".to_string());
+    }
+    argv.push(remote_name.to_string());
+    argv.push(format!("{source_ref}:{destination_ref}"));
+    Ok(GitPlan {
+        argv,
+        stdin: Vec::new(),
+        deadline_class: DeadlineClass::Network,
+    })
+}
+
+/// `git push --porcelain --no-follow-tags <remote> refs/tags/<tag>:refs/tags/<tag>` —
+/// publish one tag by name. No force, no delete form.
+pub fn plan_push_tag(remote_name: &str, tag_name: &str) -> Result<GitPlan, CoreError> {
+    validated_ref_name(tag_name)?;
+    let full = format!("refs/tags/{tag_name}");
+    plan_push(remote_name, &full, &full, false)
+}
+
+/// `git remote get-url [--push] <name>` — the URL a fetch or push would contact.
+///
+/// Read before a network operation so the *configured* URL can be safety-checked: a
+/// remote configured outside this app could name a command (`ext::`), and this is the
+/// gate that refuses to contact it.
+pub fn plan_remote_get_url(name: &str, push: bool) -> Result<GitPlan, CoreError> {
+    validated_remote_name(name)?;
+    let mut argv = vec!["remote".to_string(), "get-url".to_string()];
+    if push {
+        argv.push("--push".to_string());
+    }
+    argv.push(name.to_string());
+    Ok(GitPlan::read(argv))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -235,5 +319,78 @@ mod tests {
         );
         // An unsafe URL never becomes argv at all.
         assert!(plan_remote_add("origin", "ext::sh -c evil").is_err());
+    }
+}
+
+#[cfg(test)]
+mod push_tests {
+    use super::*;
+
+    #[test]
+    fn a_push_ref_is_fully_qualified_and_cannot_smuggle_a_separator() {
+        assert!(validated_full_ref_name("refs/heads/main").is_ok());
+        assert!(validated_full_ref_name("refs/tags/v1.0").is_ok());
+        // A colon would corrupt `src:dst`; a leading `-` or space would be an argument.
+        assert!(validated_full_ref_name("refs/heads/a:b").is_err());
+        assert!(validated_full_ref_name("-refs/heads/x").is_err());
+        assert!(validated_full_ref_name("refs/heads/a b").is_err());
+        assert!(validated_full_ref_name("main").is_err());
+        assert!(validated_full_ref_name("refs/").is_err());
+        assert!(validated_full_ref_name("refs/heads/a~b").is_err());
+    }
+
+    #[test]
+    fn a_push_names_one_explicit_ref_and_never_a_force() {
+        assert_eq!(
+            plan_push("origin", "refs/heads/main", "refs/heads/main", true)
+                .expect("a plan")
+                .argv,
+            vec![
+                "push",
+                "--porcelain",
+                "--no-follow-tags",
+                "--set-upstream",
+                "origin",
+                "refs/heads/main:refs/heads/main"
+            ]
+        );
+        let plan = plan_push("origin", "refs/heads/a", "refs/heads/b", false).expect("a plan");
+        assert_eq!(
+            plan.argv,
+            vec![
+                "push",
+                "--porcelain",
+                "--no-follow-tags",
+                "origin",
+                "refs/heads/a:refs/heads/b"
+            ]
+        );
+        assert_eq!(plan.deadline_class, DeadlineClass::Network);
+    }
+
+    #[test]
+    fn a_tag_push_publishes_one_tag_by_name() {
+        assert_eq!(
+            plan_push_tag("origin", "v1").expect("a plan").argv,
+            vec![
+                "push",
+                "--porcelain",
+                "--no-follow-tags",
+                "origin",
+                "refs/tags/v1:refs/tags/v1"
+            ]
+        );
+    }
+
+    #[test]
+    fn the_configured_url_probe_reads_the_remote_through_git() {
+        assert_eq!(
+            plan_remote_get_url("origin", true).expect("a plan").argv,
+            vec!["remote", "get-url", "--push", "origin"]
+        );
+        assert_eq!(
+            plan_remote_get_url("origin", false).expect("a plan").argv,
+            vec!["remote", "get-url", "origin"]
+        );
     }
 }
