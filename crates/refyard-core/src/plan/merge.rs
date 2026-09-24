@@ -91,6 +91,43 @@ pub fn plan_merge(
     })
 }
 
+/// `git commit [--no-edit | -m <message>]` — the continue step of a stopped merge.
+///
+/// After a conflict the resolved index already holds the merge; committing it is the
+/// continue step. No `--no-verify`: the user's hooks run on a merge commit exactly as
+/// they do on any other commit, and a hook that refuses is reported as a refusal.
+pub fn plan_merge_continue(message: Option<&[u8]>) -> Result<GitPlan, CoreError> {
+    let mut argv = vec!["commit".to_string()];
+    match message {
+        None => argv.push("--no-edit".to_string()),
+        Some(message) => {
+            validated_message(message)?;
+            let message = String::from_utf8(message.to_vec())
+                .map_err(|_| CoreError::invalid_input("a merge message must be UTF-8 text"))?;
+            argv.push("-m".to_string());
+            argv.push(message);
+        }
+    }
+    Ok(GitPlan {
+        argv,
+        stdin: Vec::new(),
+        deadline_class: DeadlineClass::Hook,
+    })
+}
+
+/// `git merge --abort` — restore the state the merge started from.
+///
+/// There is no `reset --hard` here and there must never be one: a reset is a
+/// different, larger action that would also touch work Git deliberately refuses to
+/// touch during an abort.
+pub fn plan_merge_abort() -> GitPlan {
+    GitPlan {
+        argv: vec!["merge".to_string(), "--abort".to_string()],
+        stdin: Vec::new(),
+        deadline_class: DeadlineClass::Hook,
+    }
+}
+
 /// `git rev-parse --verify --quiet <rev>^{commit}` — resolve a revision to a commit.
 ///
 /// A source that is missing, or that names a blob or a tree, is refused with this probe's
@@ -167,6 +204,24 @@ mod tests {
         assert!(plan_merge(SHA1, false, Some(b"")).is_err());
         assert!(plan_merge(SHA1, false, Some(b" \n\t")).is_err());
         assert!(plan_merge(SHA1, false, Some(b"ok\0")).is_err());
+    }
+
+    #[test]
+    fn the_abort_is_its_own_command_and_never_a_reset() {
+        assert_eq!(plan_merge_abort().argv, vec!["merge", "--abort"]);
+        assert_eq!(plan_merge_abort().deadline_class, DeadlineClass::Hook);
+    }
+
+    #[test]
+    fn the_continue_step_is_a_commit_that_lets_hooks_run_and_never_edits() {
+        assert_eq!(
+            plan_merge_continue(None).expect("a plan").argv,
+            vec!["commit", "--no-edit"]
+        );
+        let with_message = plan_merge_continue(Some(b"merged\n")).expect("a plan");
+        assert_eq!(with_message.argv, vec!["commit", "-m", "merged\n"]);
+        assert_eq!(with_message.deadline_class, DeadlineClass::Hook);
+        assert!(plan_merge_continue(Some(b"")).is_err());
     }
 
     #[test]

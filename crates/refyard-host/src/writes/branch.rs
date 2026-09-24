@@ -79,6 +79,211 @@ impl MutationEffect for CreateTagEffect {
     }
 }
 
+/// `git branch --delete <name>` — merged branches only; no force form.
+pub struct DeleteBranchEffect {
+    pub(super) host: Arc<WriteHost>,
+}
+
+/// `git branch --move <old> <new>`.
+pub struct RenameBranchEffect {
+    pub(super) host: Arc<WriteHost>,
+}
+
+/// `git branch --set-upstream-to=<remote>/<branch> <name>` — or `--unset-upstream`.
+pub struct SetBranchUpstreamEffect {
+    pub(super) host: Arc<WriteHost>,
+}
+
+/// `git tag --delete <name>` — local tags only.
+pub struct DeleteTagEffect {
+    pub(super) host: Arc<WriteHost>,
+}
+
+impl MutationEffect for DeleteBranchEffect {
+    fn kind(&self) -> MutationKind {
+        MutationKind::DeleteBranch
+    }
+
+    fn run<'a>(
+        &'a self,
+        request: EffectRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = EffectOutcome> + Send + 'a>> {
+        let host = Arc::clone(&self.host);
+        Box::pin(async move { delete_branch(&host, &request).await })
+    }
+}
+
+impl MutationEffect for RenameBranchEffect {
+    fn kind(&self) -> MutationKind {
+        MutationKind::RenameBranch
+    }
+
+    fn run<'a>(
+        &'a self,
+        request: EffectRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = EffectOutcome> + Send + 'a>> {
+        let host = Arc::clone(&self.host);
+        Box::pin(async move { rename_branch(&host, &request).await })
+    }
+}
+
+impl MutationEffect for SetBranchUpstreamEffect {
+    fn kind(&self) -> MutationKind {
+        MutationKind::SetBranchUpstream
+    }
+
+    fn run<'a>(
+        &'a self,
+        request: EffectRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = EffectOutcome> + Send + 'a>> {
+        let host = Arc::clone(&self.host);
+        Box::pin(async move { set_branch_upstream(&host, &request).await })
+    }
+}
+
+impl MutationEffect for DeleteTagEffect {
+    fn kind(&self) -> MutationKind {
+        MutationKind::DeleteTag
+    }
+
+    fn run<'a>(
+        &'a self,
+        request: EffectRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = EffectOutcome> + Send + 'a>> {
+        let host = Arc::clone(&self.host);
+        Box::pin(async move { delete_tag(&host, &request).await })
+    }
+}
+
+/// The shared ref-write shape: validate the name into a plan, run, and let the
+/// read-back decide — Git's refusal for an unmerged branch, a missing tag or a bad
+/// upstream leaves the refs exactly as they were, which is the evidence.
+async fn run_ref_write(
+    host: &Arc<WriteHost>,
+    request: &EffectRequest<'_>,
+    plan: Result<refyard_core::plan::GitPlan, refyard_core::problem::CoreError>,
+    command: &'static str,
+    summary: String,
+) -> EffectOutcome {
+    let operation_id = request.operation_id;
+    let plan = match plan {
+        Ok(plan) => plan,
+        Err(error) => return invalid_payload(operation_id, error.to_string()),
+    };
+    let target = match host.resolve(request.request) {
+        Ok(target) => target,
+        Err(problem) => return refused(operation_id, problem),
+    };
+    let before = match host.read_facts(&target).await {
+        Ok(facts) => facts,
+        Err(problem) => return refused(operation_id, problem),
+    };
+    let outcome = match target
+        .executor
+        .try_run(
+            target.record.location.canonical_worktree.as_str(),
+            &plan,
+            None,
+        )
+        .await
+    {
+        Ok(outcome) => outcome,
+        Err(problem) => return refused(operation_id, problem),
+    };
+    if outcome.state == refyard_core::outcome::ExecutionState::NotStarted {
+        return effect_outcome(
+            Verdict::Failed {
+                problem: super::refusal_problem(command, &outcome),
+            },
+            summary,
+            None,
+        );
+    }
+    let after = host.read_facts(&target).await.ok();
+    let verdict = classify_write(
+        command,
+        Postcondition::IndexMayBeUnchanged,
+        &outcome,
+        &before,
+        after.as_ref(),
+    );
+    effect_outcome(verdict, summary, None)
+}
+
+async fn delete_branch(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> EffectOutcome {
+    let operation_id = request.operation_id;
+    let MutationOperation::DeleteBranch { branch_name, .. } = &request.request.operation else {
+        return wrong_payload(operation_id, "deleteBranch");
+    };
+    run_ref_write(
+        host,
+        request,
+        refyard_core::plan::branches::plan_branch_delete(branch_name),
+        "git branch --delete",
+        format!("deleted branch {branch_name}"),
+    )
+    .await
+}
+
+async fn rename_branch(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> EffectOutcome {
+    let operation_id = request.operation_id;
+    let MutationOperation::RenameBranch {
+        branch_name,
+        new_name,
+    } = &request.request.operation
+    else {
+        return wrong_payload(operation_id, "renameBranch");
+    };
+    run_ref_write(
+        host,
+        request,
+        refyard_core::plan::branches::plan_branch_rename(branch_name, new_name),
+        "git branch --move",
+        format!("renamed branch {branch_name} to {new_name}"),
+    )
+    .await
+}
+
+async fn set_branch_upstream(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> EffectOutcome {
+    let operation_id = request.operation_id;
+    let MutationOperation::SetBranchUpstream {
+        branch_name,
+        upstream,
+    } = &request.request.operation
+    else {
+        return wrong_payload(operation_id, "setBranchUpstream");
+    };
+    let plan = refyard_core::plan::branches::plan_branch_set_upstream(
+        branch_name,
+        upstream
+            .as_ref()
+            .map(|upstream| (upstream.remote_name.as_str(), upstream.branch_name.as_str())),
+    );
+    let summary = match upstream {
+        Some(upstream) => format!(
+            "set the upstream of {branch_name} to {}/{}",
+            upstream.remote_name, upstream.branch_name
+        ),
+        None => format!("cleared the upstream of {branch_name}"),
+    };
+    run_ref_write(host, request, plan, "git branch", summary).await
+}
+
+async fn delete_tag(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> EffectOutcome {
+    let operation_id = request.operation_id;
+    let MutationOperation::DeleteTag { tag_name, .. } = &request.request.operation else {
+        return wrong_payload(operation_id, "deleteTag");
+    };
+    run_ref_write(
+        host,
+        request,
+        refyard_core::plan::tags::plan_tag_delete(tag_name),
+        "git tag --delete",
+        format!("deleted tag {tag_name}"),
+    )
+    .await
+}
+
 async fn create_branch(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> EffectOutcome {
     let operation_id = request.operation_id;
     let MutationOperation::CreateBranch {

@@ -759,7 +759,7 @@ async fn naming_a_state_directory_after_registering_the_writes_keeps_them() {
     let capabilities = service.capabilities().await.expect("capabilities");
     assert_eq!(
         capabilities.operations.len(),
-        10,
+        23,
         "the write path must survive a later state directory being named"
     );
 
@@ -1280,7 +1280,7 @@ async fn a_replayed_request_is_not_executed_twice() {
 }
 
 #[tokio::test]
-async fn capabilities_name_exactly_the_ten_implemented_writes() {
+async fn capabilities_name_exactly_the_twenty_three_implemented_writes() {
     // Prevents: a capability answer that offers a write this build cannot run, or hides
     // one it can — the UI enables controls from this list.
     let fixture = Fixture::new();
@@ -1299,11 +1299,27 @@ async fn capabilities_name_exactly_the_ten_implemented_writes() {
             (MutationKind::Commit, vec![TargetKind::Worktree]),
             (MutationKind::CreateBranch, vec![TargetKind::Repository]),
             (MutationKind::SwitchBranch, vec![TargetKind::Worktree]),
+            (MutationKind::RenameBranch, vec![TargetKind::Repository]),
+            (MutationKind::DeleteBranch, vec![TargetKind::Repository]),
+            (
+                MutationKind::SetBranchUpstream,
+                vec![TargetKind::Repository]
+            ),
             (MutationKind::CreateTag, vec![TargetKind::Repository]),
+            (MutationKind::DeleteTag, vec![TargetKind::Repository]),
             (MutationKind::Merge, vec![TargetKind::Worktree]),
+            (MutationKind::ContinueMerge, vec![TargetKind::Worktree]),
+            (MutationKind::AbortMerge, vec![TargetKind::Worktree]),
             (MutationKind::RevertCommit, vec![TargetKind::Worktree]),
             (MutationKind::ResetBranch, vec![TargetKind::Worktree]),
             (MutationKind::CherryPick, vec![TargetKind::Worktree]),
+            (MutationKind::ContinueCherryPick, vec![TargetKind::Worktree]),
+            (MutationKind::AbortCherryPick, vec![TargetKind::Worktree]),
+            (MutationKind::Rebase, vec![TargetKind::Worktree]),
+            (MutationKind::ContinueRebase, vec![TargetKind::Worktree]),
+            (MutationKind::AbortRebase, vec![TargetKind::Worktree]),
+            (MutationKind::DropCommit, vec![TargetKind::Worktree]),
+            (MutationKind::SquashCommit, vec![TargetKind::Worktree]),
         ]
     );
     let unavailable = capabilities
@@ -1313,7 +1329,7 @@ async fn capabilities_name_exactly_the_ten_implemented_writes() {
         .collect::<Vec<MutationKind>>();
     assert_eq!(
         unavailable.len(),
-        refyard_contract::reads::MUTATION_KINDS.len() - 10
+        refyard_contract::reads::MUTATION_KINDS.len() - 23
     );
     for offered in [
         MutationKind::StagePaths,
@@ -1321,11 +1337,24 @@ async fn capabilities_name_exactly_the_ten_implemented_writes() {
         MutationKind::Commit,
         MutationKind::CreateBranch,
         MutationKind::SwitchBranch,
+        MutationKind::RenameBranch,
+        MutationKind::DeleteBranch,
+        MutationKind::SetBranchUpstream,
         MutationKind::CreateTag,
+        MutationKind::DeleteTag,
         MutationKind::Merge,
+        MutationKind::ContinueMerge,
+        MutationKind::AbortMerge,
         MutationKind::RevertCommit,
         MutationKind::ResetBranch,
         MutationKind::CherryPick,
+        MutationKind::ContinueCherryPick,
+        MutationKind::AbortCherryPick,
+        MutationKind::Rebase,
+        MutationKind::ContinueRebase,
+        MutationKind::AbortRebase,
+        MutationKind::DropCommit,
+        MutationKind::SquashCommit,
     ] {
         assert!(
             !unavailable.contains(&offered),

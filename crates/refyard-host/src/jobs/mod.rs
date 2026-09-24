@@ -76,6 +76,14 @@ pub enum ResetMode {
     Mixed,
 }
 
+/// The remote and branch an upstream names, as the contract's `setUpstream` carries it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpstreamSpec {
+    pub remote_name: String,
+    pub branch_name: String,
+}
+
 /// The message of an annotated tag, as the contract's `annotation` object carries it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -116,15 +124,37 @@ pub enum MutationOperation {
     SwitchBranch {
         branch_name: String,
     },
+    RenameBranch {
+        branch_name: String,
+        new_name: String,
+    },
+    DeleteBranch {
+        branch_name: String,
+        confirmed: bool,
+    },
+    SetBranchUpstream {
+        branch_name: String,
+        upstream: Option<UpstreamSpec>,
+    },
     CreateTag {
         tag_name: String,
         target_oid: Option<String>,
         annotation: Option<TagAnnotation>,
     },
+    DeleteTag {
+        tag_name: String,
+        confirmed: bool,
+    },
     Merge {
         source_oid: String,
         mode: MergeMode,
         message: Option<String>,
+    },
+    ContinueMerge {
+        message: Option<String>,
+    },
+    AbortMerge {
+        confirmed: bool,
     },
     RevertCommit {
         oid: String,
@@ -136,6 +166,24 @@ pub enum MutationOperation {
     CherryPick {
         oid: String,
     },
+    ContinueCherryPick {},
+    AbortCherryPick {
+        confirmed: bool,
+    },
+    Rebase {
+        upstream_oid: String,
+    },
+    ContinueRebase {},
+    AbortRebase {
+        confirmed: bool,
+    },
+    DropCommit {
+        oid: String,
+        confirmed: bool,
+    },
+    SquashCommit {
+        message: Option<String>,
+    },
 }
 
 impl MutationOperation {
@@ -146,11 +194,24 @@ impl MutationOperation {
             Self::Commit { .. } => MutationKind::Commit,
             Self::CreateBranch { .. } => MutationKind::CreateBranch,
             Self::SwitchBranch { .. } => MutationKind::SwitchBranch,
+            Self::RenameBranch { .. } => MutationKind::RenameBranch,
+            Self::DeleteBranch { .. } => MutationKind::DeleteBranch,
+            Self::SetBranchUpstream { .. } => MutationKind::SetBranchUpstream,
             Self::CreateTag { .. } => MutationKind::CreateTag,
+            Self::DeleteTag { .. } => MutationKind::DeleteTag,
             Self::Merge { .. } => MutationKind::Merge,
+            Self::ContinueMerge { .. } => MutationKind::ContinueMerge,
+            Self::AbortMerge { .. } => MutationKind::AbortMerge,
             Self::RevertCommit { .. } => MutationKind::RevertCommit,
             Self::ResetBranch { .. } => MutationKind::ResetBranch,
             Self::CherryPick { .. } => MutationKind::CherryPick,
+            Self::ContinueCherryPick { .. } => MutationKind::ContinueCherryPick,
+            Self::AbortCherryPick { .. } => MutationKind::AbortCherryPick,
+            Self::Rebase { .. } => MutationKind::Rebase,
+            Self::ContinueRebase { .. } => MutationKind::ContinueRebase,
+            Self::AbortRebase { .. } => MutationKind::AbortRebase,
+            Self::DropCommit { .. } => MutationKind::DropCommit,
+            Self::SquashCommit { .. } => MutationKind::SquashCommit,
         }
     }
 
@@ -165,7 +226,20 @@ impl MutationOperation {
             | Self::Merge { .. }
             | Self::RevertCommit { .. }
             | Self::ResetBranch { .. }
-            | Self::CherryPick { .. } => Vec::new(),
+            | Self::CherryPick { .. }
+            | Self::RenameBranch { .. }
+            | Self::DeleteBranch { .. }
+            | Self::SetBranchUpstream { .. }
+            | Self::DeleteTag { .. }
+            | Self::ContinueMerge { .. }
+            | Self::AbortMerge { .. }
+            | Self::ContinueCherryPick { .. }
+            | Self::AbortCherryPick { .. }
+            | Self::Rebase { .. }
+            | Self::ContinueRebase { .. }
+            | Self::AbortRebase { .. }
+            | Self::DropCommit { .. }
+            | Self::SquashCommit { .. } => Vec::new(),
         }
     }
 
@@ -409,6 +483,108 @@ mod seed_tests {
                 MutationOperation::CherryPick {
                     oid: oid.to_string(),
                 },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "deleteBranch",
+                    "branchName": "feature",
+                    "confirmed": true
+                }),
+                MutationOperation::DeleteBranch {
+                    branch_name: "feature".to_string(),
+                    confirmed: true,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "deleteTag",
+                    "tagName": "v1",
+                    "confirmed": true
+                }),
+                MutationOperation::DeleteTag {
+                    tag_name: "v1".to_string(),
+                    confirmed: true,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "renameBranch",
+                    "branchName": "old",
+                    "newName": "new"
+                }),
+                MutationOperation::RenameBranch {
+                    branch_name: "old".to_string(),
+                    new_name: "new".to_string(),
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "setBranchUpstream",
+                    "branchName": "main",
+                    "upstream": { "remoteName": "origin", "branchName": "main" }
+                }),
+                MutationOperation::SetBranchUpstream {
+                    branch_name: "main".to_string(),
+                    upstream: Some(UpstreamSpec {
+                        remote_name: "origin".to_string(),
+                        branch_name: "main".to_string(),
+                    }),
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "setBranchUpstream",
+                    "branchName": "main",
+                    "upstream": null
+                }),
+                MutationOperation::SetBranchUpstream {
+                    branch_name: "main".to_string(),
+                    upstream: None,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "continueMerge",
+                    "message": null
+                }),
+                MutationOperation::ContinueMerge { message: None },
+            ),
+            (
+                serde_json::json!({ "kind": "abortMerge", "confirmed": true }),
+                MutationOperation::AbortMerge { confirmed: true },
+            ),
+            (
+                serde_json::json!({ "kind": "continueCherryPick" }),
+                MutationOperation::ContinueCherryPick {},
+            ),
+            (
+                serde_json::json!({ "kind": "abortCherryPick", "confirmed": true }),
+                MutationOperation::AbortCherryPick { confirmed: true },
+            ),
+            (
+                serde_json::json!({ "kind": "rebase", "upstreamOid": oid }),
+                MutationOperation::Rebase {
+                    upstream_oid: oid.to_string(),
+                },
+            ),
+            (
+                serde_json::json!({ "kind": "continueRebase" }),
+                MutationOperation::ContinueRebase {},
+            ),
+            (
+                serde_json::json!({ "kind": "abortRebase", "confirmed": true }),
+                MutationOperation::AbortRebase { confirmed: true },
+            ),
+            (
+                serde_json::json!({ "kind": "dropCommit", "oid": oid, "confirmed": true }),
+                MutationOperation::DropCommit {
+                    oid: oid.to_string(),
+                    confirmed: true,
+                },
+            ),
+            (
+                serde_json::json!({ "kind": "squashCommit", "message": null }),
+                MutationOperation::SquashCommit { message: None },
             ),
         ] {
             assert_eq!(

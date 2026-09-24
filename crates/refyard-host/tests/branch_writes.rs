@@ -16,7 +16,9 @@ use refyard_contract::problem::ProblemCode;
 use refyard_contract::reads::{
     MutationKind, MutationTarget, OperationStatus, StatusSnapshot, TargetKind,
 };
-use refyard_host::jobs::{MutationOperation, MutationRequest, ResetMode, TagAnnotation};
+use refyard_host::jobs::{
+    MutationOperation, MutationRequest, ResetMode, TagAnnotation, UpstreamSpec,
+};
 use refyard_host::providers::local::LocalGit;
 use refyard_host::service::{ApplicationService, ApplicationServiceConfig, StatusQuery};
 
@@ -1011,4 +1013,777 @@ async fn the_new_writes_are_offered_on_the_targets_the_contract_names() {
             .unwrap_or_else(|| panic!("{kind:?} is advertised"));
         assert_eq!(operation.targets, targets, "{kind:?} targets");
     }
+}
+
+/* ------------------------------------------------- the way through a conflict */
+
+async fn standing_merge_request(
+    fixture: &Fixture,
+    service: &ApplicationService,
+    repository_id: &str,
+    worktree_id: &str,
+) -> MutationRequest {
+    fixture
+        .worktree_request(
+            service,
+            repository_id,
+            worktree_id,
+            MutationOperation::ContinueMerge { message: None },
+            "crid-continue-merge",
+        )
+        .await
+}
+
+#[tokio::test]
+async fn a_resolved_merge_is_completed_by_continue_and_the_branch_carries_the_merge() {
+    // Prevents: a conflict state with no way through it. The precondition layer lets
+    // only the continue/abort pair and staging run while the merge stands; this is the
+    // step that turns the resolved index into the merge commit.
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let (repository_id, worktree_id) = fixture.open(&service).await;
+    fixture.branch_with_commit("feature", "feature line", "feature work");
+    fixture.write("a.txt", "main line\nrest\n");
+    fixture.git(&["add", "--", "a.txt"]);
+    fixture.git(&["commit", "--quiet", "-m", "main work"]);
+    let (ok, _) = fixture.git_output(&["merge", "--no-ff", "--no-edit", "feature"]);
+    assert!(!ok, "the fixture's merge stops for a conflict");
+
+    // The human's half: resolve the file and stage it.
+    fixture.write("a.txt", "resolved by hand\nrest\n");
+    fixture.git(&["add", "--", "a.txt"]);
+
+    let request = standing_merge_request(&fixture, &service, &repository_id, &worktree_id).await;
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("the continue is accepted while the merge stands");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Succeeded,
+        "{:?}",
+        finished.problem
+    );
+    assert!(
+        !fixture.git_ok(&["rev-parse", "--verify", "--quiet", "MERGE_HEAD"]),
+        "the merge no longer stands"
+    );
+    let parents = String::from_utf8(fixture.git(&["rev-list", "--parents", "-n", "1", "HEAD"]))
+        .expect("ascii");
+    // rev-list prints the commit followed by each parent: a merge is three tokens.
+    assert_eq!(
+        parents.split_whitespace().count(),
+        3,
+        "the merge commit names two parents: {parents}"
+    );
+}
+
+#[tokio::test]
+async fn an_abort_restores_the_branch_the_merge_started_from() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let (repository_id, worktree_id) = fixture.open(&service).await;
+    fixture.branch_with_commit("feature", "feature line", "feature work");
+    fixture.write("a.txt", "main line\nrest\n");
+    fixture.git(&["add", "--", "a.txt"]);
+    fixture.git(&["commit", "--quiet", "-m", "main work"]);
+    let head_before = fixture.head();
+    let (ok, _) = fixture.git_output(&["merge", "--no-ff", "--no-edit", "feature"]);
+    assert!(!ok);
+
+    let request = fixture
+        .worktree_request(
+            &service,
+            &repository_id,
+            &worktree_id,
+            MutationOperation::AbortMerge { confirmed: true },
+            "crid-abort-merge",
+        )
+        .await;
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Succeeded,
+        "{:?}",
+        finished.problem
+    );
+    assert_eq!(
+        fixture.head(),
+        head_before,
+        "the branch is where it started"
+    );
+    assert_eq!(
+        fixture.letter(&service, &repository_id, "a.txt").await,
+        "-",
+        "the index is clean"
+    );
+}
+
+#[tokio::test]
+async fn a_continue_without_a_standing_merge_is_refused() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let (repository_id, worktree_id) = fixture.open(&service).await;
+
+    let request = standing_merge_request(&fixture, &service, &repository_id, &worktree_id).await;
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(finished.status, OperationStatus::Failed);
+    let problem = finished.problem.expect("a refusal carries the reason");
+    assert!(
+        problem.message.contains("no merge is in progress"),
+        "the refusal names the absence: {}",
+        problem.message
+    );
+}
+
+#[tokio::test]
+async fn a_resolved_cherry_pick_is_completed_with_the_original_message() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let (repository_id, worktree_id) = fixture.open(&service).await;
+    let feature_tip = fixture.branch_with_commit("feature", "feature line", "feature work");
+    fixture.write("a.txt", "main line\nrest\n");
+    fixture.git(&["add", "--", "a.txt"]);
+    fixture.git(&["commit", "--quiet", "-m", "main work"]);
+
+    let pick = fixture
+        .worktree_request(
+            &service,
+            &repository_id,
+            &worktree_id,
+            MutationOperation::CherryPick {
+                oid: feature_tip.clone(),
+            },
+            "crid-pick-stop",
+        )
+        .await;
+    let accepted = service
+        .submit_mutation("owner", pick)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(finished.status, OperationStatus::NeedsAttention);
+
+    fixture.write("a.txt", "resolved by hand\nrest\n");
+    fixture.git(&["add", "--", "a.txt"]);
+    let request = fixture
+        .worktree_request(
+            &service,
+            &repository_id,
+            &worktree_id,
+            MutationOperation::ContinueCherryPick {},
+            "crid-pick-continue",
+        )
+        .await;
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Succeeded,
+        "{:?}",
+        finished.problem
+    );
+    let message = String::from_utf8(fixture.git(&["log", "-1", "--format=%s"])).expect("utf8");
+    assert_eq!(
+        message.trim(),
+        "feature work",
+        "the original message travels"
+    );
+}
+
+#[tokio::test]
+async fn an_aborted_cherry_pick_leaves_no_marker_behind() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let (repository_id, worktree_id) = fixture.open(&service).await;
+    let feature_tip = fixture.branch_with_commit("feature", "feature line", "feature work");
+    fixture.write("a.txt", "main line\nrest\n");
+    fixture.git(&["add", "--", "a.txt"]);
+    fixture.git(&["commit", "--quiet", "-m", "main work"]);
+    let pick = fixture
+        .worktree_request(
+            &service,
+            &repository_id,
+            &worktree_id,
+            MutationOperation::CherryPick { oid: feature_tip },
+            "crid-pick-stop-2",
+        )
+        .await;
+    let accepted = service
+        .submit_mutation("owner", pick)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(finished.status, OperationStatus::NeedsAttention);
+
+    let request = fixture
+        .worktree_request(
+            &service,
+            &repository_id,
+            &worktree_id,
+            MutationOperation::AbortCherryPick { confirmed: true },
+            "crid-pick-abort",
+        )
+        .await;
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Succeeded,
+        "{:?}",
+        finished.problem
+    );
+    assert!(
+        !fixture.git_ok(&["rev-parse", "--verify", "--quiet", "CHERRY_PICK_HEAD"]),
+        "no pick stands"
+    );
+}
+
+/* ---------------------------------------------------------------- rebase */
+
+#[tokio::test]
+async fn a_rebase_replays_the_branch_onto_upstream_and_a_conflict_stands_for_a_human() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let (repository_id, worktree_id) = fixture.open(&service).await;
+    let first = fixture.head();
+    // main advances; feature carries its own commit from the old base.
+    fixture.git(&["checkout", "--quiet", "-b", "feature"]);
+    fixture.write("a.txt", "feature own work\nrest\n");
+    fixture.git(&["add", "--", "a.txt"]);
+    fixture.git(&["commit", "--quiet", "-m", "feature work"]);
+    fixture.git(&["checkout", "--quiet", "main"]);
+    fixture.write("b.txt", "main advanced\n");
+    fixture.git(&["add", "--", "b.txt"]);
+    fixture.git(&["commit", "--quiet", "-m", "main advanced"]);
+    let main_tip = fixture.head();
+    fixture.git(&["checkout", "--quiet", "feature"]);
+
+    let request = fixture
+        .worktree_request(
+            &service,
+            &repository_id,
+            &worktree_id,
+            MutationOperation::Rebase {
+                upstream_oid: main_tip.clone(),
+            },
+            "crid-rebase",
+        )
+        .await;
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Succeeded,
+        "{:?}",
+        finished.problem
+    );
+    // The replayed commit now sits on main's tip.
+    let parent = String::from_utf8(fixture.git(&["rev-parse", "HEAD^"]))
+        .expect("ascii")
+        .trim()
+        .to_string();
+    assert_eq!(parent, main_tip);
+    let _ = first;
+}
+
+#[tokio::test]
+async fn a_conflicting_rebase_stands_and_continue_finishes_it() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let (repository_id, worktree_id) = fixture.open(&service).await;
+    // feature rewrites a.txt; main rewrites the same line after branching.
+    fixture.git(&["checkout", "--quiet", "-b", "feature"]);
+    fixture.write("a.txt", "feature line\nrest\n");
+    fixture.git(&["add", "--", "a.txt"]);
+    fixture.git(&["commit", "--quiet", "-m", "feature work"]);
+    fixture.git(&["checkout", "--quiet", "main"]);
+    fixture.write("a.txt", "main line\nrest\n");
+    fixture.git(&["add", "--", "a.txt"]);
+    fixture.git(&["commit", "--quiet", "-m", "main work"]);
+    let main_tip = fixture.head();
+    fixture.git(&["checkout", "--quiet", "feature"]);
+    let feature_tip = fixture.head();
+
+    let request = fixture
+        .worktree_request(
+            &service,
+            &repository_id,
+            &worktree_id,
+            MutationOperation::Rebase {
+                upstream_oid: main_tip.clone(),
+            },
+            "crid-rebase-conflict",
+        )
+        .await;
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::NeedsAttention,
+        "{:?}",
+        finished.problem
+    );
+    let problem = finished
+        .problem
+        .expect("needs attention carries the reason");
+    assert!(problem.message.contains("conflict"));
+    assert!(
+        fixture.git_ok(&["rev-parse", "--verify", "REBASE_HEAD"]),
+        "the rebase stands for a human to finish"
+    );
+
+    // The resolution half, then the continue.
+    fixture.write("a.txt", "resolved by hand\nrest\n");
+    fixture.git(&["add", "--", "a.txt"]);
+    let request = fixture
+        .worktree_request(
+            &service,
+            &repository_id,
+            &worktree_id,
+            MutationOperation::ContinueRebase {},
+            "crid-rebase-continue",
+        )
+        .await;
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Succeeded,
+        "{:?}",
+        finished.problem
+    );
+    // This Git keeps REBASE_HEAD resolvable after a finished rebase, so "done" is
+    // read from the state that actually matters: the rebase directory is gone.
+    assert!(
+        !fixture.repo.join(".git/rebase-merge").exists()
+            && !fixture.repo.join(".git").join("rebase-merge").exists(),
+        "the rebase no longer stands"
+    );
+    // The replayed commit kept its own message.
+    let message = String::from_utf8(fixture.git(&["log", "-1", "--format=%s"])).expect("utf8");
+    assert_eq!(message.trim(), "feature work");
+    let _ = feature_tip;
+}
+
+#[tokio::test]
+async fn an_aborted_rebase_restores_the_branch() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let (repository_id, worktree_id) = fixture.open(&service).await;
+    fixture.git(&["checkout", "--quiet", "-b", "feature"]);
+    fixture.write("a.txt", "feature line\nrest\n");
+    fixture.git(&["add", "--", "a.txt"]);
+    fixture.git(&["commit", "--quiet", "-m", "feature work"]);
+    fixture.git(&["checkout", "--quiet", "main"]);
+    fixture.write("a.txt", "main line\nrest\n");
+    fixture.git(&["add", "--", "a.txt"]);
+    fixture.git(&["commit", "--quiet", "-m", "main work"]);
+    fixture.git(&["checkout", "--quiet", "feature"]);
+    let feature_head = fixture.head();
+
+    let request = fixture
+        .worktree_request(
+            &service,
+            &repository_id,
+            &worktree_id,
+            MutationOperation::Rebase {
+                upstream_oid: String::from_utf8(fixture.git(&["rev-parse", "main"]))
+                    .expect("ascii")
+                    .trim()
+                    .to_string(),
+            },
+            "crid-rebase-abort-setup",
+        )
+        .await;
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(finished.status, OperationStatus::NeedsAttention);
+
+    let request = fixture
+        .worktree_request(
+            &service,
+            &repository_id,
+            &worktree_id,
+            MutationOperation::AbortRebase { confirmed: true },
+            "crid-rebase-abort",
+        )
+        .await;
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Succeeded,
+        "{:?}",
+        finished.problem
+    );
+    assert_eq!(fixture.head(), feature_head, "the branch is where it was");
+    assert!(
+        !fixture.git_ok(&["rev-parse", "--verify", "REBASE_HEAD"]),
+        "the rebase no longer stands"
+    );
+}
+
+/* ------------------------------------------------------------ drop/squash */
+
+#[tokio::test]
+async fn a_drop_removes_one_commit_and_keeps_the_rest_of_the_history() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let (repository_id, worktree_id) = fixture.open(&service).await;
+    let first = fixture.head();
+    fixture.write("a.txt", "to be dropped\nrest\n");
+    fixture.git(&["add", "--", "a.txt"]);
+    fixture.git(&["commit", "--quiet", "-m", "doomed"]);
+    let doomed = fixture.head();
+    fixture.write("b.txt", "kept work\n");
+    fixture.git(&["add", "--", "b.txt"]);
+    fixture.git(&["commit", "--quiet", "-m", "kept"]);
+
+    let request = fixture
+        .worktree_request(
+            &service,
+            &repository_id,
+            &worktree_id,
+            MutationOperation::DropCommit {
+                oid: doomed.clone(),
+                confirmed: true,
+            },
+            "crid-drop",
+        )
+        .await;
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Succeeded,
+        "{:?}",
+        finished.problem
+    );
+    // The doomed commit is gone; its descendant (kept) survived the replay.
+    let subjects = String::from_utf8(fixture.git(&["log", "--format=%s", "-3"])).expect("utf8");
+    assert!(!subjects.contains("doomed"), "{subjects}");
+    assert!(subjects.contains("kept"), "{subjects}");
+    assert!(fixture.git_ok(&["merge-base", "--is-ancestor", &first, "HEAD"]));
+}
+
+#[tokio::test]
+async fn dropping_a_merge_commit_or_a_foreign_commit_is_refused() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let (repository_id, worktree_id) = fixture.open(&service).await;
+    fixture.branch_with_commit("feature", "feature line", "feature work");
+    fixture.git(&["merge", "--quiet", "--no-ff", "-m", "a merge", "feature"]);
+    let merge_commit = fixture.head();
+
+    let request = fixture
+        .worktree_request(
+            &service,
+            &repository_id,
+            &worktree_id,
+            MutationOperation::DropCommit {
+                oid: merge_commit.clone(),
+                confirmed: true,
+            },
+            "crid-drop-merge",
+        )
+        .await;
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(finished.status, OperationStatus::Failed);
+    let problem = finished.problem.expect("a refusal carries the reason");
+    assert!(problem.message.contains("merge"), "{}", problem.message);
+
+    // A commit from a branch this history never merged is not this branch's history
+    // to rewrite — even though a merged branch's commits would be.
+    let foreign = fixture.branch_with_commit("elsewhere", "elsewhere line", "elsewhere work");
+    let request = fixture
+        .worktree_request(
+            &service,
+            &repository_id,
+            &worktree_id,
+            MutationOperation::DropCommit {
+                oid: foreign,
+                confirmed: true,
+            },
+            "crid-drop-foreign",
+        )
+        .await;
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(finished.status, OperationStatus::Failed);
+}
+
+#[tokio::test]
+async fn a_squash_folds_the_top_commit_down_and_keeps_the_parents_message() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let (repository_id, worktree_id) = fixture.open(&service).await;
+    let first = fixture.head();
+    fixture.write("a.txt", "top commit work\nrest\n");
+    fixture.git(&["add", "--", "a.txt"]);
+    fixture.git(&["commit", "--quiet", "-m", "top"]);
+
+    let request = fixture
+        .worktree_request(
+            &service,
+            &repository_id,
+            &worktree_id,
+            MutationOperation::SquashCommit { message: None },
+            "crid-squash",
+        )
+        .await;
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Succeeded,
+        "{:?}",
+        finished.problem
+    );
+    // The branch is one commit tall again; its message is the parent's; the change
+    // from the top commit is inside it.
+    let subjects = String::from_utf8(fixture.git(&["log", "--format=%s"])).expect("utf8");
+    assert_eq!(subjects.trim(), "first", "{subjects}");
+    assert_eq!(fixture.read("a.txt"), "top commit work\nrest\n");
+    let _ = first;
+}
+
+#[tokio::test]
+async fn a_squash_of_a_changeless_top_commit_is_refused() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let (repository_id, worktree_id) = fixture.open(&service).await;
+    // An empty commit over its parent: nothing to fold.
+    fixture.git(&["commit", "--quiet", "--allow-empty", "-m", "empty top"]);
+
+    let request = fixture
+        .worktree_request(
+            &service,
+            &repository_id,
+            &worktree_id,
+            MutationOperation::SquashCommit { message: None },
+            "crid-squash-empty",
+        )
+        .await;
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(finished.status, OperationStatus::Failed);
+    let problem = finished.problem.expect("a refusal carries the reason");
+    assert!(
+        problem.message.contains("nothing to squash"),
+        "{}",
+        problem.message
+    );
+}
+
+/* ----------------------------------------------------- delete/rename/upstream */
+
+#[tokio::test]
+async fn a_merged_branch_and_a_tag_delete_cleanly_and_an_unmerged_branch_is_refused() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let (repository_id, _worktree_id) = fixture.open(&service).await;
+    fixture.git(&["tag", "v-old"]);
+    fixture.git(&["branch", "merged-branch"]);
+
+    let request = fixture.repository_request(
+        &repository_id,
+        &fixture.status(&service, &repository_id).await.snapshot_id,
+        MutationOperation::DeleteBranch {
+            branch_name: "merged-branch".to_string(),
+            confirmed: true,
+        },
+        "crid-delete-branch",
+    );
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Succeeded,
+        "{:?}",
+        finished.problem
+    );
+    assert!(!fixture.git_ok(&["rev-parse", "--verify", "merged-branch"]));
+
+    let request = fixture.repository_request(
+        &repository_id,
+        &fixture.status(&service, &repository_id).await.snapshot_id,
+        MutationOperation::DeleteTag {
+            tag_name: "v-old".to_string(),
+            confirmed: true,
+        },
+        "crid-delete-tag",
+    );
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Succeeded,
+        "{:?}",
+        finished.problem
+    );
+    assert!(!fixture.git_ok(&["rev-parse", "--verify", "v-old"]));
+
+    // An unmerged branch: Git refuses, and the read-back proves the branch survived.
+    fixture.branch_with_commit("unmerged", "unmerged line", "unmerged work");
+    let request = fixture.repository_request(
+        &repository_id,
+        &fixture.status(&service, &repository_id).await.snapshot_id,
+        MutationOperation::DeleteBranch {
+            branch_name: "unmerged".to_string(),
+            confirmed: true,
+        },
+        "crid-delete-unmerged",
+    );
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(finished.status, OperationStatus::Failed);
+    assert!(
+        fixture.git_ok(&["rev-parse", "--verify", "unmerged"]),
+        "the unmerged branch survives"
+    );
+}
+
+#[tokio::test]
+async fn a_rename_moves_the_branch_and_an_upstream_sets_and_clears() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let (repository_id, _worktree_id) = fixture.open(&service).await;
+
+    fixture.git(&["branch", "old-name"]);
+
+    let request = fixture.repository_request(
+        &repository_id,
+        &fixture.status(&service, &repository_id).await.snapshot_id,
+        MutationOperation::RenameBranch {
+            branch_name: "old-name".to_string(),
+            new_name: "new-name".to_string(),
+        },
+        "crid-rename",
+    );
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Succeeded,
+        "{:?}",
+        finished.problem
+    );
+    assert!(!fixture.git_ok(&["rev-parse", "--verify", "old-name"]));
+    assert!(fixture.git_ok(&["rev-parse", "--verify", "new-name"]));
+
+    // A configured remote and a remote-tracking ref to point the upstream at,
+    // without any network.
+    fixture.git(&["remote", "add", "origin", "."]);
+    fixture.git(&["update-ref", "refs/remotes/origin/main", &fixture.head()]);
+    let request = fixture.repository_request(
+        &repository_id,
+        &fixture.status(&service, &repository_id).await.snapshot_id,
+        MutationOperation::SetBranchUpstream {
+            branch_name: "new-name".to_string(),
+            upstream: Some(UpstreamSpec {
+                remote_name: "origin".to_string(),
+                branch_name: "main".to_string(),
+            }),
+        },
+        "crid-upstream-set",
+    );
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Succeeded,
+        "{:?}",
+        finished.problem
+    );
+    let upstream =
+        String::from_utf8(fixture.git(&["rev-parse", "--abbrev-ref", "new-name@{upstream}"]))
+            .expect("ascii");
+    assert_eq!(upstream.trim(), "origin/main");
+
+    let request = fixture.repository_request(
+        &repository_id,
+        &fixture.status(&service, &repository_id).await.snapshot_id,
+        MutationOperation::SetBranchUpstream {
+            branch_name: "new-name".to_string(),
+            upstream: None,
+        },
+        "crid-upstream-clear",
+    );
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Succeeded,
+        "{:?}",
+        finished.problem
+    );
+    assert!(
+        !fixture.git_ok(&["rev-parse", "--abbrev-ref", "new-name@{upstream}"]),
+        "the upstream is cleared"
+    );
 }

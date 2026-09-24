@@ -75,6 +75,16 @@ fn validated_message(message: &[u8]) -> Result<(), CoreError> {
     Ok(())
 }
 
+/// `git tag --delete <name>` — local only; a remote tag is never touched.
+pub fn plan_tag_delete(name: &str) -> Result<GitPlan, CoreError> {
+    validated_ref_name(name)?;
+    Ok(GitPlan::read(vec![
+        "tag".to_string(),
+        "--delete".to_string(),
+        name.to_string(),
+    ]))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

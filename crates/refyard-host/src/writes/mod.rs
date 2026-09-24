@@ -1,5 +1,7 @@
-//! The ten write effects this build implements: stage, unstage, commit, branch create
-//! and switch, tag create, merge, revert, reset and cherry-pick.
+//! The twenty-three write effects this build implements: stage, unstage, commit, the
+//! ref writes (branch create/switch/rename/delete, upstream, tag create/delete),
+//! merge with its continue and abort, revert, reset, cherry-pick with its continue
+//! and abort, rebase with its continue and abort, drop, and squash.
 //!
 //! One workflow per effect, run through whatever executor the repository's target names —
 //! the local provider or the SSH provider. There is no second implementation for SSH: the
@@ -28,6 +30,7 @@ pub mod branch;
 pub mod commit;
 pub mod merge;
 pub mod replay;
+pub mod sequencer;
 pub mod stage;
 
 use std::sync::Arc;
@@ -95,7 +98,9 @@ impl WriteHost {
         }
     }
 
-    /// The ten effects this build registers, in the order the contract lists them.
+    /// The twenty-three effects this build registers, in the order the contract lists
+    /// them. The contract's own order is what `implemented_kinds` publishes, so the
+    /// capability answer the UI gates its menus on is stable across builds.
     pub fn effects(host: &Arc<Self>) -> Vec<Box<dyn MutationEffect>> {
         vec![
             Box::new(stage::StageEffect {
@@ -113,10 +118,28 @@ impl WriteHost {
             Box::new(branch::SwitchBranchEffect {
                 host: Arc::clone(host),
             }),
+            Box::new(branch::RenameBranchEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(branch::DeleteBranchEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(branch::SetBranchUpstreamEffect {
+                host: Arc::clone(host),
+            }),
             Box::new(branch::CreateTagEffect {
                 host: Arc::clone(host),
             }),
+            Box::new(branch::DeleteTagEffect {
+                host: Arc::clone(host),
+            }),
             Box::new(merge::MergeEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(sequencer::ContinueMergeEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(sequencer::AbortMergeEffect {
                 host: Arc::clone(host),
             }),
             Box::new(replay::RevertCommitEffect {
@@ -126,6 +149,27 @@ impl WriteHost {
                 host: Arc::clone(host),
             }),
             Box::new(replay::CherryPickEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(sequencer::ContinueCherryPickEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(sequencer::AbortCherryPickEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(replay::RebaseEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(sequencer::ContinueRebaseEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(sequencer::AbortRebaseEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(replay::DropCommitEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(replay::SquashCommitEffect {
                 host: Arc::clone(host),
             }),
         ]

@@ -125,6 +125,55 @@ pub fn plan_branch_switch(name: &str) -> Result<GitPlan, CoreError> {
     ]))
 }
 
+/// `git branch --delete <name>` — merged branches only; there is no force form, and
+/// Git's own refusal for unmerged work is the answer.
+pub fn plan_branch_delete(name: &str) -> Result<GitPlan, CoreError> {
+    validated_ref_name(name)?;
+    Ok(GitPlan::read(vec![
+        "branch".to_string(),
+        "--delete".to_string(),
+        name.to_string(),
+    ]))
+}
+
+/// `git branch --move <old> <new>` — the old name is not re-validated as a new name,
+/// but the new one gets the full ref rules.
+pub fn plan_branch_rename(name: &str, new_name: &str) -> Result<GitPlan, CoreError> {
+    validated_ref_name(name)?;
+    validated_ref_name(new_name)?;
+    Ok(GitPlan::read(vec![
+        "branch".to_string(),
+        "--move".to_string(),
+        name.to_string(),
+        new_name.to_string(),
+    ]))
+}
+
+/// `git branch --set-upstream-to=<remote>/<branch> <name>`, or
+/// `git branch --unset-upstream <name>` when the upstream is cleared.
+///
+/// The `<remote>/<branch>` spelling is literal because that is what Git resolves; both
+/// parts were constrained by the request schema before this planner saw them.
+pub fn plan_branch_set_upstream(
+    name: &str,
+    upstream: Option<(&str, &str)>,
+) -> Result<GitPlan, CoreError> {
+    validated_ref_name(name)?;
+    let argv = match upstream {
+        None => vec![
+            "branch".to_string(),
+            "--unset-upstream".to_string(),
+            name.to_string(),
+        ],
+        Some((remote, branch)) => vec![
+            "branch".to_string(),
+            format!("--set-upstream-to={remote}/{branch}"),
+            name.to_string(),
+        ],
+    };
+    Ok(GitPlan::read(argv))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
