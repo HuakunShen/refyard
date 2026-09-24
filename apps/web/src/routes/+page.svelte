@@ -1451,11 +1451,11 @@
             tone="branch"
             data-testid="build-badge"
             data-tauri-drag-region
-            title={`Implemented write operations: ${capabilities.data.operations
-              .map((operation) => operation.kind)
-              .join(", ")}`}
+            title={m.header_write_ops_title({
+              ops: capabilities.data.operations.map((operation) => operation.kind).join(", "),
+            })}
           >
-            {capabilities.data.operations.length} write operations
+            {m.header_n_write_ops({ n: capabilities.data.operations.length })}
           </Badge>
         {/if}
       </div>
@@ -1492,16 +1492,16 @@
           ></span>
         </span>
         {!browserOnline
-          ? "not connected (offline)"
+          ? m.conn_not_connected_offline()
           : negotiation.kind === "incompatible"
-            ? "not connected (incompatible service)"
+            ? m.conn_not_connected_incompatible()
             : negotiation.kind === "readOnlyCompatibility"
-              ? "read-only (contract update available)"
+              ? m.conn_read_only()
               : streamState === "live"
-                ? "live updates"
+                ? m.conn_live()
                 : streamState === "connecting"
-                  ? "connecting…"
-                  : "no live updates"}
+                  ? m.conn_connecting()
+                  : m.conn_no_live()}
       </Badge>
       <SettingsDialog
         {accent}

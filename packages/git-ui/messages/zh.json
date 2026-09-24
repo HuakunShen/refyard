@@ -357,5 +357,13 @@
 	"copy_uncommitted_hint": "有未提交的变更 — 点击处理",
 	"pairing_again": "重新配对",
 	"refs_gone": "已消失",
-	"detail_tree": "目录树"
+	"detail_tree": "目录树",
+	"header_n_write_ops": "{n} 项写入操作",
+	"header_write_ops_title": "已实现的写入操作:{ops}",
+	"conn_live": "实时更新",
+	"conn_not_connected_offline": "未连接(离线)",
+	"conn_not_connected_incompatible": "未连接(服务版本不兼容)",
+	"conn_read_only": "只读(有契约更新可用)",
+	"conn_connecting": "连接中…",
+	"conn_no_live": "无实时更新"
 }

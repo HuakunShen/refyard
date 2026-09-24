@@ -357,5 +357,13 @@
 	"copy_uncommitted_hint": "uncommitted changes — click to work on them",
 	"pairing_again": "Pair again",
 	"refs_gone": "gone",
-	"detail_tree": "tree"
+	"detail_tree": "tree",
+	"header_n_write_ops": "{n} write operations",
+	"header_write_ops_title": "Implemented write operations: {ops}",
+	"conn_live": "live updates",
+	"conn_not_connected_offline": "not connected (offline)",
+	"conn_not_connected_incompatible": "not connected (incompatible service)",
+	"conn_read_only": "read-only (contract update available)",
+	"conn_connecting": "connecting…",
+	"conn_no_live": "no live updates"
 }
