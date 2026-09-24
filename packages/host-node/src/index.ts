@@ -16,6 +16,7 @@
  * - everything else (the coordinator, HTTP server, journal) arrives in later tasks
  *   on top of these primitives.
  */
+export { resolveGitPath } from "./process/git-path.js";
 export {
   createGitHost,
   type GitHost,
@@ -357,3 +358,8 @@ export {
   type ConnectResult,
   type ProviderService,
 } from "./provider/service.js";
+export {
+  assembleService,
+  type AssembleOptions,
+  type ServiceAssembly,
+} from "./service/assembly.js";

@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { assembleService } from "../../apps/cli/src/serve.js";
+import { assembleService } from "@refyard/host-node";
 
 it("assembles a zero-repository development service with management enabled", async () => {
   // Prevents the launcher from requiring a fake repository or scanning the current directory.
