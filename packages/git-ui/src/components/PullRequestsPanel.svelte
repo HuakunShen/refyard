@@ -122,7 +122,7 @@
         >
           {deviceState.userCode}
         </p>
-        <p class="text-xs text-ink-faint">Waiting for authorization…</p>
+        <p class="text-xs text-ink-faint">{m.pr_waiting()}</p>
       </div>
     {:else}
       <p class="text-xs text-ink-muted">
@@ -207,9 +207,9 @@
 
   {#if connected}
     {#if loading && pullRequests === undefined}
-      <p class="text-xs text-ink-muted">Reading pull requests…</p>
+      <p class="text-xs text-ink-muted">{m.pr_reading()}</p>
     {:else if pullRequests !== undefined && pullRequests.length === 0}
-      <p class="text-xs text-ink-muted">No open pull requests.</p>
+      <p class="text-xs text-ink-muted">{m.pr_none()}</p>
     {:else if pullRequests !== undefined}
       <ul class="flex flex-col gap-1" data-testid="provider-pull-requests">
         {#each pullRequests as pull (pull.number)}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /**
    * Branches, tags and remotes for one repository.
    *
@@ -23,7 +24,7 @@
 </script>
 
 {#if refs === null}
-  <p class={cn("text-xs text-ink-faint", className)}>No refs loaded.</p>
+  <p class={cn("text-xs text-ink-faint", className)}>{m.common_no_refs()}</p>
 {:else}
   <div class={cn("flex flex-col gap-4", className)}>
     <section class="flex flex-col gap-1.5">
@@ -33,7 +34,7 @@
         >
       </h3>
       {#if refs.branches.length === 0}
-        <p class="text-xs text-ink-faint">No branches yet.</p>
+        <p class="text-xs text-ink-faint">{m.refs_no_branches()}</p>
       {:else}
         <ul class="flex flex-col gap-0.5">
           {#each refs.branches as branch (branch.fullName)}
@@ -43,7 +44,7 @@
                 title={branch.fullName}>{branch.name}</span
               >
               {#if branch.isCurrent}
-                <Badge tone="head">HEAD</Badge>
+                <Badge tone="head">{m.common_head()}</Badge>
               {/if}
               {#if branch.upstream !== null}
                 {#if branch.upstream.gone}
@@ -70,7 +71,7 @@
         >
       </h3>
       {#if refs.tags.length === 0}
-        <p class="text-xs text-ink-faint">No tags.</p>
+        <p class="text-xs text-ink-faint">{m.tag_none_short()}</p>
       {:else}
         <ul class="flex flex-col gap-0.5">
           {#each refs.tags as tag (tag.fullName)}
@@ -99,7 +100,7 @@
         >
       </h3>
       {#if refs.remotes.length === 0}
-        <p class="text-xs text-ink-faint">No remotes configured.</p>
+        <p class="text-xs text-ink-faint">{m.remote_none()}</p>
       {:else}
         <ul class="flex flex-col gap-1">
           {#each refs.remotes as remote (remote.name)}

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /**
    * The full message and metadata of one commit.
    *
@@ -80,7 +81,7 @@
     </header>
 
     {#if detail === null}
-      <p class="text-xs text-ink-faint">Loading the full message…</p>
+      <p class="text-xs text-ink-faint">{m.commit_loading_message()}</p>
     {:else}
       <dl class="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1 text-xs">
         <dt class="text-ink-faint">author</dt>

@@ -273,7 +273,7 @@
       <span class="flex-1 text-xs text-muted-foreground">
         Reading configuration never contacts a host.
       </span>
-      <Button variant="ghost" onclick={() => (open = false)}>Cancel</Button>
+      <Button variant="ghost" onclick={() => (open = false)}>{m.common_cancel()}</Button>
     </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>

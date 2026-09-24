@@ -316,7 +316,7 @@
     >
       {m.launcher_workspace()}
     </p>
-    <h1 class="mt-1 text-2xl font-semibold tracking-tight">Repositories</h1>
+    <h1 class="mt-1 text-2xl font-semibold tracking-tight">{m.sidebar_repositories()}</h1>
     <p class="mt-1 max-w-2xl text-sm text-muted-foreground">
       Open a local repository, start from a clone, or create one. Recent entries
       are only repositories you explicitly opened.
@@ -333,7 +333,7 @@
       variant={mode === "open" ? "default" : "outline"}
       onclick={() => (mode = "open")}
       data-testid="launcher-open-tab"
-      ><FolderOpen data-icon="inline-start" />Open</Button
+      ><FolderOpen data-icon="inline-start" />{m.launcher_open()}</Button
     >
     <Button
       type="button"
@@ -441,7 +441,7 @@
         type="submit"
         disabled={disabled || path.trim().length === 0 || openPending}
         data-testid="launcher-open"
-        ><FolderOpen data-icon="inline-start" />Open repository</Button
+        ><FolderOpen data-icon="inline-start" />{m.launcher_open_repo()}</Button
       >
       {#if remoteBrowseReason !== null}
         <p
@@ -591,7 +591,7 @@
                 <Button
                   type="button"
                   size="sm"
-                  onclick={() => chooseRepository(entry.path)}>Open</Button
+                  onclick={() => chooseRepository(entry.path)}>{m.launcher_open()}</Button
                 >
               {:else}
                 <Button
@@ -619,7 +619,7 @@
 
     <Dialog.Footer>
       <Button variant="ghost" onclick={() => (pickerOpen = false)}
-        >Cancel</Button
+        >{m.common_cancel()}</Button
       >
       <Button
         disabled={pickerData === null}

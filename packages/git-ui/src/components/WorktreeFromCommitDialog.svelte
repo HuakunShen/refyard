@@ -62,7 +62,7 @@
     </Dialog.Header>
     <div class="flex flex-col gap-3">
       <label class="flex flex-col gap-1.5 text-sm">
-        <span class="text-muted-foreground">New branch name</span>
+        <span class="text-muted-foreground">{m.worktree_new_branch_name()}</span>
         <!-- svelte-ignore a11y_autofocus -->
         <input
           autofocus

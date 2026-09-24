@@ -86,7 +86,7 @@
     {/if}
 
     <Dialog.Footer>
-      <Button variant="ghost" onclick={() => (open = false)}>Cancel</Button>
+      <Button variant="ghost" onclick={() => (open = false)}>{m.common_cancel()}</Button>
       <Button
         disabled={disabled || name.trim().length === 0 || commit === null}
         onclick={submit}

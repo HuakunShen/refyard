@@ -1612,7 +1612,7 @@
             <Button
               size="sm"
               variant="outline"
-              onclick={() => void runtime.start()}>Retry</Button
+              onclick={() => void runtime.start()}>{m.common_retry()}</Button
             >
           {/snippet}
         </StateBanner>
@@ -1968,7 +1968,7 @@
             >
               <span class="text-sm font-medium">Commit details</span>
               <Button size="sm" variant="ghost" onclick={backToHistory}
-                >Working copy</Button
+                >{m.copy_working_copy()}</Button
               >
             </div>
             <CommitDetailPanel

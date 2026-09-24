@@ -182,7 +182,7 @@
 
   <!-- Submodule list -->
   {#if submodules === null}
-    <p class="text-xs text-ink-faint">No submodules loaded.</p>
+    <p class="text-xs text-ink-faint">{m.submodule_none()}</p>
   {:else if submodules.length === 0}
     <p class="text-xs text-ink-faint italic py-1" data-testid="submodule-list">
       None.

@@ -1579,7 +1579,7 @@
         >
           {#if loadingMore}
             <span class="text-xs text-ink-faint" aria-live="polite"
-              >Loading more…</span
+              >{m.commit_loading_more()}</span
             >
           {:else if hasMore}
             <span class="text-xs text-ink-faint">Scroll for more</span>
