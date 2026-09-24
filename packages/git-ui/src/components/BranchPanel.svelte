@@ -360,7 +360,7 @@
         <input
           class="min-w-0 flex-1 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
           placeholder="new-branch-name"
-          aria-label="new branch name"
+          aria-label={m.branch_new_name_aria()}
           bind:value={newBranch}
           disabled={disabled || busy}
         />
@@ -383,7 +383,7 @@
         <input
           type="checkbox"
           class="size-3.5 accent-primary rounded"
-          aria-label="merge creates a commit"
+          aria-label={m.branch_merge_creates()}
           bind:checked={mergeNoFf}
           disabled={disabled || busy}
         />

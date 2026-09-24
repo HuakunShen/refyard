@@ -148,7 +148,7 @@
       <Input
         id="execution-target-search"
         class="pl-8 text-sm"
-        placeholder="Search hosts by name, label or source"
+        placeholder={m.exec_search_hosts()}
         bind:ref={searchElement}
         bind:value={query}
         oninput={() => (activeIndex = 0)}

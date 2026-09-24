@@ -30,8 +30,8 @@
       "relative",
       className,
     )}
-    aria-label="Toggle theme"
-    title="Toggle theme"
+    aria-label={m.mode_toggle_aria()}
+    title={m.mode_toggle_aria()}
   >
     <SunIcon
       class="size-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0"

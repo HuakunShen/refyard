@@ -1442,7 +1442,7 @@
             tone="muted"
             data-testid="build-badge"
             data-tauri-drag-region
-            title="No write operations: no route, no capability, no button."
+            title={m.page_no_writes()}
           >
             read-only build
           </Badge>
@@ -1540,7 +1540,7 @@
     <div class="border-b border-border bg-panel px-4 py-2">
       <StateBanner
         state="disconnected"
-        title="The session is no longer valid"
+        title={m.session_invalid()}
         detail={connectionState.problem?.message ??
           "The service was restarted or the session expired. Pair again with a fresh ticket."}
       >
@@ -1557,7 +1557,7 @@
     <div class="relative z-10 border-b border-border bg-panel px-4 py-2">
       <StateBanner
         state="error"
-        title="The update could not be installed"
+        title={m.update_failed()}
         detail={failureBanner}
       />
     </div>
@@ -1656,7 +1656,7 @@
             <div class="p-3" data-testid="repository-list-error">
               <StateBanner
                 state="error"
-                title="Could not list repositories"
+                title={m.err_list_repos()}
                 detail={describeBackendProblem(queries.repositories.error)}
               />
             </div>
@@ -1665,7 +1665,7 @@
             <div class="p-3" data-testid="capabilities-error">
               <StateBanner
                 state="error"
-                title="Write capabilities unavailable"
+                title={m.writes_unavailable()}
                 detail="the service has not reported its operations"
               />
             </div>
@@ -1799,7 +1799,7 @@
           {:else if history.isError}
             <StateBanner
               state="error"
-              title="Could not read history"
+              title={m.err_read_history()}
               detail={describeBackendProblem(history.error)}
             >
               {#snippet action()}
@@ -1934,13 +1934,13 @@
             </header>
             {#if diff.isPending}
               <div class="p-3">
-                <StateBanner state="loading" title="Reading diff…" />
+                <StateBanner state="loading" title={m.loading_diff()} />
               </div>
             {:else if diff.isError || diffPatch.isError}
               <div class="p-3">
                 <StateBanner
                   state="error"
-                  title="Could not read diff"
+                  title={m.err_read_diff()}
                   detail={describeBackendProblem(diff.error ?? diffPatch.error)}
                 />
               </div>
@@ -1993,7 +1993,7 @@
               <div class="p-3">
                 <StateBanner
                   state="error"
-                  title="Could not read working copy"
+                  title={m.err_read_working_copy()}
                   detail={describeBackendProblem(status.error)}
                 />
               </div>

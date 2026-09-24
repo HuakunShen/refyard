@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /**
    * The workbench's section navigation: one row per view, with its count.
    *
@@ -44,7 +45,7 @@
 
 <nav
   class={cn("flex gap-0.5", collapsed ? "flex-row" : "flex-col", className)}
-  aria-label="Repository navigation"
+  aria-label={m.nav_aria()}
   data-testid={testId}
   data-collapsed={collapsed}
 >

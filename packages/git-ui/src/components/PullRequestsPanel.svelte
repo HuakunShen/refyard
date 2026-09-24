@@ -154,8 +154,8 @@
             class="w-full rounded border bg-transparent px-2 py-1 font-mono text-xs"
             type="password"
             autocomplete="off"
-            placeholder="GitHub token (github_pat_… or ghp_…)"
-            aria-label="GitHub personal access token"
+            placeholder={m.pr_token_placeholder()}
+            aria-label={m.pr_token_label()}
             bind:value={tokenDraft}
             data-testid="provider-token-input"
           />
@@ -183,7 +183,7 @@
         size="icon-sm"
         disabled={busy}
         onclick={onDisconnect}
-        title="Disconnect this account"
+        title={m.pr_disconnect_title()}
         data-testid="provider-disconnect"
       >
         <GitPullRequest class="size-3.5" />
@@ -193,7 +193,7 @@
         size="icon-sm"
         disabled={busy}
         onclick={onRefresh}
-        title="Refresh pull requests"
+        title={m.pr_refresh()}
         data-testid="provider-refresh"
       >
         <RefreshCw class={cn("size-3.5", busy && "animate-spin")} />

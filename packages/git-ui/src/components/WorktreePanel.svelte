@@ -210,7 +210,7 @@
       {#if referenceKind === "detached"}
         <input
           class="min-w-0 flex-1 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          placeholder="commit object name"
+          placeholder={m.worktree_commit_aria()}
           aria-label={m.worktree_aria_commit()}
           bind:value={oid}
           disabled={disabled || busy}
@@ -230,7 +230,7 @@
       {:else}
         <input
           class="min-w-0 flex-1 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          placeholder="new branch name"
+          placeholder={m.branch_new_name_aria()}
           aria-label={m.worktree_aria_new_branch()}
           bind:value={branchName}
           disabled={disabled || busy}
@@ -250,7 +250,7 @@
 
     <input
       class="w-full rounded border border-input bg-transparent px-2.5 py-1 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring placeholder:text-ink-faint"
-      placeholder="lock reason (optional)"
+      placeholder={m.worktree_lock_reason()}
       aria-label={m.worktree_aria_lock_reason()}
       bind:value={lockReason}
       disabled={disabled || busy}

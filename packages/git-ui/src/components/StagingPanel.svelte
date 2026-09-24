@@ -149,7 +149,7 @@
                 ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
                 : "bg-amber-500/15 text-amber-600 dark:text-amber-400",
             )}
-            title="index / worktree status"
+            title={m.copy_index_worktree_aria()}
           >
             {entry.indexStatus}{entry.worktreeStatus}
           </span>

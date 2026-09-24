@@ -326,7 +326,7 @@
   <div
     class="flex flex-wrap gap-2"
     role="tablist"
-    aria-label="Repository actions"
+    aria-label={m.launcher_actions()}
   >
     <Button
       type="button"
@@ -487,7 +487,7 @@
       <Input
         id="recent-repositories-search"
         class="pl-8 text-xs"
-        placeholder="Search recent repositories"
+        placeholder={m.launcher_search_recent()}
         bind:value={query}
       />
     </label>
@@ -543,7 +543,7 @@
       <Input
         class="min-w-0 flex-1 font-mono text-xs"
         bind:value={pickerPath}
-        aria-label="Path to browse"
+        aria-label={m.launcher_path_to_browse()}
       />
       <Button type="submit" variant="outline" disabled={pickerBusy}>Go</Button>
     </form>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /**
    * One diff: the change set, its files, and the patch for the file being read.
    *
@@ -137,7 +138,7 @@
       {/if}
       {#if onlySelected}
         <span class="flex-1"></span>
-        <div class="flex gap-1" aria-label="Diff view">
+        <div class="flex gap-1" aria-label={m.diff_view()}>
           <Button
             size="sm"
             variant={splitView ? "default" : "ghost"}
@@ -158,7 +159,7 @@
       <div class="shrink-0">
         <StateBanner
           state="info"
-          title="Patches are read one path at a time"
+          title={m.diff_patches_one_path()}
           detail="This change set is listed without patches: a patch for every file at once is unbounded work. Select a file to read its patch."
         />
       </div>

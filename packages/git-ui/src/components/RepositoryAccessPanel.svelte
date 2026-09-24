@@ -69,7 +69,7 @@
     <input
       class="min-w-0 flex-1 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
       placeholder="/absolute/path/to/repository"
-      aria-label="repository path to approve"
+      aria-label={m.repo_path_to_approve()}
       bind:value={path}
       disabled={locked}
       data-testid="repository-register-path"

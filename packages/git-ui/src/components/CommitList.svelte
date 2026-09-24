@@ -1118,14 +1118,14 @@
   {#if tipsMoved}
     <StateBanner
       state="stale"
-      title="The branch moved while you were reading"
+      title={m.commit_branch_moved()}
       detail="These rows are served from the tips this page started with, so the graph you see is consistent rather than half-updated."
     />
   {/if}
   {#if shallow}
     <StateBanner
       state="info"
-      title="Shallow history"
+      title={m.commit_shallow()}
       detail="Some parents are missing locally, so a line may end at the boundary instead of at a root commit."
     />
   {/if}
@@ -1179,8 +1179,8 @@
           bind:this={settingsGear}
           type="button"
           class="flex shrink-0 items-center px-2 text-muted-foreground transition-colors hover:text-foreground"
-          aria-label="Column settings"
-          title="Column settings"
+          aria-label={m.commit_column_settings()}
+          title={m.commit_column_settings()}
           data-testid="history-column-settings"
           onclick={openColumnSettings}
         >
@@ -1279,7 +1279,7 @@
         bind:this={scrollElement}
         class="relative min-h-0 flex-1 overflow-auto"
         tabindex="0"
-        aria-label="Commit history — arrow keys move the selection"
+        aria-label={m.commit_history_aria()}
         data-testid="history-scroll"
         onkeydown={onListKeyDown}
         onscroll={onHistoryScroll}
@@ -1487,7 +1487,7 @@
                            of chips; GitKraken's signature mark is an icon first. -->
                       <span
                         class="shrink-0 text-muted-foreground/70"
-                        title="Commit carries a signature."
+                        title={m.commit_signed()}
                       >
                         <BadgeCheck class="size-3.5" />
                       </span>

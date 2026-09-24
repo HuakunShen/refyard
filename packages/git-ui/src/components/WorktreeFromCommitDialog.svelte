@@ -67,7 +67,7 @@
         <input
           autofocus
           bind:value={branchName}
-          placeholder="branch this worktree works on"
+          placeholder={m.worktree_branch_aria()}
           class="h-9 rounded-lg border border-border/60 bg-transparent px-3"
           data-testid={testId === undefined ? undefined : `${testId}-branch`}
         />

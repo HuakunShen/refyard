@@ -140,7 +140,7 @@
             id="refyard-hosted-password"
             type="password"
             autocomplete="current-password"
-            placeholder="Enter the password configured on the CLI"
+            placeholder={m.connection_password_hint()}
             value={password}
             oninput={(event: Event) =>
               onPassword(inputText(event.currentTarget))}
@@ -198,7 +198,7 @@
   {#if phase === "failed"}
     <StateBanner
       state="error"
-      title="Pairing failed"
+      title={m.pairing_failed()}
       detail={message ??
         "The ticket may have expired, already been used, or belong to a different service instance."}
     />

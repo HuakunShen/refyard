@@ -137,7 +137,7 @@
     <div
       class="flex overflow-hidden rounded border border-input"
       role="group"
-      aria-label="what to create"
+      aria-label={m.repo_what_to_create()}
     >
       <button
         type="button"
@@ -180,7 +180,7 @@
   {#if roots.length > 1}
     <select
       class="w-full rounded border border-input bg-panel px-2 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-      aria-label="approved root"
+      aria-label={m.repo_approved_root()}
       value={rootId}
       onchange={(event) => (chosenRootId = event.currentTarget.value)}
       disabled={locked}
@@ -202,7 +202,7 @@
   <input
     class="w-full rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
     placeholder="relative/path"
-    aria-label="repository destination"
+    aria-label={m.repo_destination()}
     bind:value={destination}
     disabled={locked}
     data-testid="repository-destination"
@@ -211,8 +211,8 @@
   {#if mode === "clone"}
     <input
       class="w-full rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-      placeholder="https://host/project.git or an approved local path"
-      aria-label="remote URL"
+      placeholder={m.repo_url_or_path()}
+      aria-label={m.repo_remote_url()}
       bind:value={remoteUrl}
       disabled={locked}
       data-testid="repository-remote-url"
@@ -230,8 +230,8 @@
   {:else}
     <input
       class="w-full rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring placeholder:text-ink-faint"
-      placeholder="initial branch (optional: Git's default)"
-      aria-label="initial branch"
+      placeholder={m.repo_initial_branch_hint()}
+      aria-label={m.repo_initial_branch()}
       bind:value={initialBranch}
       disabled={locked}
     />

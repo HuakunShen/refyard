@@ -303,11 +303,11 @@
       {/snippet}
       <div class="flex flex-col gap-2">
         {#if repositories.isPending}
-          <StateBanner state="loading" title="Loading repositories…" />
+          <StateBanner state="loading" title={m.loading_repos()} />
         {:else if repositories.isError}
           <StateBanner
             state="error"
-            title="Could not list repositories"
+            title={m.err_list_repos()}
             detail={describeProblem(repositories.error)}
           >
             {#snippet action()}
@@ -323,7 +323,7 @@
         {:else if repositoryList.length === 0}
           <StateBanner
             state="empty"
-            title="No repositories"
+            title={m.sidebar_no_repos()}
             detail="Start the service in a repository (refyard open <path>) to read it here."
           />
         {:else}
@@ -391,11 +391,11 @@
           {/snippet}
           <div class="flex flex-col gap-2">
             {#if refs.isPending}
-              <StateBanner state="loading" title="Reading branches…" />
+              <StateBanner state="loading" title={m.loading_branches()} />
             {:else if refs.isError}
               <StateBanner
                 state="error"
-                title="Could not read refs"
+                title={m.err_read_refs()}
                 detail={describeProblem(refs.error)}
               />
             {:else}
@@ -428,11 +428,11 @@
           {/snippet}
           <div class="flex flex-col gap-2">
             {#if refs.isPending}
-              <StateBanner state="loading" title="Reading remotes…" />
+              <StateBanner state="loading" title={m.loading_remotes()} />
             {:else if refs.isError}
               <StateBanner
                 state="error"
-                title="Could not read refs"
+                title={m.err_read_refs()}
                 detail={describeProblem(refs.error)}
               />
             {:else}
@@ -465,12 +465,12 @@
           {/snippet}
           <div class="flex flex-col gap-2">
             {#if stashes.isPending && stashes.data === undefined}
-              <StateBanner state="loading" title="Reading stashes…" />
+              <StateBanner state="loading" title={m.loading_stashes()} />
             {/if}
             {#if stashes.isError}
               <StateBanner
                 state="error"
-                title="Could not read stashes"
+                title={m.err_read_stashes()}
                 detail={describeProblem(stashes.error)}
               />
             {/if}
@@ -504,11 +504,11 @@
           {/snippet}
           <div class="flex flex-col gap-2">
             {#if refs.isPending}
-              <StateBanner state="loading" title="Reading tags…" />
+              <StateBanner state="loading" title={m.loading_tags()} />
             {:else if refs.isError}
               <StateBanner
                 state="error"
-                title="Could not read refs"
+                title={m.err_read_refs()}
                 detail={describeProblem(refs.error)}
               />
             {:else}
@@ -541,11 +541,11 @@
           {/snippet}
           <div class="flex flex-col gap-2">
             {#if worktrees.isPending}
-              <StateBanner state="loading" title="Reading worktrees…" />
+              <StateBanner state="loading" title={m.loading_worktrees()} />
             {:else if worktrees.isError}
               <StateBanner
                 state="error"
-                title="Could not read worktrees"
+                title={m.err_read_worktrees()}
                 detail={describeProblem(worktrees.error)}
               />
             {:else}
@@ -584,11 +584,11 @@
           {/snippet}
           <div class="flex flex-col gap-2">
             {#if submodules.isPending}
-              <StateBanner state="loading" title="Reading submodules…" />
+              <StateBanner state="loading" title={m.loading_submodules()} />
             {:else if submodules.isError}
               <StateBanner
                 state="error"
-                title="Could not read submodules"
+                title={m.err_read_submodules()}
                 detail={describeProblem(submodules.error)}
               />
             {:else}
@@ -654,11 +654,11 @@
           {/snippet}
           <div class="flex flex-col gap-2">
             {#if refs.isPending}
-              <StateBanner state="loading" title="Reading refs…" />
+              <StateBanner state="loading" title={m.loading_refs()} />
             {:else if refs.isError}
               <StateBanner
                 state="error"
-                title="Could not read refs"
+                title={m.err_read_refs()}
                 detail={describeProblem(refs.error)}
               />
             {:else}

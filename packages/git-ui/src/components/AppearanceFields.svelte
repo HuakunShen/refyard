@@ -214,8 +214,8 @@
     <div class="mt-1 flex items-center gap-2">
       <input
         class="min-w-0 flex-1 rounded-md border border-input bg-transparent px-2.5 py-1 text-xs font-mono placeholder:text-ink-faint"
-        placeholder="Custom image URL (https://...)"
-        aria-label="Custom background URL"
+        placeholder={m.appearance_custom_img()}
+        aria-label={m.appearance_custom_bg()}
         bind:value={customUrlInput}
         onkeydown={(e) => {
           if (e.key === "Enter") {
@@ -265,7 +265,7 @@
         checked={glass}
         onchange={(e) => onGlassChange(e.currentTarget.checked)}
         class="sr-only peer"
-        aria-label="Toggle frosted glass"
+        aria-label={m.appearance_toggle_glass()}
       />
       <div
         class="w-9 h-5 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"
@@ -290,7 +290,7 @@
         checked={avatars}
         onchange={(e) => onAvatarsChange?.(e.currentTarget.checked)}
         class="sr-only peer"
-        aria-label="Toggle author photos"
+        aria-label={m.appearance_toggle_photos()}
         data-testid="settings-avatars-toggle"
       />
       <div

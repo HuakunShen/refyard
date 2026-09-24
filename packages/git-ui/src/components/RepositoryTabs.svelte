@@ -104,7 +104,7 @@
     type="button"
     class="flex shrink-0 items-center gap-1 rounded-md border border-dashed border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
     {disabled}
-    aria-label="New repository tab"
+    aria-label={m.tabs_new_repo_tab()}
     data-testid="new-repository-tab"
     onclick={onNew}
   >

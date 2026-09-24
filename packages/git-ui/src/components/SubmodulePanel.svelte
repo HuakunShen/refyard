@@ -95,8 +95,8 @@
     </span>
     <input
       class="w-full rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-      placeholder="remote URL (cloned when added)"
-      aria-label="submodule url"
+      placeholder={m.sub_placeholder_url()}
+      aria-label={m.sub_aria_url()}
       bind:value={remoteUrl}
       disabled={disabled || busy}
     />
@@ -104,14 +104,14 @@
       <input
         class="min-w-0 flex-1 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
         placeholder="vendor/lib"
-        aria-label="submodule path"
+        aria-label={m.sub_aria_path()}
         bind:value={relativePath}
         disabled={disabled || busy}
       />
       <input
         class="w-28 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
-        placeholder="branch (tracked)"
-        aria-label="submodule branch"
+        placeholder={m.sub_placeholder_branch()}
+        aria-label={m.sub_aria_branch()}
         bind:value={branchName}
         disabled={disabled || busy}
       />
@@ -150,7 +150,7 @@
       <input
         type="checkbox"
         class="size-3.5 accent-primary rounded"
-        aria-label="submodule recursive"
+        aria-label={m.sub_aria_recursive()}
         bind:checked={recursive}
         disabled={disabled || busy}
       />
@@ -226,7 +226,7 @@
           <div
             class="flex items-center justify-between text-[11px] text-ink-faint font-mono pl-5"
           >
-            <span title="HEAD / index / checkout">
+            <span title={m.sub_status_title()}>
               {shortOid(entry.recordedOid)} · {shortOid(entry.indexOid)} · {shortOid(
                 entry.actualOid,
               )}
