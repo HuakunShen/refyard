@@ -160,5 +160,7 @@
 	"sidebar_remotes_sync": "Remotes & sync",
 	"branch_create": "Create",
 	"branch_merge_no_ff": "merge always creates a commit (--no-ff)",
-	"history_end": "End of the loaded history"
+	"history_end": "End of the loaded history",
+	"branch_merge_in": "Merge in",
+	"branch_rename_short": "Rename"
 }

@@ -160,5 +160,7 @@
 	"sidebar_remotes_sync": "远程与同步",
 	"branch_create": "创建",
 	"branch_merge_no_ff": "合并总是产生一个提交(--no-ff)",
-	"history_end": "已加载历史的末尾"
+	"history_end": "已加载历史的末尾",
+	"branch_merge_in": "合并进来",
+	"branch_rename_short": "重命名"
 }

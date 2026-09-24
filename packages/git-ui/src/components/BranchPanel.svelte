@@ -210,7 +210,7 @@
                     }}
                     data-testid={`save-rename-${branch.name}`}
                   >
-                    Rename
+                    {m.branch_rename_short()}
                   </Button>
                   <Button
                     size="sm"
@@ -218,7 +218,7 @@
                     class="h-7 text-xs px-2"
                     onclick={() => (renaming = null)}
                   >
-                    Cancel
+                    {m.common_cancel()}
                   </Button>
                 </div>
               {:else}
@@ -300,7 +300,7 @@
                       onclick={() => onSwitch(branch.name)}
                       data-testid={`switch-${branch.name}`}
                     >
-                      Switch
+                      {m.branch_switch()}
                     </Button>
                     <Button
                       size="sm"
@@ -310,7 +310,7 @@
                       onclick={() => onMerge(branch.name, mergeNoFf)}
                       data-testid={`merge-${branch.name}`}
                     >
-                      Merge in
+                      {m.branch_merge_in()}
                     </Button>
                   {/if}
                   <Button
@@ -321,7 +321,7 @@
                     onclick={() => editUpstream(branch)}
                     data-testid={`edit-upstream-${branch.name}`}
                   >
-                    Upstream…
+                    {m.branch_upstream()}
                   </Button>
                   <Button
                     size="sm"
@@ -334,7 +334,7 @@
                     }}
                     data-testid={`rename-${branch.name}`}
                   >
-                    Rename…
+                    {m.branch_rename()}
                   </Button>
                   {#if !branch.isCurrent}
                     <ConfirmAction
