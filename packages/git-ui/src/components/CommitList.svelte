@@ -1254,7 +1254,7 @@
                   >{wip.changedCount}</span
                 >
                 <span class="truncate text-xs text-muted-foreground/60"
-                  >uncommitted changes — click to work on them</span
+                  >{m.copy_uncommitted_hint()}</span
                 >
               </div>
             </button>

@@ -365,5 +365,6 @@
 	"conn_not_connected_incompatible": "not connected (incompatible service)",
 	"conn_read_only": "read-only (contract update available)",
 	"conn_connecting": "connecting…",
-	"conn_no_live": "no live updates"
+	"conn_no_live": "no live updates",
+	"common_close": "Close"
 }

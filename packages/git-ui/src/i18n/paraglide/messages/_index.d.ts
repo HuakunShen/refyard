@@ -53,6 +53,7 @@ export * from "./commitref_annotation.js";
 export * from "./common_add.js";
 export * from "./common_cancel.js";
 export * from "./common_clear.js";
+export * from "./common_close.js";
 export * from "./common_collapse.js";
 export * from "./common_create.js";
 export * from "./common_delete.js";

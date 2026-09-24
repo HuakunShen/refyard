@@ -365,5 +365,6 @@
 	"conn_not_connected_incompatible": "未连接(服务版本不兼容)",
 	"conn_read_only": "只读(有契约更新可用)",
 	"conn_connecting": "连接中…",
-	"conn_no_live": "无实时更新"
+	"conn_no_live": "无实时更新",
+	"common_close": "关闭"
 }
