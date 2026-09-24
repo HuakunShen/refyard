@@ -374,7 +374,7 @@
           }}
           data-testid="create-branch"
         >
-          Create
+          {m.branch_create()}
         </Button>
       </div>
       <label
@@ -387,7 +387,7 @@
           bind:checked={mergeNoFf}
           disabled={disabled || busy}
         />
-        merge always creates a commit (--no-ff)
+        {m.branch_merge_no_ff()}
       </label>
     </div>
   {/if}

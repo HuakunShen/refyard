@@ -1584,7 +1584,7 @@
           {:else if hasMore}
             <span class="text-xs text-ink-faint">Scroll for more</span>
           {:else}
-            <span class="text-xs text-ink-faint">End of the loaded history</span
+            <span class="text-xs text-ink-faint">{m.history_end()}</span
             >
           {/if}
         </div>

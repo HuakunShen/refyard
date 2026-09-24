@@ -156,5 +156,9 @@
 	"tag_aria_annotation": "tag annotation",
 	"tag_aria_name": "tag name",
 	"tag_placeholder_annotation": "annotation (empty = lightweight)",
-	"tag_placeholder_name": "v1.0.0"
+	"tag_placeholder_name": "v1.0.0",
+	"sidebar_remotes_sync": "Remotes & sync",
+	"branch_create": "Create",
+	"branch_merge_no_ff": "merge always creates a commit (--no-ff)",
+	"history_end": "End of the loaded history"
 }

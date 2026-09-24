@@ -293,7 +293,7 @@
       data-testid={`sidebar-view-${activeView}`}
     >
     <SectionCard
-      title="Repositories"
+      title={m.sidebar_repositories()}
       class={activeView !== "repositories" ? "hidden" : ""}
       count={repositoryList.length}
       open={true}
@@ -381,7 +381,7 @@
 
       {#if branchAvailable}
         <SectionCard
-          title="Branches"
+          title={m.sidebar_branches()}
           class={activeView !== "branches" ? "hidden" : ""}
           count={refs.data ? refs.data.branches.length : undefined}
           open={true}
@@ -418,7 +418,7 @@
 
       {#if networkAvailable}
         <SectionCard
-          title="Remotes & sync"
+          title={m.sidebar_remotes_sync()}
           class={activeView !== "remotes" ? "hidden" : ""}
           count={refs.data ? refs.data.remotes.length : undefined}
           open={true}
@@ -455,7 +455,7 @@
 
       {#if stashAvailable}
         <SectionCard
-          title="Stashes"
+          title={m.sidebar_stashes()}
           class={activeView !== "stashes" ? "hidden" : ""}
           count={stashes.data ? stashes.data.stashes.length : undefined}
           open={true}
@@ -494,7 +494,7 @@
 
       {#if tagAvailable}
         <SectionCard
-          title="Tags"
+          title={m.sidebar_tags()}
           class={activeView !== "tags" ? "hidden" : ""}
           count={refs.data ? refs.data.tags.length : undefined}
           open={true}
@@ -529,7 +529,7 @@
 
       {#if worktreeAvailable}
         <SectionCard
-          title="Worktrees"
+          title={m.sidebar_worktrees()}
           class={activeView !== "worktrees" && activeView !== "working-copy"
             ? "hidden"
             : ""}
@@ -572,7 +572,7 @@
 
       {#if submoduleAvailable}
         <SectionCard
-          title="Submodules"
+          title={m.sidebar_submodules()}
           class={activeView !== "submodules" ? "hidden" : ""}
           count={submodules.data
             ? submodules.data.submodules.length
@@ -608,7 +608,7 @@
 
       {#if providerAvailable}
         <SectionCard
-          title="Pull Requests"
+          title={m.sidebar_pull_requests()}
           class={activeView !== "pull-requests" ? "hidden" : ""}
           open={true}
         >

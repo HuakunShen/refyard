@@ -156,5 +156,9 @@
 	"tag_aria_annotation": "标签附注",
 	"tag_aria_name": "标签名",
 	"tag_placeholder_annotation": "附注(留空即轻量标签)",
-	"tag_placeholder_name": "v1.0.0"
+	"tag_placeholder_name": "v1.0.0",
+	"sidebar_remotes_sync": "远程与同步",
+	"branch_create": "创建",
+	"branch_merge_no_ff": "合并总是产生一个提交(--no-ff)",
+	"history_end": "已加载历史的末尾"
 }
