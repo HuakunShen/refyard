@@ -22,6 +22,7 @@ pub mod history;
 pub mod merge;
 pub mod paths;
 pub mod refs;
+pub mod remotes;
 pub mod replay;
 pub mod status;
 pub mod tags;

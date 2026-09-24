@@ -151,6 +151,21 @@ pub enum MutationOperation {
         branch_name: String,
         upstream: Option<UpstreamSpec>,
     },
+    AddRemote {
+        remote_name: String,
+        fetch_url: String,
+        push_url: Option<String>,
+    },
+    UpdateRemote {
+        remote_name: String,
+        new_name: Option<String>,
+        fetch_url: Option<String>,
+        push_url: Option<String>,
+    },
+    RemoveRemote {
+        remote_name: String,
+        confirmed: bool,
+    },
     CreateStash {
         message: Option<String>,
         include_untracked: bool,
@@ -231,6 +246,9 @@ impl MutationOperation {
             Self::RenameBranch { .. } => MutationKind::RenameBranch,
             Self::DeleteBranch { .. } => MutationKind::DeleteBranch,
             Self::SetBranchUpstream { .. } => MutationKind::SetBranchUpstream,
+            Self::AddRemote { .. } => MutationKind::AddRemote,
+            Self::UpdateRemote { .. } => MutationKind::UpdateRemote,
+            Self::RemoveRemote { .. } => MutationKind::RemoveRemote,
             Self::CreateStash { .. } => MutationKind::CreateStash,
             Self::ApplyStash { .. } => MutationKind::ApplyStash,
             Self::PopStash { .. } => MutationKind::PopStash,
@@ -282,7 +300,10 @@ impl MutationOperation {
             | Self::CreateStash { .. }
             | Self::ApplyStash { .. }
             | Self::PopStash { .. }
-            | Self::DropStash { .. } => Vec::new(),
+            | Self::DropStash { .. }
+            | Self::AddRemote { .. }
+            | Self::UpdateRemote { .. }
+            | Self::RemoveRemote { .. } => Vec::new(),
         }
     }
 
@@ -690,6 +711,45 @@ mod seed_tests {
                         oid: oid.to_string(),
                         locator: "stash@{2}".to_string(),
                     },
+                    confirmed: true,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "addRemote",
+                    "remoteName": "origin",
+                    "fetchUrl": "https://e.com/r",
+                    "pushUrl": null
+                }),
+                MutationOperation::AddRemote {
+                    remote_name: "origin".to_string(),
+                    fetch_url: "https://e.com/r".to_string(),
+                    push_url: None,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "updateRemote",
+                    "remoteName": "origin",
+                    "newName": "upstream",
+                    "fetchUrl": "ssh://e.com/r",
+                    "pushUrl": null
+                }),
+                MutationOperation::UpdateRemote {
+                    remote_name: "origin".to_string(),
+                    new_name: Some("upstream".to_string()),
+                    fetch_url: Some("ssh://e.com/r".to_string()),
+                    push_url: None,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "removeRemote",
+                    "remoteName": "origin",
+                    "confirmed": true
+                }),
+                MutationOperation::RemoveRemote {
+                    remote_name: "origin".to_string(),
                     confirmed: true,
                 },
             ),

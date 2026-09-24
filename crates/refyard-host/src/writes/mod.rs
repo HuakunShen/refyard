@@ -1,8 +1,9 @@
-//! The twenty-eight write effects this build implements: stage, unstage, commit and
+//! The thirty-one write effects this build implements: stage, unstage, commit and
 //! amend, the ref writes (branch create/switch/rename/delete, upstream, tag
-//! create/delete), the stash family (create/apply/pop/drop), merge with its continue
-//! and abort, revert, reset, cherry-pick with its continue and abort, rebase with its
-//! continue and abort, drop, and squash.
+//! create/delete), the remote config writes (add/update/remove), the stash family
+//! (create/apply/pop/drop), merge with its continue and abort, revert, reset,
+//! cherry-pick with its continue and abort, rebase with its continue and abort, drop,
+//! and squash.
 //!
 //! One workflow per effect, run through whatever executor the repository's target names —
 //! the local provider or the SSH provider. There is no second implementation for SSH: the
@@ -30,6 +31,7 @@
 pub mod branch;
 pub mod commit;
 pub mod merge;
+pub mod remotes;
 pub mod replay;
 pub mod sequencer;
 pub mod stage;
@@ -100,7 +102,7 @@ impl WriteHost {
         }
     }
 
-    /// The twenty-eight effects this build registers, in the order the contract lists
+    /// The thirty-one effects this build registers, in the order the contract lists
     /// them. The contract's own order is what `implemented_kinds` publishes, so the
     /// capability answer the UI gates its menus on is stable across builds.
     pub fn effects(host: &Arc<Self>) -> Vec<Box<dyn MutationEffect>> {
@@ -130,6 +132,15 @@ impl WriteHost {
                 host: Arc::clone(host),
             }),
             Box::new(branch::SetBranchUpstreamEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(remotes::AddRemoteEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(remotes::UpdateRemoteEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(remotes::RemoveRemoteEffect {
                 host: Arc::clone(host),
             }),
             Box::new(stash::CreateStashEffect {
