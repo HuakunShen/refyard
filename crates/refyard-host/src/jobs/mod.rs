@@ -91,6 +91,17 @@ pub struct TagAnnotation {
     pub message: String,
 }
 
+/// A stash entry: the object name it resolved to, plus the reflog locator it was listed
+/// under. `stash@{n}` is a moving label — anyone's `git stash` shifts every position
+/// after it — so every write re-resolves the locator and compares it to `oid` before
+/// touching anything. A mismatch is a stale request, never a different entry to act on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StashRef {
+    pub oid: String,
+    pub locator: String,
+}
+
 /// The mutation the write path can carry, as the host understands it.
 ///
 /// A projection of the contract's closed union: only the operations this slice can reason
@@ -116,6 +127,10 @@ pub enum MutationOperation {
     Commit {
         message: String,
     },
+    AmendCommit {
+        message: Option<String>,
+        confirmed: bool,
+    },
     CreateBranch {
         branch_name: String,
         start_oid: Option<String>,
@@ -135,6 +150,24 @@ pub enum MutationOperation {
     SetBranchUpstream {
         branch_name: String,
         upstream: Option<UpstreamSpec>,
+    },
+    CreateStash {
+        message: Option<String>,
+        include_untracked: bool,
+        keep_index: bool,
+    },
+    ApplyStash {
+        stash: StashRef,
+        restore_index: bool,
+    },
+    PopStash {
+        stash: StashRef,
+        restore_index: bool,
+        confirmed: bool,
+    },
+    DropStash {
+        stash: StashRef,
+        confirmed: bool,
     },
     CreateTag {
         tag_name: String,
@@ -192,11 +225,16 @@ impl MutationOperation {
             Self::StagePaths { .. } => MutationKind::StagePaths,
             Self::UnstagePaths { .. } => MutationKind::UnstagePaths,
             Self::Commit { .. } => MutationKind::Commit,
+            Self::AmendCommit { .. } => MutationKind::AmendCommit,
             Self::CreateBranch { .. } => MutationKind::CreateBranch,
             Self::SwitchBranch { .. } => MutationKind::SwitchBranch,
             Self::RenameBranch { .. } => MutationKind::RenameBranch,
             Self::DeleteBranch { .. } => MutationKind::DeleteBranch,
             Self::SetBranchUpstream { .. } => MutationKind::SetBranchUpstream,
+            Self::CreateStash { .. } => MutationKind::CreateStash,
+            Self::ApplyStash { .. } => MutationKind::ApplyStash,
+            Self::PopStash { .. } => MutationKind::PopStash,
+            Self::DropStash { .. } => MutationKind::DropStash,
             Self::CreateTag { .. } => MutationKind::CreateTag,
             Self::DeleteTag { .. } => MutationKind::DeleteTag,
             Self::Merge { .. } => MutationKind::Merge,
@@ -239,7 +277,12 @@ impl MutationOperation {
             | Self::ContinueRebase { .. }
             | Self::AbortRebase { .. }
             | Self::DropCommit { .. }
-            | Self::SquashCommit { .. } => Vec::new(),
+            | Self::SquashCommit { .. }
+            | Self::AmendCommit { .. }
+            | Self::CreateStash { .. }
+            | Self::ApplyStash { .. }
+            | Self::PopStash { .. }
+            | Self::DropStash { .. } => Vec::new(),
         }
     }
 
@@ -585,6 +628,70 @@ mod seed_tests {
             (
                 serde_json::json!({ "kind": "squashCommit", "message": null }),
                 MutationOperation::SquashCommit { message: None },
+            ),
+            (
+                serde_json::json!({ "kind": "amendCommit", "message": null, "confirmed": true }),
+                MutationOperation::AmendCommit {
+                    message: None,
+                    confirmed: true,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "createStash",
+                    "message": "wip",
+                    "includeUntracked": true,
+                    "keepIndex": false
+                }),
+                MutationOperation::CreateStash {
+                    message: Some("wip".to_string()),
+                    include_untracked: true,
+                    keep_index: false,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "applyStash",
+                    "stash": { "oid": oid, "locator": "stash@{0}" },
+                    "restoreIndex": true
+                }),
+                MutationOperation::ApplyStash {
+                    stash: StashRef {
+                        oid: oid.to_string(),
+                        locator: "stash@{0}".to_string(),
+                    },
+                    restore_index: true,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "popStash",
+                    "stash": { "oid": oid, "locator": "stash@{1}" },
+                    "restoreIndex": false,
+                    "confirmed": true
+                }),
+                MutationOperation::PopStash {
+                    stash: StashRef {
+                        oid: oid.to_string(),
+                        locator: "stash@{1}".to_string(),
+                    },
+                    restore_index: false,
+                    confirmed: true,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "dropStash",
+                    "stash": { "oid": oid, "locator": "stash@{2}" },
+                    "confirmed": true
+                }),
+                MutationOperation::DropStash {
+                    stash: StashRef {
+                        oid: oid.to_string(),
+                        locator: "stash@{2}".to_string(),
+                    },
+                    confirmed: true,
+                },
             ),
         ] {
             assert_eq!(

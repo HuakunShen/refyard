@@ -759,7 +759,7 @@ async fn naming_a_state_directory_after_registering_the_writes_keeps_them() {
     let capabilities = service.capabilities().await.expect("capabilities");
     assert_eq!(
         capabilities.operations.len(),
-        23,
+        28,
         "the write path must survive a later state directory being named"
     );
 
@@ -1297,6 +1297,7 @@ async fn capabilities_name_exactly_the_twenty_three_implemented_writes() {
             (MutationKind::StagePaths, vec![TargetKind::Worktree]),
             (MutationKind::UnstagePaths, vec![TargetKind::Worktree]),
             (MutationKind::Commit, vec![TargetKind::Worktree]),
+            (MutationKind::AmendCommit, vec![TargetKind::Worktree]),
             (MutationKind::CreateBranch, vec![TargetKind::Repository]),
             (MutationKind::SwitchBranch, vec![TargetKind::Worktree]),
             (MutationKind::RenameBranch, vec![TargetKind::Repository]),
@@ -1305,6 +1306,10 @@ async fn capabilities_name_exactly_the_twenty_three_implemented_writes() {
                 MutationKind::SetBranchUpstream,
                 vec![TargetKind::Repository]
             ),
+            (MutationKind::CreateStash, vec![TargetKind::Worktree]),
+            (MutationKind::ApplyStash, vec![TargetKind::Worktree]),
+            (MutationKind::PopStash, vec![TargetKind::Worktree]),
+            (MutationKind::DropStash, vec![TargetKind::Repository]),
             (MutationKind::CreateTag, vec![TargetKind::Repository]),
             (MutationKind::DeleteTag, vec![TargetKind::Repository]),
             (MutationKind::Merge, vec![TargetKind::Worktree]),
@@ -1329,17 +1334,22 @@ async fn capabilities_name_exactly_the_twenty_three_implemented_writes() {
         .collect::<Vec<MutationKind>>();
     assert_eq!(
         unavailable.len(),
-        refyard_contract::reads::MUTATION_KINDS.len() - 23
+        refyard_contract::reads::MUTATION_KINDS.len() - 28
     );
     for offered in [
         MutationKind::StagePaths,
         MutationKind::UnstagePaths,
         MutationKind::Commit,
+        MutationKind::AmendCommit,
         MutationKind::CreateBranch,
         MutationKind::SwitchBranch,
         MutationKind::RenameBranch,
         MutationKind::DeleteBranch,
         MutationKind::SetBranchUpstream,
+        MutationKind::CreateStash,
+        MutationKind::ApplyStash,
+        MutationKind::PopStash,
+        MutationKind::DropStash,
         MutationKind::CreateTag,
         MutationKind::DeleteTag,
         MutationKind::Merge,

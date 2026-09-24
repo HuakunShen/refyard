@@ -1,7 +1,8 @@
-//! The twenty-three write effects this build implements: stage, unstage, commit, the
-//! ref writes (branch create/switch/rename/delete, upstream, tag create/delete),
-//! merge with its continue and abort, revert, reset, cherry-pick with its continue
-//! and abort, rebase with its continue and abort, drop, and squash.
+//! The twenty-eight write effects this build implements: stage, unstage, commit and
+//! amend, the ref writes (branch create/switch/rename/delete, upstream, tag
+//! create/delete), the stash family (create/apply/pop/drop), merge with its continue
+//! and abort, revert, reset, cherry-pick with its continue and abort, rebase with its
+//! continue and abort, drop, and squash.
 //!
 //! One workflow per effect, run through whatever executor the repository's target names —
 //! the local provider or the SSH provider. There is no second implementation for SSH: the
@@ -32,6 +33,7 @@ pub mod merge;
 pub mod replay;
 pub mod sequencer;
 pub mod stage;
+pub mod stash;
 
 use std::sync::Arc;
 
@@ -98,7 +100,7 @@ impl WriteHost {
         }
     }
 
-    /// The twenty-three effects this build registers, in the order the contract lists
+    /// The twenty-eight effects this build registers, in the order the contract lists
     /// them. The contract's own order is what `implemented_kinds` publishes, so the
     /// capability answer the UI gates its menus on is stable across builds.
     pub fn effects(host: &Arc<Self>) -> Vec<Box<dyn MutationEffect>> {
@@ -110,6 +112,9 @@ impl WriteHost {
                 host: Arc::clone(host),
             }),
             Box::new(commit::CommitEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(commit::AmendCommitEffect {
                 host: Arc::clone(host),
             }),
             Box::new(branch::CreateBranchEffect {
@@ -125,6 +130,18 @@ impl WriteHost {
                 host: Arc::clone(host),
             }),
             Box::new(branch::SetBranchUpstreamEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(stash::CreateStashEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(stash::ApplyStashEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(stash::PopStashEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(stash::DropStashEffect {
                 host: Arc::clone(host),
             }),
             Box::new(branch::CreateTagEffect {
@@ -725,6 +742,27 @@ pub(crate) fn invalid_payload(operation_id: &str, message: String) -> EffectOutc
 pub(crate) fn refused(operation_id: &str, problem: Problem) -> EffectOutcome {
     EffectOutcome::Failed {
         problem: problem.for_operation(operation_id.to_string()),
+    }
+}
+
+/// A destructive operation's gate. Without the explicit confirmation the contract's
+/// `confirmed` literal carries, the write is refused before anything runs — the
+/// fail-closed half of "a destructive operation requires explicit confirmation".
+pub(crate) fn require_confirmed(
+    operation_id: &str,
+    confirmed: bool,
+    what: &str,
+) -> Result<(), EffectOutcome> {
+    if confirmed {
+        Ok(())
+    } else {
+        Err(refused(
+            operation_id,
+            Problem::new(
+                ProblemCode::InvalidRequest,
+                format!("{what} requires explicit confirmation; nothing was changed"),
+            ),
+        ))
     }
 }
 

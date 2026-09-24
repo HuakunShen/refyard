@@ -119,6 +119,111 @@ pub fn plan_amend_commit(message: Option<&[u8]>) -> Result<GitPlan, CoreError> {
     }
 }
 
+/// `stash@{n}` is a moving label in a reflog, never a stable identifier. Only the
+/// exact `stash@{digits}` form is accepted, so a crafted locator can neither name a
+/// real ref nor be read as a switch.
+fn validated_stash_locator(locator: &str) -> Result<(), CoreError> {
+    let inner = locator
+        .strip_prefix("stash@{")
+        .and_then(|rest| rest.strip_suffix('}'))
+        .ok_or_else(|| CoreError::invalid_input("a stash locator must look like stash@{0}"))?;
+    if inner.is_empty() || !inner.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(CoreError::invalid_input(
+            "a stash locator must look like stash@{0}",
+        ));
+    }
+    Ok(())
+}
+
+/// A stash message is caller text carried in argv; it is bounded to the same rules as a
+/// commit message so a blank or NUL-carrying label cannot reach Git.
+fn validated_stash_message(message: &str) -> Result<(), CoreError> {
+    if message.is_empty() {
+        return Err(CoreError::invalid_input(
+            "a stash message cannot be empty; pass none for the default",
+        ));
+    }
+    if message.contains('\0') {
+        return Err(CoreError::invalid_input(
+            "a stash message cannot contain NUL",
+        ));
+    }
+    if message.trim().is_empty() {
+        return Err(CoreError::invalid_input("a stash message cannot be blank"));
+    }
+    Ok(())
+}
+
+/// `git stash push [--message=<msg>] [--include-untracked] [--keep-index]`.
+///
+/// The message travels in argv (`--message=<value>`, the `=` spelling so a leading `-`
+/// cannot be read as a switch) because `git stash` has no stdin form for it. Ignored
+/// files are never swept in, and `--include-untracked` is only added when asked.
+pub fn plan_stash_push(
+    message: Option<&str>,
+    include_untracked: bool,
+    keep_index: bool,
+) -> Result<GitPlan, CoreError> {
+    let mut argv = vec!["stash".to_string(), "push".to_string()];
+    if let Some(message) = message {
+        validated_stash_message(message)?;
+        argv.push(format!("--message={message}"));
+    }
+    if include_untracked {
+        argv.push("--include-untracked".to_string());
+    }
+    if keep_index {
+        argv.push("--keep-index".to_string());
+    }
+    Ok(hooked(argv))
+}
+
+/// `git stash apply [--index] <locator>` — apply and keep the entry.
+pub fn plan_stash_apply(locator: &str, restore_index: bool) -> Result<GitPlan, CoreError> {
+    validated_stash_locator(locator)?;
+    let mut argv = vec!["stash".to_string(), "apply".to_string()];
+    if restore_index {
+        argv.push("--index".to_string());
+    }
+    // The locator is positional and pinned to `stash@{n}`, so it cannot be a switch.
+    argv.push(locator.to_string());
+    Ok(hooked(argv))
+}
+
+/// `git stash pop [--index] <locator>` — apply, and let Git drop only on success.
+pub fn plan_stash_pop(locator: &str, restore_index: bool) -> Result<GitPlan, CoreError> {
+    validated_stash_locator(locator)?;
+    let mut argv = vec!["stash".to_string(), "pop".to_string()];
+    if restore_index {
+        argv.push("--index".to_string());
+    }
+    argv.push(locator.to_string());
+    Ok(hooked(argv))
+}
+
+/// `git stash drop <locator>` — discard one entry. Destructive; the caller confirmed it.
+pub fn plan_stash_drop(locator: &str) -> Result<GitPlan, CoreError> {
+    validated_stash_locator(locator)?;
+    Ok(hooked(vec![
+        "stash".to_string(),
+        "drop".to_string(),
+        locator.to_string(),
+    ]))
+}
+
+/// `git rev-parse --verify --quiet <locator>^{commit}` — does the locator still name
+/// the object the request carried? This is the only way a pop cannot land on the wrong
+/// entry after someone else's `git stash` shifted every position.
+pub fn plan_stash_resolve(locator: &str) -> Result<GitPlan, CoreError> {
+    validated_stash_locator(locator)?;
+    Ok(GitPlan::read(vec![
+        "rev-parse".to_string(),
+        "--verify".to_string(),
+        "--quiet".to_string(),
+        format!("{locator}^{{commit}}"),
+    ]))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -180,5 +285,78 @@ mod squash_tests {
         assert!(plan_amend_commit(Some(b"")).is_err());
         assert!(plan_amend_commit(Some(b" \n")).is_err());
         assert!(plan_amend_commit(Some(b"a\0b")).is_err());
+    }
+}
+
+#[cfg(test)]
+mod stash_tests {
+    use super::*;
+
+    #[test]
+    fn a_stash_locator_is_pinned_to_the_reflog_form() {
+        assert!(plan_stash_resolve("stash@{0}").is_ok());
+        assert!(plan_stash_resolve("stash@{12}").is_ok());
+        // A crafted locator can name a real ref or begin as a switch; both are refused.
+        assert!(plan_stash_resolve("HEAD").is_err());
+        assert!(plan_stash_resolve("--help").is_err());
+        assert!(plan_stash_resolve("stash@{}").is_err());
+        assert!(plan_stash_resolve("stash@{1x}").is_err());
+        assert!(plan_stash_resolve("stash@{1}extra").is_err());
+        assert!(plan_stash_resolve("refs/stash").is_err());
+    }
+
+    #[test]
+    fn the_resolve_probe_reads_the_locator_through_git() {
+        assert_eq!(
+            plan_stash_resolve("stash@{2}").expect("a plan").argv,
+            vec!["rev-parse", "--verify", "--quiet", "stash@{2}^{commit}"]
+        );
+    }
+
+    #[test]
+    fn a_push_carries_the_message_in_argv_so_a_leading_dash_is_not_a_switch() {
+        let plan = plan_stash_push(Some("wip"), true, true).expect("a plan");
+        assert_eq!(
+            plan.argv,
+            vec![
+                "stash",
+                "push",
+                "--message=wip",
+                "--include-untracked",
+                "--keep-index"
+            ]
+        );
+        assert!(
+            plan.stdin.is_empty(),
+            "stash push has no stdin message form"
+        );
+        assert_eq!(plan.deadline_class, DeadlineClass::Hook);
+        // The `=` spelling keeps a leading `-` in the value.
+        assert_eq!(
+            plan_stash_push(Some("-not-a-switch"), false, false)
+                .expect("a plan")
+                .argv,
+            vec!["stash", "push", "--message=-not-a-switch"]
+        );
+        // A blank or NUL message is not a label this host can make.
+        assert!(plan_stash_push(Some(""), false, false).is_err());
+        assert!(plan_stash_push(Some("   "), false, false).is_err());
+        assert!(plan_stash_push(Some("a\0b"), false, false).is_err());
+    }
+
+    #[test]
+    fn apply_pop_and_drop_pin_the_locator_last_and_never_force() {
+        assert_eq!(
+            plan_stash_apply("stash@{1}", true).expect("a plan").argv,
+            vec!["stash", "apply", "--index", "stash@{1}"]
+        );
+        assert_eq!(
+            plan_stash_pop("stash@{0}", false).expect("a plan").argv,
+            vec!["stash", "pop", "stash@{0}"]
+        );
+        assert_eq!(
+            plan_stash_drop("stash@{3}").expect("a plan").argv,
+            vec!["stash", "drop", "stash@{3}"]
+        );
     }
 }
