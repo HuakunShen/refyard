@@ -185,6 +185,21 @@ export function createWorkbenchRuntime(
     if (session === null && form.token !== null) {
       await connect({});
     }
+    if (session === null && form.ticket.length > 0) {
+      // The remembered bearer is dead — the service restarted, or a different service answers
+      // on this address — and the ticket this page was opened with is the credential that
+      // still works. Without this fallback the page that exists to pair instead asks the user
+      // for a pairing URL, which is exactly the thing opening it was supposed to save them.
+      form.pairPhase = "idle";
+      form.pairMessage = undefined;
+      await pairWorkbenchSession(form, pairingPorts);
+    }
+    if (session !== null && form.ticket.length > 0) {
+      // The remembered session was good, so the ticket was never spent. It must still leave
+      // the address bar: it is a credential, and a reload would replay it.
+      form.ticket = "";
+      options.replaceHref(stripTicket(options.currentHref()));
+    }
     if (session === null) {
       options.onConnectionState({ phase: "disconnected", problem: null });
     }

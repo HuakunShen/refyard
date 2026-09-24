@@ -145,7 +145,12 @@ describe("workbench session state", () => {
     ]);
   });
 
-  it("scrubs an initial ticket without exchanging it when this tab is already paired", async () => {
+  it("holds an initial ticket unspent while a remembered session is still unproven", async () => {
+    // Prevents: the ticket being discarded because storage looked non-empty. A remembered
+    // bearer proves nothing until the service answers it, and after a restart it never
+    // does — so the caller must still be able to fall back to the ticket this page was
+    // opened with. `WorkbenchRuntime.start` spends it or scrubs the URL; this transition
+    // only decides not to exchange here.
     const h = harness();
     const state = createWorkbenchSessionState({
       href: "http://127.0.0.1:9595/?pair=ticket-123",
@@ -158,8 +163,8 @@ describe("workbench session state", () => {
 
     expect(h.exchange).not.toHaveBeenCalled();
     expect(state.token).toBe("tok_existing");
-    expect(state.ticket).toBe("");
-    expect(h.stored.replaced).toEqual(["http://127.0.0.1:9595/"]);
+    expect(state.ticket).toBe("ticket-123");
+    expect(h.stored.replaced).toEqual([]);
   });
 
   it("clears credentials and storage without owning repository selection", () => {
