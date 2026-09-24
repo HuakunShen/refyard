@@ -25,6 +25,16 @@ export interface RepositoryTab {
 export interface RepositoryTabsState {
   tabs: RepositoryTab[];
   activeRepositoryId: string | null;
+  /**
+   * Keys the reader closed.
+   *
+   * Adopting every repository the service lists is what makes a closed tab come back: the
+   * list is the source of adoption and a close leaves no trace in it, so the workbench
+   * "remembers what was opened and forgets what was closed". This records the close so
+   * automatic adoption respects it. An explicit open clears the entry, because asking for a
+   * repository is the reader changing their mind.
+   */
+  dismissed: Set<string>;
   revision: number;
 }
 
@@ -36,6 +46,7 @@ export function createRepositoryTabs(
     tabs,
     activeRepositoryId:
       tabs[0] === undefined ? null : repositoryTabKey(tabs[0]),
+    dismissed: new Set(),
     revision: 0,
   };
 }
@@ -44,14 +55,70 @@ export function openRepositoryTab(
   state: RepositoryTabsState,
   tab: RepositoryTab,
 ): void {
+  const key = repositoryTabKey(tab);
+  state.dismissed.delete(key);
   const existing = state.tabs.some(
-    (candidate) => repositoryTabKey(candidate) === repositoryTabKey(tab),
+    (candidate) => repositoryTabKey(candidate) === key,
   );
   if (!existing) {
-    state.tabs = [...state.tabs, tab];
+    state.tabs = insertAfterActive(state, tab);
   }
-  state.activeRepositoryId = repositoryTabKey(tab);
+  state.activeRepositoryId = key;
   state.revision += 1;
+}
+
+/**
+ * Adopt repositories the service lists that have no tab yet — what opening a Session's
+ * repository does.
+ *
+ * Two decisions the reader notices. A tab lands **beside the active one** rather than at the
+ * end of an already long strip, and the adopted repository becomes active: an adopted
+ * repository is the one the Session just asked for, so leaving the reader on an older one is
+ * the difference between "it opened my project" and "it opened something". A repository the
+ * reader closed stays closed.
+ *
+ * @returns whether anything was adopted.
+ */
+export function adoptRepositoryTabs(
+  state: RepositoryTabsState,
+  incoming: readonly RepositoryTab[],
+): boolean {
+  const known = new Set(state.tabs.map((tab) => repositoryTabKey(tab)));
+  const adopted = incoming.filter(
+    (tab) =>
+      !known.has(repositoryTabKey(tab)) &&
+      !state.dismissed.has(repositoryTabKey(tab)),
+  );
+  if (adopted.length === 0) {
+    return false;
+  }
+  for (const tab of adopted) {
+    state.tabs = insertAfterActive(state, tab);
+  }
+  const newest = adopted[adopted.length - 1];
+  if (newest !== undefined) {
+    state.activeRepositoryId = repositoryTabKey(newest);
+  }
+  state.revision += 1;
+  return true;
+}
+
+/** The tab list with `tab` directly after the active one. */
+function insertAfterActive(
+  state: RepositoryTabsState,
+  tab: RepositoryTab,
+): RepositoryTab[] {
+  const activeIndex = state.tabs.findIndex(
+    (candidate) => repositoryTabKey(candidate) === state.activeRepositoryId,
+  );
+  if (activeIndex < 0) {
+    return [...state.tabs, tab];
+  }
+  return [
+    ...state.tabs.slice(0, activeIndex + 1),
+    tab,
+    ...state.tabs.slice(activeIndex + 1),
+  ];
 }
 
 export function selectRepositoryTab(
@@ -82,6 +149,7 @@ export function closeRepositoryTab(
     (tab) => repositoryTabKey(tab) !== repositoryId,
   );
   state.tabs = nextTabs;
+  state.dismissed.add(repositoryId);
   if (state.activeRepositoryId === repositoryId) {
     const neighbor = nextTabs[index] ?? nextTabs[index - 1];
     state.activeRepositoryId =
