@@ -230,6 +230,12 @@ pub enum MutationOperation {
         remote_name: String,
         tag_name: String,
     },
+    AddSubmodule {
+        remote_url: String,
+        relative_path: String,
+        branch_name: Option<String>,
+        initialize: bool,
+    },
     Merge {
         source_oid: String,
         mode: MergeMode,
@@ -296,6 +302,7 @@ impl MutationOperation {
             Self::CreateTag { .. } => MutationKind::CreateTag,
             Self::DeleteTag { .. } => MutationKind::DeleteTag,
             Self::PushTag { .. } => MutationKind::PushTag,
+            Self::AddSubmodule { .. } => MutationKind::AddSubmodule,
             Self::Merge { .. } => MutationKind::Merge,
             Self::ContinueMerge { .. } => MutationKind::ContinueMerge,
             Self::AbortMerge { .. } => MutationKind::AbortMerge,
@@ -348,7 +355,8 @@ impl MutationOperation {
             | Self::Push { .. }
             | Self::PushTag { .. }
             | Self::Fetch { .. }
-            | Self::Pull { .. } => Vec::new(),
+            | Self::Pull { .. }
+            | Self::AddSubmodule { .. } => Vec::new(),
         }
     }
 
@@ -839,13 +847,17 @@ mod seed_tests {
             ),
             (
                 serde_json::json!({
-                    "kind": "pull",
-                    "remoteName": "origin",
-                    "mode": "ff-only"
+                    "kind": "addSubmodule",
+                    "remoteUrl": "/local/repo",
+                    "relativePath": "vendor/lib",
+                    "branchName": null,
+                    "initialize": true
                 }),
-                MutationOperation::Pull {
-                    remote_name: "origin".to_string(),
-                    mode: PullMode::FfOnly,
+                MutationOperation::AddSubmodule {
+                    remote_url: "/local/repo".to_string(),
+                    relative_path: "vendor/lib".to_string(),
+                    branch_name: None,
+                    initialize: true,
                 },
             ),
         ] {

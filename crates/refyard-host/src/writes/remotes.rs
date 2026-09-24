@@ -84,7 +84,7 @@ impl MutationEffect for RemoveRemoteEffect {
 
 /// Run one remote command in the target's worktree. `Err` is only a host failure to
 /// start the executor; a started run comes back as its `RunOutcome` to classify.
-async fn run_step(
+pub(super) async fn run_step(
     target: &WriteTarget,
     plan: &refyard_core::plan::GitPlan,
 ) -> Result<RunOutcome, Problem> {
@@ -98,7 +98,7 @@ async fn run_step(
         .await
 }
 
-fn succeeded(summary: String, head: Option<String>) -> EffectOutcome {
+pub(super) fn succeeded(summary: String, head: Option<String>) -> EffectOutcome {
     effect_outcome(Verdict::Succeeded { new_head_oid: head }, summary, None)
 }
 
@@ -412,7 +412,7 @@ async fn check_configured_remote(
 /// A push that did not finish cleanly: a clean non-zero is a refusal (the single ref
 /// was rejected), while a timeout, signal or truncated stream is `unknown` — a network
 /// write may have half-reached the remote and is never retried.
-fn network_failure(
+pub(super) fn network_failure(
     operation_id: &str,
     command: &'static str,
     outcome: &RunOutcome,

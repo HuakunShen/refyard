@@ -25,6 +25,7 @@ pub mod refs;
 pub mod remotes;
 pub mod replay;
 pub mod status;
+pub mod submodules;
 pub mod tags;
 
 use std::path::PathBuf;

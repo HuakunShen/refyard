@@ -955,3 +955,94 @@ async fn a_pull_that_cannot_fast_forward_keeps_the_two_facts_apart() {
     let subject = String::from_utf8(fixture.git(&["log", "-1", "--format=%s"])).expect("utf8");
     assert_eq!(subject.trim(), "local work", "the branch did not move");
 }
+
+/* ------------------------------------------------------------ addSubmodule */
+
+#[tokio::test]
+async fn a_submodule_adds_from_a_local_path() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let (repository_id, worktree_id) = fixture.open(&service).await;
+
+    // A source repository to add as a submodule.
+    let src = fixture.temp.path().join("subsource");
+    let src_str = src.to_str().expect("utf8").to_string();
+    run_git_in(&fixture, &fixture.repo, &["init", "--quiet", &src_str]);
+    std::fs::write(src.join("lib.txt"), "lib\n").expect("write");
+    run_git_in(&fixture, &src, &["add", "--", "lib.txt"]);
+    run_git_in(&fixture, &src, &["commit", "--quiet", "-m", "sub commit"]);
+    // Git blocks the `file` protocol for submodules by default. A local-path submodule
+    // is legitimate here (the URL form the contract allows), so the isolated fixture's
+    // own config permits it — this is test setup, never a production setting.
+    run_git_in(
+        &fixture,
+        &fixture.repo,
+        &["config", "--global", "protocol.file.allow", "always"],
+    );
+
+    let request = fixture
+        .worktree_request(
+            &service,
+            &repository_id,
+            &worktree_id,
+            MutationOperation::AddSubmodule {
+                remote_url: src_str.clone(),
+                relative_path: "vendor/lib".to_string(),
+                branch_name: None,
+                initialize: true,
+            },
+            "crid-sub-add",
+        )
+        .await;
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Succeeded,
+        "{:?}",
+        finished.problem
+    );
+    assert!(
+        fixture.repo.join("vendor/lib/lib.txt").exists(),
+        "the submodule is cloned and checked out"
+    );
+    let gitmodules = std::fs::read_to_string(fixture.repo.join(".gitmodules")).expect("read");
+    assert!(gitmodules.contains("vendor/lib"), ".gitmodules records it");
+}
+
+#[tokio::test]
+async fn a_submodule_url_that_names_a_command_is_refused() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let (repository_id, worktree_id) = fixture.open(&service).await;
+
+    let request = fixture
+        .worktree_request(
+            &service,
+            &repository_id,
+            &worktree_id,
+            MutationOperation::AddSubmodule {
+                remote_url: "ext::evil-helper".to_string(),
+                relative_path: "vendor/lib".to_string(),
+                branch_name: None,
+                initialize: true,
+            },
+            "crid-sub-unsafe",
+        )
+        .await;
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(finished.status, OperationStatus::Failed);
+    let problem = finished.problem.expect("a refusal carries the reason");
+    assert!(
+        problem.message.contains("remote URL"),
+        "the refusal names the unsafe URL: {}",
+        problem.message
+    );
+}
