@@ -236,6 +236,15 @@ pub enum MutationOperation {
         branch_name: Option<String>,
         initialize: bool,
     },
+    UpdateSubmodule {
+        path_ids: Vec<String>,
+        initialize: bool,
+        recursive: bool,
+    },
+    SyncSubmodule {
+        path_ids: Vec<String>,
+        recursive: bool,
+    },
     Merge {
         source_oid: String,
         mode: MergeMode,
@@ -303,6 +312,8 @@ impl MutationOperation {
             Self::DeleteTag { .. } => MutationKind::DeleteTag,
             Self::PushTag { .. } => MutationKind::PushTag,
             Self::AddSubmodule { .. } => MutationKind::AddSubmodule,
+            Self::UpdateSubmodule { .. } => MutationKind::UpdateSubmodule,
+            Self::SyncSubmodule { .. } => MutationKind::SyncSubmodule,
             Self::Merge { .. } => MutationKind::Merge,
             Self::ContinueMerge { .. } => MutationKind::ContinueMerge,
             Self::AbortMerge { .. } => MutationKind::AbortMerge,
@@ -322,6 +333,9 @@ impl MutationOperation {
     /// The paths this operation selected, for a precondition check that needs them.
     pub fn path_ids(&self) -> Vec<String> {
         match self {
+            Self::UpdateSubmodule { path_ids, .. } | Self::SyncSubmodule { path_ids, .. } => {
+                path_ids.clone()
+            }
             Self::StagePaths { path_ids, .. } | Self::UnstagePaths { path_ids } => path_ids.clone(),
             Self::Commit { .. }
             | Self::CreateBranch { .. }
@@ -858,6 +872,30 @@ mod seed_tests {
                     relative_path: "vendor/lib".to_string(),
                     branch_name: None,
                     initialize: true,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "updateSubmodule",
+                    "pathIds": ["p1"],
+                    "initialize": true,
+                    "recursive": false
+                }),
+                MutationOperation::UpdateSubmodule {
+                    path_ids: vec!["p1".to_string()],
+                    initialize: true,
+                    recursive: false,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "syncSubmodule",
+                    "pathIds": [],
+                    "recursive": true
+                }),
+                MutationOperation::SyncSubmodule {
+                    path_ids: vec![],
+                    recursive: true,
                 },
             ),
         ] {

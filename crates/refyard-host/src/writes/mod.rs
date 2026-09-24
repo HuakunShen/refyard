@@ -103,7 +103,7 @@ impl WriteHost {
         }
     }
 
-    /// The thirty-six effects this build registers, in the order the contract lists
+    /// The thirty-eight effects this build registers, in the order the contract lists
     /// them. The contract's own order is what `implemented_kinds` publishes, so the
     /// capability answer the UI gates its menus on is stable across builds.
     pub fn effects(host: &Arc<Self>) -> Vec<Box<dyn MutationEffect>> {
@@ -175,6 +175,12 @@ impl WriteHost {
                 host: Arc::clone(host),
             }),
             Box::new(submodules::AddSubmoduleEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(submodules::UpdateSubmoduleEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(submodules::SyncSubmoduleEffect {
                 host: Arc::clone(host),
             }),
             Box::new(merge::MergeEffect {

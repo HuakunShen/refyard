@@ -1046,3 +1046,126 @@ async fn a_submodule_url_that_names_a_command_is_refused() {
         problem.message
     );
 }
+
+/* ---------------------------------------- updateSubmodule / syncSubmodule */
+
+#[tokio::test]
+async fn a_submodule_update_and_sync_run_on_the_configured_submodules() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let (repository_id, worktree_id) = fixture.open(&service).await;
+
+    let src = fixture.temp.path().join("subsource");
+    let src_str = src.to_str().expect("utf8").to_string();
+    run_git_in(&fixture, &fixture.repo, &["init", "--quiet", &src_str]);
+    std::fs::write(src.join("lib.txt"), "lib\n").expect("write");
+    run_git_in(&fixture, &src, &["add", "--", "lib.txt"]);
+    run_git_in(&fixture, &src, &["commit", "--quiet", "-m", "sub commit"]);
+    run_git_in(
+        &fixture,
+        &fixture.repo,
+        &["config", "--global", "protocol.file.allow", "always"],
+    );
+    run_git_in(
+        &fixture,
+        &fixture.repo,
+        &["submodule", "add", "--", &src_str, "vendor/lib"],
+    );
+    // Commit the gitlink so the parent records which commit the submodule should hold.
+    fixture.git(&["add", "--", ".gitmodules", "vendor/lib"]);
+    fixture.git(&["commit", "--quiet", "-m", "add submodule"]);
+
+    // An empty path selection means every configured submodule.
+    let request = fixture
+        .worktree_request(
+            &service,
+            &repository_id,
+            &worktree_id,
+            MutationOperation::UpdateSubmodule {
+                path_ids: vec![],
+                initialize: true,
+                recursive: false,
+            },
+            "crid-sub-update",
+        )
+        .await;
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Succeeded,
+        "{:?}",
+        finished.problem
+    );
+    assert!(
+        fixture.repo.join("vendor/lib/lib.txt").exists(),
+        "checked out"
+    );
+
+    let request = fixture
+        .worktree_request(
+            &service,
+            &repository_id,
+            &worktree_id,
+            MutationOperation::SyncSubmodule {
+                path_ids: vec![],
+                recursive: true,
+            },
+            "crid-sub-sync",
+        )
+        .await;
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Succeeded,
+        "{:?}",
+        finished.problem
+    );
+}
+
+#[tokio::test]
+async fn an_unsafe_configured_submodule_url_is_refused_before_updating() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let (repository_id, worktree_id) = fixture.open(&service).await;
+
+    // A crafted .gitmodules naming a transport-helper URL (a command). The safety scan
+    // must refuse to contact it — before update/sync run at all.
+    std::fs::write(
+        fixture.repo.join(".gitmodules"),
+        "[submodule \"lib\"]\n\tpath = vendor/lib\n\turl = ext::evil-helper\n",
+    )
+    .expect("write");
+
+    let request = fixture
+        .worktree_request(
+            &service,
+            &repository_id,
+            &worktree_id,
+            MutationOperation::SyncSubmodule {
+                path_ids: vec![],
+                recursive: true,
+            },
+            "crid-sub-unsafe-sync",
+        )
+        .await;
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(finished.status, OperationStatus::Failed);
+    let problem = finished.problem.expect("a refusal carries the reason");
+    assert!(
+        problem.message.contains("unsafe configured URL"),
+        "the refusal names the unsafe URL: {}",
+        problem.message
+    );
+}

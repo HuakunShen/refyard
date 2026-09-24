@@ -310,7 +310,9 @@ fn operation_targets(kind: MutationKind) -> Vec<TargetKind> {
         | MutationKind::DropCommit
         | MutationKind::SquashCommit
         | MutationKind::Pull
-        | MutationKind::AddSubmodule => vec![TargetKind::Worktree],
+        | MutationKind::AddSubmodule
+        | MutationKind::UpdateSubmodule
+        | MutationKind::SyncSubmodule => vec![TargetKind::Worktree],
         _ => vec![TargetKind::Repository],
     }
 }

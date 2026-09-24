@@ -68,6 +68,101 @@ pub fn plan_submodule_add(
     })
 }
 
+/// `git submodule update --checkout [--init] [--recursive] -- <paths>`.
+///
+/// The recorded commit is the target, always: no `--remote`, `--force`, `--merge` or
+/// `--rebase`. Each path is confined to the working tree, and `--` keeps a path from
+/// being read as a switch.
+pub fn plan_submodule_update(
+    paths: &[String],
+    initialize: bool,
+    recursive: bool,
+) -> Result<GitPlan, CoreError> {
+    let mut argv = vec![
+        "submodule".to_string(),
+        "update".to_string(),
+        "--checkout".to_string(),
+    ];
+    if initialize {
+        argv.push("--init".to_string());
+    }
+    if recursive {
+        argv.push("--recursive".to_string());
+    }
+    argv.push("--".to_string());
+    for path in paths {
+        validated_relative_path(path)?;
+        argv.push(path.clone());
+    }
+    Ok(GitPlan {
+        argv,
+        stdin: Vec::new(),
+        deadline_class: DeadlineClass::Network,
+    })
+}
+
+/// `git submodule sync [--recursive] -- <paths>` — copy URLs from the parent's
+/// configuration into the submodules. No network.
+pub fn plan_submodule_sync(paths: &[String], recursive: bool) -> Result<GitPlan, CoreError> {
+    let mut argv = vec!["submodule".to_string(), "sync".to_string()];
+    if recursive {
+        argv.push("--recursive".to_string());
+    }
+    argv.push("--".to_string());
+    for path in paths {
+        validated_relative_path(path)?;
+        argv.push(path.clone());
+    }
+    Ok(GitPlan {
+        argv,
+        stdin: Vec::new(),
+        deadline_class: DeadlineClass::Hook,
+    })
+}
+
+/// `git config -z --file .gitmodules --get-regexp ^submodule\.` — every configured
+/// submodule key and value. Read before an update or sync so a crafted `.gitmodules`
+/// cannot name a command URL that the run would then contact.
+pub fn plan_submodule_config() -> GitPlan {
+    GitPlan::read(vec![
+        "config".to_string(),
+        "-z".to_string(),
+        "--file".to_string(),
+        ".gitmodules".to_string(),
+        "--get-regexp".to_string(),
+        "^submodule\\.".to_string(),
+    ])
+}
+
+/// Parse `git config -z --get-regexp` output: NUL-framed `<key>\n<value>` records.
+/// Returns the URLs a `.gitmodules` configures (the `submodule.<name>.url` values).
+///
+/// Byte-level: the separator is exactly one `0x0a` and the value is raw bytes after it;
+/// a record without that shape is skipped rather than guessed at. The value is decoded
+/// only to validate the URL grammar, which is a byte test in `validated_remote_url`.
+pub fn submodule_config_urls(bytes: &[u8]) -> Vec<String> {
+    let mut urls = Vec::new();
+    for frame in bytes.split(|b| *b == 0) {
+        if frame.is_empty() {
+            continue;
+        }
+        let Some(separator) = frame.iter().position(|b| *b == 0x0a) else {
+            continue;
+        };
+        if separator == 0 {
+            continue;
+        }
+        let key = &frame[..separator];
+        let value = &frame[separator + 1..];
+        // Only `submodule.<name>.url` carries a URL to contact.
+        let key_str = String::from_utf8_lossy(key);
+        if key_str.starts_with("submodule.") && key_str.ends_with(".url") && !value.is_empty() {
+            urls.push(String::from_utf8_lossy(value).to_string());
+        }
+    }
+    urls
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,5 +196,74 @@ mod tests {
         // A transport-helper URL names a command: refused before it is ever contacted.
         assert!(plan_submodule_add("ext::evil", "lib", None).is_err());
         assert!(plan_submodule_add("--upload-pack=evil", "lib", None).is_err());
+    }
+}
+
+#[cfg(test)]
+mod update_sync_tests {
+    use super::*;
+
+    #[test]
+    fn a_submodule_update_checks_out_the_recorded_commit_and_never_a_forced_form() {
+        let paths = vec!["vendor/lib".to_string(), "vendor/other".to_string()];
+        assert_eq!(
+            plan_submodule_update(&paths, true, true)
+                .expect("a plan")
+                .argv,
+            vec![
+                "submodule",
+                "update",
+                "--checkout",
+                "--init",
+                "--recursive",
+                "--",
+                "vendor/lib",
+                "vendor/other"
+            ]
+        );
+        let plan = plan_submodule_update(&paths, false, false).expect("a plan");
+        assert_eq!(
+            plan.argv,
+            vec![
+                "submodule",
+                "update",
+                "--checkout",
+                "--",
+                "vendor/lib",
+                "vendor/other"
+            ]
+        );
+        assert_eq!(plan.deadline_class, DeadlineClass::Network);
+        // A `..` path would reach outside the working tree.
+        assert!(plan_submodule_update(&["../escape".to_string()], false, false).is_err());
+    }
+
+    #[test]
+    fn a_submodule_sync_only_copies_urls() {
+        assert_eq!(
+            plan_submodule_sync(&["vendor/lib".to_string()], true)
+                .expect("a plan")
+                .argv,
+            vec!["submodule", "sync", "--recursive", "--", "vendor/lib"]
+        );
+        assert_eq!(
+            plan_submodule_sync(&[], false)
+                .expect("a plan")
+                .deadline_class,
+            DeadlineClass::Hook
+        );
+    }
+
+    #[test]
+    fn the_url_safety_scan_reads_only_the_configured_urls() {
+        // A crafted .gitmodules: one safe local URL and one that names a command.
+        let config = b"submodule.lib.url\n/local/repo\0submodule.lib.path\nvendor/lib\0submodule.evil.url\next::rm\0";
+        assert_eq!(
+            submodule_config_urls(config),
+            vec!["/local/repo".to_string(), "ext::rm".to_string()]
+        );
+        // A record without the `<key>\n<value>` shape is skipped, never guessed at.
+        let malformed = b"submodule.lib.url\n/local\0garbage-no-newline\0";
+        assert_eq!(submodule_config_urls(malformed), vec!["/local".to_string()]);
     }
 }
