@@ -86,6 +86,29 @@ pub enum FetchTagMode {
     Following,
 }
 
+/// What a new worktree checks out: an existing branch, a new branch at a commit, or a
+/// detached commit. A branch already checked out elsewhere is refused by Git, never
+/// overridden here.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum WorktreeReference {
+    ExistingBranch {
+        branch_name: String,
+    },
+    NewBranch {
+        branch_name: String,
+        start_oid: String,
+    },
+    Detached {
+        oid: String,
+    },
+}
+
 /// How a pull moves the branch. This build offers only `ff-only`: a divergence fails
 /// and nothing is merged or rebased implicitly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -230,6 +253,10 @@ pub enum MutationOperation {
         remote_name: String,
         tag_name: String,
     },
+    CreateWorktree {
+        relative_destination: String,
+        reference: WorktreeReference,
+    },
     AddSubmodule {
         remote_url: String,
         relative_path: String,
@@ -311,6 +338,7 @@ impl MutationOperation {
             Self::CreateTag { .. } => MutationKind::CreateTag,
             Self::DeleteTag { .. } => MutationKind::DeleteTag,
             Self::PushTag { .. } => MutationKind::PushTag,
+            Self::CreateWorktree { .. } => MutationKind::CreateWorktree,
             Self::AddSubmodule { .. } => MutationKind::AddSubmodule,
             Self::UpdateSubmodule { .. } => MutationKind::UpdateSubmodule,
             Self::SyncSubmodule { .. } => MutationKind::SyncSubmodule,
@@ -370,6 +398,7 @@ impl MutationOperation {
             | Self::PushTag { .. }
             | Self::Fetch { .. }
             | Self::Pull { .. }
+            | Self::CreateWorktree { .. }
             | Self::AddSubmodule { .. } => Vec::new(),
         }
     }
@@ -857,6 +886,19 @@ mod seed_tests {
                     remote_name: "origin".to_string(),
                     prune: true,
                     tags: FetchTagMode::Following,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "createWorktree",
+                    "relativeDestination": "feature-wt",
+                    "reference": { "kind": "existingBranch", "branchName": "feature" }
+                }),
+                MutationOperation::CreateWorktree {
+                    relative_destination: "feature-wt".to_string(),
+                    reference: WorktreeReference::ExistingBranch {
+                        branch_name: "feature".to_string(),
+                    },
                 },
             ),
             (

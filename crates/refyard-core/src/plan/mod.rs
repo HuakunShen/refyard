@@ -27,6 +27,7 @@ pub mod replay;
 pub mod status;
 pub mod submodules;
 pub mod tags;
+pub mod worktrees;
 
 use std::path::PathBuf;
 use std::time::Duration;

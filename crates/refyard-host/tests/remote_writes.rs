@@ -13,7 +13,9 @@ use std::time::Duration;
 
 use refyard_contract::problem::ProblemCode;
 use refyard_contract::reads::{MutationTarget, OperationStatus, StatusSnapshot};
-use refyard_host::jobs::{FetchTagMode, MutationOperation, MutationRequest, PullMode};
+use refyard_host::jobs::{
+    FetchTagMode, MutationOperation, MutationRequest, PullMode, WorktreeReference,
+};
 use refyard_host::providers::local::LocalGit;
 use refyard_host::service::{ApplicationService, ApplicationServiceConfig, StatusQuery};
 
@@ -1167,5 +1169,107 @@ async fn an_unsafe_configured_submodule_url_is_refused_before_updating() {
         problem.message.contains("unsafe configured URL"),
         "the refusal names the unsafe URL: {}",
         problem.message
+    );
+}
+
+/* ----------------------------------------------- createWorktree */
+
+#[tokio::test]
+async fn a_create_worktree_adds_a_linked_worktree() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let (repository_id, _worktree_id) = fixture.open(&service).await;
+    let head = String::from_utf8(fixture.git(&["rev-parse", "HEAD"]))
+        .expect("utf8")
+        .trim()
+        .to_string();
+
+    // Detached form: a worktree at a commit, no branch.
+    let snapshot_id = fixture.status(&service, &repository_id).await.snapshot_id;
+    let request = fixture.repository_request(
+        &repository_id,
+        &snapshot_id,
+        MutationOperation::CreateWorktree {
+            relative_destination: "wt-detached".to_string(),
+            reference: WorktreeReference::Detached { oid: head.clone() },
+        },
+        "crid-wt-detached",
+    );
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Succeeded,
+        "{:?}",
+        finished.problem
+    );
+
+    // New-branch form: a fresh branch at a commit, checked out in the new worktree.
+    let snapshot_id = fixture.status(&service, &repository_id).await.snapshot_id;
+    let request = fixture.repository_request(
+        &repository_id,
+        &snapshot_id,
+        MutationOperation::CreateWorktree {
+            relative_destination: "wt-new".to_string(),
+            reference: WorktreeReference::NewBranch {
+                branch_name: "feature".to_string(),
+                start_oid: head.clone(),
+            },
+        },
+        "crid-wt-new",
+    );
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Succeeded,
+        "{:?}",
+        finished.problem
+    );
+
+    // Both linked worktrees now exist beside the primary.
+    let list = String::from_utf8(fixture.git(&["worktree", "list"])).expect("utf8");
+    assert!(
+        list.lines().count() >= 3,
+        "the primary plus two linked worktrees:\n{list}"
+    );
+}
+
+#[tokio::test]
+async fn a_create_worktree_refuses_a_branch_already_checked_out_elsewhere() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let (repository_id, _worktree_id) = fixture.open(&service).await;
+
+    // `main` is checked out in the primary worktree. Git refuses to check it out again;
+    // this build reports that refusal and never overrides it.
+    let snapshot_id = fixture.status(&service, &repository_id).await.snapshot_id;
+    let request = fixture.repository_request(
+        &repository_id,
+        &snapshot_id,
+        MutationOperation::CreateWorktree {
+            relative_destination: "wt-taken".to_string(),
+            reference: WorktreeReference::ExistingBranch {
+                branch_name: "main".to_string(),
+            },
+        },
+        "crid-wt-taken",
+    );
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Failed,
+        "{:?}",
+        finished.problem
     );
 }
