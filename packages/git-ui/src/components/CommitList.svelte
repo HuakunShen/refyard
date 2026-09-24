@@ -510,7 +510,7 @@
       {
         kind: "action" as const,
         id: "reset-columns",
-        label: "Reset columns to default layout",
+        label: m.commit_reset_columns(),
         onSelect: () => {
           columnState = defaultColumnState();
         },

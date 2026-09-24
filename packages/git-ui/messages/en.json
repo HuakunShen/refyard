@@ -384,5 +384,15 @@
 	"bg_solid": "Solid Canvas",
 	"bg_solid_desc": "Clean minimal workbench",
 	"bg_mist": "Mountain Mist",
-	"bg_aurora": "Dark Aurora"
+	"bg_aurora": "Dark Aurora",
+	"commit_reset_columns": "Reset columns to default layout",
+	"filter_err_sha_file": "SHA and file filters cannot be combined",
+	"filter_err_dates": "Use valid UTC dates with the start no later than the end",
+	"filter_err_line": "{field} must be a single line of up to 512 characters",
+	"filter_after": "After: {value}",
+	"filter_before": "Before: {value}",
+	"filter_file": "File: {name}",
+	"filter_selected_file": "Selected file",
+	"filter_field_message": "Message",
+	"filter_field_author": "Author"
 }

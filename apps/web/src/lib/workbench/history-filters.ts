@@ -1,3 +1,4 @@
+import { m } from "@refyard/git-ui/i18n";
 /** Pure draft/applied history state and bounded page intent; display paths never become authority. */
 import {
   validateHistoryQuery,
@@ -82,14 +83,14 @@ export function applyHistoryFilters(state: HistoryFilterState): boolean {
         if (problem.path === "oidPrefix")
           return "Commit SHA needs 4–64 hexadecimal digits";
         if (problem.path === "pathId" && draft.oidPrefix.trim() !== "")
-          return "SHA and file filters cannot be combined";
+          return m.filter_err_sha_file();
         if (
           problem.path === "committedAfter" ||
           problem.path === "committedBefore"
         )
-          return "Use valid UTC dates with the start no later than the end";
+          return m.filter_err_dates();
         if (problem.path === "message" || problem.path === "author")
-          return `${problem.path === "message" ? "Message" : "Author"} must be a single line of up to 512 characters`;
+          return m.filter_err_line({ field: problem.path === "message" ? m.filter_field_message() : m.filter_field_author() });
         return problem.message;
       })
       .join(". ");
@@ -118,13 +119,13 @@ export function historyFilterLabels(state: HistoryFilterState): string[] {
     ...(filter.oidPrefix === undefined ? [] : [`SHA: ${filter.oidPrefix}`]),
     ...(filter.committedAfter === undefined
       ? []
-      : [`After: ${filter.committedAfter}`]),
+      : [m.filter_after({ value: filter.committedAfter })]),
     ...(filter.committedBefore === undefined
       ? []
-      : [`Before: ${filter.committedBefore}`]),
+      : [m.filter_before({ value: filter.committedBefore })]),
     ...(filter.pathId === undefined
       ? []
-      : [`File: ${state.appliedPath?.displayPath ?? "Selected file"}`]),
+      : [m.filter_file({ name: state.appliedPath?.displayPath ?? m.filter_selected_file() })]),
   ];
 }
 export function historyPageQuery(

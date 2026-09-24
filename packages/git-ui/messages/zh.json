@@ -384,5 +384,15 @@
 	"bg_solid": "纯色画布",
 	"bg_solid_desc": "干净极简的工作台",
 	"bg_mist": "山间雾霭",
-	"bg_aurora": "暗夜极光"
+	"bg_aurora": "暗夜极光",
+	"commit_reset_columns": "重置列为默认布局",
+	"filter_err_sha_file": "SHA 与文件筛选不能同时使用",
+	"filter_err_dates": "请使用有效的 UTC 日期,且开始时间不得晚于结束时间",
+	"filter_err_line": "{field} 必须是单行且不超过 512 个字符",
+	"filter_after": "之后:{value}",
+	"filter_before": "之前:{value}",
+	"filter_file": "文件:{name}",
+	"filter_selected_file": "已选文件",
+	"filter_field_message": "提交信息",
+	"filter_field_author": "作者"
 }
