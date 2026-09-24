@@ -15,6 +15,7 @@
     DialogTrigger,
   } from "./ui/dialog/index.js";
   import { Button } from "./ui/button/index.js";
+  import { m, type UiLanguage } from "../i18n.js";
   import { ScrollArea } from "./ui/scroll-area/index.js";
   import SettingsIcon from "@lucide/svelte/icons/settings";
   import SunIcon from "@lucide/svelte/icons/sun";
@@ -49,7 +50,10 @@
     glass: boolean;
     avatars?: boolean;
     density?: RowDensity;
+    /** The reader's language preference; `auto` follows the browser. */
+    language?: UiLanguage;
     onAccentChange: (accent: string) => void;
+    onLanguageChange?: (language: UiLanguage) => void;
     onBackgroundChange: (bg: string) => void;
     onGlassChange: (glass: boolean) => void;
     onAvatarsChange?: (avatars: boolean) => void;
@@ -68,7 +72,9 @@
     glass,
     avatars = true,
     density = "compact",
+    language = "auto",
     onAccentChange,
+    onLanguageChange = undefined,
     onBackgroundChange,
     onGlassChange,
     onAvatarsChange = undefined,
@@ -172,8 +178,8 @@
         size="icon"
         variant="ghost"
         class="size-7"
-        title="Settings"
-        aria-label="Settings"
+        title={m.settings_title()}
+        aria-label={m.settings_title()}
         data-testid="settings-open"
       >
         <SettingsIcon class="size-4" />
@@ -187,10 +193,10 @@
     <DialogHeader>
       <DialogTitle class="flex items-center gap-2 text-base font-semibold">
         <Sparkles class="size-4 text-primary" />
-        Settings
+        {m.settings_title()}
       </DialogTitle>
       <DialogDescription class="text-xs text-ink-muted">
-        Appearance and connection details. Preferences are saved locally.
+        {m.settings_description()}
       </DialogDescription>
     </DialogHeader>
 
@@ -200,7 +206,7 @@
           <h3
             class="text-xs font-semibold uppercase tracking-wider text-ink-muted"
           >
-            Appearance
+            {m.settings_appearance()}
           </h3>
           <div
             class="flex items-center gap-1 self-start rounded-lg border border-border/60 bg-card/60 p-1"
@@ -230,7 +236,9 @@
             {glass}
             {avatars}
             {density}
+            {language}
             {onAccentChange}
+            {onLanguageChange}
             {onBackgroundChange}
             {onGlassChange}
             {onAvatarsChange}

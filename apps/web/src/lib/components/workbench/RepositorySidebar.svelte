@@ -43,6 +43,25 @@
     selectSidebarView,
     type SidebarViewId,
   } from "$lib/workbench/sidebar-navigation.js";
+  import { m } from "@refyard/git-ui/i18n";
+
+  /**
+   * The navigation's labels come from the catalogue rather than the view table, because the
+   * table is logic (ids, availability, counts) and the label is the one part of it that
+   * changes with the reader's language.
+   */
+  const SIDEBAR_LABELS: Record<SidebarViewId, () => string> = {
+    repositories: () => m.sidebar_repositories(),
+    "working-copy": () => m.sidebar_working_copy(),
+    branches: () => m.sidebar_branches(),
+    remotes: () => m.sidebar_remotes(),
+    stashes: () => m.sidebar_stashes(),
+    tags: () => m.sidebar_tags(),
+    worktrees: () => m.sidebar_worktrees(),
+    submodules: () => m.sidebar_submodules(),
+    "pull-requests": () => m.sidebar_pull_requests(),
+    refs: () => m.sidebar_refs(),
+  };
 
   interface Props {
     queries: WorkbenchQueries;
@@ -196,9 +215,10 @@
   const navItems: readonly WorkbenchNavItem[] = $derived(
     sidebarViews
       .filter((entry) => entry.available)
-      .map(({ id, label, count }) =>
-        count === undefined ? { id, label } : { id, label, count },
-      ),
+      .map(({ id, count }) => {
+        const label = SIDEBAR_LABELS[id]();
+        return count === undefined ? { id, label } : { id, label, count };
+      }),
   );
   const navigation = $state(createSidebarNavigationState());
   const activeView = $derived(navigation.activeView);

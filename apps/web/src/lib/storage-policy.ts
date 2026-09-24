@@ -39,6 +39,7 @@ const AVATARS_KEY = "refyard.appearance.avatars";
  * never a pixel count, so a future change to the scale does not have to read old numbers.
  */
 const DENSITY_KEY = "refyard.appearance.density";
+const LANGUAGE_KEY = "refyard.appearance.language";
 
 /** The two methods of the browser's `Storage` this module uses. */
 export interface StorageLike {
@@ -74,6 +75,8 @@ export interface BrowserStorage {
   storeAvatars(enabled: boolean): void;
   readStoredDensity(): string;
   storeDensity(density: string | null): void;
+  readStoredLanguage(): string;
+  storeLanguage(language: string | null): void;
 }
 
 export function createBrowserStorage(stores: BrowserStores): BrowserStorage {
@@ -179,6 +182,12 @@ export function createBrowserStorage(stores: BrowserStores): BrowserStorage {
     },
     storeDensity(density: string | null): void {
       writeTo(stores.local, DENSITY_KEY, density);
+    },
+    readStoredLanguage(): string {
+      return readFrom(stores.local, LANGUAGE_KEY) ?? "auto";
+    },
+    storeLanguage(language: string | null): void {
+      writeTo(stores.local, LANGUAGE_KEY, language);
     },
   };
 }

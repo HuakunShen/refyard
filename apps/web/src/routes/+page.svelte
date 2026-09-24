@@ -56,6 +56,11 @@
     RefreshCw,
     Server,
   } from "@lucide/svelte";
+  import {
+    resolveUiLocale,
+    setLocale,
+    type UiLanguage,
+  } from "@refyard/git-ui/i18n";
   import { useQueryClient } from "@tanstack/svelte-query";
   import {
     createWorkbenchSessionState,
@@ -132,6 +137,8 @@
     storeAvatars,
     readStoredDensity,
     storeDensity,
+    readStoredLanguage,
+    storeLanguage,
   } from "$lib/storage.js";
   import { createDesktopUpdates } from "$lib/runtime/updates.js";
   import type { UpdateOffer, UpdatesProbe } from "@refyard/git-ui";
@@ -235,6 +242,36 @@
   let background = $state(browser ? readStoredBackground() : "none");
   let glass = $state(browser ? readStoredGlass() : false);
   let avatars = $state(browser ? readStoredAvatars() : true);
+  /**
+   * The reader's language, and the key that re-mounts the page when it changes.
+   *
+   * A message is read at render time, so a switch has to re-render everything that ever
+   * rendered a string; re-mounting the page is the honest way to do that, and it is what the
+   * reader expects a language change to feel like anyway.
+   */
+  let language = $state<UiLanguage>(
+    browser ? (readStoredLanguage() as UiLanguage) : "auto",
+  );
+  let localeEpoch = $state(0);
+
+  /**
+   * Set the locale before the first string is read, not in an effect after it: effects run
+   * once the render has already happened, so a reader whose browser is Chinese would get a
+   * frame of English that nothing ever re-draws.
+   */
+  if (browser) {
+    void setLocale(resolveUiLocale(language, navigator.language), { reload: false });
+  }
+
+  /** One writer for the preference: resolve it, set it, then re-render the page. */
+  function applyLanguage(next: UiLanguage): void {
+    language = next;
+    if (browser) {
+      void setLocale(resolveUiLocale(next, navigator.language), { reload: false });
+    }
+    localeEpoch += 1;
+  }
+
   const storedDensity = browser ? readStoredDensity() : "compact";
   let density = $state<RowDensity>(
     isRowDensity(storedDensity) ? storedDensity : "compact",
@@ -257,6 +294,7 @@
     storeGlass(glass);
     storeAvatars(avatars);
     storeDensity(density);
+    storeLanguage(language);
   });
 
   // The updater exists only on the desktop runtime, and its code only loads there.
@@ -1213,6 +1251,7 @@
 <div
   class="@container relative flex h-dvh min-h-0 flex-col bg-canvas text-ink"
 >
+  {#key localeEpoch}
   {#if background !== "none"}
     <div
       class="pointer-events-none fixed inset-0 z-0 bg-cover bg-center bg-no-repeat transition-all duration-500"
@@ -1469,6 +1508,8 @@
         onGlassChange={(val) => (glass = val)}
         onAvatarsChange={(val) => (avatars = val)}
         onDensityChange={(val) => (density = val)}
+        {language}
+        onLanguageChange={applyLanguage}
         updates={updatesProbe ?? undefined}
         {autoCheck}
         onAutoCheckChange={(enabled) => {
@@ -2009,4 +2050,5 @@
       {/if}
     </main>
   {/if}
+  {/key}
 </div>
