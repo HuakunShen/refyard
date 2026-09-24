@@ -153,14 +153,14 @@
         : { label: "Git", value: about.gitVersion },
       about?.serviceInstanceId === undefined
         ? undefined
-        : { label: "Service instance", value: about.serviceInstanceId },
+        : { label: m.settings_service_instance(), value: about.serviceInstanceId },
       about?.backendLabel === undefined
         ? undefined
         : { label: "Backend", value: about.backendLabel },
       about?.operations === undefined
         ? undefined
         : {
-            label: "Write operations",
+            label: m.settings_write_ops(),
             value:
               about.operations === 0
                 ? "none — read-only build"

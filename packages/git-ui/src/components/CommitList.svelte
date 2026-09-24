@@ -108,7 +108,7 @@
     metrics?: GraphMetrics;
     /**
      * A GitHub remote URL for this repository, when it has one. Used only to offer
-     * "Copy GitHub link" items; without it those items are absent rather than
+     * m.copy_github_link() items; without it those items are absent rather than
      * disabled, because a link that cannot exist is not a feature.
      */
     githubRemoteUrl?: string;
@@ -641,7 +641,7 @@
             {
               kind: "action" as const,
               id: "copy-sha",
-              label: "Copy SHA",
+              label: m.copy_sha(),
               onSelect: () => onCopyOid(commit),
             },
           ]),
@@ -651,7 +651,7 @@
             {
               kind: "action" as const,
               id: "copy-message",
-              label: "Copy Message",
+              label: m.copy_message(),
               onSelect: () => onCopyText(commit.subject),
             },
           ]),
@@ -661,7 +661,7 @@
             {
               kind: "action" as const,
               id: "copy-github-link",
-              label: "Copy GitHub Link",
+              label: m.copy_github_link(),
               onSelect: () => {
                 const url = commitUrlFor(commit);
                 if (url !== null) {
@@ -846,7 +846,7 @@
               {
                 kind: "action" as const,
                 id: "copy-name",
-                label: "Copy Branch Name",
+                label: m.copy_branch_name(),
                 onSelect: () => onCopyText(ref.branchName),
               },
             ]),
@@ -856,7 +856,7 @@
               {
                 kind: "action" as const,
                 id: "copy-github-branch",
-                label: "Copy GitHub Link",
+                label: m.copy_github_link(),
                 onSelect: () => {
                   const url = branchUrlFor(ref.branchName);
                   if (url !== null) {
@@ -887,7 +887,7 @@
               {
                 kind: "action" as const,
                 id: "copy-name",
-                label: "Copy Tag Name",
+                label: m.copy_tag_name(),
                 onSelect: () => onCopyText(ref.tagName),
               },
             ]),
@@ -913,7 +913,7 @@
               {
                 kind: "action" as const,
                 id: "copy-name",
-                label: "Copy Name",
+                label: m.copy_name(),
                 onSelect: () => onCopyText(commitRefDisplayName(ref)),
               },
             ]),
@@ -928,7 +928,7 @@
             {
               kind: "action" as const,
               id: "copy-name",
-              label: "Copy Name",
+              label: m.copy_name(),
               onSelect: () => onCopyText(commitRefDisplayName(ref)),
             },
           ]),

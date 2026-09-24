@@ -100,19 +100,19 @@
   const PRESET_BACKGROUNDS = [
     {
       id: "none",
-      title: "Solid Canvas",
-      desc: "Clean minimal workbench",
+      title: m.bg_solid(),
+      desc: m.bg_solid_desc(),
       thumbnail: "bg-card border border-border",
     },
     {
       id: "/backgrounds/mountain-mist.svg",
-      title: "Mountain Mist",
+      title: m.bg_mist(),
       desc: "Scenic misty mountains & lake",
       thumbnail: "bg-gradient-to-br from-slate-400 via-blue-300 to-sky-100",
     },
     {
       id: "/backgrounds/aurora.svg",
-      title: "Dark Aurora",
+      title: m.bg_aurora(),
       desc: "Cosmic night sky & aurora glow",
       thumbnail:
         "bg-gradient-to-br from-slate-950 via-emerald-950 to-indigo-950",

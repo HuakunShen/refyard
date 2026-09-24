@@ -144,7 +144,7 @@
    */
   const remoteTargetChosen = $derived(!localTargetChosen);
   const pathFieldLabel = $derived(
-    remoteTargetChosen ? "Remote repository path" : "Local repository path",
+    remoteTargetChosen ? m.launcher_remote_path_label() : m.launcher_local_path_label(),
   );
   const pathFieldPlaceholder = $derived(
     remoteTargetChosen
@@ -244,7 +244,7 @@
       pickerError =
         error instanceof Error
           ? error.message
-          : "Could not read this directory";
+          : m.launcher_read_dir_error();
     } finally {
       pickerBusy = false;
     }
@@ -289,7 +289,7 @@
       nativePickerError =
         error instanceof Error
           ? error.message
-          : "Could not open the folder picker";
+          : m.launcher_picker_error();
     } finally {
       nativePickerBusy = false;
     }

@@ -530,7 +530,7 @@
   });
 
   /**
-   * A GitHub remote URL for the history's "Copy GitHub Link" items.
+   * A GitHub remote URL for the history's m.copy_github_link() items.
    *
    * `origin` wins when several remotes point at GitHub, because that is the one a
    * "link to this commit" is expected to mean; a repository with no GitHub remote
@@ -568,7 +568,7 @@
   const worktreeLabel = $derived(
     queries.activeWorktree?.head.branchName ??
       status.data?.head.branchName ??
-      "Working copy",
+      m.copy_working_copy(),
   );
   const worktreePath = $derived(
     queries.activeWorktree?.displayPath ?? repository?.displayPath ?? "",

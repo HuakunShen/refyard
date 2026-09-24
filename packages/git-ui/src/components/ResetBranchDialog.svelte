@@ -43,12 +43,12 @@
   }[] = [
     {
       id: "mixed",
-      label: "Mixed — unstage changes",
+      label: m.reset_mixed_hint(),
       note: "Moves the branch and resets the index to the commit. Staged work becomes unstaged; every file keeps its content.",
     },
     {
       id: "soft",
-      label: "Soft — keep everything staged",
+      label: m.reset_soft_hint(),
       note: "Moves the branch and leaves the index exactly as it is, so the same changes stay staged on top of the new head.",
     },
   ];
