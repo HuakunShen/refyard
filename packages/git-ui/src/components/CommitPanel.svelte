@@ -82,7 +82,7 @@
       >
     </label>
     <span class="text-[11px] font-mono text-ink-faint">
-      {stagedCount} staged path{stagedCount === 1 ? "" : "s"}
+      {m.copy_n_staged_paths({ n: stagedCount, s: stagedCount === 1 ? "" : "s" })}
     </span>
   </div>
 

@@ -10,7 +10,7 @@ const en_sidebar_pull_requests = /** @type {(inputs: Sidebar_Pull_RequestsInputs
 };
 
 const zh_sidebar_pull_requests = /** @type {(inputs: Sidebar_Pull_RequestsInputs) => LocalizedString} */ () => {
-	return /** @type {LocalizedString} */ (`Pull Request`)
+	return /** @type {LocalizedString} */ (`拉取请求`)
 };
 
 /**

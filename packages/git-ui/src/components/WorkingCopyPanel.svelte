@@ -194,7 +194,7 @@
         <span
           class="rounded-full border border-border/50 px-2 py-0.5 font-mono"
         >
-          {status.entryCount} changed
+          {m.copy_n_changed({ n: status.entryCount })}
         </span>
       {/if}
     </div>

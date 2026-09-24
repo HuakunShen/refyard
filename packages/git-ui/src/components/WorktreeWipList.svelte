@@ -136,7 +136,7 @@
                   >
                 {/if}
                 {#if counts.unstaged === 0 && counts.staged === 0}
-                  <span class="text-ink-faint">clean</span>
+                  <span class="text-ink-faint">{m.worktree_clean()}</span>
                 {/if}
               </span>
             {:else if record?.error !== null && record?.error !== undefined}

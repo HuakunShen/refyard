@@ -211,5 +211,8 @@
 	"page_install_restart": "Install and restart",
 	"appearance_accent": "Accent Color",
 	"appearance_background": "Workbench Background",
-	"appearance_apply_url": "Apply URL"
+	"appearance_apply_url": "Apply URL",
+	"worktree_clean": "clean",
+	"copy_n_changed": "{n} changed",
+	"copy_n_staged_paths": "{n} staged path{s}"
 }

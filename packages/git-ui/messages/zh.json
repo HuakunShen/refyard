@@ -8,7 +8,7 @@
 	"sidebar_tags": "标签",
 	"sidebar_worktrees": "工作树",
 	"sidebar_submodules": "子模块",
-	"sidebar_pull_requests": "Pull Request",
+	"sidebar_pull_requests": "拉取请求",
 	"sidebar_refs": "引用",
 	"settings_title": "设置",
 	"settings_description": "这个工作台的外观与行为。",
@@ -211,5 +211,8 @@
 	"page_install_restart": "安装并重启",
 	"appearance_accent": "强调色",
 	"appearance_background": "工作台背景",
-	"appearance_apply_url": "应用 URL"
+	"appearance_apply_url": "应用 URL",
+	"worktree_clean": "干净",
+	"copy_n_changed": "{n} 个变更",
+	"copy_n_staged_paths": "{n} 个暂存路径"
 }
