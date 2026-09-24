@@ -37,10 +37,12 @@ export interface GraphMetrics {
 /**
  * How much room a row gets.
  *
- * GitKraken's default sits at the roomy end of this scale — roughly 43px rows, 26px
+ * The scale is anchored on GitKraken's spacing at its roomy end — roughly 43px rows, 26px
  * avatar nodes and 3px lanes — which is what makes its graph read as calm instead of
- * dense. The proportions are held constant here (lane stroke ≈ 7% of the row, avatar
- * ≈ 30%); only the absolute size changes.
+ * dense. This workbench defaults to the compact end instead (`DEFAULT_METRICS`): a
+ * workbench is read for what changed, so the most commits per screen wins, and the
+ * proportions are held constant here (lane stroke ≈ 7% of the row, avatar ≈ 30%) so the
+ * denser rows stay legible rather than merely smaller.
  */
 export type RowDensity = "compact" | "comfortable" | "roomy";
 
@@ -82,7 +84,7 @@ export function densityMetrics(density: RowDensity): GraphMetrics {
   return DENSITY_METRICS[density];
 }
 
-export const DEFAULT_METRICS: GraphMetrics = DENSITY_METRICS.roomy;
+export const DEFAULT_METRICS: GraphMetrics = DENSITY_METRICS.compact;
 
 /**
  * Avatar radius for a row: GitKraken's 26px photo in a 43px row is a 0.30 ratio, with
@@ -173,13 +175,29 @@ export function compressedMetrics(
     ),
     1,
   );
-  return {
+  const lanePadding = Math.max(MIN_LANE_PADDING, base.lanePadding * scale);
+  const radius = Math.max(MIN_RADIUS, base.radius * scale);
+  const lineWidth = Math.max(MIN_LINE_WIDTH, base.lineWidth * scale);
+  let laneWidth = Math.max(MIN_LANE_WIDTH, base.laneWidth * scale);
+
+  // Each term above is an independently rounded product, so the reconstruction can land a
+  // fraction of a pixel above the width it was scaled to fit — and "every lane fits" is
+  // this function's whole promise: a column that overflows by an ulp clips its last lane.
+  // So what was built is measured and the remainder comes out of the lane spacing, which
+  // is the only term multiplied by the lane count. At the floor there is nothing left to
+  // take, and the documented answer past it is to clip.
+  const first: GraphMetrics = {
     ...base,
-    lanePadding: Math.max(MIN_LANE_PADDING, base.lanePadding * scale),
-    laneWidth: Math.max(MIN_LANE_WIDTH, base.laneWidth * scale),
-    radius: Math.max(MIN_RADIUS, base.radius * scale),
-    lineWidth: Math.max(MIN_LINE_WIDTH, base.lineWidth * scale),
+    lanePadding,
+    laneWidth,
+    radius,
+    lineWidth,
   };
+  const overflow = gutterWidth(laneCount, first) - availableWidth;
+  if (overflow > 0 && laneWidth > MIN_LANE_WIDTH) {
+    laneWidth = Math.max(MIN_LANE_WIDTH, laneWidth - overflow / last);
+  }
+  return { ...base, lanePadding, laneWidth, radius, lineWidth };
 }
 
 /**

@@ -42,9 +42,9 @@
   }: Props = $props();
 
   const DENSITY_NOTES: Record<RowDensity, string> = {
-    compact: "28px rows — the most commits per screen",
+    compact: "28px rows — the default, the most commits per screen",
     comfortable: "36px rows — the middle size",
-    roomy: "44px rows — the default, GitKraken's spacing",
+    roomy: "44px rows — GitKraken's spacing",
   };
 
   /** The three buttons, each drawn with its own node size so the choice is visible. */

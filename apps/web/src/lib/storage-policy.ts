@@ -33,9 +33,10 @@ const GLASS_KEY = "refyard.theme.glass";
  */
 const AVATARS_KEY = "refyard.appearance.avatars";
 /**
- * How much room a history row gets. The default is the roomy end of the scale, which is
- * the density the graph was drawn for; the value is a name, never a pixel count, so a
- * future change to the scale does not have to read old numbers.
+ * How much room a history row gets. The default is the compact end of the scale, which is
+ * what a workbench reads best at: the most commits per screen, with the graph's own
+ * proportions held constant so the denser rows are still legible. The value is a name,
+ * never a pixel count, so a future change to the scale does not have to read old numbers.
  */
 const DENSITY_KEY = "refyard.appearance.density";
 
@@ -174,7 +175,7 @@ export function createBrowserStorage(stores: BrowserStores): BrowserStorage {
       writeTo(stores.local, AVATARS_KEY, enabled ? "true" : "false");
     },
     readStoredDensity(): string {
-      return readFrom(stores.local, DENSITY_KEY) ?? "roomy";
+      return readFrom(stores.local, DENSITY_KEY) ?? "compact";
     },
     storeDensity(density: string | null): void {
       writeTo(stores.local, DENSITY_KEY, density);
