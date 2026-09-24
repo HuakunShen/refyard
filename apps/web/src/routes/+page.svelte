@@ -1290,11 +1290,11 @@
         size="icon"
         class="size-7 shrink-0"
         aria-label={leftSidebarCollapsed
-          ? "Expand repository panel"
-          : "Collapse repository panel"}
+          ? m.panel_expand()
+          : m.panel_collapse()}
         title={leftSidebarCollapsed
-          ? "Expand repository panel"
-          : "Collapse repository panel"}
+          ? m.panel_expand()
+          : m.panel_collapse()}
         aria-expanded={!leftSidebarCollapsed}
         data-testid="repository-sidebar-toggle"
         onclick={toggleLeftSidebar}
@@ -1568,7 +1568,7 @@
       <StateBanner
         state="loading"
         title={pendingUpdate.version === null
-          ? "An update is available"
+          ? m.update_available()
           : `Update to v${pendingUpdate.version} is available`}
         detail="Download and install, then restart to run it. Nothing is installed until you say so."
       >
@@ -1601,7 +1601,7 @@
         <StateBanner
           state={pairing.pairPhase === "failed" ? "error" : "loading"}
           title={pairing.pairPhase === "failed"
-            ? "The local service is unavailable"
+            ? m.service_unavailable()
             : "Starting the local service…"}
           detail={pairing.pairPhase === "failed"
             ? (pairing.pairMessage ??
@@ -1908,7 +1908,7 @@
               <span
                 class="min-w-0 flex-1 truncate font-mono text-xs"
                 title={selectedPath?.displayPath ?? ""}
-                >{selectedPath?.displayPath ?? "Commit diff"}</span
+                >{selectedPath?.displayPath ?? m.commit_diff()}</span
               >
               {#if selectedPath !== null && selectedPath.kind !== "ignored" && writeController.availability.staging}
                 <Button
@@ -1927,7 +1927,7 @@
                   }}
                 >
                   {selection.statusSide === "staged"
-                    ? "Unstage file"
+                    ? m.commit_unstage_file()
                     : "Stage file"}
                 </Button>
               {/if}

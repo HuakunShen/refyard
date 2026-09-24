@@ -262,7 +262,7 @@
                   data-testid="updates-busy"
                 >
                   {updatesPhase.state === "checking"
-                    ? "Checking…"
+                    ? m.checking()
                     : "Downloading and installing…"}
                 </Button>
               {:else if availableUpdate !== null}

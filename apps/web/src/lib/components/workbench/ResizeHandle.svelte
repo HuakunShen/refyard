@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "@refyard/git-ui/i18n";
   /**
    * Keyboard and pointer resize handle for a workbench divider.
    *
@@ -105,7 +106,7 @@
   )}
   {style}
   aria-label={horizontal
-    ? "Repository list height"
+    ? m.resize_repo_list()
     : `${side === "left" ? "Left" : "Right"} sidebar width`}
   data-testid={horizontal
     ? "stacked-nav-resize-handle"

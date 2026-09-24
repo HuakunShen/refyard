@@ -44,7 +44,7 @@
     <Dialog.Header>
       <Dialog.Title>
         {subject === null
-          ? "Squash into parent"
+          ? m.squash_into()
           : `Squash "${subject}" into the commit below?`}
       </Dialog.Title>
       <Dialog.Description>
@@ -76,7 +76,7 @@
         onclick={confirm}
         data-testid={testId === undefined ? undefined : `${testId}-confirm`}
       >
-        {busy ? "Working…" : "Squash"}
+        {busy ? m.working() : "Squash"}
       </Button>
     </Dialog.Footer>
   </Dialog.Content>

@@ -186,10 +186,10 @@
           disabled={phase === "connecting" || ticket.length === 0}
           onclick={onConnect}
         >
-          {phase === "connecting" ? "Pairing…" : "Pair"}
+          {phase === "connecting" ? m.pairing() : "Pair"}
         </Button>
         {#if baseUrlIsDefault}
-          <Badge variant="secondary">same origin</Badge>
+          <Badge variant="secondary">{m.same_origin()}</Badge>
         {/if}
       </div>
     </CardContent>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /** GitKraken-style side-by-side rendering for already parsed patch hunks. */
   import type { PatchHunk } from "@refyard/git-contract";
   import {
@@ -111,7 +112,7 @@
                   )}
                   role="cell"
                   aria-label={row.old.lineNumber === null
-                    ? "No old line"
+                    ? m.split_no_old()
                     : `Old line ${row.old.lineNumber}`}
                 >
                   {row.old.lineNumber ?? ""}
@@ -140,7 +141,7 @@
                   )}
                   role="cell"
                   aria-label={row.new.lineNumber === null
-                    ? "No new line"
+                    ? m.split_no_new()
                     : `New line ${row.new.lineNumber}`}
                 >
                   {row.new.lineNumber ?? ""}

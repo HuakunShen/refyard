@@ -64,7 +64,7 @@
     <Dialog.Header>
       <Dialog.Title>
         {subject === null
-          ? "Reset branch to here"
+          ? m.reset_branch_here()
           : branchName === null
             ? `Reset branch to "${subject}"?`
             : `Reset ${branchName} to "${subject}"?`}
@@ -121,7 +121,7 @@
         onclick={confirm}
         data-testid={testId === undefined ? undefined : `${testId}-confirm`}
       >
-        {busy ? "Working…" : "Reset branch"}
+        {busy ? m.working() : "Reset branch"}
       </Button>
     </Dialog.Footer>
   </Dialog.Content>

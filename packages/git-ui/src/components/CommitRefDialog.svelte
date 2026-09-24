@@ -65,7 +65,7 @@
     </Dialog.Header>
 
     <label class="flex flex-col gap-1.5 text-xs text-ink-muted">
-      {kind === "branch" ? "Branch name" : "Tag name"}
+      {kind === "branch" ? m.ref_branch_name() : "Tag name"}
       <input
         class="rounded border border-input bg-transparent px-2.5 py-1.5 font-mono text-sm text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
         bind:value={name}

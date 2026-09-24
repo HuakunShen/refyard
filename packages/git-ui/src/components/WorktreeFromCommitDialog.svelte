@@ -51,7 +51,7 @@
     <Dialog.Header>
       <Dialog.Title>
         {subject === null
-          ? "Create worktree from here"
+          ? m.worktree_from_here()
           : `Create worktree from "${subject}"?`}
       </Dialog.Title>
       <Dialog.Description>
@@ -96,7 +96,7 @@
         onclick={confirm}
         data-testid={testId === undefined ? undefined : `${testId}-confirm`}
       >
-        {busy ? "Working…" : "Create worktree"}
+        {busy ? m.working() : "Create worktree"}
       </Button>
     </Dialog.Footer>
   </Dialog.Content>

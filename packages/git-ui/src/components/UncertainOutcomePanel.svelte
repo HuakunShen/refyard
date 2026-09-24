@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /**
    * The block an uncertain operation puts on a repository, and the way out of it.
    *
@@ -94,7 +95,7 @@
       }}
       data-testid="uncertain-acknowledge"
     >
-      {busy ? "Acknowledging…" : "Confirm and unblock writes"}
+      {busy ? m.acknowledging() : "Confirm and unblock writes"}
     </Button>
   </div>
 </div>

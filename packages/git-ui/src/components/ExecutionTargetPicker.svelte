@@ -262,7 +262,7 @@
               </span>
             </span>
             {#if option.kind === "ssh-config" && option.discoveryIncomplete}
-              <Badge tone="warn">incomplete</Badge>
+              <Badge tone="warn">{m.exec_incomplete()}</Badge>
             {/if}
           </button>
         {/each}

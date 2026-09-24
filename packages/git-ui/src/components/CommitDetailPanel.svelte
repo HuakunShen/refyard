@@ -65,7 +65,7 @@
           </button>
         </div>
         {#if commit.signed}
-          <Badge tone="muted">signed</Badge>
+          <Badge tone="muted">{m.detail_signed()}</Badge>
         {/if}
         {#if commit.missingParents.length > 0}
           <Badge tone="warn">
@@ -84,7 +84,7 @@
       <p class="text-xs text-ink-faint">{m.commit_loading_message()}</p>
     {:else}
       <dl class="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1 text-xs">
-        <dt class="text-ink-faint">author</dt>
+        <dt class="text-ink-faint">{m.detail_author()}</dt>
         <dd class="flex items-center gap-1.5 text-ink">
           <AuthorAvatar
             email={detail.authorEmail}
@@ -93,17 +93,17 @@
           />
           {detail.authorName} &lt;{detail.authorEmail}&gt;
         </dd>
-        <dt class="text-ink-faint">authored</dt>
+        <dt class="text-ink-faint">{m.detail_authored()}</dt>
         <dd class="text-ink">
           <time datetime={detail.authoredAt} title={detail.authoredAt}
             >{absoluteTime(detail.authoredAt)}</time
           >
         </dd>
-        <dt class="text-ink-faint">committer</dt>
+        <dt class="text-ink-faint">{m.detail_committer()}</dt>
         <dd class="text-ink">
           {detail.committerName} &lt;{detail.committerEmail}&gt;
         </dd>
-        <dt class="text-ink-faint">committed</dt>
+        <dt class="text-ink-faint">{m.detail_committed()}</dt>
         <dd class="text-ink">
           <time datetime={detail.committedAt} title={detail.committedAt}
             >{absoluteTime(detail.committedAt)}</time
@@ -111,14 +111,14 @@
         </dd>
         <dt class="text-ink-faint">tree</dt>
         <dd class="font-mono text-ink">{shortOid(detail.treeOid)}</dd>
-        <dt class="text-ink-faint">parents</dt>
+        <dt class="text-ink-faint">{m.detail_parents()}</dt>
         <dd class="font-mono text-ink">
           {detail.parents.length === 0
             ? "(root commit)"
             : detail.parents.map(shortOid).join(" ")}
         </dd>
         {#if detail.encoding !== null}
-          <dt class="text-ink-faint">encoding</dt>
+          <dt class="text-ink-faint">{m.detail_encoding()}</dt>
           <dd class="text-ink">{detail.encoding}</dd>
         {/if}
       </dl>

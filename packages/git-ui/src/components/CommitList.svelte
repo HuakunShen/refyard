@@ -1133,7 +1133,7 @@
   {#if commits.length === 0}
     <StateBanner
       state="empty"
-      title={filtered ? "No matching commits" : "No commits yet"}
+      title={filtered ? m.no_matching_commits() : "No commits yet"}
       detail={filtered
         ? "Try adjusting the filters or clear them to see all history."
         : "This repository has no history on these tips."}
@@ -1627,7 +1627,7 @@
 <ConfirmDialog
   bind:open={deleteDialogOpen}
   title={pendingDelete === null
-    ? "Delete ref"
+    ? m.delete_ref()
     : pendingDelete.kind === "branch"
       ? `Delete ${pendingDelete.name}?`
       : `Delete tag ${pendingDelete.name}?`}
@@ -1635,7 +1635,7 @@
     ? "The tag is removed from this repository. Pushed copies stay on the remote until pushed as a deletion."
     : "Only fully merged branches can be deleted; unmerged work is refused by Git."}
   confirmLabel={pendingDelete === null
-    ? "Delete"
+    ? m.common_delete()
     : pendingDelete.kind === "branch"
       ? `Delete ${pendingDelete.name}`
       : `Delete tag ${pendingDelete.name}`}
@@ -1657,11 +1657,11 @@
 <ConfirmDialog
   bind:open={revertDialogOpen}
   title={pendingRevert === null
-    ? "Revert commit"
+    ? m.revert_commit()
     : `Revert "${pendingRevert.subject}"?`}
   description="Creates a new commit that undoes this one, with Git's own revert message and your hooks running. Merge commits are refused, and if the revert conflicts with your working tree it is aborted, so your branch comes out unchanged."
   confirmLabel={pendingRevert === null
-    ? "Revert"
+    ? m.revert()
     : `Revert "${pendingRevert.subject}"`}
   disabled={pendingRevert === null || contextDisabled}
   onConfirm={() => {
@@ -1726,7 +1726,7 @@
 <ConfirmDialog
   bind:open={dropDialogOpen}
   title={pendingDrop === null
-    ? "Drop commit"
+    ? m.drop_commit()
     : `Drop "${pendingDrop.subject}"?`}
   description="Removes this commit from the checked-out branch and replays the commits after it onto its parent — a history rewrite. A conflict stops it for you to resolve, like a merge. Merge commits and the branch's first commit are refused."
   confirmLabel={pendingDrop === null ? "Drop" : `Drop "${pendingDrop.subject}"`}

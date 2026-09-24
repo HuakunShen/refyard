@@ -59,7 +59,7 @@
     <h3 class="text-xs font-semibold uppercase tracking-wide text-ink-muted">
       {m.access_managed()}
     </h3>
-    <Badge tone="muted">approval required</Badge>
+    <Badge tone="muted">{m.access_approval_required()}</Badge>
   </div>
   <p class="text-xs text-ink-faint">
     Add one exact absolute path you chose. Refyard never scans this machine for
@@ -81,7 +81,7 @@
       onclick={submit}
       data-testid="repository-register"
     >
-      {busy ? "Working…" : "Approve"}
+      {busy ? m.working() : "Approve"}
     </Button>
   </div>
 

@@ -135,7 +135,7 @@
         onclick={onStartDeviceConnect}
         data-testid="provider-device-start"
       >
-        {busy ? "Connecting…" : "Connect GitHub"}
+        {busy ? m.connecting() : "Connect GitHub"}
       </Button>
       {#if deviceState?.state === "failed" || deviceState?.state === "denied"}
         <p class="text-xs text-warn" data-testid="provider-device-error">
@@ -160,7 +160,7 @@
             data-testid="provider-token-input"
           />
           <Button size="sm" disabled={busy || tokenDraft.trim().length === 0} onclick={submit} data-testid="provider-connect">
-            {busy ? "Connecting…" : "Connect with token"}
+            {busy ? m.connecting() : "Connect with token"}
           </Button>
         </form>
       {:else}
@@ -230,7 +230,7 @@
                 <span class="font-mono text-ink-faint">#{pull.number}</span>
                 {pull.title}
                 {#if pull.isDraft}
-                  <span class="ml-1 rounded bg-canvas-hover px-1 text-[10px] uppercase text-ink-faint">draft</span>
+                  <span class="ml-1 rounded bg-canvas-hover px-1 text-[10px] uppercase text-ink-faint">{m.pr_draft()}</span>
                 {/if}
               </span>
               <span class="shrink-0 font-mono text-[10px] text-ink-faint">

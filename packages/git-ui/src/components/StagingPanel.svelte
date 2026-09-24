@@ -103,7 +103,7 @@
           onclick={selectAll}
           data-testid="select-all"
         >
-          {allSelected ? "All selected" : "Select all"}
+          {allSelected ? m.all_selected() : "Select all"}
         </Button>
         <Button
           size="sm"

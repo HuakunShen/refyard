@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   import { Button } from "./ui/button/index.js";
   import * as Dialog from "./ui/dialog/index.js";
 
@@ -50,7 +51,7 @@
         onclick={confirm}
         data-testid={testId === undefined ? undefined : `${testId}-confirm`}
       >
-        {busy ? "Working…" : confirmLabel}
+        {busy ? m.working() : confirmLabel}
       </Button>
     </Dialog.Footer>
   </Dialog.Content>

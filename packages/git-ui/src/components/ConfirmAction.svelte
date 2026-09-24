@@ -61,7 +61,7 @@
       onclick={confirm}
       data-testid={testId === undefined ? undefined : `${testId}-confirm`}
     >
-      {busy ? "Working…" : confirmLabel}
+      {busy ? m.working() : confirmLabel}
     </Button>
     <Button size="sm" variant="ghost" onclick={() => (armed = false)}>
       {m.common_cancel()}

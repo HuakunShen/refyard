@@ -175,7 +175,7 @@
         <StateBanner
           state="truncated"
           title={awaitingPerPathPatches
-            ? "The host limited this listing"
+            ? m.host_limited()
             : "This listing was truncated"}
           detail={awaitingPerPathPatches
             ? "Either the change set was larger than the host returns at once, or patches were not included because they are read one path at a time. Select a file to read its patch, or narrow the request."

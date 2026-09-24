@@ -171,9 +171,9 @@
       </button>
     </div>
     {#if available === "unknown"}
-      <Badge tone="muted">the service has not reported its operations</Badge>
+      <Badge tone="muted">{m.repo_no_ops_reported()}</Badge>
     {:else if !modeAvailable}
-      <Badge tone="muted">not implemented in this build</Badge>
+      <Badge tone="muted">{m.repo_not_implemented()}</Badge>
     {/if}
   </div>
 
@@ -244,7 +244,7 @@
     onclick={submit}
     data-testid="repository-submit"
   >
-    {mode === "init" ? "Create repository" : "Clone repository"}
+    {mode === "init" ? m.repo_create() : "Clone repository"}
   </Button>
 
   {#if message !== null}

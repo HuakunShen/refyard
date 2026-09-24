@@ -84,7 +84,7 @@
                 <Badge
                   tone="tag"
                   title={`annotated tag object ${shortOid(tag.oid)}`}
-                  >annotated</Badge
+                  >{m.refs_annotated()}</Badge
                 >
               {/if}
             </li>

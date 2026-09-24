@@ -406,7 +406,7 @@
           disabled={disabled || nativePickerBusy}
           data-testid="launcher-native-picker"
           ><FolderOpen data-icon="inline-start" />{nativePickerBusy
-            ? "Choosing…"
+            ? m.choosing()
             : "Choose folder…"}</Button
         >
       {/if}
@@ -515,7 +515,7 @@
                 >{entry.displayPath}</span
               ></span
             >
-            {#if !entry.available}<Badge tone="muted">unavailable</Badge>{/if}
+            {#if !entry.available}<Badge tone="muted">{m.launcher_unavailable()}</Badge>{/if}
           </button>
         {/each}
       </div>
