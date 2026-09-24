@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { m } from "../i18n.js";
   /**
    * Changed paths, exactly as `git status` reports them.
    *
@@ -141,7 +142,7 @@
 </script>
 
 {#if snapshot === null}
-  <p class={cn("text-xs text-ink-faint", className)}>No status loaded.</p>
+  <p class={cn("text-xs text-ink-faint", className)}>{m.status_none()}</p>
 {:else}
   <div class={cn("flex flex-col gap-2", className)}>
     <div

@@ -349,7 +349,7 @@
             </div>
             {#if onDisconnect !== undefined}
               <Button size="sm" variant="outline" onclick={onDisconnect}
-                >Disconnect</Button
+                >{m.settings_disconnect()}</Button
               >
             {/if}
           </section>

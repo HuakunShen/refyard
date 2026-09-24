@@ -172,7 +172,7 @@
         {m.appearance_background()}
       </span>
       {#if background !== "none"}
-        <Badge tone="branch" class="text-[10px]">Active</Badge>
+        <Badge tone="branch" class="text-[10px]">{m.appearance_active()}</Badge>
       {/if}
     </div>
 
@@ -253,7 +253,7 @@
   >
     <div class="flex flex-col gap-0.5">
       <span class="text-xs font-medium text-foreground"
-        >Frosted Glass Effect</span
+        >{m.appearance_frosted()}</span
       >
       <span class="text-[11px] text-ink-faint">
         Translucent backdrop blur on cards and panels for wallpapers
@@ -278,7 +278,7 @@
     class="flex items-center justify-between rounded-lg border border-border/60 bg-card/50 p-3"
   >
     <div class="flex flex-col gap-0.5">
-      <span class="text-xs font-medium text-foreground">Author Photos</span>
+      <span class="text-xs font-medium text-foreground">{m.appearance_author_photos()}</span>
       <span class="text-[11px] text-ink-faint">
         GitHub profile pictures in the history list — commits identify their
         author by email; authors without a photo get colored initials

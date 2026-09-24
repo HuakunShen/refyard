@@ -51,7 +51,7 @@
                   <Badge
                     tone="danger"
                     title={`upstream ${branch.upstream.fullName} is gone`}
-                    >gone</Badge
+                    >{m.refs_gone()}</Badge
                   >
                 {:else if branch.upstream.ahead > 0 || branch.upstream.behind > 0}
                   <span class="text-xs text-ink-muted">

@@ -340,7 +340,7 @@
       variant={mode === "create" ? "default" : "outline"}
       onclick={() => (mode = "create")}
       data-testid="launcher-create-tab"
-      ><GitBranchPlus data-icon="inline-start" />Clone / Create</Button
+      ><GitBranchPlus data-icon="inline-start" />{m.launcher_clone_create()}</Button
     >
   </div>
 
@@ -352,7 +352,7 @@
       >
         <span
           class="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground"
-          >Location</span
+          >{m.launcher_location()}</span
         >
         <Button
           type="button"
@@ -435,7 +435,7 @@
         disabled={disabled || remoteTargetChosen}
         title={remoteBrowseReason ?? undefined}
         data-testid="launcher-browse"
-        ><FolderOpen data-icon="inline-start" />Browse</Button
+        ><FolderOpen data-icon="inline-start" />{m.launcher_browse()}</Button
       >
       <Button
         type="submit"
@@ -526,7 +526,7 @@
 <Dialog.Root bind:open={pickerOpen}>
   <Dialog.Content class="max-w-2xl" data-testid="repository-path-picker">
     <Dialog.Header>
-      <Dialog.Title>Choose a repository folder</Dialog.Title>
+      <Dialog.Title>{m.launcher_choose_folder()}</Dialog.Title>
       <Dialog.Description>
         Browse directories through the local coordinator. Nothing is uploaded
         and file contents are never returned.
@@ -599,7 +599,7 @@
                   size="sm"
                   variant="ghost"
                   onclick={() => void browse(entry.path)}
-                  disabled={pickerBusy}>Browse</Button
+                  disabled={pickerBusy}>{m.launcher_browse()}</Button
                 >
               {/if}
             </div>

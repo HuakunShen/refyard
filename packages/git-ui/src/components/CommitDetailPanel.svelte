@@ -44,7 +44,7 @@
 
 <div class={cn("flex flex-col gap-3 overflow-auto p-3", className)}>
   {#if commit === null}
-    <p class="text-sm text-ink-faint">Select a commit to read it.</p>
+    <p class="text-sm text-ink-faint">{m.commit_select_prompt()}</p>
   {:else}
     <header class="flex flex-col gap-1">
       <h2 class="text-sm font-medium text-ink">{commit.subject}</h2>
@@ -109,7 +109,7 @@
             >{absoluteTime(detail.committedAt)}</time
           >
         </dd>
-        <dt class="text-ink-faint">tree</dt>
+        <dt class="text-ink-faint">{m.detail_tree()}</dt>
         <dd class="font-mono text-ink">{shortOid(detail.treeOid)}</dd>
         <dt class="text-ink-faint">{m.detail_parents()}</dt>
         <dd class="font-mono text-ink">

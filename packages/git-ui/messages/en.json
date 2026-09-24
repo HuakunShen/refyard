@@ -354,5 +354,8 @@
 	"repo_no_ops_reported": "the service has not reported its operations",
 	"launcher_unavailable": "unavailable",
 	"same_origin": "same origin",
-	"copy_uncommitted_hint": "uncommitted changes — click to work on them"
+	"copy_uncommitted_hint": "uncommitted changes — click to work on them",
+	"pairing_again": "Pair again",
+	"refs_gone": "gone",
+	"detail_tree": "tree"
 }

@@ -143,13 +143,13 @@
             size="sm"
             variant={splitView ? "default" : "ghost"}
             aria-pressed={splitView}
-            onclick={() => (splitView = true)}>Split</Button
+            onclick={() => (splitView = true)}>{m.diff_split()}</Button
           >
           <Button
             size="sm"
             variant={!splitView ? "default" : "ghost"}
             aria-pressed={!splitView}
-            onclick={() => (splitView = false)}>Unified</Button
+            onclick={() => (splitView = false)}>{m.diff_unified()}</Button
           >
         </div>
       {/if}

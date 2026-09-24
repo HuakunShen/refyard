@@ -1582,7 +1582,7 @@
               >{m.commit_loading_more()}</span
             >
           {:else if hasMore}
-            <span class="text-xs text-ink-faint">Scroll for more</span>
+            <span class="text-xs text-ink-faint">{m.commit_scroll_more()}</span>
           {:else}
             <span class="text-xs text-ink-faint">{m.history_end()}</span
             >

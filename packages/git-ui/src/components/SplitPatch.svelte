@@ -67,7 +67,7 @@
   data-testid="split-patch"
 >
   {#if splitHunks.length === 0}
-    <p class="px-3 py-2 text-xs text-ink-muted">No line changes.</p>
+    <p class="px-3 py-2 text-xs text-ink-muted">{m.split_no_changes()}</p>
   {:else}
     {#each splitHunks as hunk, hunkIndex}
       {@const columns = gridTemplate(hunk)}
@@ -93,9 +93,9 @@
               role="row"
             >
               <span class="px-2 py-1 text-right" role="columnheader">Old</span>
-              <span class="px-2 py-1" role="columnheader">Before</span>
+              <span class="px-2 py-1" role="columnheader">{m.split_before()}</span>
               <span class="px-2 py-1 text-right" role="columnheader">New</span>
-              <span class="px-2 py-1" role="columnheader">After</span>
+              <span class="px-2 py-1" role="columnheader">{m.split_after()}</span>
             </div>
 
             {#each hunk.rows as row, rowIndex}

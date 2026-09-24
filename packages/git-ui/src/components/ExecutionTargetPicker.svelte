@@ -134,7 +134,7 @@
 <Dialog.Root bind:open>
   <Dialog.Content class="max-w-2xl" data-testid="execution-target-picker">
     <Dialog.Header>
-      <Dialog.Title>Where should Git run?</Dialog.Title>
+      <Dialog.Title>{m.exec_where_git_runs()}</Dialog.Title>
       <Dialog.Description>
         This machine, or a host your SSH configuration names. Choosing a host
         only selects it; nothing is contacted until you open a repository there.
@@ -211,7 +211,7 @@
           type="submit"
           variant="outline"
           disabled={manualSelection === null}
-          data-testid="execution-target-manual-submit">Use alias</Button
+          data-testid="execution-target-manual-submit">{m.exec_use_alias()}</Button
         >
       </form>
     {/if}

@@ -1546,7 +1546,7 @@
       >
         {#snippet action()}
           <Button size="sm" variant="outline" onclick={disconnect}
-            >Pair again</Button
+            >{m.pairing_again()}</Button
           >
         {/snippet}
       </StateBanner>
@@ -1903,7 +1903,7 @@
               class="flex flex-wrap items-center gap-2 border-b border-border bg-panel px-3 py-2"
             >
               <Button variant="ghost" size="sm" onclick={backToHistory}
-                >Back to history</Button
+                >{m.history_back()}</Button
               >
               <span
                 class="min-w-0 flex-1 truncate font-mono text-xs"
@@ -1966,7 +1966,7 @@
             <div
               class="flex items-center justify-between border-b border-border px-3 py-2"
             >
-              <span class="text-sm font-medium">Commit details</span>
+              <span class="text-sm font-medium">{m.commit_details()}</span>
               <Button size="sm" variant="ghost" onclick={backToHistory}
                 >{m.copy_working_copy()}</Button
               >

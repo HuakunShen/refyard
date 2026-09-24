@@ -98,7 +98,7 @@
 
 <section class="mx-auto flex w-full max-w-xl flex-col gap-4">
   <header class="flex flex-col gap-1">
-    <h1 class="text-lg font-semibold text-ink">Connect to the local service</h1>
+    <h1 class="text-lg font-semibold text-ink">{m.connection_connect_local()}</h1>
     <p class="text-sm text-ink-muted">
       The service runs on this machine and reads repositories you approved when
       you started it. Reads are authenticated, so the page needs the ticket the
@@ -219,7 +219,7 @@
         +
         <kbd
           class="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[11px] text-ink"
-          >Enter</kbd
+          >{m.connection_enter()}</kbd
         > to print a fresh single-use pairing URL.
       </li>
       <li>
