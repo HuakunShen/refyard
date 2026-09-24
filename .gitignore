@@ -30,6 +30,10 @@ dist
 # builds from sharing SvelteKit's intermediate output (see apps/web/svelte.config.js).
 build-desktop
 .svelte-kit-desktop
+# The embedded-plugin flavour: served under a path prefix by an embedding host, which is
+# also why it needs its own `paths.base` and its own intermediate directory.
+build-dsh
+.svelte-kit-dsh
 
 # SvelteKit's generated types and route manifest (`svelte-kit sync`, run by `pnpm build`).
 .svelte-kit
