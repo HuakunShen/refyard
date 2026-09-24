@@ -1273,3 +1273,146 @@ async fn a_create_worktree_refuses_a_branch_already_checked_out_elsewhere() {
         finished.problem
     );
 }
+
+/* --------------------------------------- lockWorktree / unlockWorktree */
+
+#[tokio::test]
+async fn a_worktree_lock_and_unlock_toggle_the_lock_and_refuse_the_wrong_state() {
+    let fixture = Fixture::new();
+    let service = fixture.service();
+    let (repository_id, _worktree_id) = fixture.open(&service).await;
+    let head = String::from_utf8(fixture.git(&["rev-parse", "HEAD"]))
+        .expect("utf8")
+        .trim()
+        .to_string();
+    let wt_str = fixture
+        .temp
+        .path()
+        .join("lock-wt")
+        .to_str()
+        .expect("utf8")
+        .to_string();
+    run_git_in(
+        &fixture,
+        &fixture.repo,
+        &["worktree", "add", "--detach", &wt_str, &head],
+    );
+
+    // The id a read would mint: a deterministic function of the path Git reports (the
+    // linked worktree is the second entry; the primary is listed first).
+    let list = run_git_in(
+        &fixture,
+        &fixture.repo,
+        &["worktree", "list", "--porcelain", "-z"],
+    );
+    let entries = refyard_core::plan::worktrees::parse_worktree_list(&list);
+    assert_eq!(entries.len(), 2);
+    let wt_id = refyard_core::plan::worktrees::worktree_id_for_path(&entries[1].path);
+    assert!(!entries[1].locked, "starts unlocked");
+
+    // Lock it.
+    let snapshot_id = fixture.status(&service, &repository_id).await.snapshot_id;
+    let request = fixture.repository_request(
+        &repository_id,
+        &snapshot_id,
+        MutationOperation::LockWorktree {
+            worktree_id: wt_id.clone(),
+            reason: Some("on ice".to_string()),
+        },
+        "crid-wt-lock",
+    );
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Succeeded,
+        "{:?}",
+        finished.problem
+    );
+    let list = run_git_in(
+        &fixture,
+        &fixture.repo,
+        &["worktree", "list", "--porcelain", "-z"],
+    );
+    assert!(
+        refyard_core::plan::worktrees::parse_worktree_list(&list)[1].locked,
+        "now locked"
+    );
+
+    // Locking again is refused — the wrong state, not a silent no-op.
+    let snapshot_id = fixture.status(&service, &repository_id).await.snapshot_id;
+    let request = fixture.repository_request(
+        &repository_id,
+        &snapshot_id,
+        MutationOperation::LockWorktree {
+            worktree_id: wt_id.clone(),
+            reason: None,
+        },
+        "crid-wt-relock",
+    );
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Failed,
+        "{:?}",
+        finished.problem
+    );
+
+    // Unlock it.
+    let snapshot_id = fixture.status(&service, &repository_id).await.snapshot_id;
+    let request = fixture.repository_request(
+        &repository_id,
+        &snapshot_id,
+        MutationOperation::UnlockWorktree {
+            worktree_id: wt_id.clone(),
+        },
+        "crid-wt-unlock",
+    );
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Succeeded,
+        "{:?}",
+        finished.problem
+    );
+    let list = run_git_in(
+        &fixture,
+        &fixture.repo,
+        &["worktree", "list", "--porcelain", "-z"],
+    );
+    assert!(
+        !refyard_core::plan::worktrees::parse_worktree_list(&list)[1].locked,
+        "unlocked again"
+    );
+
+    // Unlocking an unlocked worktree is refused too.
+    let snapshot_id = fixture.status(&service, &repository_id).await.snapshot_id;
+    let request = fixture.repository_request(
+        &repository_id,
+        &snapshot_id,
+        MutationOperation::UnlockWorktree { worktree_id: wt_id },
+        "crid-wt-reunlock",
+    );
+    let accepted = service
+        .submit_mutation("owner", request)
+        .await
+        .expect("accepted");
+    let finished = wait_terminal(&service, &accepted.record.operation_id).await;
+    assert_eq!(
+        finished.status,
+        OperationStatus::Failed,
+        "{:?}",
+        finished.problem
+    );
+}

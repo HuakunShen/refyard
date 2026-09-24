@@ -16,7 +16,7 @@ use crate::jobs::journal::EffectOutcome;
 use crate::jobs::{EffectRequest, MutationEffect, MutationOperation, WorktreeReference};
 
 use super::remotes::{network_failure, run_step, succeeded};
-use super::{clean_exit, invalid_payload, refused, wrong_payload, WriteHost};
+use super::{clean_exit, invalid_payload, refused, wrong_payload, WriteHost, WriteTarget};
 
 /// `git worktree add` — check out an existing branch, a new branch at a commit, or a
 /// detached commit, at a destination inside the repository's approved root.
@@ -109,4 +109,138 @@ async fn create_worktree(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> 
     // `worktree add` is local: a real refusal (branch checked out elsewhere, destination
     // taken) is failed; an unfinished run is unknown and never retried.
     network_failure(operation_id, "git worktree add", &outcome)
+}
+
+/// `git worktree lock` — lock a linked worktree, with an optional reason.
+pub struct LockWorktreeEffect {
+    pub(super) host: Arc<WriteHost>,
+}
+
+/// `git worktree unlock` — unlock a locked worktree.
+pub struct UnlockWorktreeEffect {
+    pub(super) host: Arc<WriteHost>,
+}
+
+impl MutationEffect for LockWorktreeEffect {
+    fn kind(&self) -> MutationKind {
+        MutationKind::LockWorktree
+    }
+    fn run<'a>(
+        &'a self,
+        request: EffectRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = EffectOutcome> + Send + 'a>> {
+        let host = Arc::clone(&self.host);
+        Box::pin(async move { lock_worktree(&host, &request).await })
+    }
+}
+
+impl MutationEffect for UnlockWorktreeEffect {
+    fn kind(&self) -> MutationKind {
+        MutationKind::UnlockWorktree
+    }
+    fn run<'a>(
+        &'a self,
+        request: EffectRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = EffectOutcome> + Send + 'a>> {
+        let host = Arc::clone(&self.host);
+        Box::pin(async move { unlock_worktree(&host, &request).await })
+    }
+}
+
+/// Resolve a host-minted worktree id to the live worktree it names.
+///
+/// The id is a deterministic function of the path (`worktree_id_for_path`), so this reads
+/// `git worktree list` and matches — no registry to go stale. A worktree that is gone (or
+/// an id this repository never had) is `not found`, not a guess.
+async fn resolve_worktree_entry(
+    target: &WriteTarget,
+    worktree_id: &str,
+) -> Result<refyard_core::plan::worktrees::WorktreeEntry, Problem> {
+    let outcome = run_step(target, &refyard_core::plan::worktrees::plan_worktree_list()).await?;
+    if !clean_exit(&outcome) {
+        return Err(Problem::new(
+            ProblemCode::InvalidRequest,
+            "could not list this repository's worktrees; nothing was changed",
+        ));
+    }
+    for entry in refyard_core::plan::worktrees::parse_worktree_list(&outcome.stdout) {
+        if refyard_core::plan::worktrees::worktree_id_for_path(&entry.path) == worktree_id {
+            return Ok(entry);
+        }
+    }
+    Err(Problem::new(
+        ProblemCode::NotFound,
+        format!("no worktree {worktree_id} in this repository; reload the worktrees and retry"),
+    ))
+}
+
+async fn lock_worktree(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> EffectOutcome {
+    let operation_id = request.operation_id;
+    let MutationOperation::LockWorktree {
+        worktree_id,
+        reason,
+    } = &request.request.operation
+    else {
+        return wrong_payload(operation_id, "lockWorktree");
+    };
+    let target = match host.resolve(request.request) {
+        Ok(target) => target,
+        Err(problem) => return refused(operation_id, problem),
+    };
+    let entry = match resolve_worktree_entry(&target, worktree_id).await {
+        Ok(entry) => entry,
+        Err(problem) => return refused(operation_id, problem),
+    };
+    if entry.locked {
+        return refused(
+            operation_id,
+            Problem::new(ProblemCode::Conflict, "that worktree is already locked"),
+        );
+    }
+    let plan =
+        match refyard_core::plan::worktrees::plan_worktree_lock(&entry.path, reason.as_deref()) {
+            Ok(plan) => plan,
+            Err(error) => return invalid_payload(operation_id, error.to_string()),
+        };
+    let outcome = match run_step(&target, &plan).await {
+        Ok(outcome) => outcome,
+        Err(problem) => return refused(operation_id, problem),
+    };
+    if clean_exit(&outcome) {
+        return succeeded("locked the worktree".to_string(), None);
+    }
+    network_failure(operation_id, "git worktree lock", &outcome)
+}
+
+async fn unlock_worktree(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> EffectOutcome {
+    let operation_id = request.operation_id;
+    let MutationOperation::UnlockWorktree { worktree_id } = &request.request.operation else {
+        return wrong_payload(operation_id, "unlockWorktree");
+    };
+    let target = match host.resolve(request.request) {
+        Ok(target) => target,
+        Err(problem) => return refused(operation_id, problem),
+    };
+    let entry = match resolve_worktree_entry(&target, worktree_id).await {
+        Ok(entry) => entry,
+        Err(problem) => return refused(operation_id, problem),
+    };
+    if !entry.locked {
+        return refused(
+            operation_id,
+            Problem::new(ProblemCode::Conflict, "that worktree is not locked"),
+        );
+    }
+    let plan = match refyard_core::plan::worktrees::plan_worktree_unlock(&entry.path) {
+        Ok(plan) => plan,
+        Err(error) => return invalid_payload(operation_id, error.to_string()),
+    };
+    let outcome = match run_step(&target, &plan).await {
+        Ok(outcome) => outcome,
+        Err(problem) => return refused(operation_id, problem),
+    };
+    if clean_exit(&outcome) {
+        return succeeded("unlocked the worktree".to_string(), None);
+    }
+    network_failure(operation_id, "git worktree unlock", &outcome)
 }

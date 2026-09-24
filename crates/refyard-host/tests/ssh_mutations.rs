@@ -759,7 +759,7 @@ async fn naming_a_state_directory_after_registering_the_writes_keeps_them() {
     let capabilities = service.capabilities().await.expect("capabilities");
     assert_eq!(
         capabilities.operations.len(),
-        39,
+        41,
         "the write path must survive a later state directory being named"
     );
 
@@ -1280,7 +1280,7 @@ async fn a_replayed_request_is_not_executed_twice() {
 }
 
 #[tokio::test]
-async fn capabilities_name_exactly_the_thirty_nine_implemented_writes() {
+async fn capabilities_name_exactly_the_forty_one_implemented_writes() {
     // Prevents: a capability answer that offers a write this build cannot run, or hides
     // one it can — the UI enables controls from this list.
     let fixture = Fixture::new();
@@ -1320,6 +1320,8 @@ async fn capabilities_name_exactly_the_thirty_nine_implemented_writes() {
             (MutationKind::DeleteTag, vec![TargetKind::Repository]),
             (MutationKind::PushTag, vec![TargetKind::Repository]),
             (MutationKind::CreateWorktree, vec![TargetKind::Repository]),
+            (MutationKind::LockWorktree, vec![TargetKind::Repository]),
+            (MutationKind::UnlockWorktree, vec![TargetKind::Repository]),
             (MutationKind::AddSubmodule, vec![TargetKind::Worktree]),
             (MutationKind::UpdateSubmodule, vec![TargetKind::Worktree]),
             (MutationKind::SyncSubmodule, vec![TargetKind::Worktree]),
@@ -1345,7 +1347,7 @@ async fn capabilities_name_exactly_the_thirty_nine_implemented_writes() {
         .collect::<Vec<MutationKind>>();
     assert_eq!(
         unavailable.len(),
-        refyard_contract::reads::MUTATION_KINDS.len() - 39
+        refyard_contract::reads::MUTATION_KINDS.len() - 41
     );
     for offered in [
         MutationKind::StagePaths,
@@ -1371,6 +1373,8 @@ async fn capabilities_name_exactly_the_thirty_nine_implemented_writes() {
         MutationKind::DeleteTag,
         MutationKind::PushTag,
         MutationKind::CreateWorktree,
+        MutationKind::LockWorktree,
+        MutationKind::UnlockWorktree,
         MutationKind::AddSubmodule,
         MutationKind::UpdateSubmodule,
         MutationKind::SyncSubmodule,
@@ -1395,7 +1399,7 @@ async fn capabilities_name_exactly_the_thirty_nine_implemented_writes() {
     }
     assert!(unavailable.contains(&MutationKind::DiscardTrackedPaths));
     assert!(unavailable.contains(&MutationKind::InitRepository));
-    assert!(unavailable.contains(&MutationKind::LockWorktree));
+    assert!(unavailable.contains(&MutationKind::RemoveWorktree));
 }
 
 /* ------------------------------------------------------------------ the fixture-backed cases */

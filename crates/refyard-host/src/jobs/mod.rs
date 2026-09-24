@@ -257,6 +257,13 @@ pub enum MutationOperation {
         relative_destination: String,
         reference: WorktreeReference,
     },
+    LockWorktree {
+        worktree_id: String,
+        reason: Option<String>,
+    },
+    UnlockWorktree {
+        worktree_id: String,
+    },
     AddSubmodule {
         remote_url: String,
         relative_path: String,
@@ -339,6 +346,8 @@ impl MutationOperation {
             Self::DeleteTag { .. } => MutationKind::DeleteTag,
             Self::PushTag { .. } => MutationKind::PushTag,
             Self::CreateWorktree { .. } => MutationKind::CreateWorktree,
+            Self::LockWorktree { .. } => MutationKind::LockWorktree,
+            Self::UnlockWorktree { .. } => MutationKind::UnlockWorktree,
             Self::AddSubmodule { .. } => MutationKind::AddSubmodule,
             Self::UpdateSubmodule { .. } => MutationKind::UpdateSubmodule,
             Self::SyncSubmodule { .. } => MutationKind::SyncSubmodule,
@@ -398,6 +407,8 @@ impl MutationOperation {
             | Self::PushTag { .. }
             | Self::Fetch { .. }
             | Self::Pull { .. }
+            | Self::LockWorktree { .. }
+            | Self::UnlockWorktree { .. }
             | Self::CreateWorktree { .. }
             | Self::AddSubmodule { .. } => Vec::new(),
         }
@@ -899,6 +910,26 @@ mod seed_tests {
                     reference: WorktreeReference::ExistingBranch {
                         branch_name: "feature".to_string(),
                     },
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "lockWorktree",
+                    "worktreeId": "wt_abc",
+                    "reason": "on ice"
+                }),
+                MutationOperation::LockWorktree {
+                    worktree_id: "wt_abc".to_string(),
+                    reason: Some("on ice".to_string()),
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "unlockWorktree",
+                    "worktreeId": "wt_abc"
+                }),
+                MutationOperation::UnlockWorktree {
+                    worktree_id: "wt_abc".to_string(),
                 },
             ),
             (

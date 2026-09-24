@@ -86,6 +86,122 @@ pub fn plan_worktree_add_detached(destination: &str, oid: &str) -> Result<GitPla
     })
 }
 
+/// One worktree from `git worktree list --porcelain -z`: its raw path bytes and whether
+/// it is locked. The path is bytes — a worktree path can be a POSIX byte path that is not
+/// valid UTF-8, and it is the field a write addresses, so it is never decoded here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorktreeEntry {
+    pub path: Vec<u8>,
+    pub locked: bool,
+}
+
+/// A stable, host-derived worktree id: `wt_<fnv1a-64 of the canonical path bytes>`.
+///
+/// Deterministic from the path alone, so a read can mint it and a later write can resolve
+/// it without a registry — the same worktree always maps to the same id. FNV-1a is not a
+/// cryptographic hash; it only has to keep a handful of one repository's worktree paths
+/// distinct, never to be one-way.
+pub fn worktree_id_for_path(path: &[u8]) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in path {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("wt_{hash:016x}")
+}
+
+/// Parse `git worktree list --porcelain -z`. Attributes are NUL-terminated within a block
+/// and an extra NUL separates blocks; `<key> <value>` splits on the first space (the value
+/// may itself hold spaces, e.g. a lock reason). A frame that is not `<key>[ <value>]` is
+/// skipped rather than guessed at.
+pub fn parse_worktree_list(bytes: &[u8]) -> Vec<WorktreeEntry> {
+    let mut entries = Vec::new();
+    let mut current_path: Option<Vec<u8>> = None;
+    let mut current_locked = false;
+    let flush =
+        |path: &mut Option<Vec<u8>>, locked: &mut bool, entries: &mut Vec<WorktreeEntry>| {
+            if let Some(p) = path.take() {
+                entries.push(WorktreeEntry {
+                    path: p,
+                    locked: *locked,
+                });
+            }
+            *locked = false;
+        };
+    for frame in bytes.split(|b| *b == 0) {
+        if frame.is_empty() {
+            flush(&mut current_path, &mut current_locked, &mut entries);
+            continue;
+        }
+        let (key, value) = match frame.iter().position(|b| *b == b' ') {
+            Some(pos) => (&frame[..pos], Some(&frame[pos + 1..])),
+            None => (frame, None),
+        };
+        if key == b"worktree" {
+            current_path = value.map(|v| v.to_vec());
+        } else if key == b"locked" {
+            current_locked = true;
+        }
+    }
+    flush(&mut current_path, &mut current_locked, &mut entries);
+    entries
+}
+
+/// `git worktree list --porcelain -z` — every worktree of this repository.
+pub fn plan_worktree_list() -> GitPlan {
+    GitPlan::read(vec![
+        "worktree".to_string(),
+        "list".to_string(),
+        "--porcelain".to_string(),
+        "-z".to_string(),
+    ])
+}
+
+/// `git worktree lock [--reason=<r>] <path>`. The `=` spelling keeps a reason that
+/// begins with `-` from being read as a switch. Never a `--force`.
+pub fn plan_worktree_lock(path: &[u8], reason: Option<&str>) -> Result<GitPlan, CoreError> {
+    if let Some(reason) = reason {
+        if reason.bytes().any(|b| b < 0x20 || b == 0x7f) {
+            return Err(CoreError::invalid_input(
+                "a worktree lock reason must not contain control characters",
+            ));
+        }
+    }
+    let path = validated_worktree_path(path)?;
+    let mut argv = vec!["worktree".to_string(), "lock".to_string()];
+    if let Some(reason) = reason {
+        argv.push(format!("--reason={reason}"));
+    }
+    argv.push(path);
+    Ok(GitPlan {
+        argv,
+        stdin: Vec::new(),
+        deadline_class: DeadlineClass::Hook,
+    })
+}
+
+/// `git worktree unlock <path>`.
+pub fn plan_worktree_unlock(path: &[u8]) -> Result<GitPlan, CoreError> {
+    let path = validated_worktree_path(path)?;
+    Ok(GitPlan {
+        argv: vec!["worktree".to_string(), "unlock".to_string(), path],
+        stdin: Vec::new(),
+        deadline_class: DeadlineClass::Hook,
+    })
+}
+
+/// A worktree path as one argv field: non-empty and NUL-free (a NUL cannot be in argv).
+fn validated_worktree_path(path: &[u8]) -> Result<String, CoreError> {
+    if path.is_empty() || path.contains(&0) {
+        return Err(CoreError::invalid_input(
+            "a worktree path must be non-empty and NUL-free",
+        ));
+    }
+    String::from_utf8(path.to_vec()).map_err(|_| {
+        CoreError::invalid_input("a worktree path's bytes cannot be represented on this host")
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -124,5 +240,60 @@ mod tests {
         // A bad ref or object is refused before it becomes argv.
         assert!(plan_worktree_add_existing("/root/wt", "-bad").is_err());
         assert!(plan_worktree_add_detached("/root/wt", "nope").is_err());
+    }
+}
+
+#[cfg(test)]
+mod lock_tests {
+    use super::*;
+
+    #[test]
+    fn a_worktree_id_is_deterministic_from_the_path() {
+        let a = worktree_id_for_path(b"/repo/wt-one");
+        assert!(a.starts_with("wt_"));
+        assert_eq!(
+            a,
+            worktree_id_for_path(b"/repo/wt-one"),
+            "stable for one path"
+        );
+        assert_ne!(
+            a,
+            worktree_id_for_path(b"/repo/wt-two"),
+            "distinct paths differ"
+        );
+    }
+
+    #[test]
+    fn the_worktree_list_parses_paths_and_lock_state() {
+        // Two blocks: the primary (unlocked) and a locked linked worktree whose reason
+        // itself holds spaces. Blocks are separated by an extra NUL.
+        let list = b"worktree /repo\0HEAD 1111\0branch refs/heads/main\0\0worktree /repo-wt\0HEAD 2222\0detached\0locked away for now\0\0";
+        let entries = parse_worktree_list(list);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].path, b"/repo");
+        assert!(!entries[0].locked);
+        assert_eq!(entries[1].path, b"/repo-wt");
+        assert!(entries[1].locked, "the locked flag is read");
+    }
+
+    #[test]
+    fn a_lock_names_one_path_and_never_a_force() {
+        assert_eq!(
+            plan_worktree_lock(b"/repo-wt", Some("on ice"))
+                .expect("a plan")
+                .argv,
+            vec!["worktree", "lock", "--reason=on ice", "/repo-wt"]
+        );
+        assert_eq!(
+            plan_worktree_lock(b"/repo-wt", None).expect("a plan").argv,
+            vec!["worktree", "lock", "/repo-wt"]
+        );
+        assert_eq!(
+            plan_worktree_unlock(b"/repo-wt").expect("a plan").argv,
+            vec!["worktree", "unlock", "/repo-wt"]
+        );
+        // A control character in the reason, or a path that cannot be argv, is refused.
+        assert!(plan_worktree_lock(b"/repo-wt", Some("bad\nreason")).is_err());
+        assert!(plan_worktree_unlock(b"").is_err());
     }
 }
