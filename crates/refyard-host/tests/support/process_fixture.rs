@@ -252,9 +252,13 @@ fn run_ssh_double(arguments: &[String]) -> i32 {
 fn matches_fixture_directory(remote: &str, repository: &std::ffi::OsStr) -> bool {
     #[cfg(windows)]
     {
-        let repository = repository.to_string_lossy().replace('\\', "/");
-        let repository = repository.strip_prefix("//?/").unwrap_or(&repository);
-        remote.eq_ignore_ascii_case(repository)
+        match (
+            std::fs::canonicalize(remote),
+            std::fs::canonicalize(std::path::Path::new(repository)),
+        ) {
+            (Ok(remote), Ok(repository)) => remote == repository,
+            _ => false,
+        }
     }
     #[cfg(not(windows))]
     {
@@ -266,17 +270,18 @@ fn matches_fixture_directory(remote: &str, repository: &std::ffi::OsStr) -> bool
 #[cfg(not(test))]
 fn rewrite_fixture_path(output: &[u8], repository: &std::ffi::OsStr) -> Vec<u8> {
     let repository = repository.to_string_lossy();
-    let mut variants = vec![repository.to_string()];
-    variants.push(repository.replace('\\', "/"));
-    let extended_prefix = format!(r"\\?\{repository}");
-    variants.push(extended_prefix.clone());
-    variants.push(extended_prefix.replace('\\', "/"));
-    let without_prefix = variants[0]
-        .strip_prefix(r"\\?\")
-        .unwrap_or(&variants[0])
-        .to_string();
-    variants.push(without_prefix.clone());
-    variants.push(without_prefix.replace('\\', "/"));
+    let mut roots = vec![repository.to_string()];
+    if let Ok(canonical) = std::fs::canonicalize(std::path::Path::new(repository.as_ref())) {
+        roots.push(canonical.to_string_lossy().into_owned());
+    }
+    let mut variants = Vec::new();
+    for root in roots {
+        variants.push(root.clone());
+        variants.push(root.replace('\\', "/"));
+        let without_prefix = root.strip_prefix(r"\\?\").unwrap_or(&root).to_string();
+        variants.push(without_prefix.clone());
+        variants.push(without_prefix.replace('\\', "/"));
+    }
     variants.sort_by_key(|path| std::cmp::Reverse(path.len()));
 
     let mut rewritten = output.to_vec();
