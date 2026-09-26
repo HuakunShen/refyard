@@ -223,7 +223,9 @@ fn run_ssh_double(arguments: &[String]) -> i32 {
         && remote_directory != "."
         && !matches_fixture_directory(remote_directory, &repository)
     {
-        eprintln!("scripted transport refused remote directory: {remote_directory:?}");
+        eprintln!(
+            "scripted transport refused remote directory: {remote_directory:?}; fixture repository: {repository:?}"
+        );
         return 2;
     }
     let output = match std::process::Command::new(git)
