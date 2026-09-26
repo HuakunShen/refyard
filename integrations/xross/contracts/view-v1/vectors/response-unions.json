@@ -48,7 +48,7 @@
   ],
   "ScanWatchEventV1": [
     { "kind": "progress", "scan": { "scanId": "xscan_00000000000000000000000000000001", "state": "scanning", "progressPermille": 500, "bytesVisited": "50", "entriesVisited": "5", "rootIds": ["xroot_00000000000000000000000000000001"], "updatedAtUnixMs": "1710000000000" } },
-    { "kind": "ready", "scan": { "scanId": "xscan_00000000000000000000000000000001", "state": "ready", "progressPermille": 1000, "bytesVisited": "100", "entriesVisited": "10", "rootIds": ["xroot_00000000000000000000000000000001"], "snapshotId": "xsnapshot_00000000000000000000000000000001", "updatedAtUnixMs": "1710000000001" } },
+    { "kind": "ready", "scan": { "scanId": "xscan_00000000000000000000000000000001", "state": "ready", "progressPermille": 1000, "bytesVisited": "100", "entriesVisited": "10", "rootIds": ["xroot_00000000000000000000000000000001"], "snapshotId": "xsnapshot_00000000000000000000000000000001", "rootNodes": [{ "rootId": "xroot_00000000000000000000000000000001", "nodeId": "xnode_00000000000000000000000000000001" }], "updatedAtUnixMs": "1710000000001" } },
     { "kind": "cancelled", "scan": { "scanId": "xscan_00000000000000000000000000000001", "state": "cancelled", "bytesVisited": "50", "entriesVisited": "5", "rootIds": ["xroot_00000000000000000000000000000001"], "updatedAtUnixMs": "1710000000002" } },
     { "kind": "failed", "scan": { "scanId": "xscan_00000000000000000000000000000001", "state": "failed", "bytesVisited": "50", "entriesVisited": "5", "rootIds": ["xroot_00000000000000000000000000000001"], "updatedAtUnixMs": "1710000000003" }, "error": "unavailable" }
   ],

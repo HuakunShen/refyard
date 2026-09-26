@@ -449,6 +449,7 @@
           "entriesVisited": "10",
           "rootIds": ["xroot_00000000000000000000000000000001"],
           "snapshotId": "xsnapshot_00000000000000000000000000000001",
+          "rootNodes": [{ "rootId": "xroot_00000000000000000000000000000001", "nodeId": "xnode_00000000000000000000000000000001" }],
           "updatedAtUnixMs": "1710000000000"
         }
       },
@@ -896,6 +897,7 @@
                 "entriesVisited": "10",
                 "rootIds": ["xroot_00000000000000000000000000000001"],
                 "snapshotId": "xsnapshot_00000000000000000000000000000001",
+                "rootNodes": [{ "rootId": "xroot_00000000000000000000000000000001", "nodeId": "xnode_00000000000000000000000000000001" }],
                 "updatedAtUnixMs": "1710000000001"
               }
             }
