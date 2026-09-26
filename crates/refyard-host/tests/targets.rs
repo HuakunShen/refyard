@@ -229,7 +229,10 @@ fn fixture_environment(home: &Path) -> Vec<(String, String)> {
     environment.extend([
         ("HOME".to_string(), home.display().to_string()),
         ("GIT_CONFIG_NOSYSTEM".to_string(), "1".to_string()),
-        ("GIT_CONFIG_GLOBAL".to_string(), "/dev/null".to_string()),
+        (
+            "GIT_CONFIG_GLOBAL".to_string(),
+            home.join(".gitconfig").display().to_string(),
+        ),
         ("GIT_TERMINAL_PROMPT".to_string(), "0".to_string()),
         // An identity for the fixture's commits, so the fixture does not depend on the
         // developer's global Git configuration.
