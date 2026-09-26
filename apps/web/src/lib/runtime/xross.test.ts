@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createBackendRegistry } from "./backend-registry.js";
 
 describe("the explicit Xross workbench entry", () => {
-  it("keeps the standalone contract snapshot pinned to final Task 0.3", () => {
+  it("keeps the standalone contract snapshot pinned to reviewed Task 0.4", () => {
     const schema = readFileSync(
       new URL(
         "../../../../../integrations/xross/contracts/view-v1/schema.json",
@@ -13,7 +13,7 @@ describe("the explicit Xross workbench entry", () => {
     );
 
     expect(createHash("sha256").update(schema).digest("hex")).toBe(
-      "178cc0f93a27439a59f106db01e164a4d65d0b09051523f6e41dc005a6989059",
+      "9f365418a12fec02c7ebbc770fa019e52c9d9e037817a4c3ef1c590888e1ba68",
     );
   });
 

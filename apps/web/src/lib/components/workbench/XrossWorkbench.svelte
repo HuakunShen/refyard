@@ -426,16 +426,21 @@
               </div>
             {/each}
             <PageContinuation nextCursor={scoped.status.current().nextCursor} truncated={scoped.status.current().truncated} loading={scoped.status.current().loading} error={scoped.status.current().problem} onContinue={scoped.status.continue} />
-            {#if session.capabilities.operations.some((item) => item.operationKind === "commit" && item.targets.includes("worktree"))}
+            {#if xrossOperationAvailable(session, "commit", "worktree")}
               <div class="mt-4 space-y-2 border-t pt-4">
                 <label class="block text-sm" for="xross-commit-message">{t("xross.mutation.commitMessage")}</label>
                 <textarea id="xross-commit-message" bind:value={commitMessage} class="w-full rounded border p-2"></textarea>
                 <button type="button" class="rounded border px-3 py-2" disabled={recoveryBlocksWrites || commitMessage.length === 0 || scoped.status.current().source === undefined} onclick={() => void previewCommit()}>{t("xross.mutation.preview")}</button>
-                {#if preview !== null}<p class="text-sm">{preview.resourceLabel} · {t("xross.field.operation")}: <code>{preview.operationKind}</code> · {t("xross.field.summary")}: <code>{preview.summaryKey}</code></p><button type="button" class="rounded border px-3 py-2" disabled={recoveryBlocksWrites} onclick={() => void requestNativeSubmission()}>{t("xross.mutation.nativeApproval")}</button>{/if}
-                {#if approvalDecision !== null}<p role="status">{t(approvalDecision === "denied" ? "xross.mutation.denied" : "xross.mutation.cancelled")}</p>{/if}
-                {#if mutationProblem !== null}<p role="alert">{mutationProblem}</p>{/if}
               </div>
             {/if}
+            {#if preview !== null}
+              <div class="mt-4 space-y-2 border-t pt-4" aria-live="polite">
+                <p class="text-sm">{preview.resourceLabel} · {t("xross.field.operation")}: <code>{preview.operationKind}</code> · {t("xross.field.summary")}: <code>{preview.summaryKey}</code></p>
+                <button type="button" class="rounded border px-3 py-2" disabled={recoveryBlocksWrites} onclick={() => void requestNativeSubmission()}>{t("xross.mutation.nativeApproval")}</button>
+              </div>
+            {/if}
+            {#if approvalDecision !== null}<p role="status">{t(approvalDecision === "denied" ? "xross.mutation.denied" : "xross.mutation.cancelled")}</p>{/if}
+            {#if mutationProblem !== null}<p role="alert">{mutationProblem}</p>{/if}
           </section>
         {:else if panel === "history" && history !== null}
           <section aria-labelledby="xross-history-heading"><h2 id="xross-history-heading" class="font-semibold">{t("xross.history.label")}</h2>

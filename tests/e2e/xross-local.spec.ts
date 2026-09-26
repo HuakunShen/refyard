@@ -113,6 +113,71 @@ test("missing native facade stays refused without offering the browser connectio
   expect(requests.every((url) => url.startsWith(origin) && !url.includes("/api/") && !url.includes("service-worker"))).toBe(true);
 });
 
+test("stage and unstage show their own native approval without commit capability", async ({ page }) => {
+  await page.addInitScript((capabilities) => {
+    const context = {
+      contractMajor: 1, featureBits: ["refyard.read"], packId: "refyard",
+      packDigest: "a".repeat(64), xrossVersion: "1.0.0", sourceClientIncarnation: "1".repeat(32),
+      targetDeviceId: "xdev_1aaaaaaaaaaaaaaaaaaaaaaaaa", targetDisplayLabel: "Test Mac",
+      targetPolicyRevision: "4", bridgeGeneration: "2".repeat(32), locale: "en",
+    };
+    const snapshotId = `rsnapshot_${"0".repeat(31)}1`;
+    const head = { kind: "born", branchName: "main", oid: "0".repeat(40), detached: false };
+    const calls: string[] = [];
+    Reflect.set(globalThis, "__xrossStageCalls", calls);
+    Reflect.set(globalThis, "xrossRefyardV1", {
+      context: async () => context,
+      capabilities: async () => ({ ...capabilities, reads: ["filesystem", "repositories", "status"],
+        operations: [{ operationKind: "stagePaths", targets: ["worktree"] },
+          { operationKind: "unstagePaths", targets: ["worktree"] }] }),
+      listWorkspaceRoots: async () => ({ items: [], nextCursor: null }),
+      listRepositories: async () => ({ items: [{ repositoryId: "repo_demo", workspaceRootId: "root_demo",
+        displayName: "Review repository", objectFormat: "sha1", worktreeIds: ["wt_main"],
+        primaryWorktreeId: "wt_main", head, operationInProgress: null }], nextCursor: null }),
+      getStatus: async () => ({ repositoryId: "repo_demo", worktreeId: "wt_main", snapshotId,
+        readAtUnixMs: "1710000000000", head, upstream: null, operationInProgress: null,
+        entries: [{ pathId: "path_review", displayPath: "review.txt", pathEncoding: "utf8", kind: "ordinary",
+          indexStatus: "M", worktreeStatus: "M", originalPathId: null, originalDisplayPath: null,
+          headOid: null, indexOid: null, headMode: null, indexMode: null, worktreeMode: null,
+          submodule: null, unmergedStages: null }], entryCount: 1, truncated: false, nextCursor: null }),
+      getPathPreviews: async () => ({ repositoryId: "repo_demo", worktreeId: "wt_main", snapshotId,
+        tokens: [{ pathId: "path_review", previewToken: "pt_review_01", sizeBytes: "7",
+          contentKind: "text", algorithm: "sha256", expiresAtUnixMs: "1710000300000" }] }),
+      previewMutation: async ({ intent }: { intent: { operation: { kind: string } } }) => {
+        calls.push(`preview:${intent.operation.kind}`);
+        return { previewId: `rpreview_${"0".repeat(31)}1`, recoveryId: `rrecovery_${"0".repeat(31)}1`,
+          targetKind: "worktree", resourceLabel: "Review repository / main worktree",
+          operationKind: intent.operation.kind, summaryKey: `mutation.${intent.operation.kind}`,
+          displayPaths: ["review.txt"], requiresNativeApproval: true, expiresAtUnixMs: "1710000300000" };
+      },
+      requestMutationSubmission: async ({ previewId }: { previewId: string }) => {
+        calls.push(`native:${previewId}`);
+        return { decision: "denied" };
+      },
+      historyPage: async () => ({}), listRefs: async () => ({}), listWorktrees: async () => ({}),
+      listStashes: async () => ({}), listSubmodules: async () => ({}), readDiff: async () => ({}),
+      getMutationJob: async () => ({}), listMutationRecoveries: async () => ({
+        snapshotId: `rrecoverysnapshot_${"0".repeat(31)}1`, items: [], nextCursor: null }),
+      watchRepository: async function* () {}, watchMutation: async function* () {},
+    });
+  }, capabilitiesFixture);
+  await page.goto(`${origin}/xross/`);
+  await page.getByRole("button", { name: "Review repository" }).click();
+  await expect(page.getByLabel("Commit message")).toHaveCount(0);
+  await page.getByRole("button", { name: "Stage", exact: true }).click();
+  await expect(page.getByText("Review repository / main worktree")).toBeVisible();
+  await expect(page.getByText("stagePaths", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Continue in native approval" }).click();
+  await expect(page.getByText("Native approval was denied.")).toBeVisible();
+  await page.getByRole("button", { name: "Unstage", exact: true }).click();
+  await expect(page.getByText("unstagePaths", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Continue in native approval" }).click();
+  expect(await page.evaluate(() => Reflect.get(globalThis, "__xrossStageCalls"))).toEqual([
+    "preview:stagePaths", `native:rpreview_${"0".repeat(31)}1`,
+    "preview:unstagePaths", `native:rpreview_${"0".repeat(31)}1`,
+  ]);
+});
+
 test("restart reattaches only an exact found job and keeps an unrelated unknown recovery fenced", async ({ page }) => {
   await page.addInitScript((capabilities) => {
     const jobId = `rjob_${"1".repeat(32)}`;
@@ -157,7 +222,9 @@ test("restart reattaches only an exact found job and keeps an unrelated unknown 
   }, capabilitiesFixture);
   await page.goto(`${origin}/xross/`);
   await expect(page.getByRole("alert")).toContainText("outcome is unknown");
-  await expect.poll(() => page.evaluate(() => Reflect.get(globalThis, "__xrossRecoveryCalls"))).toEqual([
+  // A focus/pageshow resume may reattach the same job again; the first recovery transcript
+  // must still bind and reconcile this exact job, never the unrelated unknown row.
+  await expect.poll(() => page.evaluate(() => (Reflect.get(globalThis, "__xrossRecoveryCalls") as string[]).slice(0, 4))).toEqual([
     `get:rjob_${"1".repeat(32)}`,
     `watch:rjob_${"1".repeat(32)}:18446744073709551614`,
     `get:rjob_${"1".repeat(32)}`,

@@ -3,7 +3,7 @@
   import { onMount } from "svelte";
   import { createGitViewI18n } from "@refyard/git-ui/lib/i18n/catalog";
   import type { XrossSession } from "$lib/workbench/xross-session.svelte.js";
-  import { createXrossWorkbenchRuntime } from "$lib/runtime/bootstrap.js";
+  import { createXrossSession } from "$lib/workbench/xross-session.svelte.js";
   import XrossWorkbench from "$lib/components/workbench/XrossWorkbench.svelte";
 
   const standalone = createGitViewI18n("en");
@@ -16,7 +16,7 @@
     problem = null;
     session = null;
     try {
-      session = await createXrossWorkbenchRuntime().start();
+      session = await createXrossSession();
     } catch (error) {
       problem = error instanceof Error ? error.message : standalone.t("xross.host.unavailable");
     } finally {
