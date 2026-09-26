@@ -214,6 +214,7 @@ fn run_ssh_double(arguments: &[String]) -> i32 {
         return 2;
     };
     if remote_directory != "/repo" && remote_directory != "." {
+        eprintln!("scripted transport refused remote directory: {remote_directory:?}");
         return 2;
     }
     let (Some(repository), Some(git)) = (
