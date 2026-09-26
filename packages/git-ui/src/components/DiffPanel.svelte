@@ -26,8 +26,9 @@
   import StateBanner from "./StateBanner.svelte";
   import SplitPatch from "./SplitPatch.svelte";
   import { Button } from "./ui/button/index.js";
-  import { changeKindLabel, diffStatLabel } from "../lib/format.js";
   import { cn } from "../lib/utils.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
+  import type { TranslationKey } from "../lib/i18n/types.js";
 
   interface Props {
     /** The change set: files, counts and, when the host chose to include them, patches. */
@@ -48,11 +49,27 @@
     patch = null,
     selectedPathId = null,
     onSelectPath,
-    placeholder = "Select a path or a commit to read its diff.",
+    placeholder = undefined,
     onlySelected = false,
     listingOnly = false,
     class: className = "",
   }: Props = $props();
+  const i18n = useGitViewI18n();
+  const { t } = i18n;
+  const changeKindKeys: Readonly<Record<DiffFile["changeKind"], TranslationKey>> = {
+    added: "diff.kind.added", modified: "diff.kind.modified", deleted: "diff.kind.deleted",
+    renamed: "diff.kind.renamed", copied: "diff.kind.copied", typeChanged: "diff.kind.typeChanged",
+    unmerged: "diff.kind.unmerged",
+  };
+  const requestKindKeys: Readonly<Record<DiffResponse["request"]["kind"], TranslationKey>> = {
+    unstaged: "diff.request.unstaged", staged: "diff.request.staged", untracked: "diff.request.untracked",
+    commit: "diff.request.commit", range: "diff.request.range",
+  };
+  function statLabel(file: DiffFile): string {
+    if (file.isBinary) return t("diff.binary");
+    if (file.insertions === null && file.deletions === null) return t("diff.noLineCounts");
+    return `+${i18n.count(file.insertions ?? 0)} −${i18n.count(file.deletions ?? 0)}`;
+  }
 
   let splitView = $state(true);
 
@@ -100,13 +117,13 @@
   )}
 >
   {#if diff === null}
-    <p class="p-3 text-sm text-ink-faint">{placeholder}</p>
+    <p class="p-3 text-sm text-ink-faint">{placeholder ?? t("diff.placeholder")}</p>
   {:else}
     <header
       class="sticky top-0 z-10 shrink-0 flex flex-wrap items-center gap-2 pb-2.5 pt-0.5 bg-canvas/95 backdrop-blur-sm border-b border-border/40 text-xs text-ink-muted -mx-3 px-3"
     >
       <span class="font-medium text-ink">
-        {diff.request.kind}
+        {t(requestKindKeys[diff.request.kind])}
         {#if diff.request.oid !== null}<span class="font-mono ml-1"
             >{diff.request.oid.slice(0, 8)}</span
           >{/if}
@@ -121,34 +138,33 @@
       </span>
       <span class="text-muted-foreground">·</span>
       <span
-        >{diff.stats.filesChanged}
-        {diff.stats.filesChanged === 1 ? "file" : "files"}</span
+        >{i18n.plural(diff.stats.filesChanged, "diff.fileOne", "diff.fileOther")}</span
       >
       <span class="text-add font-mono font-medium"
-        >+{diff.stats.insertions}</span
+        >+{i18n.count(diff.stats.insertions)}</span
       >
       <span class="text-remove font-mono font-medium"
-        >−{diff.stats.deletions}</span
+        >−{i18n.count(diff.stats.deletions)}</span
       >
       {#if diff.stats.binaryFiles > 0}
         <span class="text-muted-foreground"
-          >· {diff.stats.binaryFiles} binary</span
+          >· {i18n.count(diff.stats.binaryFiles)} {t("diff.binary")}</span
         >
       {/if}
       {#if onlySelected}
         <span class="flex-1"></span>
-        <div class="flex gap-1" aria-label="Diff view">
+        <div class="flex gap-1" aria-label={t("diff.view")}>
           <Button
             size="sm"
             variant={splitView ? "default" : "ghost"}
             aria-pressed={splitView}
-            onclick={() => (splitView = true)}>Split</Button
+            onclick={() => (splitView = true)}>{t("diff.split")}</Button
           >
           <Button
             size="sm"
             variant={!splitView ? "default" : "ghost"}
             aria-pressed={!splitView}
-            onclick={() => (splitView = false)}>Unified</Button
+            onclick={() => (splitView = false)}>{t("diff.unified")}</Button
           >
         </div>
       {/if}
@@ -158,8 +174,8 @@
       <div class="shrink-0">
         <StateBanner
           state="info"
-          title="Patches are read one path at a time"
-          detail="This change set is listed without patches: a patch for every file at once is unbounded work. Select a file to read its patch."
+          title={t("diff.perPathTitle")}
+          detail={t("diff.perPathDetail")}
         />
       </div>
     {:else if diff.truncated}
@@ -174,18 +190,18 @@
         <StateBanner
           state="truncated"
           title={awaitingPerPathPatches
-            ? "The host limited this listing"
-            : "This listing was truncated"}
+            ? t("diff.limitedTitle")
+            : t("diff.truncatedTitle")}
           detail={awaitingPerPathPatches
-            ? "Either the change set was larger than the host returns at once, or patches were not included because they are read one path at a time. Select a file to read its patch, or narrow the request."
-            : "The host bounded this response, so later files in it are not shown. Narrow the request to see them."}
+            ? t("diff.limitedDetail")
+            : t("diff.truncatedDetail")}
         />
       </div>
     {/if}
 
     {#if diff.files.length === 0}
       <p class="text-sm text-ink-muted shrink-0">
-        No changed files for this request.
+        {t("diff.empty")}
       </p>
     {:else}
       {#each onlySelected && selectedPathId !== null ? diff.files.filter((file) => file.pathId === selectedPathId) : diff.files as file (file.pathId + file.changeKind)}
@@ -223,7 +239,7 @@
               tone={file.changeKind === "deleted" ? "danger" : "muted"}
               class="text-[10px] h-4.5 px-1.5 shrink-0"
             >
-              {changeKindLabel(file.changeKind)}
+              {t(changeKindKeys[file.changeKind])}
             </Badge>
             {#if file.oldDisplayPath !== null && file.oldDisplayPath !== file.displayPath}
               <span
@@ -234,7 +250,7 @@
               </span>
             {/if}
             <span class="text-xs font-mono text-muted-foreground shrink-0"
-              >{diffStatLabel(file)}</span
+              >{statLabel(file)}</span
             >
           </button>
 
@@ -244,15 +260,14 @@
                 <p
                   class="border-t border-border/60 bg-muted/30 px-3 py-1.5 text-xs text-muted-foreground"
                 >
-                  Untracked file: this content was read from the working tree,
-                  not produced by Git.
+                  {t("diff.synthesized")}
                 </p>
               {/if}
               {#if filePatch.hunks.length === 0}
                 <p
                   class="border-t border-border/60 bg-muted/20 px-3 py-2 text-xs text-muted-foreground"
                 >
-                  No line changes — the file's mode or type changed.
+                  {t("diff.noLines")}
                 </p>
               {:else if onlySelected && splitView}
                 <SplitPatch hunks={filePatch.hunks} />
@@ -279,7 +294,7 @@
                           >{line.text}{#if line.noNewline}<span
                               class="text-muted-foreground italic ml-1"
                             >
-                              ⏎ no newline at end of file</span
+                              ⏎ {t("diff.noNewline")}</span
                             >{/if}
                         </p>
                       {/each}
@@ -291,31 +306,31 @@
               <p
                 class="border-t border-border/60 px-3 py-3 text-xs text-muted-foreground"
               >
-                Binary file — Git reported no text patch for it.
+                {t("diff.binaryHelp")}
               </p>
             {:else if filePatch.kind === "oversize"}
               <p
                 class="border-t border-border/60 px-3 py-3 text-xs text-muted-foreground"
               >
-                Patch omitted: {filePatch.reason}
+                {t("diff.omitted")} {filePatch.reason}
               </p>
             {:else if filePatch.kind === "unavailable"}
               <p
                 class="border-t border-border/60 px-3 py-2.5 text-xs text-muted-foreground"
               >
                 {selected
-                  ? `Patch unavailable: ${filePatch.reason}`
-                  : "Select this file to read its patch."}
+                  ? `${t("diff.unavailable")} ${filePatch.reason}`
+                  : t("diff.selectFile")}
               </p>
             {:else}
               <p
                 class="border-t border-border/60 px-3 py-3 text-xs text-muted-foreground font-mono"
               >
-                Submodule pointer: {filePatch.oldOid === null
-                  ? "(none)"
+                {t("diff.submodulePointer")} {filePatch.oldOid === null
+                  ? t("diff.none")
                   : filePatch.oldOid.slice(0, 8)}
                 → {filePatch.newOid === null
-                  ? "(none)"
+                  ? t("diff.none")
                   : filePatch.newOid.slice(0, 8)}
               </p>
             {/if}

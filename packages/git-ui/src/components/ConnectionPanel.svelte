@@ -19,6 +19,7 @@
   import { Card, CardContent } from "./ui/card/index.js";
   import { Input } from "./ui/input/index.js";
   import StateBanner from "./StateBanner.svelte";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   interface Props {
     baseUrl: string;
@@ -48,6 +49,7 @@
     onPassword,
     onConnect,
   }: Props = $props();
+  const { t } = useGitViewI18n();
 
   /**
    * Accept a bare ticket or a full pairing URL in either spelling.
@@ -97,11 +99,9 @@
 
 <section class="mx-auto flex w-full max-w-xl flex-col gap-4">
   <header class="flex flex-col gap-1">
-    <h1 class="text-lg font-semibold text-ink">Connect to the local service</h1>
+    <h1 class="text-lg font-semibold text-ink">{t("connection.title")}</h1>
     <p class="text-sm text-ink-muted">
-      The service runs on this machine and reads repositories you approved when
-      you started it. Reads are authenticated, so the page needs the ticket the
-      CLI printed.
+      {t("connection.description")}
     </p>
   </header>
 
@@ -112,18 +112,18 @@
           class="text-xs font-medium text-ink-muted"
           for="refyard-base-url"
         >
-          Service address
+          {t("connection.address")}
         </label>
         <Input
           id="refyard-base-url"
-          placeholder="http://127.0.0.1:47831"
+          placeholder={t("connection.addressExample")}
           value={baseUrl}
           oninput={(event: Event) => onBaseUrl(inputText(event.currentTarget))}
         />
         <p class="text-xs text-ink-faint">
           {baseUrlIsDefault
-            ? "Taken from this page's origin — the service that served this page."
-            : "Overridden for this browser; clear it to fall back to this page's origin."}
+            ? t("connection.addressDefault")
+            : t("connection.addressOverride")}
         </p>
       </div>
 
@@ -133,13 +133,13 @@
             class="text-xs font-medium text-ink-muted"
             for="refyard-hosted-password"
           >
-            Hosted service password
+            {t("connection.password")}
           </label>
           <Input
             id="refyard-hosted-password"
             type="password"
             autocomplete="current-password"
-            placeholder="Enter the password configured on the CLI"
+            placeholder={t("connection.passwordPlaceholder")}
             value={password}
             oninput={(event: Event) =>
               onPassword(inputText(event.currentTarget))}
@@ -150,20 +150,18 @@
             }}
           />
           <p class="text-xs text-ink-faint">
-            Required for a non-loopback origin when the CLI enables hosted
-            access. It is used once to obtain a bearer session and is not saved
-            in this browser.
+            {t("connection.passwordHelp")}
           </p>
         </div>
       {/if}
 
       <div class="flex flex-col gap-1">
         <label class="text-xs font-medium text-ink-muted" for="refyard-ticket">
-          Pairing ticket
+          {t("connection.ticket")}
         </label>
         <Input
           id="refyard-ticket"
-          placeholder="http://127.0.0.1:47831/?pair=…"
+          placeholder={t("connection.ticketExample")}
           class="font-mono text-xs"
           value={ticket}
           oninput={(event: Event) =>
@@ -175,8 +173,7 @@
           }}
         />
         <p class="text-xs text-ink-faint">
-          Paste the pairing URL (any spelling) or just its ticket. It is single
-          use and expires after 60 seconds.
+          {t("connection.ticketHelp")}
         </p>
       </div>
 
@@ -185,10 +182,10 @@
           disabled={phase === "connecting" || ticket.length === 0}
           onclick={onConnect}
         >
-          {phase === "connecting" ? "Pairing…" : "Pair"}
+          {t(phase === "connecting" ? "connection.pairing" : "connection.pair")}
         </Button>
         {#if baseUrlIsDefault}
-          <Badge variant="secondary">same origin</Badge>
+          <Badge variant="secondary">{t("connection.sameOrigin")}</Badge>
         {/if}
       </div>
     </CardContent>
@@ -197,9 +194,9 @@
   {#if phase === "failed"}
     <StateBanner
       state="error"
-      title="Pairing failed"
+      title={t("connection.failed")}
       detail={message ??
-        "The ticket may have expired, already been used, or belong to a different service instance."}
+        t("connection.failedHelp")}
     />
   {/if}
 
@@ -207,11 +204,12 @@
     class="flex flex-col gap-2 rounded-lg border border-border/70 bg-panel/50 p-3.5 text-xs text-ink-muted"
   >
     <div class="flex items-center gap-1.5 font-medium text-ink">
-      <span>💡 How to get a fresh pairing link</span>
+      <span>💡 {t("connection.freshLink")}</span>
     </div>
     <ul class="list-disc space-y-1 pl-4 text-ink-muted">
       <li>
-        If Refyard is running in your terminal, press <kbd
+        {t("connection.press")}
+        <kbd
           class="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[11px] text-ink"
           >p</kbd
         >
@@ -219,15 +217,14 @@
         <kbd
           class="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[11px] text-ink"
           >Enter</kbd
-        > to print a fresh single-use pairing URL.
+        > {t("connection.printLink")}
       </li>
       <li>
-        Or run <code class="font-mono text-ink">refyard open &lt;path&gt;</code>
-        in the repository you want to inspect.
+        {t("connection.orRun")} <code class="font-mono text-ink">refyard open &lt;path&gt;</code>
+        {t("connection.inRepository")}
       </li>
       <li>
-        Once paired, your session is remembered in this browser, so reopening or
-        opening new tabs will connect automatically without requiring a ticket.
+        {t("connection.remembered")}
       </li>
     </ul>
   </div>

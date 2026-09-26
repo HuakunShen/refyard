@@ -89,8 +89,9 @@
     groupCommitRefs,
     type CommitRefBadgeGroup,
   } from "../lib/history-refs.js";
-  import { absoluteTime, shortAbsoluteTime, shortOid } from "../lib/format.js";
+  import { shortOid } from "../lib/format.js";
   import { cn } from "../lib/utils.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   interface Props {
     /** Graph rows, index-aligned with `commits`. */
@@ -250,6 +251,25 @@
     remoteAvatars = undefined,
     class: className = "",
   }: Props = $props();
+  const i18n = useGitViewI18n();
+  const { t } = i18n;
+
+  function inject(key: Parameters<typeof t>[0], tokens: Readonly<Record<string, string>>): string {
+    let value = t(key);
+    for (const [name, token] of Object.entries(tokens)) {
+      value = value.replace(`{${name}}`, () => token);
+    }
+    return value;
+  }
+
+  function compactTime(iso: string): string {
+    const timestamp = Date.parse(iso);
+    return Number.isNaN(timestamp)
+      ? t("xross.time.invalid")
+      : new Intl.DateTimeFormat(i18n.locale, {
+          year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+        }).format(timestamp);
+  }
 
   let scrollElement = $state<HTMLDivElement | null>(null);
   let autoLoadPending = $state(false);
@@ -378,14 +398,14 @@
   const graphCell = $derived(cellById.get("graph"));
   const graphLeft = $derived(cellById.get("refs")?.width ?? 0);
   const refsColumn = $derived(cellById.get("refs"));
-  const headerLabels: Record<HistoryColumnId, string> = {
-    refs: "Branch / Tag",
-    graph: "Graph",
-    message: "Commit message",
-    author: "Author",
-    date: "Date / Time",
-    sha: "Sha",
-  };
+  const headerLabels = $derived<Record<HistoryColumnId, string>>({
+    refs: t("history.column.refs"),
+    graph: t("history.column.graph"),
+    message: t("history.column.message"),
+    author: t("history.column.author"),
+    date: t("history.column.date"),
+    sha: t("history.column.sha"),
+  });
 
   /**
    * The table's width: the sum of the visible columns, never narrower than the
@@ -509,7 +529,7 @@
       {
         kind: "action" as const,
         id: "reset-columns",
-        label: "Reset columns to default layout",
+        label: t("history.column.reset"),
         onSelect: () => {
           columnState = defaultColumnState();
         },
@@ -545,7 +565,7 @@
             {
               kind: "action" as const,
               id: "create-branch",
-              label: "Create Branch Here…",
+              label: t("history.action.createBranch"),
               disabled: contextDisabled,
               onSelect: () => openRefDialog("branch", commit),
             },
@@ -556,7 +576,7 @@
             {
               kind: "action" as const,
               id: "create-tag",
-              label: "Create Tag Here…",
+              label: t("history.action.createTag"),
               disabled: contextDisabled,
               onSelect: () => openRefDialog("tag", commit),
             },
@@ -567,7 +587,7 @@
             {
               kind: "action" as const,
               id: "create-worktree",
-              label: "Create Worktree from Here…",
+              label: t("history.action.createWorktree"),
               disabled: contextDisabled,
               onSelect: () => askWorktree(commit),
             },
@@ -579,7 +599,7 @@
             {
               kind: "action" as const,
               id: "revert-commit",
-              label: "Revert Commit…",
+              label: t("history.action.revert"),
               disabled: contextDisabled,
               onSelect: () => askRevert(commit),
             },
@@ -590,7 +610,7 @@
             {
               kind: "action" as const,
               id: "cherry-pick-commit",
-              label: "Cherry-Pick Commit…",
+              label: t("history.action.cherryPick"),
               disabled: contextDisabled,
               onSelect: () => askCherryPick(commit),
             },
@@ -603,7 +623,7 @@
             {
               kind: "action" as const,
               id: "squash-commit",
-              label: "Squash into Parent…",
+              label: t("history.action.squash"),
               disabled: contextDisabled,
               onSelect: () => askSquash(),
             },
@@ -616,7 +636,7 @@
             {
               kind: "action" as const,
               id: "drop-commit",
-              label: "Drop Commit…",
+              label: t("history.action.drop"),
               destructive: true,
               disabled: contextDisabled,
               onSelect: () => askDrop(commit),
@@ -628,7 +648,7 @@
             {
               kind: "action" as const,
               id: "reset-branch",
-              label: "Reset Branch to Here…",
+              label: t("history.action.reset"),
               disabled: contextDisabled,
               onSelect: () => askReset(commit),
             },
@@ -640,7 +660,7 @@
             {
               kind: "action" as const,
               id: "copy-sha",
-              label: "Copy SHA",
+              label: t("history.action.copySha"),
               onSelect: () => onCopyOid(commit),
             },
           ]),
@@ -650,7 +670,7 @@
             {
               kind: "action" as const,
               id: "copy-message",
-              label: "Copy Message",
+              label: t("history.action.copyMessage"),
               onSelect: () => onCopyText(commit.subject),
             },
           ]),
@@ -660,7 +680,7 @@
             {
               kind: "action" as const,
               id: "copy-github-link",
-              label: "Copy GitHub Link",
+              label: t("history.action.copyGithubLink"),
               onSelect: () => {
                 const url = commitUrlFor(commit);
                 if (url !== null) {
@@ -769,7 +789,7 @@
               {
                 kind: "action" as const,
                 id: "checkout",
-                label: "Checkout",
+                label: t("history.action.checkout"),
                 disabled: contextDisabled,
                 onSelect: () => onCheckoutBranch(ref.branchName),
               },
@@ -780,7 +800,7 @@
               {
                 kind: "action" as const,
                 id: "merge",
-                label: `Merge into ${currentBranch ?? "current branch"}`,
+                label: inject("history.action.mergeInto", { branch: currentBranch ?? t("history.currentBranch") }),
                 disabled: contextDisabled,
                 onSelect: () => onMergeBranch(ref.branchName),
               },
@@ -791,7 +811,7 @@
               {
                 kind: "action" as const,
                 id: "rebase-onto",
-                label: `Rebase ${currentBranch ?? "current branch"} onto This`,
+                label: inject("history.action.rebaseOnto", { branch: currentBranch ?? t("history.currentBranch") }),
                 disabled: contextDisabled,
                 onSelect: () => onRebaseOntoBranch(ref.branchName, commit.oid),
               },
@@ -803,7 +823,7 @@
               {
                 kind: "action" as const,
                 id: "delete",
-                label: "Delete…",
+                label: t("history.action.deleteMore"),
                 destructive: true,
                 disabled: contextDisabled,
                 onSelect: () => askDelete("branch", ref.branchName),
@@ -816,7 +836,7 @@
               {
                 kind: "action" as const,
                 id: "copy-name",
-                label: "Copy Branch Name",
+                label: t("history.action.copyBranchName"),
                 onSelect: () => onCopyText(ref.branchName),
               },
             ]),
@@ -826,7 +846,7 @@
               {
                 kind: "action" as const,
                 id: "copy-github-branch",
-                label: "Copy GitHub Link",
+                label: t("history.action.copyGithubLink"),
                 onSelect: () => {
                   const url = branchUrlFor(ref.branchName);
                   if (url !== null) {
@@ -844,7 +864,7 @@
               {
                 kind: "action" as const,
                 id: "delete",
-                label: "Delete…",
+                label: t("history.action.deleteMore"),
                 destructive: true,
                 disabled: contextDisabled,
                 onSelect: () => askDelete("tag", ref.tagName),
@@ -857,7 +877,7 @@
               {
                 kind: "action" as const,
                 id: "copy-name",
-                label: "Copy Tag Name",
+                label: t("history.action.copyTagName"),
                 onSelect: () => onCopyText(ref.tagName),
               },
             ]),
@@ -870,7 +890,7 @@
               {
                 kind: "action" as const,
                 id: "checkout-remote",
-                label: `Checkout ${ref.remoteName}/${ref.branchName} as Local Branch`,
+                label: inject("history.action.checkoutRemote", { ref: `${ref.remoteName}/${ref.branchName}` }),
                 disabled: contextDisabled,
                 onSelect: () =>
                   onCheckoutRemoteBranch(ref.branchName, commit.oid),
@@ -883,7 +903,7 @@
               {
                 kind: "action" as const,
                 id: "copy-name",
-                label: "Copy Name",
+                label: t("history.action.copyName"),
                 onSelect: () => onCopyText(commitRefDisplayName(ref)),
               },
             ]),
@@ -898,7 +918,7 @@
             {
               kind: "action" as const,
               id: "copy-name",
-              label: "Copy Name",
+              label: t("history.action.copyName"),
               onSelect: () => onCopyText(commitRefDisplayName(ref)),
             },
           ]),
@@ -939,7 +959,7 @@
               {
                 kind: "action" as const,
                 id: `copy-${entry.refName}`,
-                label: `Copy ${commitRefDisplayName(entry.ref)}`,
+                label: inject("history.action.copyRef", { ref: commitRefDisplayName(entry.ref) }),
                 onSelect: () => onCopyText(commitRefDisplayName(entry.ref)),
               },
             ]),
@@ -1087,25 +1107,25 @@
   {#if tipsMoved}
     <StateBanner
       state="stale"
-      title="The branch moved while you were reading"
-      detail="These rows are served from the tips this page started with, so the graph you see is consistent rather than half-updated."
+      title={t("history.tipsMovedTitle")}
+      detail={t("history.tipsMovedDetail")}
     />
   {/if}
   {#if shallow}
     <StateBanner
       state="info"
-      title="Shallow history"
-      detail="Some parents are missing locally, so a line may end at the boundary instead of at a root commit."
+      title={t("history.shallowTitle")}
+      detail={t("history.shallowDetail")}
     />
   {/if}
 
   {#if commits.length === 0}
     <StateBanner
       state="empty"
-      title={filtered ? "No matching commits" : "No commits yet"}
+      title={t(filtered ? "history.noMatching" : "history.noCommits")}
       detail={filtered
-        ? "Try adjusting the filters or clear them to see all history."
-        : "This repository has no history on these tips."}
+        ? t("history.noMatchingDetail")
+        : t("history.noCommitsDetail")}
     />
   {:else}
     <div
@@ -1136,7 +1156,7 @@
                   class="absolute top-0 right-0 h-full w-1.5 cursor-col-resize bg-transparent transition-colors hover:bg-primary/30 active:bg-primary/50"
                   role="separator"
                   aria-orientation="vertical"
-                  aria-label="resize {headerLabels[cell.id]} column"
+                  aria-label={inject("history.resizeColumn", { column: headerLabels[cell.id] })}
                   data-testid={`history-column-resize-${cell.id}`}
                   onpointerdown={(event) => startColumnResize(event, cell.id)}
                 ></span>
@@ -1148,8 +1168,8 @@
           bind:this={settingsGear}
           type="button"
           class="flex shrink-0 items-center px-2 text-muted-foreground transition-colors hover:text-foreground"
-          aria-label="Column settings"
-          title="Column settings"
+          aria-label={t("history.column.settings")}
+          title={t("history.column.settings")}
           data-testid="history-column-settings"
           onclick={openColumnSettings}
         >
@@ -1216,14 +1236,14 @@
               {/if}
               <div class="flex min-w-0 flex-1 items-center gap-2 px-2.5">
                 <span class="truncate font-mono text-xs text-muted-foreground"
-                  >// WIP</span
+                  >// {t("history.wip")}</span
                 >
                 <Pencil class="size-3 shrink-0 text-muted-foreground/70" />
                 <span class="shrink-0 text-xs text-muted-foreground"
-                  >{wip.changedCount}</span
+                  >{i18n.count(wip.changedCount)}</span
                 >
                 <span class="truncate text-xs text-muted-foreground/60"
-                  >uncommitted changes — click to work on them</span
+                  >{t("history.uncommittedChanges")}</span
                 >
               </div>
             </button>
@@ -1248,7 +1268,7 @@
         bind:this={scrollElement}
         class="relative min-h-0 flex-1 overflow-auto"
         tabindex="0"
-        aria-label="Commit history — arrow keys move the selection"
+        aria-label={t("history.keyboardHint")}
         data-testid="history-scroll"
         onkeydown={onListKeyDown}
         onscroll={onHistoryScroll}
@@ -1394,7 +1414,7 @@
                       {/each}
                       {#if groups.length > 3}
                         <Badge tone="muted" title={commit.refNames.join(", ")}>
-                          +{groups.length - 3}
+                          +{i18n.count(groups.length - 3)}
                         </Badge>
                       {/if}
                     </div>
@@ -1438,15 +1458,15 @@
                       title={commit.subject}
                     >
                       {commit.subject.length === 0
-                        ? "(no subject)"
+                        ? t("history.noSubject")
                         : commit.subject}
                     </span>
                     {#if commit.missingParents.length > 0}
                       <Badge
                         tone="warn"
-                        title="A parent object is not present locally, so this line continues to a commit that was not loaded."
+                        title={t("history.boundaryHelp")}
                       >
-                        boundary
+                        {t("history.boundary")}
                       </Badge>
                     {/if}
                     {#if commit.signed}
@@ -1454,7 +1474,7 @@
                            of chips; GitKraken's signature mark is an icon first. -->
                       <span
                         class="shrink-0 text-muted-foreground/70"
-                        title="Commit carries a signature."
+                        title={t("history.signedHelp")}
                       >
                         <BadgeCheck class="size-3.5" />
                       </span>
@@ -1484,9 +1504,9 @@
                       <time
                         class="truncate font-mono text-xs text-muted-foreground/75"
                         datetime={commit.authoredAt}
-                        title={absoluteTime(commit.authoredAt)}
+                        title={i18n.absoluteIso(commit.authoredAt)}
                       >
-                        {shortAbsoluteTime(commit.authoredAt)}
+                        {compactTime(commit.authoredAt)}
                       </time>
                     </div>
                   {/if}
@@ -1546,12 +1566,12 @@
         >
           {#if loadingMore}
             <span class="text-xs text-ink-faint" aria-live="polite"
-              >Loading more…</span
+              >{t("history.loadingMore")}</span
             >
           {:else if hasMore}
-            <span class="text-xs text-ink-faint">Scroll for more</span>
+            <span class="text-xs text-ink-faint">{t("history.scrollMore")}</span>
           {:else}
-            <span class="text-xs text-ink-faint">End of the loaded history</span
+            <span class="text-xs text-ink-faint">{t("history.endLoaded")}</span
             >
           {/if}
         </div>
@@ -1594,18 +1614,18 @@
 <ConfirmDialog
   bind:open={deleteDialogOpen}
   title={pendingDelete === null
-    ? "Delete ref"
+    ? t("history.deleteRef")
     : pendingDelete.kind === "branch"
-      ? `Delete ${pendingDelete.name}?`
-      : `Delete tag ${pendingDelete.name}?`}
+      ? inject("history.deleteQuestion", { name: pendingDelete.name })
+      : inject("history.deleteTagQuestion", { name: pendingDelete.name })}
   description={pendingDelete?.kind === "tag"
-    ? "The tag is removed from this repository. Pushed copies stay on the remote until pushed as a deletion."
-    : "Only fully merged branches can be deleted; unmerged work is refused by Git."}
+    ? t("history.deleteTagDescription")
+    : t("history.deleteBranchDescription")}
   confirmLabel={pendingDelete === null
-    ? "Delete"
+    ? t("history.delete")
     : pendingDelete.kind === "branch"
-      ? `Delete ${pendingDelete.name}`
-      : `Delete tag ${pendingDelete.name}`}
+      ? inject("history.deleteNamed", { name: pendingDelete.name })
+      : inject("history.deleteTagNamed", { name: pendingDelete.name })}
   disabled={pendingDelete === null || contextDisabled}
   onConfirm={() => {
     if (pendingDelete === null) {
@@ -1624,12 +1644,12 @@
 <ConfirmDialog
   bind:open={revertDialogOpen}
   title={pendingRevert === null
-    ? "Revert commit"
-    : `Revert "${pendingRevert.subject}"?`}
-  description="Creates a new commit that undoes this one, with Git's own revert message and your hooks running. Merge commits are refused, and if the revert conflicts with your working tree it is aborted, so your branch comes out unchanged."
+    ? t("history.revertCommit")
+    : inject("history.revertQuestion", { subject: pendingRevert.subject })}
+  description={t("history.revertDescription")}
   confirmLabel={pendingRevert === null
-    ? "Revert"
-    : `Revert "${pendingRevert.subject}"`}
+    ? t("history.revert")
+    : inject("history.revertNamed", { subject: pendingRevert.subject })}
   disabled={pendingRevert === null || contextDisabled}
   onConfirm={() => {
     if (pendingRevert === null) {
@@ -1673,12 +1693,12 @@
 <ConfirmDialog
   bind:open={cherryPickDialogOpen}
   title={pendingCherryPick === null
-    ? "Cherry-pick commit"
-    : `Cherry-pick "${pendingCherryPick.subject}" onto ${currentBranch ?? "the checked-out branch"}?`}
-  description="Applies this commit's change onto your checked-out branch as a new commit, keeping the original message and author. A conflict stops it for you to resolve, like a merge; a merge commit itself is refused."
+    ? t("history.cherryPickCommit")
+    : inject("history.cherryPickQuestion", { subject: pendingCherryPick.subject, branch: currentBranch ?? t("history.checkedOutBranch") })}
+  description={t("history.cherryPickDescription")}
   confirmLabel={pendingCherryPick === null
-    ? "Cherry-pick"
-    : `Cherry-pick "${pendingCherryPick.subject}"`}
+    ? t("history.cherryPick")
+    : inject("history.cherryPickNamed", { subject: pendingCherryPick.subject })}
   disabled={pendingCherryPick === null || contextDisabled}
   onConfirm={() => {
     if (pendingCherryPick === null) {
@@ -1693,10 +1713,10 @@
 <ConfirmDialog
   bind:open={dropDialogOpen}
   title={pendingDrop === null
-    ? "Drop commit"
-    : `Drop "${pendingDrop.subject}"?`}
-  description="Removes this commit from the checked-out branch and replays the commits after it onto its parent — a history rewrite. A conflict stops it for you to resolve, like a merge. Merge commits and the branch's first commit are refused."
-  confirmLabel={pendingDrop === null ? "Drop" : `Drop "${pendingDrop.subject}"`}
+    ? t("history.dropCommit")
+    : inject("history.dropQuestion", { subject: pendingDrop.subject })}
+  description={t("history.dropDescription")}
+  confirmLabel={pendingDrop === null ? t("history.drop") : inject("history.dropNamed", { subject: pendingDrop.subject })}
   disabled={pendingDrop === null || contextDisabled}
   onConfirm={() => {
     if (pendingDrop === null) {

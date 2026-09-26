@@ -11,6 +11,7 @@
    */
   import { Button } from "./ui/button/index.js";
   import { cn } from "../lib/utils.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   interface Props {
     /** Why the service is blocking, verbatim from the refusal. */
@@ -36,6 +37,7 @@
     class: className = "",
     "data-testid": testId = undefined,
   }: Props = $props();
+  const { t } = useGitViewI18n();
 
   let confirmed = $state(false);
 </script>
@@ -49,7 +51,7 @@
   data-testid={testId ?? "uncertain-outcome-panel"}
 >
   <p class="font-medium text-ink">
-    Writes are blocked: an operation's outcome is unknown
+    {t("uncertain.title")}
   </p>
   <p class="mt-1 text-xs text-ink-muted">{reason}</p>
   {#if operationIds.length > 0}
@@ -74,9 +76,7 @@
       data-testid="uncertain-confirm-checkbox"
     />
     <span>
-      I have re-read the repository state and accept what these operations may
-      have done. Acknowledging records that confirmation; it does not change
-      their recorded outcome.
+      {t("uncertain.confirmation")}
     </span>
   </label>
   {#if note !== undefined && note !== ""}
@@ -94,7 +94,7 @@
       }}
       data-testid="uncertain-acknowledge"
     >
-      {busy ? "Acknowledging…" : "Confirm and unblock writes"}
+      {busy ? t("uncertain.acknowledging") : t("uncertain.unblock")}
     </Button>
   </div>
 </div>

@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import { cn } from "../lib/utils.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   export interface WorkbenchNavItem {
     readonly id: string;
@@ -26,11 +27,13 @@
     class: className = "",
     "data-testid": testId = "workbench-nav",
   }: Props = $props();
+  const i18n = useGitViewI18n();
+  const { t } = i18n;
 </script>
 
 <nav
   class={cn("flex flex-col gap-0.5", className)}
-  aria-label="Repository navigation"
+  aria-label={t("navigation.repository")}
   data-testid={testId}
 >
   {#each items as item (item.id)}
@@ -65,7 +68,7 @@
               : "bg-muted/70 text-ink-faint group-hover:text-muted-foreground",
           )}
         >
-          {item.count}
+          {i18n.count(item.count)}
         </span>
       {/if}
     </button>

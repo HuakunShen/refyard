@@ -28,6 +28,7 @@
   import { Input } from "./ui/input/index.js";
   import * as Dialog from "./ui/dialog/index.js";
   import { cn } from "../lib/utils.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   interface Props {
     open?: boolean;
@@ -44,6 +45,7 @@
     loadOptions,
     onSelectTarget,
   }: Props = $props();
+  const { t } = useGitViewI18n();
 
   let load = $state<TargetOptionsLoad | null>(null);
   let query = $state("");
@@ -55,8 +57,10 @@
 
   const options = $derived(
     load?.kind === "ready"
-      ? targetOptionsFromList(load.hosts)
-      : [localTargetOption()],
+      ? targetOptionsFromList(load.hosts).map((option) => option.kind === "local"
+          ? { ...option, label: t("target.thisMachine"), description: t("target.localDescription") }
+          : option)
+      : [{ ...localTargetOption(), label: t("target.thisMachine"), description: t("target.localDescription") }],
   );
   const visible = $derived(filterTargetOptions(options, query));
   const notice = $derived(load?.kind === "ready" ? load.notice : null);
@@ -133,10 +137,9 @@
 <Dialog.Root bind:open>
   <Dialog.Content class="max-w-2xl" data-testid="execution-target-picker">
     <Dialog.Header>
-      <Dialog.Title>Where should Git run?</Dialog.Title>
+      <Dialog.Title>{t("target.title")}</Dialog.Title>
       <Dialog.Description>
-        This machine, or a host your SSH configuration names. Choosing a host
-        only selects it; nothing is contacted until you open a repository there.
+        {t("target.description")}
       </Dialog.Description>
     </Dialog.Header>
 
@@ -147,7 +150,7 @@
       <Input
         id="execution-target-search"
         class="pl-8 text-sm"
-        placeholder="Search hosts by name, label or source"
+        placeholder={t("target.searchPlaceholder")}
         bind:ref={searchElement}
         bind:value={query}
         oninput={() => (activeIndex = 0)}
@@ -162,7 +165,7 @@
         class="rounded-md border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger"
         data-testid="execution-target-unavailable"
       >
-        The SSH host list is unavailable: {unavailable.message}
+        {t("target.unavailable")} {unavailable.message}
       </p>
     {/if}
 
@@ -173,7 +176,7 @@
       >
         <p class="flex items-start gap-2 font-medium text-warn">
           <TriangleAlert class="mt-px size-3.5 shrink-0" />
-          <span>{notice.summary}</span>
+          <span>{t("target.incomplete")}</span>
         </p>
         {#if notice.warnings.length > 0}
           <ul class="mt-1 list-disc pl-6 text-muted-foreground">
@@ -197,11 +200,11 @@
         <label
           class="min-w-0 flex-1 text-xs font-medium"
           for="execution-target-manual-alias"
-          >Enter a host alias from your SSH configuration
+          >{t("target.manualAlias")}
           <Input
             id="execution-target-manual-alias"
             class="mt-1 font-mono text-xs"
-            placeholder="e.g. production-jump"
+            placeholder={t("target.aliasPlaceholder")}
             bind:value={aliasDraft}
             data-testid="execution-target-manual-alias"
           />
@@ -210,14 +213,14 @@
           type="submit"
           variant="outline"
           disabled={manualSelection === null}
-          data-testid="execution-target-manual-submit">Use alias</Button
+          data-testid="execution-target-manual-submit">{t("target.useAlias")}</Button
         >
       </form>
     {/if}
 
     {#if load === null}
       <p class="p-6 text-center text-xs text-muted-foreground">
-        Reading the host's SSH configuration…
+        {t("target.loading")}
       </p>
     {:else if visible.length === 0}
       <p
@@ -225,8 +228,8 @@
         data-testid="execution-target-empty"
       >
         {unavailable === null
-          ? "No target matches this search."
-          : "No host matches this search; this machine is still available."}
+          ? t("target.noTarget")
+          : t("target.noHost")}
       </p>
     {/if}
 
@@ -261,7 +264,7 @@
               </span>
             </span>
             {#if option.kind === "ssh-config" && option.discoveryIncomplete}
-              <Badge tone="warn">incomplete</Badge>
+              <Badge tone="warn">{t("target.incompleteBadge")}</Badge>
             {/if}
           </button>
         {/each}
@@ -270,9 +273,9 @@
 
     <Dialog.Footer>
       <span class="flex-1 text-xs text-muted-foreground">
-        Reading configuration never contacts a host.
+        {t("target.readOnly")}
       </span>
-      <Button variant="ghost" onclick={() => (open = false)}>Cancel</Button>
+      <Button variant="ghost" onclick={() => (open = false)}>{t("action.cancel")}</Button>
     </Dialog.Footer>
   </Dialog.Content>
 </Dialog.Root>

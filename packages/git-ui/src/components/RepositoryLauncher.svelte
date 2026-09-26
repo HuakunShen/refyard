@@ -28,11 +28,11 @@
     executionLocationKey,
     loadTargetOptions,
     supportsSshTargets,
-    targetSelectionLabel,
     type ExecutionTargetSelection,
     type TargetDiscoveryPort,
     type TargetOptionsLoad,
   } from "../lib/execution-targets.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   export interface RecentRepository {
     readonly repositoryId: string;
@@ -114,6 +114,8 @@
     onPickLocalFolder = undefined,
     dropPathsActive = false,
   }: Props = $props();
+  const i18n = useGitViewI18n();
+  const { t } = i18n;
 
   let mode = $state<"open" | "create">("open");
   let path = $state("");
@@ -132,7 +134,11 @@
   const chosenTarget = $derived(
     selectedTarget === undefined ? localTargetChoice : selectedTarget,
   );
-  const chosenTargetLabel = $derived(targetSelectionLabel(chosenTarget));
+  const chosenTargetLabel = $derived(
+    chosenTarget === null || chosenTarget.kind === "local"
+      ? t("target.thisMachine")
+      : chosenTarget.label,
+  );
   const localTargetChosen = $derived(
     chosenTarget === null || chosenTarget.kind === "local",
   );
@@ -143,7 +149,7 @@
    */
   const remoteTargetChosen = $derived(!localTargetChosen);
   const pathFieldLabel = $derived(
-    remoteTargetChosen ? "Remote repository path" : "Local repository path",
+    t(remoteTargetChosen ? "launcher.remotePath" : "launcher.localPath"),
   );
   const pathFieldPlaceholder = $derived(
     remoteTargetChosen
@@ -161,9 +167,9 @@
       selectedTargetSummary !== null &&
       !selectedTargetSummary.remotePathBrowse
     ) {
-      return `The host reports it cannot list directories on ${chosenTargetLabel}, so there is nothing to browse; type the path to open there.`;
+      return t("launcher.remoteBrowseUnavailable").replace("{target}", () => chosenTargetLabel);
     }
-    return `This build does not browse directories on ${chosenTargetLabel}; type the path to open there.`;
+    return t("launcher.remoteBrowseUnsupported").replace("{target}", () => chosenTargetLabel);
   });
   const openPending = $derived(remoteTargetChosen && targetProgress !== null);
   /**
@@ -203,7 +209,7 @@
       return {
         kind: "unavailable",
         capabilities: null,
-        message: "this launcher has no host connection",
+        message: t("launcher.noHostConnection"),
       };
     }
     const load = await loadTargetOptions(host);
@@ -243,7 +249,7 @@
       pickerError =
         error instanceof Error
           ? error.message
-          : "Could not read this directory";
+          : t("launcher.readDirectoryFailed");
     } finally {
       pickerBusy = false;
     }
@@ -288,7 +294,7 @@
       nativePickerError =
         error instanceof Error
           ? error.message
-          : "Could not open the folder picker";
+          : t("launcher.folderPickerFailed");
     } finally {
       nativePickerBusy = false;
     }
@@ -305,7 +311,7 @@
       data-testid="launcher-drop-overlay"
     >
       <p class="rounded-md bg-background px-4 py-2 text-sm font-medium">
-        Drop the folder to open it as a repository
+        {t("launcher.dropFolder")}
       </p>
     </div>
   {/if}
@@ -313,33 +319,32 @@
     <p
       class="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground"
     >
-      Workspace
+      {t("launcher.workspace")}
     </p>
-    <h1 class="mt-1 text-2xl font-semibold tracking-tight">Repositories</h1>
+    <h1 class="mt-1 text-2xl font-semibold tracking-tight">{t("launcher.repositories")}</h1>
     <p class="mt-1 max-w-2xl text-sm text-muted-foreground">
-      Open a local repository, start from a clone, or create one. Recent entries
-      are only repositories you explicitly opened.
+      {t("launcher.description")}
     </p>
   </div>
 
   <div
     class="flex flex-wrap gap-2"
     role="tablist"
-    aria-label="Repository actions"
+    aria-label={t("launcher.actions")}
   >
     <Button
       type="button"
       variant={mode === "open" ? "default" : "outline"}
       onclick={() => (mode = "open")}
       data-testid="launcher-open-tab"
-      ><FolderOpen data-icon="inline-start" />Open</Button
+      ><FolderOpen data-icon="inline-start" />{t("launcher.open")}</Button
     >
     <Button
       type="button"
       variant={mode === "create" ? "default" : "outline"}
       onclick={() => (mode = "create")}
       data-testid="launcher-create-tab"
-      ><GitBranchPlus data-icon="inline-start" />Clone / Create</Button
+      ><GitBranchPlus data-icon="inline-start" />{t("launcher.cloneCreate")}</Button
     >
   </div>
 
@@ -351,7 +356,7 @@
       >
         <span
           class="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground"
-          >Location</span
+          >{t("launcher.location")}</span
         >
         <Button
           type="button"
@@ -368,8 +373,7 @@
             class="min-w-0 flex-1 text-xs text-muted-foreground"
             data-testid="execution-target-note"
           >
-            Repositories open on {chosenTargetLabel}; that machine resolves the
-            path, so nothing is checked against this machine's filesystem.
+            {t("launcher.remoteNote").replace("{target}", () => chosenTargetLabel)}
           </span>
         {/if}
       </div>
@@ -404,9 +408,9 @@
           onclick={pickLocalFolder}
           disabled={disabled || nativePickerBusy}
           data-testid="launcher-native-picker"
-          ><FolderOpen data-icon="inline-start" />{nativePickerBusy
-            ? "Choosing…"
-            : "Choose folder…"}</Button
+          ><FolderOpen data-icon="inline-start" />{t(nativePickerBusy
+            ? "launcher.choosing"
+            : "launcher.chooseFolder")}</Button
         >
       {/if}
       {#if nativePickerError !== null}
@@ -434,13 +438,13 @@
         disabled={disabled || remoteTargetChosen}
         title={remoteBrowseReason ?? undefined}
         data-testid="launcher-browse"
-        ><FolderOpen data-icon="inline-start" />Browse</Button
+        ><FolderOpen data-icon="inline-start" />{t("launcher.browse")}</Button
       >
       <Button
         type="submit"
         disabled={disabled || path.trim().length === 0 || openPending}
         data-testid="launcher-open"
-        ><FolderOpen data-icon="inline-start" />Open repository</Button
+        ><FolderOpen data-icon="inline-start" />{t("launcher.openRepository")}</Button
       >
       {#if remoteBrowseReason !== null}
         <p
@@ -467,17 +471,16 @@
     <div
       class="rounded-lg border border-dashed border-border bg-panel p-5 text-sm text-muted-foreground"
     >
-      Open one local repository first to approve a workspace root. Clone and
-      Create will then use that explicit root.
+      {t("launcher.noWorkspaceRoot")}
     </div>
   {/if}
 
   <div class="flex flex-col gap-2 rounded-lg border border-border bg-panel p-4">
     <div class="flex items-center justify-between gap-3">
       <h2 class="flex items-center gap-2 text-sm font-semibold">
-        <Clock3 class="size-4 text-primary" />Recent
+        <Clock3 class="size-4 text-primary" />{t("launcher.recent")}
       </h2>
-      <Badge tone="muted">{filteredRecent.length}</Badge>
+      <Badge tone="muted">{i18n.count(filteredRecent.length)}</Badge>
     </div>
     <label class="relative block" for="recent-repositories-search">
       <Search
@@ -486,13 +489,13 @@
       <Input
         id="recent-repositories-search"
         class="pl-8 text-xs"
-        placeholder="Search recent repositories"
+        placeholder={t("launcher.searchRecent")}
         bind:value={query}
       />
     </label>
     {#if filteredRecent.length === 0}
       <p class="py-5 text-center text-sm text-muted-foreground">
-        No recent repositories match.
+        {t("launcher.noRecentMatch")}
       </p>
     {:else}
       <div class="grid gap-1">
@@ -514,7 +517,7 @@
                 >{entry.displayPath}</span
               ></span
             >
-            {#if !entry.available}<Badge tone="muted">unavailable</Badge>{/if}
+            {#if !entry.available}<Badge tone="muted">{t("launcher.unavailable")}</Badge>{/if}
           </button>
         {/each}
       </div>
@@ -525,10 +528,9 @@
 <Dialog.Root bind:open={pickerOpen}>
   <Dialog.Content class="max-w-2xl" data-testid="repository-path-picker">
     <Dialog.Header>
-      <Dialog.Title>Choose a repository folder</Dialog.Title>
+      <Dialog.Title>{t("launcher.chooseRepositoryFolder")}</Dialog.Title>
       <Dialog.Description>
-        Browse directories through the local coordinator. Nothing is uploaded
-        and file contents are never returned.
+        {t("launcher.folderBrowseDescription")}
       </Dialog.Description>
     </Dialog.Header>
 
@@ -542,9 +544,9 @@
       <Input
         class="min-w-0 flex-1 font-mono text-xs"
         bind:value={pickerPath}
-        aria-label="Path to browse"
+        aria-label={t("launcher.pathToBrowse")}
       />
-      <Button type="submit" variant="outline" disabled={pickerBusy}>Go</Button>
+      <Button type="submit" variant="outline" disabled={pickerBusy}>{t("launcher.go")}</Button>
     </form>
 
     {#if pickerError !== null}
@@ -568,14 +570,14 @@
             onclick={() => void browse(pickerData?.parentPath ?? "~")}
             disabled={pickerBusy}
           >
-            <ChevronLeft data-icon="inline-start" />Up
+            <ChevronLeft data-icon="inline-start" />{t("launcher.up")}
           </Button>
         {/if}
       </div>
       <div class="max-h-72 overflow-y-auto rounded-md border border-border">
         {#if pickerData.entries.length === 0}
           <p class="p-4 text-center text-xs text-muted-foreground">
-            No directories here.
+            {t("launcher.noDirectories")}
           </p>
         {:else}
           {#each pickerData.entries as entry (entry.path)}
@@ -590,7 +592,7 @@
                 <Button
                   type="button"
                   size="sm"
-                  onclick={() => chooseRepository(entry.path)}>Open</Button
+                  onclick={() => chooseRepository(entry.path)}>{t("launcher.open")}</Button
                 >
               {:else}
                 <Button
@@ -598,7 +600,7 @@
                   size="sm"
                   variant="ghost"
                   onclick={() => void browse(entry.path)}
-                  disabled={pickerBusy}>Browse</Button
+                  disabled={pickerBusy}>{t("launcher.browse")}</Button
                 >
               {/if}
             </div>
@@ -607,24 +609,24 @@
       </div>
       {#if pickerData.truncated}
         <p class="text-xs text-muted-foreground">
-          Only the first 200 directories are shown.
+          {t("launcher.truncatedDirectories")}
         </p>
       {/if}
     {:else if pickerBusy}
       <p class="p-6 text-center text-xs text-muted-foreground">
-        Reading directories…
+        {t("launcher.readingDirectories")}
       </p>
     {/if}
 
     <Dialog.Footer>
       <Button variant="ghost" onclick={() => (pickerOpen = false)}
-        >Cancel</Button
+        >{t("action.cancel")}</Button
       >
       <Button
         disabled={pickerData === null}
         onclick={() => chooseRepository(pickerData?.path ?? "")}
       >
-        Use this folder
+        {t("launcher.useFolder")}
       </Button>
     </Dialog.Footer>
   </Dialog.Content>

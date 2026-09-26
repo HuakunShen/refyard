@@ -29,7 +29,11 @@ dist
 # The desktop flavour of the same SPA, and the working directory that keeps the two
 # builds from sharing SvelteKit's intermediate output (see apps/web/svelte.config.js).
 build-desktop
+build-xross-local
+build-xross-hosted
 .svelte-kit-desktop
+.svelte-kit-xross-local
+.svelte-kit-xross-hosted
 
 # SvelteKit's generated types and route manifest (`svelte-kit sync`, run by `pnpm build`).
 .svelte-kit
@@ -75,4 +79,3 @@ target/
 # Tauri's generated capability schemas: written by tauri-build from
 # capabilities/*.json on every build, so they are output rather than source.
 apps/desktop/src-tauri/gen/
-

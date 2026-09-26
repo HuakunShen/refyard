@@ -12,6 +12,7 @@
   import { Badge } from "./ui/badge/index.js";
   import { groupWorkingCopyEntries } from "../lib/working-copy.js";
   import { cn } from "../lib/utils.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   interface WorktreeStatus {
     readonly worktreeId: string;
@@ -36,6 +37,8 @@
     disabled = false,
     class: className = "",
   }: Props = $props();
+  const i18n = useGitViewI18n();
+  const { t } = i18n;
 
   const visibleWorktrees = $derived(
     worktrees.filter((worktree) => !worktree.isBare && !worktree.isPrunable),
@@ -47,7 +50,7 @@
   function branchLabel(worktree: WorktreeSummary): string {
     return (
       worktree.head.branchName ??
-      (worktree.head.kind === "unborn" ? "unborn" : "detached")
+      (worktree.head.kind === "unborn" ? t("worktreeWip.unborn") : t("worktreeWip.detached"))
     );
   }
 
@@ -63,18 +66,18 @@
 {#if visibleWorktrees.length > 0}
   <section
     class={cn("flex min-w-0 flex-col gap-1.5", className)}
-    aria-label="Worktree changes"
+    aria-label={t("worktreeWip.changes")}
     data-testid="worktree-wip-list"
   >
     <div class="flex items-center gap-2 px-0.5">
       <span
         class="text-[11px] font-semibold tracking-wider text-ink-muted uppercase"
-        >WIP</span
+        >{t("worktreeWip.wip")}</span
       >
       <Badge tone="muted" class="h-4.5 px-1.5 text-[10px] font-mono"
-        >{visibleWorktrees.length}</Badge
+        >{i18n.count(visibleWorktrees.length)}</Badge
       >
-      <span class="text-[11px] text-ink-faint">Working copies</span>
+      <span class="text-[11px] text-ink-faint">{t("worktreeWip.workingCopies")}</span>
     </div>
 
     <ul
@@ -101,7 +104,7 @@
             )}
             {disabled}
             aria-current={selected ? "true" : undefined}
-            aria-label={`${label} at ${worktree.displayPath}`}
+            aria-label={t("worktreeWip.atPath").replace("{branch}", () => label).replace("{path}", () => worktree.displayPath)}
             title={`${label}\n${worktree.displayPath}`}
             onclick={() => onSelect(worktree.worktreeId)}
             data-testid={`worktree-wip-${worktree.worktreeId}`}
@@ -126,25 +129,25 @@
               >
                 {#if counts.unstaged > 0}
                   <span class="text-amber-600 dark:text-amber-400"
-                    >{counts.unstaged} unstaged</span
+                    >{i18n.count(counts.unstaged)} {t("worktreeWip.unstaged")}</span
                   >
                 {/if}
                 {#if counts.staged > 0}
                   <span class="text-emerald-600 dark:text-emerald-400"
-                    >{counts.staged} staged</span
+                    >{i18n.count(counts.staged)} {t("worktreeWip.staged")}</span
                   >
                 {/if}
                 {#if counts.unstaged === 0 && counts.staged === 0}
-                  <span class="text-ink-faint">clean</span>
+                  <span class="text-ink-faint">{t("worktreeWip.clean")}</span>
                 {/if}
               </span>
             {:else if record?.error !== null && record?.error !== undefined}
               <span
                 class="shrink-0 text-[10px] text-ink-faint"
-                title={record.error}>Unavailable</span
+                title={record.error}>{t("worktreeWip.unavailable")}</span
               >
             {:else}
-              <span class="shrink-0 text-[10px] text-ink-faint">Loading…</span>
+              <span class="shrink-0 text-[10px] text-ink-faint">{t("xross.read.loading")}</span>
             {/if}
           </button>
         </li>

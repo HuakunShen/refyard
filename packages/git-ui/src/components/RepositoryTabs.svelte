@@ -2,6 +2,7 @@
   /** Top-level repository tabs; one tab is active while the session may keep many open. */
   import { X, Plus } from "@lucide/svelte";
   import { cn } from "../lib/utils.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   export interface RepositoryTabItem {
     readonly repositoryId: string;
@@ -32,6 +33,7 @@
     onNew,
     disabled = false,
   }: Props = $props();
+  const { t } = useGitViewI18n();
 </script>
 
 <!--
@@ -75,7 +77,7 @@
         -->
         <span
           class="max-w-20 shrink-0 truncate rounded bg-background/70 px-1 py-px text-[10px] font-normal text-muted-foreground"
-          title={`Git runs on ${tab.targetLabel}`}
+          title={t("repository.tab.target").replace("{name}", () => tab.targetLabel ?? "")}
           data-testid={`repository-target-${tab.repositoryId}`}
         >
           {tab.targetLabel}
@@ -85,7 +87,7 @@
         type="button"
         {disabled}
         class="rounded p-0.5 text-muted-foreground opacity-70 hover:bg-background hover:text-foreground group-hover:opacity-100"
-        aria-label={`Close ${tab.displayName}`}
+        aria-label={t("repository.tab.close").replace("{name}", () => tab.displayName)}
         onclick={() => onClose(tab.repositoryId)}
       >
         <X class="size-3" />
@@ -96,11 +98,11 @@
     type="button"
     class="flex shrink-0 items-center gap-1 rounded-md border border-dashed border-border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
     {disabled}
-    aria-label="New repository tab"
+    aria-label={t("repository.tab.new")}
     data-testid="new-repository-tab"
     onclick={onNew}
   >
     <Plus class="size-3" />
-    New Tab
+    {t("repository.tab.newShort")}
   </button>
 </div>

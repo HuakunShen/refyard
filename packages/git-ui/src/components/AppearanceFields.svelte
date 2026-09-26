@@ -9,6 +9,8 @@
   import { Badge } from "./ui/badge/index.js";
   import Check from "@lucide/svelte/icons/check";
   import { cn } from "../lib/utils.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
+  import type { TranslationKey } from "../lib/i18n/types.js";
   import {
     densityMetrics,
     ROW_DENSITIES,
@@ -40,11 +42,16 @@
     onAvatarsChange = undefined,
     onDensityChange = undefined,
   }: Props = $props();
+  const { t } = useGitViewI18n();
 
   const DENSITY_NOTES: Record<RowDensity, string> = {
-    compact: "28px rows — the most commits per screen",
-    comfortable: "36px rows — the middle size",
-    roomy: "44px rows — the default, GitKraken's spacing",
+    compact: t("appearance.density.compactNote"),
+    comfortable: t("appearance.density.comfortableNote"),
+    roomy: t("appearance.density.roomyNote"),
+  };
+  const DENSITY_NAMES: Readonly<Record<RowDensity, TranslationKey>> = {
+    compact: "appearance.density.compact", comfortable: "appearance.density.comfortable",
+    roomy: "appearance.density.roomy",
   };
 
   /** The three buttons, each drawn with its own node size so the choice is visible. */
@@ -52,7 +59,7 @@
     const metrics = densityMetrics(id);
     return {
       id,
-      name: id.charAt(0).toUpperCase() + id.slice(1),
+      name: t(DENSITY_NAMES[id]),
       // The dot in the button is the graph's node at that density, capped so the
       // roomy one does not outgrow the button.
       node: Math.round(Math.min(14, metrics.radius * 2)),
@@ -74,35 +81,35 @@
   const ACCENTS = [
     {
       id: "default",
-      name: "Neutral",
+      name: t("appearance.accent.neutral"),
       color: "#52525b",
       bg: "bg-zinc-600",
     },
-    { id: "blue", name: "Blue", color: "#2563eb", bg: "bg-blue-600" },
-    { id: "emerald", name: "Emerald", color: "#059669", bg: "bg-emerald-600" },
-    { id: "violet", name: "Violet", color: "#7c3aed", bg: "bg-violet-600" },
-    { id: "rose", name: "Rose", color: "#e11d48", bg: "bg-rose-600" },
-    { id: "amber", name: "Amber", color: "#d97706", bg: "bg-amber-600" },
-    { id: "cyan", name: "Cyan", color: "#0891b2", bg: "bg-cyan-600" },
+    { id: "blue", name: t("appearance.accent.blue"), color: "#2563eb", bg: "bg-blue-600" },
+    { id: "emerald", name: t("appearance.accent.emerald"), color: "#059669", bg: "bg-emerald-600" },
+    { id: "violet", name: t("appearance.accent.violet"), color: "#7c3aed", bg: "bg-violet-600" },
+    { id: "rose", name: t("appearance.accent.rose"), color: "#e11d48", bg: "bg-rose-600" },
+    { id: "amber", name: t("appearance.accent.amber"), color: "#d97706", bg: "bg-amber-600" },
+    { id: "cyan", name: t("appearance.accent.cyan"), color: "#0891b2", bg: "bg-cyan-600" },
   ];
 
   const PRESET_BACKGROUNDS = [
     {
       id: "none",
-      title: "Solid Canvas",
-      desc: "Clean minimal workbench",
+      title: t("appearance.background.solid"),
+      desc: t("appearance.background.solidDescription"),
       thumbnail: "bg-card border border-border",
     },
     {
       id: "/backgrounds/mountain-mist.svg",
-      title: "Mountain Mist",
-      desc: "Scenic misty mountains & lake",
+      title: t("appearance.background.mountain"),
+      desc: t("appearance.background.mountainDescription"),
       thumbnail: "bg-gradient-to-br from-slate-400 via-blue-300 to-sky-100",
     },
     {
       id: "/backgrounds/aurora.svg",
-      title: "Dark Aurora",
-      desc: "Cosmic night sky & aurora glow",
+      title: t("appearance.background.aurora"),
+      desc: t("appearance.background.auroraDescription"),
       thumbnail:
         "bg-gradient-to-br from-slate-950 via-emerald-950 to-indigo-950",
     },
@@ -121,7 +128,7 @@
   <!-- Accent Color Selection -->
   <div class="flex flex-col gap-2">
     <span class="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-      Accent Color
+      {t("appearance.accent.title")}
     </span>
     <div class="grid grid-cols-3 gap-2">
       {#each ACCENTS as item (item.id)}
@@ -158,10 +165,10 @@
       <span
         class="text-xs font-semibold uppercase tracking-wider text-ink-muted"
       >
-        Workbench Background
+        {t("appearance.background.title")}
       </span>
       {#if background !== "none"}
-        <Badge tone="branch" class="text-[10px]">Active</Badge>
+        <Badge tone="branch" class="text-[10px]">{t("appearance.active")}</Badge>
       {/if}
     </div>
 
@@ -203,8 +210,8 @@
     <div class="mt-1 flex items-center gap-2">
       <input
         class="min-w-0 flex-1 rounded-md border border-input bg-transparent px-2.5 py-1 text-xs font-mono placeholder:text-ink-faint"
-        placeholder="Custom image URL (https://...)"
-        aria-label="Custom background URL"
+        placeholder={t("appearance.customUrlPlaceholder")}
+        aria-label={t("appearance.customUrl")}
         bind:value={customUrlInput}
         onkeydown={(e) => {
           if (e.key === "Enter") {
@@ -218,7 +225,7 @@
         disabled={customUrlInput.trim().length === 0}
         onclick={applyCustomUrl}
       >
-        Apply URL
+        {t("appearance.applyUrl")}
       </Button>
       {#if background !== "none"}
         <Button
@@ -230,7 +237,7 @@
             customUrlInput = "";
           }}
         >
-          Clear
+          {t("appearance.clear")}
         </Button>
       {/if}
     </div>
@@ -242,10 +249,10 @@
   >
     <div class="flex flex-col gap-0.5">
       <span class="text-xs font-medium text-foreground"
-        >Frosted Glass Effect</span
+        >{t("appearance.glass.title")}</span
       >
       <span class="text-[11px] text-ink-faint">
-        Translucent backdrop blur on cards and panels for wallpapers
+        {t("appearance.glass.description")}
       </span>
     </div>
     <label class="relative inline-flex items-center cursor-pointer">
@@ -254,7 +261,7 @@
         checked={glass}
         onchange={(e) => onGlassChange(e.currentTarget.checked)}
         class="sr-only peer"
-        aria-label="Toggle frosted glass"
+        aria-label={t("appearance.glass.toggle")}
       />
       <div
         class="w-9 h-5 bg-muted peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"
@@ -267,10 +274,9 @@
     class="flex items-center justify-between rounded-lg border border-border/60 bg-card/50 p-3"
   >
     <div class="flex flex-col gap-0.5">
-      <span class="text-xs font-medium text-foreground">Author Photos</span>
+      <span class="text-xs font-medium text-foreground">{t("appearance.avatars.title")}</span>
       <span class="text-[11px] text-ink-faint">
-        GitHub profile pictures in the history list — commits identify their
-        author by email; authors without a photo get colored initials
+        {t("appearance.avatars.description")}
       </span>
     </div>
     <label class="relative inline-flex items-center cursor-pointer">
@@ -279,7 +285,7 @@
         checked={avatars}
         onchange={(e) => onAvatarsChange?.(e.currentTarget.checked)}
         class="sr-only peer"
-        aria-label="Toggle author photos"
+        aria-label={t("appearance.avatars.toggle")}
         data-testid="settings-avatars-toggle"
       />
       <div
@@ -294,14 +300,14 @@
       <span
         class="text-xs font-semibold uppercase tracking-wider text-ink-muted"
       >
-        Row Density
+        {t("appearance.density.title")}
       </span>
       <span class="text-[11px] text-ink-faint">{DENSITY_NOTES[density]}</span>
     </div>
     <div
       class="grid grid-cols-3 gap-2"
       role="radiogroup"
-      aria-label="History row density"
+      aria-label={t("appearance.density.group")}
     >
       {#each DENSITIES as item (item.id)}
         {@const active = density === item.id}

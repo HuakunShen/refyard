@@ -13,7 +13,7 @@
   import type { RepositorySummary } from "@refyard/git-contract";
   import { Badge } from "./ui/badge/index.js";
   import { cn } from "../lib/utils.js";
-  import { headLabel } from "../lib/format.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   interface Props {
     repositories: readonly RepositorySummary[];
@@ -28,6 +28,7 @@
     onSelect,
     class: className = "",
   }: Props = $props();
+  const i18n = useGitViewI18n();
 </script>
 
 <ul class={cn("flex flex-col gap-1", className)}>
@@ -51,19 +52,14 @@
           >
           {#if repository.operationInProgress !== null}
             <Badge tone="warn"
-              >{repository.operationInProgress} in progress</Badge
+              >{repository.operationInProgress} {i18n.t("repository.operation.inProgress")}</Badge
             >
           {/if}
         </span>
         <span class="flex items-center gap-2 text-xs text-ink-muted">
-          <span class="truncate font-mono">{headLabel(repository.head)}</span>
+          <span class="truncate font-mono">{i18n.head(repository.head)}</span>
           <span class="text-ink-faint">·</span>
-          <span
-            >{repository.worktreeIds.length}
-            {repository.worktreeIds.length === 1
-              ? "worktree"
-              : "worktrees"}</span
-          >
+          <span>{i18n.worktrees(repository.worktreeIds.length)}</span>
           <span class="text-ink-faint">·</span>
           <span>{repository.objectFormat}</span>
         </span>
