@@ -609,13 +609,16 @@ fn one_local_reader_answers_every_kind_of_path_with_its_own_typed_result() {
     std::fs::create_dir_all(root.join("docs")).expect("create a directory");
     assert_eq!(local::read(&root, b"docs"), FileRead::Directory);
 
-    let symlink = root.join("link.txt");
-    std::os::unix::fs::symlink(root.join("a.txt"), &symlink).expect("create symlink");
-    assert_eq!(
-        local::read(&root, b"link.txt"),
-        FileRead::Symlink,
-        "a symlink is not a regular file: following it would read bytes the path does not own"
-    );
+    #[cfg(unix)]
+    {
+        let symlink = root.join("link.txt");
+        std::os::unix::fs::symlink(root.join("a.txt"), &symlink).expect("create symlink");
+        assert_eq!(
+            local::read(&root, b"link.txt"),
+            FileRead::Symlink,
+            "a symlink is not a regular file: following it would read bytes the path does not own"
+        );
+    }
 
     // A submodule is a directory whose contents belong to another repository.
     let submodule = root.join("vendor");
@@ -642,18 +645,21 @@ fn one_local_reader_answers_every_kind_of_path_with_its_own_typed_result() {
 
     // A name that is not UTF-8 is still a name on this machine, and the reader keeps its
     // bytes rather than substituting a replacement character.
-    use std::os::unix::ffi::OsStrExt;
-    let raw = root.join(std::ffi::OsStr::from_bytes(b"caf\xe9.txt"));
-    if std::fs::write(&raw, b"latin-1 name").is_ok() {
-        match local::read(&root, b"caf\xe9.txt") {
-            FileRead::Bytes {
-                bytes,
-                content_kind,
-            } => {
-                assert_eq!(bytes, b"latin-1 name");
-                assert_eq!(content_kind, FileContentKind::Text);
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let raw = root.join(std::ffi::OsStr::from_bytes(b"caf\xe9.txt"));
+        if std::fs::write(&raw, b"latin-1 name").is_ok() {
+            match local::read(&root, b"caf\xe9.txt") {
+                FileRead::Bytes {
+                    bytes,
+                    content_kind,
+                } => {
+                    assert_eq!(bytes, b"latin-1 name");
+                    assert_eq!(content_kind, FileContentKind::Text);
+                }
+                other => panic!("a non-UTF-8 name must still be readable locally, got {other:?}"),
             }
-            other => panic!("a non-UTF-8 name must still be readable locally, got {other:?}"),
         }
     }
 }
