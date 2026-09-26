@@ -551,7 +551,11 @@ async fn linked_worktrees_registered_under_separate_roots_keep_both_bindings() {
             .response
             .worktrees
             .iter()
-            .find(|worktree| worktree.display_path == external_canonical.to_string_lossy())
+            .find(|worktree| {
+                std::fs::canonicalize(&worktree.display_path)
+                    .ok()
+                    .is_some_and(|path| path == external_canonical)
+            })
             .expect("external worktree remains visible")
             .worktree_id,
         external_worktree_id
