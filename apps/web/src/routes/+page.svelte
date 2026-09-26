@@ -1606,7 +1606,7 @@
     </main>
   {:else}
     <main
-      class="relative z-1 flex min-h-0 flex-1 flex-col overflow-hidden @5xl:grid @5xl:overflow-visible @5xl:grid-cols-[var(--left-sidebar-width)_minmax(0,1fr)_var(--right-sidebar-width)]"
+      class="relative z-1 flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto @5xl:grid @5xl:overflow-visible @5xl:grid-cols-[var(--left-sidebar-width)_minmax(0,1fr)_var(--right-sidebar-width)]"
       style={`--left-sidebar-width: ${mainDiffOpen ? 0 : leftSidebarCollapsed ? RAIL_WIDTH : leftSidebarWidth}px; --right-sidebar-width: ${rightSidebarWidth}px; --nav-height: ${leftSidebarCollapsed ? RAIL_HEIGHT : navHeight}px;`}
       data-launcher-open={launcherOpen}
       data-selected-repository={selectedRepositoryId ?? ""}
@@ -1701,7 +1701,7 @@
         <section
           class={mainDiffOpen
             ? "hidden"
-            : "flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-hidden p-3"}
+            : "flex h-[28rem] min-h-0 min-w-0 flex-none flex-col gap-2 overflow-hidden p-3 @5xl:h-auto @5xl:flex-1"}
           data-testid="history-panel"
         >
           <div class="shrink-0 flex items-center gap-2">
