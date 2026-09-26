@@ -218,7 +218,9 @@ describe("the native event stream on the wire", () => {
     // then sends the reconnect hint.
     const stream = await Stream.open(service.baseUrl, token, 0);
     await stream.until((buffer) => buffer.includes("retry: 3000"));
-    const parsed = frames(stream.text()).map((frame) => eventEnvelopeSchema.parse(frame.envelope));
+    const hintIndex = stream.text().indexOf("retry: 3000");
+    const replayText = stream.text().slice(0, hintIndex);
+    const parsed = frames(replayText).map((frame) => eventEnvelopeSchema.parse(frame.envelope));
     const replayed = parsed.filter(
       (envelope) =>
         envelope.payload.kind === "operation" || envelope.payload.kind === "repositoryChanged",
@@ -234,8 +236,8 @@ describe("the native event stream on the wire", () => {
           (envelope.payload.operation as { operationId?: string }).operationId === operationId,
       ),
     ).toBe(true);
-    // The hint follows the replay, never precedes it.
-    expect(stream.text().indexOf("retry: 3000")).toBeGreaterThan(stream.text().lastIndexOf("data: "));
+    // The submitted operation is in the replay before the hint. Live frames may
+    // legitimately arrive after that hint on the still-open stream.
     await stream.close();
 
     // A cursor at the newest replayed sequence replays nothing — but the operation's
@@ -243,7 +245,7 @@ describe("the native event stream on the wire", () => {
     // is that nothing on this stream is at or before the cursor.
     const newest = Math.max(...parsed.map((envelope) => envelope.sequence));
     const caughtUp = await Stream.open(service.baseUrl, token, newest);
-    await caughtUp.until((buffer) => buffer.startsWith("retry: 3000\n\n"));
+    await caughtUp.until((buffer) => buffer.includes("retry: 3000\n\n"));
     for (const frame of frames(caughtUp.text())) {
       expect(frame.id).toBeGreaterThan(newest);
     }
