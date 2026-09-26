@@ -173,6 +173,16 @@ pub struct Journal {
     _state_root_lock: Option<File>,
 }
 
+impl Drop for Journal {
+    fn drop(&mut self) {
+        if let Some(lock) = self._state_root_lock.take() {
+            // Release before closing the descriptor so an immediate restart can
+            // acquire the same state root on every supported filesystem.
+            let _ = lock.unlock();
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone)]
 struct JournalState {
     /// Keyed by operation id; the index holds the order.
