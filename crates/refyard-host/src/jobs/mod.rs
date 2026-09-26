@@ -21,7 +21,7 @@ pub mod recovery;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use refyard_contract::problem::{Problem, ProblemCode};
 use refyard_contract::reads::{
@@ -1030,6 +1030,10 @@ pub struct MutationEngine {
     queue: Queue<MutationRequest>,
     next_operation: AtomicU64,
     closed: AtomicBool,
+    /// Spawned tickets retain the engine (and journal) after their queue slot is released.
+    /// This lock orders task registration against shutdown closing the queue.
+    tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
+    shutdown_gate: tokio::sync::Mutex<()>,
     /// Where state changes are announced. `None` is an engine nobody subscribed to —
     /// tests, and a host that has not wired its event transport — and it changes nothing
     /// about what is journalled.
@@ -1079,6 +1083,8 @@ impl MutationEngine {
             queue: Queue::new(queue_limits),
             next_operation: AtomicU64::new(next_operation),
             closed: AtomicBool::new(false),
+            tasks: Mutex::new(Vec::new()),
+            shutdown_gate: tokio::sync::Mutex::new(()),
             events,
         })
     }
@@ -1126,15 +1132,29 @@ impl MutationEngine {
     /// effects to reach their own observed outcome. Running effects are never relabelled
     /// cancelled: they may already have changed the repository.
     pub async fn shutdown(&self) -> Result<(), Problem> {
-        self.closed.store(true, Ordering::SeqCst);
-        for ticket in self.queue.close() {
-            let record = self.journal.mark_cancelled(&ticket.id, now_millis())?;
-            self.publish(&record);
+        let _shutdown = self.shutdown_gate.lock().await;
+        let (pending, tasks) = {
+            let mut tasks = self.tasks.lock().expect("mutation tasks lock");
+            self.closed.store(true, Ordering::SeqCst);
+            let pending = self.queue.close();
+            (pending, std::mem::take(&mut *tasks))
+        };
+        let mut cancellation_error = None;
+        for ticket in pending {
+            match self.journal.mark_cancelled(&ticket.id, now_millis()) {
+                Ok(record) => self.publish(&record),
+                Err(problem) => {
+                    cancellation_error.get_or_insert(problem);
+                }
+            }
         }
-        while self.queue.running_count() != 0 {
-            tokio::task::yield_now().await;
+        for task in tasks {
+            // A panicked effect leaves its journal record for recovery; its queue slot
+            // is still released by QueueSlot. The join also waits for the task's Arc
+            // to drop, so close can release the journal lock before it returns.
+            let _ = task.await;
         }
-        Ok(())
+        cancellation_error.map_or(Ok(()), Err)
     }
 
     /// Submits one request, journalling it before it may run.
@@ -1443,14 +1463,16 @@ impl MutationEngine {
 
     /// Starts every queued operation the limits allow.
     fn pump(self: &Arc<Self>) {
+        let mut tasks = self.tasks.lock().expect("mutation tasks lock");
         if self.closed.load(Ordering::SeqCst) {
             return;
         }
+        tasks.retain(|task| !task.is_finished());
         for ticket in self.queue.take_startable() {
             let engine = Arc::clone(self);
-            tokio::spawn(async move {
+            tasks.push(tokio::spawn(async move {
                 engine.run_ticket(ticket).await;
-            });
+            }));
         }
     }
 
