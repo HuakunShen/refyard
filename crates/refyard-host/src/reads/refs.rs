@@ -178,7 +178,7 @@ pub async fn read_refs(
     let snapshot = snapshots.mint(SnapshotRequest {
         kind: SnapshotKind::Refs,
         repository_id: &record.repository_id,
-        worktree_id: None,
+        worktree_id: Some(&record.worktree_id),
         target_generation: &record.location.target_generation,
         tips: Vec::new(),
         head_oid: head.oid.clone(),

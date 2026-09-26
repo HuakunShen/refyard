@@ -308,7 +308,7 @@ async fn repository_root_of(state: &HttpState, repository_id: &str) -> Option<St
         .repositories
         .into_iter()
         .find(|record| record.repository_id == repository_id)
-        .map(|record| record.allowed_root_id)
+        .map(|record| record.allowed_root_id.as_str().to_string())
 }
 
 /// A request may only touch a repository its session was granted, directly or through
@@ -600,7 +600,7 @@ async fn register_repository(
         if !before.contains(&record.repository_id) || record.display_path == body.path {
             auth.grant(
                 &session.session_id,
-                &record.allowed_root_id,
+                record.allowed_root_id.as_str(),
                 &record.repository_id,
             );
         }
@@ -631,7 +631,7 @@ async fn revoke_repository(
         let root_has_repositories = answer
             .allowed_roots
             .iter()
-            .any(|allowed| allowed.allowed_root_id == root);
+            .any(|allowed| allowed.allowed_root_id.as_str() == root);
         state.auth.lock().expect("auth lock").revoke_repository(
             &body.repository_id,
             &root,

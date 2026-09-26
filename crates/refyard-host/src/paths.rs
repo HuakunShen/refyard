@@ -13,7 +13,7 @@
 //! shown" checkable: text never travels back in as a path, and an id minted before a
 //! target was rebuilt is refused for the new build.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 
 /// Bytes and their printable form.
@@ -150,6 +150,7 @@ struct PathRegistryState {
     id_by_key: HashMap<Vec<u8>, String>,
     bytes_by_id: HashMap<String, Vec<u8>>,
     generation_by_id: HashMap<String, String>,
+    worktree_by_id: HashMap<String, String>,
 }
 
 impl PathRegistry {
@@ -180,6 +181,9 @@ impl PathRegistry {
         state
             .generation_by_id
             .insert(id.clone(), target_generation.to_string());
+        state
+            .worktree_by_id
+            .insert(id.clone(), worktree_id.to_string());
         id
     }
 
@@ -226,6 +230,31 @@ impl PathRegistry {
     pub fn resolve_any(&self, path_id: &str) -> Option<Vec<u8>> {
         let state = self.inner.lock().expect("path registry lock");
         state.bytes_by_id.get(path_id).cloned()
+    }
+
+    /// Invalidates every path id minted for one worktree before its root binding is
+    /// retired. A surviving root may still access that worktree, but must read it again
+    /// and receive fresh ids rather than reuse a prior authorization.
+    pub fn invalidate_worktree(&self, worktree_id: &str) -> usize {
+        let mut state = self.inner.lock().expect("path registry lock");
+        let invalidated: HashSet<String> = state
+            .worktree_by_id
+            .iter()
+            .filter(|(_, known_worktree_id)| known_worktree_id.as_str() == worktree_id)
+            .map(|(path_id, _)| path_id.clone())
+            .collect();
+        if invalidated.is_empty() {
+            return 0;
+        }
+        for path_id in &invalidated {
+            state.bytes_by_id.remove(path_id);
+            state.generation_by_id.remove(path_id);
+            state.worktree_by_id.remove(path_id);
+        }
+        state
+            .id_by_key
+            .retain(|_, path_id| !invalidated.contains(path_id));
+        invalidated.len()
     }
 }
 
@@ -326,6 +355,21 @@ mod tests {
         assert_eq!(
             registry.bind("wt_1", "gen_1", b"a.txt"),
             registry.bind("wt_1", "gen_1", b"a.txt")
+        );
+    }
+
+    #[test]
+    fn retiring_a_worktree_invalidates_its_path_ids_but_not_another_worktree() {
+        let registry = PathRegistry::new();
+        let retired = registry.bind("wt_1", "gen_1", b"a.txt");
+        let retained = registry.bind("wt_2", "gen_1", b"a.txt");
+
+        assert_eq!(registry.invalidate_worktree("wt_1"), 1);
+        assert_eq!(registry.resolve("gen_1", &retired), None);
+        assert_eq!(registry.resolve_any(&retired), None);
+        assert_eq!(
+            registry.resolve_in("wt_2", "gen_1", &retained).as_deref(),
+            Some(&b"a.txt"[..])
         );
     }
 

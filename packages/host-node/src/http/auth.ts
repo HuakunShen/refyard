@@ -139,6 +139,20 @@ export interface AuthStore {
       readonly repositoryId: string;
     },
   ): boolean;
+  /**
+   * Add a newly approved root/repository to **every** live session.
+   *
+   * The mirror of `revokeRepository`, and it exists for the same reason: a grant is a fact
+   * about the service rather than about one session. An embedding host approves a
+   * repository on its own initiative, so a session that paired before that approval must
+   * not be the one session that cannot read it.
+   * @param input - the approval to record.
+   * @returns how many live sessions gained it.
+   */
+  grantRepository(input: {
+    readonly allowedRootId: string;
+    readonly repositoryId: string;
+  }): number;
   /** Remove a revoked repository from every live session. */
   revokeRepository(
     repositoryId: string,
@@ -447,6 +461,36 @@ export function createAuthStore(options: AuthStoreOptions): AuthStore {
         return true;
       }
       return false;
+    },
+
+    grantRepository(input): number {
+      let granted = 0;
+      for (const [token, session] of sessions) {
+        if (
+          session.grants.repositoryIds.includes(input.repositoryId) &&
+          session.grants.allowedRootIds.includes(input.allowedRootId)
+        ) {
+          continue;
+        }
+        sessions.set(token, {
+          ...session,
+          grants: {
+            allowedRootIds: session.grants.allowedRootIds.includes(
+              input.allowedRootId,
+            )
+              ? [...session.grants.allowedRootIds]
+              : [...session.grants.allowedRootIds, input.allowedRootId],
+            repositoryIds: session.grants.repositoryIds.includes(
+              input.repositoryId,
+            )
+              ? [...session.grants.repositoryIds]
+              : [...session.grants.repositoryIds, input.repositoryId],
+            scopes: [...session.grants.scopes],
+          },
+        });
+        granted += 1;
+      }
+      return granted;
     },
 
     revokeRepository(repositoryId, allowedRootId, rootHasRepositories): void {

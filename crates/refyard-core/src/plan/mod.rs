@@ -15,12 +15,19 @@
 //! - stdin for anything unstructured (tips, pathspecs, messages) instead of
 //!   interpolating it into an argument.
 
+pub mod branches;
 pub mod commit;
 pub mod diff;
 pub mod history;
+pub mod merge;
 pub mod paths;
 pub mod refs;
+pub mod remotes;
+pub mod replay;
 pub mod status;
+pub mod submodules;
+pub mod tags;
+pub mod worktrees;
 
 use std::path::PathBuf;
 use std::time::Duration;

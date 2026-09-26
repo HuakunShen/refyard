@@ -57,6 +57,77 @@ pub struct RepositoryRecord {
     pub relative_path: String,
     pub layout: RepositoryLayout,
     pub location: RepositoryLocation,
+    /// All explicitly registered worktrees that share this common Git directory.
+    /// The fields above mirror the first active worktree for existing callers; new
+    /// worktree-aware reads resolve through this collection before choosing a cwd.
+    pub worktrees: Vec<RegisteredWorktree>,
+}
+
+/// One target-native worktree and the roots that explicitly approved it.
+#[derive(Debug, Clone)]
+pub struct RegisteredWorktree {
+    pub worktree_id: String,
+    pub display_name: String,
+    pub display_path: String,
+    pub layout: RepositoryLayout,
+    pub location: RepositoryLocation,
+    pub root_bindings: Vec<WorkspaceRootBinding>,
+}
+
+/// Host-only association between one approved root and a worktree.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceRootBinding {
+    pub allowed_root_id: String,
+    pub root_path: PathBuf,
+    pub relative_path: String,
+}
+
+/// One worktree whose root binding was retired. The service uses this exact pair to
+/// invalidate process-local path ids, snapshots and preview tokens before returning.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RootRevocation {
+    pub repository_id: String,
+    pub worktree_id: String,
+}
+
+impl RepositoryRecord {
+    /// Creates the single-worktree view used by a read or mutation after its selectors
+    /// have been authorized. When a root is supplied, its exact binding is required.
+    pub fn selected_worktree(
+        &self,
+        worktree_id: Option<&str>,
+        allowed_root_id: Option<&str>,
+    ) -> Option<Self> {
+        let worktree = match worktree_id {
+            Some(worktree_id) => self
+                .worktrees
+                .iter()
+                .find(|worktree| worktree.worktree_id == worktree_id)?,
+            None => self
+                .worktrees
+                .iter()
+                .find(|worktree| worktree.worktree_id == self.worktree_id)
+                .or_else(|| self.worktrees.first())?,
+        };
+        let binding = match allowed_root_id {
+            Some(allowed_root_id) => worktree
+                .root_bindings
+                .iter()
+                .find(|binding| binding.allowed_root_id == allowed_root_id)?,
+            None => worktree.root_bindings.first()?,
+        };
+        let mut selected = self.clone();
+        selected.allowed_root_id = binding.allowed_root_id.clone();
+        selected.worktree_id = worktree.worktree_id.clone();
+        selected.display_name = worktree.display_name.clone();
+        selected.display_path = worktree.display_path.clone();
+        selected.root_path = binding.root_path.clone();
+        selected.relative_path = binding.relative_path.clone();
+        selected.layout = worktree.layout.clone();
+        selected.location = worktree.location.clone();
+        selected.worktrees = vec![worktree.clone()];
+        Some(selected)
+    }
 }
 
 /// Parses the output of `plan_repository_layout`.
@@ -131,21 +202,37 @@ pub fn build_record(
         .map(|name| name.to_string_lossy().into_owned())
         .filter(|name| !name.is_empty())
         .unwrap_or_else(|| canonical_worktree.clone());
+    let display_path = display.text;
+    let location = RepositoryLocation {
+        target_id: target_id.to_string(),
+        target_generation: target_generation.to_string(),
+        canonical_worktree: canonical_worktree.clone(),
+        canonical_common_dir: String::new(),
+    };
+    let root_binding = WorkspaceRootBinding {
+        allowed_root_id: allowed_root_id.to_string(),
+        root_path: root_path.to_path_buf(),
+        relative_path: relative_path.to_string(),
+    };
+    let worktree = RegisteredWorktree {
+        worktree_id: "wt_1".to_string(),
+        display_name: display_name.clone(),
+        display_path: display_path.clone(),
+        layout: layout.clone(),
+        location: location.clone(),
+        root_bindings: vec![root_binding],
+    };
     RepositoryRecord {
         repository_id,
         allowed_root_id: allowed_root_id.to_string(),
         worktree_id: "wt_1".to_string(),
         display_name,
-        display_path: display.text,
+        display_path,
         root_path: root_path.to_path_buf(),
         relative_path: relative_path.to_string(),
         layout,
-        location: RepositoryLocation {
-            target_id: target_id.to_string(),
-            target_generation: target_generation.to_string(),
-            canonical_worktree,
-            canonical_common_dir: String::new(),
-        },
+        location,
+        worktrees: vec![worktree],
     }
 }
 
@@ -275,9 +362,11 @@ pub struct RepositoryRegistry {
 #[derive(Debug, Default)]
 struct RegistryState {
     next: u64,
+    next_worktree: u64,
     order: Vec<String>,
     by_id: HashMap<String, RepositoryRecord>,
     id_by_location: HashMap<String, String>,
+    worktree_id_by_path: HashMap<(String, Vec<u8>), String>,
 }
 
 /// The identity key of a repository: one common directory **on one target**.
@@ -328,10 +417,63 @@ impl RepositoryRegistry {
         let common = record.layout.common_dir.clone();
         let key = location_key(&record.location.target_id, &common);
         if let Some(existing) = state.id_by_location.get(&key).cloned() {
-            if let Some(known) = state.by_id.get(&existing) {
-                if known.location.target_generation == record.location.target_generation {
-                    return Ok(known.clone());
+            let same_generation = state.by_id.get(&existing).is_some_and(|known| {
+                known.location.target_generation == record.location.target_generation
+            });
+            if same_generation {
+                record.location.canonical_common_dir = common.clone();
+                for worktree in &mut record.worktrees {
+                    worktree.location.canonical_common_dir = common.clone();
                 }
+                let mut incoming = record.worktrees.into_iter().next().ok_or_else(|| {
+                    Problem::new(
+                        ProblemCode::InternalError,
+                        "a registered repository must contain at least one worktree",
+                    )
+                })?;
+                let has_same_worktree = state
+                    .by_id
+                    .get(&existing)
+                    .expect("the existing repository id remains present under the registry lock")
+                    .worktrees
+                    .iter()
+                    .any(|known_worktree| {
+                        known_worktree.location.canonical_worktree
+                            == incoming.location.canonical_worktree
+                    });
+                if !has_same_worktree {
+                    let path_key = (
+                        existing.clone(),
+                        target_path_identity(&incoming.location.canonical_worktree),
+                    );
+                    if let Some(worktree_id) = state.worktree_id_by_path.get(&path_key) {
+                        incoming.worktree_id = worktree_id.clone();
+                    } else {
+                        state.next_worktree += 1;
+                        incoming.worktree_id = format!("wt_{}", state.next_worktree);
+                        state
+                            .worktree_id_by_path
+                            .insert(path_key, incoming.worktree_id.clone());
+                    }
+                }
+                let known = state
+                    .by_id
+                    .get_mut(&existing)
+                    .expect("the existing repository id remains present under the registry lock");
+                if let Some(known_worktree) = known.worktrees.iter_mut().find(|known_worktree| {
+                    known_worktree.location.canonical_worktree
+                        == incoming.location.canonical_worktree
+                }) {
+                    for binding in incoming.root_bindings.drain(..) {
+                        if !known_worktree.root_bindings.contains(&binding) {
+                            known_worktree.root_bindings.push(binding);
+                        }
+                    }
+                } else {
+                    known.worktrees.push(incoming);
+                }
+                sync_primary_worktree(known);
+                return Ok(known.clone());
             }
             revoke_locked(&mut state, &existing);
         }
@@ -342,6 +484,19 @@ impl RepositoryRegistry {
             ));
         }
         record.location.canonical_common_dir = common;
+        for worktree in &mut record.worktrees {
+            worktree.location.canonical_common_dir = record.location.canonical_common_dir.clone();
+        }
+        state.next_worktree = state.next_worktree.max(1);
+        for worktree in &record.worktrees {
+            state.worktree_id_by_path.insert(
+                (
+                    record.repository_id.clone(),
+                    target_path_identity(&worktree.location.canonical_worktree),
+                ),
+                worktree.worktree_id.clone(),
+            );
+        }
         state
             .id_by_location
             .insert(key, record.repository_id.clone());
@@ -355,6 +510,28 @@ impl RepositoryRegistry {
     pub fn get(&self, repository_id: &str) -> Option<RepositoryRecord> {
         let state = self.inner.lock().expect("registry lock");
         state.by_id.get(repository_id).cloned()
+    }
+
+    /// Stable target-generation-local identity for a path Git reported, including an
+    /// external worktree that has not yet been approved under any root. Unbound ids may
+    /// be displayed by the source worktree panel, but `require_worktree` will not grant
+    /// them read or write access until registration adds an explicit root binding.
+    pub fn worktree_id_for_path(&self, repository_id: &str, path_bytes: &[u8]) -> Option<String> {
+        let mut state = self.inner.lock().expect("registry lock");
+        let record = state.by_id.get(repository_id)?;
+        if let Some(worktree) = record.worktrees.iter().find(|worktree| {
+            target_path_identity(&worktree.location.canonical_worktree) == path_bytes
+        }) {
+            return Some(worktree.worktree_id.clone());
+        }
+        let key = (repository_id.to_string(), path_bytes.to_vec());
+        if let Some(worktree_id) = state.worktree_id_by_path.get(&key) {
+            return Some(worktree_id.clone());
+        }
+        state.next_worktree += 1;
+        let worktree_id = format!("wt_{}", state.next_worktree);
+        state.worktree_id_by_path.insert(key, worktree_id.clone());
+        Some(worktree_id)
     }
 
     pub fn list(&self) -> Vec<RepositoryRecord> {
@@ -400,6 +577,85 @@ impl RepositoryRegistry {
         }
         doomed
     }
+
+    /// Removes every repository row authorized by one workspace root and returns their ids.
+    pub fn revoke_root(&self, allowed_root_id: &str) -> Vec<RootRevocation> {
+        let mut state = self.inner.lock().expect("registry lock");
+        let repository_ids = state.order.clone();
+        let mut doomed = Vec::new();
+        let mut affected = Vec::new();
+        for repository_id in repository_ids {
+            let Some(record) = state.by_id.get_mut(&repository_id) else {
+                continue;
+            };
+            for worktree in &mut record.worktrees {
+                if worktree
+                    .root_bindings
+                    .iter()
+                    .any(|binding| binding.allowed_root_id == allowed_root_id)
+                {
+                    affected.push(RootRevocation {
+                        repository_id: repository_id.clone(),
+                        worktree_id: worktree.worktree_id.clone(),
+                    });
+                }
+                worktree
+                    .root_bindings
+                    .retain(|binding| binding.allowed_root_id != allowed_root_id);
+            }
+            record
+                .worktrees
+                .retain(|worktree| !worktree.root_bindings.is_empty());
+            if record.worktrees.is_empty() {
+                doomed.push(repository_id);
+            } else {
+                sync_primary_worktree(record);
+            }
+        }
+        for repository_id in &doomed {
+            revoke_locked(&mut state, repository_id);
+        }
+        affected
+    }
+}
+
+/// Keeps the legacy single-worktree view aligned with the first active worktree.
+fn sync_primary_worktree(record: &mut RepositoryRecord) {
+    let Some(worktree) = record.worktrees.first() else {
+        return;
+    };
+    let Some(binding) = worktree.root_bindings.first() else {
+        return;
+    };
+    record.allowed_root_id = binding.allowed_root_id.clone();
+    record.worktree_id = worktree.worktree_id.clone();
+    record.display_name = worktree.display_name.clone();
+    record.display_path = worktree.display_path.clone();
+    record.root_path = binding.root_path.clone();
+    record.relative_path = binding.relative_path.clone();
+    record.layout = worktree.layout.clone();
+    record.location = worktree.location.clone();
+}
+
+fn target_path_identity(path: &str) -> Vec<u8> {
+    let path = Path::new(path);
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        path.as_os_str().as_bytes().to_vec()
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        path.as_os_str()
+            .encode_wide()
+            .flat_map(u16::to_le_bytes)
+            .collect()
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        path.to_string_lossy().as_bytes().to_vec()
+    }
 }
 
 /// Removes one repository and its location binding. The caller holds the lock.
@@ -411,6 +667,9 @@ fn revoke_locked(state: &mut RegistryState, repository_id: &str) {
         &record.location.target_id,
         &record.layout.common_dir,
     ));
+    state
+        .worktree_id_by_path
+        .retain(|(known_repository_id, _), _| known_repository_id != repository_id);
     state.order.retain(|id| id != repository_id);
 }
 
@@ -578,6 +837,20 @@ mod tests {
     }
 
     fn fixture_record(id: &str, common_dir: &str) -> RepositoryRecord {
+        let layout = RepositoryLayout {
+            git_dir: common_dir.to_string(),
+            top_level: Some("/repo".to_string()),
+            common_dir: common_dir.to_string(),
+            is_bare: false,
+            object_format: "sha1".to_string(),
+            is_shallow: false,
+        };
+        let location = RepositoryLocation {
+            target_id: "tgt_local".to_string(),
+            target_generation: "gen_1".to_string(),
+            canonical_worktree: "/repo".to_string(),
+            canonical_common_dir: String::new(),
+        };
         RepositoryRecord {
             repository_id: id.to_string(),
             allowed_root_id: "root_1".to_string(),
@@ -586,20 +859,20 @@ mod tests {
             display_path: "/repo".to_string(),
             root_path: PathBuf::from("/"),
             relative_path: "repo".to_string(),
-            layout: RepositoryLayout {
-                git_dir: common_dir.to_string(),
-                top_level: Some("/repo".to_string()),
-                common_dir: common_dir.to_string(),
-                is_bare: false,
-                object_format: "sha1".to_string(),
-                is_shallow: false,
-            },
-            location: RepositoryLocation {
-                target_id: "tgt_local".to_string(),
-                target_generation: "gen_1".to_string(),
-                canonical_worktree: "/repo".to_string(),
-                canonical_common_dir: String::new(),
-            },
+            layout: layout.clone(),
+            location: location.clone(),
+            worktrees: vec![RegisteredWorktree {
+                worktree_id: "wt_1".to_string(),
+                display_name: "repo".to_string(),
+                display_path: "/repo".to_string(),
+                layout,
+                location,
+                root_bindings: vec![WorkspaceRootBinding {
+                    allowed_root_id: "root_1".to_string(),
+                    root_path: PathBuf::from("/"),
+                    relative_path: "repo".to_string(),
+                }],
+            }],
         }
     }
 }

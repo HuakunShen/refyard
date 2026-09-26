@@ -10,12 +10,24 @@
   import Check from "@lucide/svelte/icons/check";
   import { cn } from "../lib/utils.js";
   import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
-  import type { TranslationKey } from "../lib/i18n/types.js";
   import {
     densityMetrics,
     ROW_DENSITIES,
     type RowDensity,
   } from "../lib/geometry.js";
+  import { m, type UiLanguage } from "../i18n.js";
+
+  /** Name the choices in the active locale, including after the root remounts on change. */
+  function languageChoices(): readonly {
+    readonly id: UiLanguage;
+    readonly label: string;
+  }[] {
+    return [
+      { id: "auto", label: m.settings_language_auto() },
+      { id: "en", label: m.settings_language_en() },
+      { id: "zh", label: m.settings_language_zh() },
+    ];
+  }
 
   interface Props {
     accent: string;
@@ -23,7 +35,10 @@
     glass: boolean;
     avatars: boolean;
     density: RowDensity;
+    /** The reader's language preference; `auto` follows the browser. */
+    language: UiLanguage;
     onAccentChange: (accent: string) => void;
+    onLanguageChange?: (language: UiLanguage) => void;
     onBackgroundChange: (bg: string) => void;
     onGlassChange: (glass: boolean) => void;
     onAvatarsChange?: (avatars: boolean) => void;
@@ -36,7 +51,9 @@
     glass,
     avatars,
     density,
+    language,
     onAccentChange,
+    onLanguageChange = undefined,
     onBackgroundChange,
     onGlassChange,
     onAvatarsChange = undefined,
@@ -44,22 +61,17 @@
   }: Props = $props();
   const { t } = useGitViewI18n();
 
-  const DENSITY_NOTES: Record<RowDensity, string> = {
-    compact: t("appearance.density.compactNote"),
-    comfortable: t("appearance.density.comfortableNote"),
-    roomy: t("appearance.density.roomyNote"),
-  };
-  const DENSITY_NAMES: Readonly<Record<RowDensity, TranslationKey>> = {
-    compact: "appearance.density.compact", comfortable: "appearance.density.comfortable",
-    roomy: "appearance.density.roomy",
-  };
-
   /** The three buttons, each drawn with its own node size so the choice is visible. */
   const DENSITIES = ROW_DENSITIES.map((id) => {
     const metrics = densityMetrics(id);
     return {
       id,
-      name: t(DENSITY_NAMES[id]),
+      name:
+        id === "compact"
+          ? m.settings_density_compact()
+          : id === "comfortable"
+            ? m.settings_density_comfortable()
+            : m.settings_density_roomy(),
       // The dot in the button is the graph's node at that density, capped so the
       // roomy one does not outgrow the button.
       node: Math.round(Math.min(14, metrics.radius * 2)),
@@ -85,12 +97,42 @@
       color: "#52525b",
       bg: "bg-zinc-600",
     },
-    { id: "blue", name: t("appearance.accent.blue"), color: "#2563eb", bg: "bg-blue-600" },
-    { id: "emerald", name: t("appearance.accent.emerald"), color: "#059669", bg: "bg-emerald-600" },
-    { id: "violet", name: t("appearance.accent.violet"), color: "#7c3aed", bg: "bg-violet-600" },
-    { id: "rose", name: t("appearance.accent.rose"), color: "#e11d48", bg: "bg-rose-600" },
-    { id: "amber", name: t("appearance.accent.amber"), color: "#d97706", bg: "bg-amber-600" },
-    { id: "cyan", name: t("appearance.accent.cyan"), color: "#0891b2", bg: "bg-cyan-600" },
+    {
+      id: "blue",
+      name: t("appearance.accent.blue"),
+      color: "#2563eb",
+      bg: "bg-blue-600",
+    },
+    {
+      id: "emerald",
+      name: t("appearance.accent.emerald"),
+      color: "#059669",
+      bg: "bg-emerald-600",
+    },
+    {
+      id: "violet",
+      name: t("appearance.accent.violet"),
+      color: "#7c3aed",
+      bg: "bg-violet-600",
+    },
+    {
+      id: "rose",
+      name: t("appearance.accent.rose"),
+      color: "#e11d48",
+      bg: "bg-rose-600",
+    },
+    {
+      id: "amber",
+      name: t("appearance.accent.amber"),
+      color: "#d97706",
+      bg: "bg-amber-600",
+    },
+    {
+      id: "cyan",
+      name: t("appearance.accent.cyan"),
+      color: "#0891b2",
+      bg: "bg-cyan-600",
+    },
   ];
 
   const PRESET_BACKGROUNDS = [
@@ -168,7 +210,8 @@
         {t("appearance.background.title")}
       </span>
       {#if background !== "none"}
-        <Badge tone="branch" class="text-[10px]">{t("appearance.active")}</Badge>
+        <Badge tone="branch" class="text-[10px]">{t("appearance.active")}</Badge
+        >
       {/if}
     </div>
 
@@ -274,7 +317,9 @@
     class="flex items-center justify-between rounded-lg border border-border/60 bg-card/50 p-3"
   >
     <div class="flex flex-col gap-0.5">
-      <span class="text-xs font-medium text-foreground">{t("appearance.avatars.title")}</span>
+      <span class="text-xs font-medium text-foreground"
+        >{t("appearance.avatars.title")}</span
+      >
       <span class="text-[11px] text-ink-faint">
         {t("appearance.avatars.description")}
       </span>
@@ -294,20 +339,64 @@
     </label>
   </div>
 
+  <!-- Language -->
+  <div class="flex flex-col gap-2">
+    <div class="flex items-center justify-between">
+      <span
+        class="text-xs font-semibold uppercase tracking-wider text-ink-muted"
+      >
+        {m.settings_language()}
+      </span>
+      <span class="text-[11px] text-ink-faint"
+        >{language === "auto" ? m.settings_language_auto_hint() : ""}</span
+      >
+    </div>
+    <div
+      class="grid grid-cols-3 gap-2"
+      role="radiogroup"
+      aria-label={m.settings_language()}
+    >
+      {#each languageChoices() as choice (choice.id)}
+        {@const active = language === choice.id}
+        <button
+          type="button"
+          role="radio"
+          aria-checked={active}
+          onclick={() => onLanguageChange?.(choice.id)}
+          class={cn(
+            "flex items-center justify-center gap-2 rounded-lg border p-2 text-left text-xs transition-all",
+            active
+              ? "border-primary bg-primary/10 font-medium text-foreground shadow-xs"
+              : "border-border/60 bg-card/60 hover:border-border hover:bg-accent/40 text-ink-muted",
+          )}
+          data-testid={`settings-language-${choice.id}`}
+        >
+          <span class="truncate">{choice.label}</span>
+        </button>
+      {/each}
+    </div>
+  </div>
+
   <!-- Row Density -->
   <div class="flex flex-col gap-2">
     <div class="flex items-center justify-between">
       <span
         class="text-xs font-semibold uppercase tracking-wider text-ink-muted"
       >
-        {t("appearance.density.title")}
+        {m.settings_density()}
       </span>
-      <span class="text-[11px] text-ink-faint">{DENSITY_NOTES[density]}</span>
+      <span class="text-[11px] text-ink-faint"
+        >{density === "compact"
+          ? m.settings_density_compact()
+          : density === "comfortable"
+            ? m.settings_density_comfortable()
+            : m.settings_density_roomy()}</span
+      >
     </div>
     <div
       class="grid grid-cols-3 gap-2"
       role="radiogroup"
-      aria-label={t("appearance.density.group")}
+      aria-label={m.settings_density()}
     >
       {#each DENSITIES as item (item.id)}
         {@const active = density === item.id}

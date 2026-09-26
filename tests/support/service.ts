@@ -149,6 +149,8 @@ export interface StartTestServiceOptions {
   /** Extra web assets to serve, for the static-file cases. */
   readonly webRoot?: string | null;
   readonly inlineDocument?: string;
+  /** Origins allowed to frame a served document; absent keeps `frame-ancestors 'none'`. */
+  readonly frameAncestors?: readonly string[];
   readonly limits?: { readonly maxBodyBytes?: number };
   /** Grant this session access to a repository id it will otherwise not own. */
   readonly extraRepositoryIds?: readonly string[];
@@ -373,6 +375,9 @@ export async function startTestService(
     ...(options.inlineDocument === undefined
       ? {}
       : { inlineDocument: options.inlineDocument }),
+    ...(options.frameAncestors === undefined
+      ? {}
+      : { frameAncestors: options.frameAncestors }),
     ...(options.limits === undefined ? {} : { limits: options.limits }),
     repositoryRootOf: (repositoryId) =>
       repositories.get(repositoryId)?.allowedRootId ?? null,

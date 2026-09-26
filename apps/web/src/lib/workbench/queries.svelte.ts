@@ -415,6 +415,22 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
   }
 
   /**
+   * Whether the named target is this machine, for a UI that shows an icon rather than
+   * the label's two words. A host may place this machine's own repositories under a
+   * target id — the desktop one does — so "has a target id" is not "is elsewhere": the
+   * kind is read from the same list the label is. An id the list does not name answers
+   * null, which renders no machine marker at all instead of a wrong one.
+   */
+  function targetKindFor(
+    targetId: string | null | undefined,
+  ): "local" | "remote" | undefined {
+    if (targetId === null || targetId === undefined) return undefined;
+    const target = targets.find((summary) => summary.targetId === targetId);
+    if (target === undefined) return undefined;
+    return target.kind === "local" ? "local" : "remote";
+  }
+
+  /**
    * The prefix every read of one repository is cached under, from the target it lives on
    * and its path. A repository the list no longer contains maps to the repository id in
    * the path slot, which cannot equal a real path: a late invalidation for a revoked
@@ -929,6 +945,7 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
     /** The key prefix one execution target's reads are cached under, for invalidation. */
     targetCachePrefixFor,
     targetLabelFor,
+    targetKindFor,
     /** Whether a repository's machine may currently be read from. */
     targetReadyFor,
     /** Re-reads the target list; the page calls it after creating or releasing one. */

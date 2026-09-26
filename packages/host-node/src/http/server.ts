@@ -89,6 +89,13 @@ export interface HttpHostOptions {
   readonly webRoot?: string | null;
   /** Document served when there is no web build; see `AssetServerOptions`. */
   readonly inlineDocument?: string;
+  /**
+   * Origins allowed to frame this service's documents; absent means `'none'`.
+   *
+   * An embedding host that renders the workbench inside its own chrome names the exact
+   * origin it frames from. See `AssetServerOptions.frameAncestors`.
+   */
+  readonly frameAncestors?: readonly string[];
   readonly limits?: Partial<HttpLimits>;
   /** Grants every session paired through this host receives. */
   readonly grants: SessionGrants;
@@ -133,6 +140,22 @@ export interface HttpHost {
   readonly events: EventRing;
   /** A browser pairing URL carrying one short-lived ticket. */
   pairingUrl(origin: string): string;
+  /**
+   * Record a repository this host approved on its own initiative, outside any session.
+   *
+   * The HTTP route that registers a repository also grants it, but an embedding host may
+   * approve one before any session exists — it mints the pairing ticket itself. Without
+   * this, such a host would hold a repository its own freshly paired session is then
+   * refused, which reads as a broken workbench rather than a missing grant.
+   *
+   * The grant joins every ticket minted afterwards **and** every live session, so the order
+   * of approval and pairing never decides what a session may read.
+   * @param approval - the approved root and repository.
+   */
+  grantRepository(approval: {
+    readonly repositoryId: string;
+    readonly allowedRootId: string;
+  }): void;
   close(): Promise<void>;
 }
 
@@ -166,6 +189,9 @@ export async function startHttpHost(
     ...(options.inlineDocument === undefined
       ? {}
       : { inlineDocument: options.inlineDocument }),
+    ...(options.frameAncestors === undefined
+      ? {}
+      : { frameAncestors: options.frameAncestors }),
   });
   const log = options.log ?? ((): void => {});
   const now = options.now ?? Date.now;
@@ -516,6 +542,14 @@ export async function startHttpHost(
       // also strips it from the address bar as soon as it is spent. The fragment spelling
       // (`/#pair=…`) keeps working for URLs already in circulation.
       return `${origin}/?pair=${ticket.ticket}`;
+    },
+
+    grantRepository(approval): void {
+      currentGrants = addGrant(currentGrants, approval);
+      const granted = auth.grantRepository(approval);
+      log(
+        `granted ${approval.repositoryId} to every ticket from now on and to ${String(granted)} live session(s)`,
+      );
     },
 
     async close(): Promise<void> {

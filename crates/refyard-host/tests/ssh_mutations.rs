@@ -759,7 +759,7 @@ async fn naming_a_state_directory_after_registering_the_writes_keeps_them() {
     let capabilities = service.capabilities().await.expect("capabilities");
     assert_eq!(
         capabilities.operations.len(),
-        3,
+        42,
         "the write path must survive a later state directory being named"
     );
 
@@ -790,6 +790,7 @@ async fn naming_a_state_directory_after_registering_the_writes_keeps_them() {
 /// It exists so "the batch was refused before Git was started" can be measured: a test
 /// that only asserted the problem code could not tell a refusal-before-Git from a refusal
 /// after Git ran and changed nothing.
+#[cfg(unix)]
 fn logging_git(fixture: &Fixture, log: &Path) -> LocalGit {
     let script = fixture.temp.path().join("logging-git.sh");
     let body = format!(
@@ -813,6 +814,7 @@ fn logging_git(fixture: &Fixture, log: &Path) -> LocalGit {
 /// Node reference performs too — so a test cannot assert "no Git process ran at all". It
 /// can and does assert that no *write* command ran, which is what "the batch is refused
 /// before Git is started" means for a mutation.
+#[cfg(unix)]
 fn write_invocations(log: &Path) -> usize {
     std::fs::read_to_string(log)
         .map(|text| {
@@ -824,6 +826,7 @@ fn write_invocations(log: &Path) -> usize {
 }
 
 #[tokio::test]
+#[cfg(unix)]
 async fn a_refused_batch_never_started_git_and_left_the_repository_alone() {
     // Prevents: a batch that runs `git add` for the paths it could resolve and then fails
     // on the one it could not — the index would hold half of what the user selected, and
@@ -921,6 +924,7 @@ async fn a_refused_batch_never_started_git_and_left_the_repository_alone() {
 /* ------------------------------------------------------------------ hooks */
 
 #[tokio::test]
+#[cfg(unix)]
 async fn a_failing_pre_commit_hook_is_reported_and_leaves_the_repository_unchanged() {
     // Prevents: a hook failure turned into "succeeded because git was run", or a retry
     // (or a `--no-verify`) that commits what the user's own hook refused.
@@ -976,6 +980,7 @@ async fn a_failing_pre_commit_hook_is_reported_and_leaves_the_repository_unchang
 }
 
 #[tokio::test]
+#[cfg(unix)]
 async fn a_commit_that_exists_while_git_reported_failure_is_needs_attention_not_a_failure() {
     // Prevents: a commit that landed being reported as "nothing happened" — and a commit
     // that landed being reported as a plain success when Git also complained. The JSON
@@ -1044,6 +1049,7 @@ async fn a_commit_that_exists_while_git_reported_failure_is_needs_attention_not_
 
 /// A `git` that stages for real and then dies without reporting a status, standing in for
 /// a connection that dropped after the remote command had already run.
+#[cfg(unix)]
 fn dying_git(fixture: &Fixture) -> LocalGit {
     let script = fixture.temp.path().join("dying-git.sh");
     std::fs::write(
@@ -1059,6 +1065,7 @@ fn dying_git(fixture: &Fixture) -> LocalGit {
     LocalGit::at(script, fixture.env.clone())
 }
 
+#[cfg(unix)]
 fn make_executable(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
     let mut permissions = std::fs::metadata(path).expect("exists").permissions();
@@ -1067,6 +1074,7 @@ fn make_executable(path: &Path) {
 }
 
 #[tokio::test]
+#[cfg(unix)]
 async fn a_stage_whose_git_died_after_the_index_moved_is_unknown_and_blocks_the_repository() {
     // Prevents: a dropped connection reported as "nothing happened" when the index has
     // already changed, and an automatic retry that stages on top of an outcome nobody
@@ -1280,7 +1288,7 @@ async fn a_replayed_request_is_not_executed_twice() {
 }
 
 #[tokio::test]
-async fn capabilities_name_exactly_the_three_implemented_writes() {
+async fn capabilities_name_exactly_the_forty_two_implemented_writes() {
     // Prevents: a capability answer that offers a write this build cannot run, or hides
     // one it can — the UI enables controls from this list.
     let fixture = Fixture::new();
@@ -1297,6 +1305,48 @@ async fn capabilities_name_exactly_the_three_implemented_writes() {
             (MutationKind::StagePaths, vec![TargetKind::Worktree]),
             (MutationKind::UnstagePaths, vec![TargetKind::Worktree]),
             (MutationKind::Commit, vec![TargetKind::Worktree]),
+            (MutationKind::AmendCommit, vec![TargetKind::Worktree]),
+            (MutationKind::CreateBranch, vec![TargetKind::Repository]),
+            (MutationKind::SwitchBranch, vec![TargetKind::Worktree]),
+            (MutationKind::RenameBranch, vec![TargetKind::Repository]),
+            (MutationKind::DeleteBranch, vec![TargetKind::Repository]),
+            (
+                MutationKind::SetBranchUpstream,
+                vec![TargetKind::Repository]
+            ),
+            (MutationKind::AddRemote, vec![TargetKind::Repository]),
+            (MutationKind::UpdateRemote, vec![TargetKind::Repository]),
+            (MutationKind::RemoveRemote, vec![TargetKind::Repository]),
+            (MutationKind::Fetch, vec![TargetKind::Repository]),
+            (MutationKind::Push, vec![TargetKind::Repository]),
+            (MutationKind::Pull, vec![TargetKind::Worktree]),
+            (MutationKind::CreateStash, vec![TargetKind::Worktree]),
+            (MutationKind::ApplyStash, vec![TargetKind::Worktree]),
+            (MutationKind::PopStash, vec![TargetKind::Worktree]),
+            (MutationKind::DropStash, vec![TargetKind::Repository]),
+            (MutationKind::CreateTag, vec![TargetKind::Repository]),
+            (MutationKind::DeleteTag, vec![TargetKind::Repository]),
+            (MutationKind::PushTag, vec![TargetKind::Repository]),
+            (MutationKind::CreateWorktree, vec![TargetKind::Repository]),
+            (MutationKind::RemoveWorktree, vec![TargetKind::Repository]),
+            (MutationKind::LockWorktree, vec![TargetKind::Repository]),
+            (MutationKind::UnlockWorktree, vec![TargetKind::Repository]),
+            (MutationKind::AddSubmodule, vec![TargetKind::Worktree]),
+            (MutationKind::UpdateSubmodule, vec![TargetKind::Worktree]),
+            (MutationKind::SyncSubmodule, vec![TargetKind::Worktree]),
+            (MutationKind::Merge, vec![TargetKind::Worktree]),
+            (MutationKind::ContinueMerge, vec![TargetKind::Worktree]),
+            (MutationKind::AbortMerge, vec![TargetKind::Worktree]),
+            (MutationKind::RevertCommit, vec![TargetKind::Worktree]),
+            (MutationKind::ResetBranch, vec![TargetKind::Worktree]),
+            (MutationKind::CherryPick, vec![TargetKind::Worktree]),
+            (MutationKind::ContinueCherryPick, vec![TargetKind::Worktree]),
+            (MutationKind::AbortCherryPick, vec![TargetKind::Worktree]),
+            (MutationKind::Rebase, vec![TargetKind::Worktree]),
+            (MutationKind::ContinueRebase, vec![TargetKind::Worktree]),
+            (MutationKind::AbortRebase, vec![TargetKind::Worktree]),
+            (MutationKind::DropCommit, vec![TargetKind::Worktree]),
+            (MutationKind::SquashCommit, vec![TargetKind::Worktree]),
         ]
     );
     let unavailable = capabilities
@@ -1306,12 +1356,51 @@ async fn capabilities_name_exactly_the_three_implemented_writes() {
         .collect::<Vec<MutationKind>>();
     assert_eq!(
         unavailable.len(),
-        refyard_contract::reads::MUTATION_KINDS.len() - 3
+        refyard_contract::reads::MUTATION_KINDS.len() - 42
     );
     for offered in [
         MutationKind::StagePaths,
         MutationKind::UnstagePaths,
         MutationKind::Commit,
+        MutationKind::AmendCommit,
+        MutationKind::CreateBranch,
+        MutationKind::SwitchBranch,
+        MutationKind::RenameBranch,
+        MutationKind::DeleteBranch,
+        MutationKind::SetBranchUpstream,
+        MutationKind::AddRemote,
+        MutationKind::UpdateRemote,
+        MutationKind::RemoveRemote,
+        MutationKind::Fetch,
+        MutationKind::Push,
+        MutationKind::Pull,
+        MutationKind::CreateStash,
+        MutationKind::ApplyStash,
+        MutationKind::PopStash,
+        MutationKind::DropStash,
+        MutationKind::CreateTag,
+        MutationKind::DeleteTag,
+        MutationKind::PushTag,
+        MutationKind::CreateWorktree,
+        MutationKind::RemoveWorktree,
+        MutationKind::LockWorktree,
+        MutationKind::UnlockWorktree,
+        MutationKind::AddSubmodule,
+        MutationKind::UpdateSubmodule,
+        MutationKind::SyncSubmodule,
+        MutationKind::Merge,
+        MutationKind::ContinueMerge,
+        MutationKind::AbortMerge,
+        MutationKind::RevertCommit,
+        MutationKind::ResetBranch,
+        MutationKind::CherryPick,
+        MutationKind::ContinueCherryPick,
+        MutationKind::AbortCherryPick,
+        MutationKind::Rebase,
+        MutationKind::ContinueRebase,
+        MutationKind::AbortRebase,
+        MutationKind::DropCommit,
+        MutationKind::SquashCommit,
     ] {
         assert!(
             !unavailable.contains(&offered),
@@ -1319,7 +1408,8 @@ async fn capabilities_name_exactly_the_three_implemented_writes() {
         );
     }
     assert!(unavailable.contains(&MutationKind::DiscardTrackedPaths));
-    assert!(unavailable.contains(&MutationKind::Push));
+    assert!(unavailable.contains(&MutationKind::InitRepository));
+    assert!(unavailable.contains(&MutationKind::InitRepository));
 }
 
 /* ------------------------------------------------------------------ the fixture-backed cases */

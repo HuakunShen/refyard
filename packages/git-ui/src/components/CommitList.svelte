@@ -254,7 +254,10 @@
   const i18n = useGitViewI18n();
   const { t } = i18n;
 
-  function inject(key: Parameters<typeof t>[0], tokens: Readonly<Record<string, string>>): string {
+  function inject(
+    key: Parameters<typeof t>[0],
+    tokens: Readonly<Record<string, string>>,
+  ): string {
     let value = t(key);
     for (const [name, token] of Object.entries(tokens)) {
       value = value.replace(`{${name}}`, () => token);
@@ -267,7 +270,11 @@
     return Number.isNaN(timestamp)
       ? t("xross.time.invalid")
       : new Intl.DateTimeFormat(i18n.locale, {
-          year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
         }).format(timestamp);
   }
 
@@ -706,12 +713,38 @@
       : githubCommitUrl(githubRemoteUrl, commit.oid);
   }
 
+  /**
+   * The right button's *press* must not start anything. WebKit places the caret on
+   * right-mouse-down, so right-clicking a commit highlighted the words under and below
+   * the pointer; the `contextmenu` event's own preventDefault is too late, because the
+   * selection began one event earlier. Refusing the press's default stops exactly that,
+   * and the `contextmenu` event still fires, which is what opens the menu.
+   */
+  function refuseRightPress(event: MouseEvent): void {
+    if (event.button === 2) {
+      event.preventDefault();
+    }
+  }
+
+  /**
+   * Clears whatever the right press may have selected. WebKit's own handling can place
+   * a caret — and with it a word selection — on the press itself, before any DOM
+   * handler runs, so the menu's opener sweeps the selection away rather than trusting
+   * the mousedown's preventDefault to have stopped it. A selection a user made earlier
+   * with the left button is theirs, but it is also already gone the moment the right
+   * press landed, so there is nothing of theirs to protect here.
+   */
+  function clearRightPressSelection(): void {
+    window.getSelection()?.removeAllRanges();
+  }
+
   function openCommitMenu(event: MouseEvent, commit: CommitSummary): void {
     const actions = commitActionsFor(commit);
     if (actions.length === 0) {
       return;
     }
     event.preventDefault();
+    clearRightPressSelection();
     openContextMenu(
       commitMenu,
       actions,
@@ -800,7 +833,10 @@
               {
                 kind: "action" as const,
                 id: "merge",
-                label: inject("history.action.mergeInto", { branch: currentBranch ?? t("history.currentBranch") }),
+                // GitKraken names both sides — "Merge feature into main" — because a
+                // menu opened on a ref label sits between other rows and the direction
+                // is the one thing a misread click cannot undo.
+                label: `Merge ${ref.branchName} into ${currentBranch ?? "current branch"}`,
                 disabled: contextDisabled,
                 onSelect: () => onMergeBranch(ref.branchName),
               },
@@ -811,7 +847,7 @@
               {
                 kind: "action" as const,
                 id: "rebase-onto",
-                label: inject("history.action.rebaseOnto", { branch: currentBranch ?? t("history.currentBranch") }),
+                label: `Rebase ${currentBranch ?? "current branch"} onto ${ref.branchName}`,
                 disabled: contextDisabled,
                 onSelect: () => onRebaseOntoBranch(ref.branchName, commit.oid),
               },
@@ -890,7 +926,9 @@
               {
                 kind: "action" as const,
                 id: "checkout-remote",
-                label: inject("history.action.checkoutRemote", { ref: `${ref.remoteName}/${ref.branchName}` }),
+                label: inject("history.action.checkoutRemote", {
+                  ref: `${ref.remoteName}/${ref.branchName}`,
+                }),
                 disabled: contextDisabled,
                 onSelect: () =>
                   onCheckoutRemoteBranch(ref.branchName, commit.oid),
@@ -932,6 +970,7 @@
   ): void {
     event.preventDefault();
     event.stopPropagation();
+    clearRightPressSelection();
     // One pill can stand for several refs (local branch + its remote twins).
     // The menu is the union: the primary ref's actions first, then each other
     // ref's honest copy-only actions, so right-clicking a merged pill can
@@ -959,7 +998,9 @@
               {
                 kind: "action" as const,
                 id: `copy-${entry.refName}`,
-                label: inject("history.action.copyRef", { ref: commitRefDisplayName(entry.ref) }),
+                label: inject("history.action.copyRef", {
+                  ref: commitRefDisplayName(entry.ref),
+                }),
                 onSelect: () => onCopyText(commitRefDisplayName(entry.ref)),
               },
             ]),
@@ -1156,7 +1197,9 @@
                   class="absolute top-0 right-0 h-full w-1.5 cursor-col-resize bg-transparent transition-colors hover:bg-primary/30 active:bg-primary/50"
                   role="separator"
                   aria-orientation="vertical"
-                  aria-label={inject("history.resizeColumn", { column: headerLabels[cell.id] })}
+                  aria-label={inject("history.resizeColumn", {
+                    column: headerLabels[cell.id],
+                  })}
                   data-testid={`history-column-resize-${cell.id}`}
                   onpointerdown={(event) => startColumnResize(event, cell.id)}
                 ></span>
@@ -1329,6 +1372,7 @@
                   ? ` background-color: color-mix(in oklab, ${segmentTint} 12%, transparent);`
                   : ''}"
                 onclick={() => onSelect(commit)}
+                onmousedown={refuseRightPress}
                 oncontextmenu={(event) => openCommitMenu(event, commit)}
               >
                 {#if selected}
@@ -1367,6 +1411,7 @@
                             .map((entry) => entry.refName)
                             .join(" ")}
                           onclick={() => onSelect(commit)}
+                          onmousedown={refuseRightPress}
                           oncontextmenu={(event) =>
                             openRefMenu(event, group, commit)}
                           onmouseenter={(event) =>
@@ -1462,10 +1507,7 @@
                         : commit.subject}
                     </span>
                     {#if commit.missingParents.length > 0}
-                      <Badge
-                        tone="warn"
-                        title={t("history.boundaryHelp")}
-                      >
+                      <Badge tone="warn" title={t("history.boundaryHelp")}>
                         {t("history.boundary")}
                       </Badge>
                     {/if}
@@ -1569,10 +1611,10 @@
               >{t("history.loadingMore")}</span
             >
           {:else if hasMore}
-            <span class="text-xs text-ink-faint">{t("history.scrollMore")}</span>
-          {:else}
-            <span class="text-xs text-ink-faint">{t("history.endLoaded")}</span
+            <span class="text-xs text-ink-faint">{t("history.scrollMore")}</span
             >
+          {:else}
+            <span class="text-xs text-ink-faint">{t("history.endLoaded")}</span>
           {/if}
         </div>
       </div>
@@ -1694,7 +1736,10 @@
   bind:open={cherryPickDialogOpen}
   title={pendingCherryPick === null
     ? t("history.cherryPickCommit")
-    : inject("history.cherryPickQuestion", { subject: pendingCherryPick.subject, branch: currentBranch ?? t("history.checkedOutBranch") })}
+    : inject("history.cherryPickQuestion", {
+        subject: pendingCherryPick.subject,
+        branch: currentBranch ?? t("history.checkedOutBranch"),
+      })}
   description={t("history.cherryPickDescription")}
   confirmLabel={pendingCherryPick === null
     ? t("history.cherryPick")
@@ -1716,7 +1761,9 @@
     ? t("history.dropCommit")
     : inject("history.dropQuestion", { subject: pendingDrop.subject })}
   description={t("history.dropDescription")}
-  confirmLabel={pendingDrop === null ? t("history.drop") : inject("history.dropNamed", { subject: pendingDrop.subject })}
+  confirmLabel={pendingDrop === null
+    ? t("history.drop")
+    : inject("history.dropNamed", { subject: pendingDrop.subject })}
   disabled={pendingDrop === null || contextDisabled}
   onConfirm={() => {
     if (pendingDrop === null) {

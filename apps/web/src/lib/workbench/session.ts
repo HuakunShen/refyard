@@ -132,10 +132,12 @@ export async function consumeInitialPairingUrl(
     await pairWorkbenchSession(state, ports);
     return;
   }
-  if (state.token !== null) {
-    state.ticket = "";
-    scrubPairingUrl(ports);
-  }
+  // A remembered bearer proves nothing until the service answers it, and the ordinary way it
+  // stops working is that the service restarted under the same address — every restart mints
+  // new sessions. So the ticket this page arrived with is *kept* rather than scrubbed, and the
+  // caller spends it when the remembered session turns out to be dead (see
+  // `WorkbenchRuntime.start`). Discarding it here is what turns "open this URL to pair" into a
+  // pairing form the user has no way to satisfy.
 }
 
 export function clearWorkbenchCredentials(

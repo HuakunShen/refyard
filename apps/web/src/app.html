@@ -2,10 +2,12 @@
 <!--
   The single document the static build ships.
 
-  SvelteKit's two placeholders (for the head and the body) are the only substitutions here,
-  so this comment must never spell them out — the substitution replaces the first
-  occurrence, and a copy inside a comment silently wins over the real one, producing a page
-  that serves the comment and leaves the document empty.
+  SvelteKit's placeholders (for the head, the body and the asset root) are the only
+  substitutions here, so this comment must never spell them out — the substitution
+  replaces the first occurrence, and a copy inside a comment silently wins over the real
+  one, producing a page that serves the comment and leaves the document empty. The asset
+  placeholder is what lets one document serve two mount points: the app at the root, and
+  the embedded build under the prefix a host mounts it at.
 
   With `ssr = false` the body is just the app shell and the page paints itself in the
   browser. Nothing here loads from another origin except author avatars (GitHub
@@ -20,9 +22,9 @@
     <meta name="color-scheme" content="light dark" />
     <meta name="referrer" content="no-referrer" />
     <title>refyard</title>
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/svg+xml" href="%sveltekit.assets%/favicon.svg" />
     <!-- Installable as an app shell; the data still comes from the service on loopback. -->
-    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
     <!--
       Paint the canvas before any app code runs: the stored preference decides, and the
       system's own appearance is the fallback — the same rule the workbench applies once

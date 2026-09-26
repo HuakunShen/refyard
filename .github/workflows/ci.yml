@@ -132,3 +132,55 @@ jobs:
           path: test-results/
           if-no-files-found: ignore
           retention-days: 7
+
+  # The complete product verify matrix remains unchanged. Its pre-integration
+  # main-branch run was already red on all three OSes; a separate green result
+  # is needed for the Rust facade Xross actually embeds, without hiding those
+  # broader failures or skipping this job when verify fails.
+  xross-embed-facade:
+    name: xross embed facade (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Test the upstream branch commit that Xross will pin, not GitHub's
+          # synthetic pull-request merge commit.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Record exact tested head
+        shell: bash
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          git rev-parse HEAD
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+
+      - name: Rust format
+        run: cargo fmt --all -- --check
+
+      - name: Strict contract, core and host Clippy
+        run: cargo clippy -p refyard-contract -p refyard-core -p refyard-host --all-targets -- -D warnings
+
+      - name: Contract, parser, embed and journal tests
+        run: cargo test -p refyard-contract -p refyard-core -p refyard-host --all-targets --no-fail-fast
+
+      - name: Windows fail-closed journal startup ran one test
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          output="$(cargo test -p refyard-host --lib security_failures_stop_before_journal_index_is_read 2>&1)"
+          printf '%s\n' "$output"
+          grep -Fq 'test result: ok. 1 passed; 0 failed;' <<< "$output"

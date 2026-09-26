@@ -1,12 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "The workbench window. Its granted capabilities are Tauri's event IPC \u2014 exactly listen and unlisten, the pair the backend adapter subscribes a listener with \u2014 and window start-dragging, which the overlay title bar needs because the page's own top strip is the drag region (there is no native bar to drag). core:app:default exists only so the Settings sheet can read the shell version. The dialog plugin is linked so the HOST can open the OS folder picker from dispatch, but no dialog:* permission is granted to this window, so the WebView has no plugin command to call; every host answer is reached over the IPC and gated by the session registry in src/session.rs.",
+  "description": "The workbench window. Its granted capabilities are Tauri's event IPC \u2014 exactly listen and unlisten, the pair the backend adapter subscribes a listener with \u2014 and window start-dragging, which the overlay title bar needs because the page's own top strip is the drag region (there is no native bar to drag). core:app:default exists only so the Settings sheet can read the shell version. core:webview:allow-set-webview-zoom supports Tauri's built-in zoom hotkeys. The dialog plugin is linked so the HOST can open the OS folder picker from dispatch, but no dialog:* permission is granted to this window, so the WebView has no plugin command to call; every host answer is reached over the IPC and gated by the session registry in src/session.rs.",
   "windows": ["main"],
   "permissions": [
     "core:event:default",
     "core:app:default",
     "core:window:allow-start-dragging",
+    "core:webview:allow-set-webview-zoom",
     "updater:default",
     "process:allow-restart"
   ]

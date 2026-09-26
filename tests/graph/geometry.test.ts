@@ -119,9 +119,11 @@ describe("row density", () => {
     expect(isRowDensity(null)).toBe(false);
   });
 
-  it("ships the roomy default GitKraken's spacing asks for", () => {
-    expect(DEFAULT_METRICS).toEqual(densityMetrics("roomy"));
-    expect(DEFAULT_METRICS.rowHeight).toBe(44);
+  it("ships the compact default a workbench is read at", () => {
+    // Prevents: a history table that opens at GitKraken's calm spacing, which trades the
+    // commits a reader came for against whitespace they did not ask for.
+    expect(DEFAULT_METRICS).toEqual(densityMetrics("compact"));
+    expect(DEFAULT_METRICS.rowHeight).toBe(28);
   });
 });
 

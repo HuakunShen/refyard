@@ -34,6 +34,10 @@ build-xross-hosted
 .svelte-kit-desktop
 .svelte-kit-xross-local
 .svelte-kit-xross-hosted
+# The embedded-plugin flavour: served under a path prefix by an embedding host, which is
+# also why it needs its own `paths.base` and its own intermediate directory.
+build-dsh
+.svelte-kit-dsh
 
 # SvelteKit's generated types and route manifest (`svelte-kit sync`, run by `pnpm build`).
 .svelte-kit

@@ -69,3 +69,6 @@ export const storeAvatars = (enabled: boolean): void =>
 export const readStoredDensity = (): string => storage.readStoredDensity();
 export const storeDensity = (density: string | null): void =>
   storage.storeDensity(density);
+export const readStoredLanguage = (): string => storage.readStoredLanguage();
+export const storeLanguage = (language: string | null): void =>
+  storage.storeLanguage(language);

@@ -7,36 +7,40 @@
 //! which service instance answered.
 //!
 //! **Capabilities are derived from what this build implements, never from a wish.** The
-//! `reads` list names only the panels that exist here, `operations` is empty because no
-//! mutation is wired in this slice, and every mutation the contract declares is named in
-//! `unavailable` with the reason. A capability answer that offered a write and then
-//! refused it is the one failure a client cannot recover from.
+//! `reads` list names only the reads this build serves, `operations` is empty when no
+//! mutation is wired in, and every unsupported mutation is named in `unavailable` with
+//! the reason. A capability answer that offered a write and then refused it is the one
+//! failure a client cannot recover from.
 //!
 //! The `git.features` flags are a statement about *this build's* reads rather than a
 //! guess from a version string: `porcelainV2Status` and `catFileBatch` are true because
 //! every status, history and diff read here is built on them, and a Git too old to
-//! answer fails with the exit code and diagnostic in the problem. `worktreeListZ`,
-//! `fetchPorcelain` and `pushPorcelain` are false because this slice implements no
-//! worktree read and no network operation. `objectFormats` names both formats the
-//! parsers accept; the format actually in use is detected per repository from
-//! `rev-parse --show-object-format` during registration, never assumed.
+//! answer fails with the exit code and diagnostic in the problem. `worktreeListZ` is
+//! probed by running the exact command in a temporary bare repository; fetch and push
+//! remain false because this build implements no network operation. `objectFormats` names
+//! both formats the parsers accept; the format actually in use is detected per repository
+//! from `rev-parse --show-object-format` during registration, never assumed.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
+use tokio::sync::{OwnedRwLockReadGuard, RwLock};
 
 use refyard_contract::diff::{DiffKind, DiffQuery, DiffResponse};
 use refyard_contract::history::{HistoryPage, HistoryQuery};
 use refyard_contract::host::{ExecutionTargetKind, ExecutionTargetState, SshHostList};
 use refyard_contract::problem::{DetailValue, Problem, ProblemCode};
+use refyard_contract::reads::WorkspaceRootId;
 use refyard_contract::reads::{
     AllowedRootSummary, CapabilitiesResponse, ContentKind, FilesystemEntriesResponse,
     FingerprintAlgorithm, GitCapabilities, GitInfo, HeadKind, HeadState, HostInfo, HostKind,
     MutationKind, MutationTarget, ObjectFormat, OperationCapability, OperationInProgress,
     OperationRecord, OperationStatus, OperationsListResponse, PathPreviewToken, PreviewsRequest,
     PreviewsResponse, ReadKind, RepositoriesResponse, RepositorySummary, RuntimeLimits,
-    StatusSnapshot, TargetKind, UnavailableReason, MUTATION_KINDS,
+    StashesResponse, StatusSnapshot, SubmodulesResponse, TargetKind, UnavailableReason,
+    MUTATION_KINDS,
 };
 use refyard_contract::refs::RefsSnapshot;
 use refyard_core::preconditions::{GatheredRefusal, PreconditionContext};
@@ -49,8 +53,10 @@ use crate::files::{self, FileRead};
 use crate::jobs::journal::Journal;
 use crate::jobs::queue::QueueLimits;
 use crate::jobs::recovery::Recovery;
-use crate::jobs::{MutationEngine, MutationRequest, PreconditionSource, SubmitResult};
-use crate::paths::{base36, PathRegistry};
+use crate::jobs::{
+    ClientRequestLookup, MutationEngine, MutationRequest, PreconditionSource, SubmitResult,
+};
+use crate::paths::PathRegistry;
 use crate::providers::local::LocalGit;
 use crate::providers::ssh::SshGit;
 use crate::providers::GitExecutor;
@@ -66,6 +72,7 @@ use crate::targets::{
     probe_facts, ssh_target_generation, ssh_target_id, CreateTargetRequest, TargetRecord,
     TargetRegistry,
 };
+use crate::workspace_roots::{RootKey, RootState};
 use crate::writes::WriteHost;
 
 /// The contract revision this build serves. It matches `CONTRACT_VERSION` in
@@ -79,6 +86,14 @@ const NOT_IMPLEMENTED_MESSAGE: &str = "this build implements the read half of th
 
 /// Why the mutations this build does not implement are absent.
 const PARTIALLY_IMPLEMENTED_MESSAGE: &str = "this build implements staging, unstaging and committing only; every other mutation is named here and none of them is reported as available";
+
+fn unknown_worktree(record: &RepositoryRecord, worktree_id: &str) -> Problem {
+    Problem::new(
+        ProblemCode::NotFound,
+        format!("unknown worktree {worktree_id} in {}", record.repository_id),
+    )
+    .with_detail("worktreeId", DetailValue::Text(worktree_id.to_string()))
+}
 
 /// Builds the engine, registering the write effects exactly when the host asked for them.
 ///
@@ -215,13 +230,15 @@ pub struct ApplicationService {
     repositories: Arc<RepositoryRegistry>,
     paths: Arc<PathRegistry>,
     snapshots: Arc<SnapshotStore>,
-    roots: Mutex<RootState>,
+    roots: Arc<Mutex<RootState>>,
+    root_operations: Arc<RwLock<()>>,
     service_instance_id: String,
     /// The local target's id and generation, as the constructor was given them.
     target_id: String,
     target_generation: String,
     home: PathBuf,
     git_version: Mutex<Option<String>>,
+    worktree_list_z: Mutex<Option<bool>>,
     /// An explicitly chosen SSH configuration source, when the caller named one. `None`
     /// leaves the machine's own OpenSSH configuration in force.
     ssh_source: Option<ConfigCatalogue>,
@@ -254,33 +271,6 @@ pub struct ApplicationService {
     enabled_mutations: BTreeSet<MutationKind>,
 }
 
-/// One approved root: the key it is unique by, and the text a client is shown.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum RootKey {
-    /// A canonical local directory.
-    Local(PathBuf),
-    /// A remote path, unique per target only through the target it was approved on — the
-    /// display string is what it is keyed by here because an SSH path is bytes text, not a
-    /// path this process can canonicalise.
-    Remote(String),
-}
-
-impl RootKey {
-    fn display(&self) -> String {
-        match self {
-            Self::Local(path) => path.display().to_string(),
-            Self::Remote(path) => path.clone(),
-        }
-    }
-}
-
-#[derive(Default)]
-struct RootState {
-    next: u64,
-    /// Approved roots, in approval order, with the id each was minted.
-    roots: Vec<(String, RootKey)>,
-}
-
 /// The most paths one preview request may name, from `LIMITS.pathSelectionMaxEntries`.
 const PATH_SELECTION_MAX_ENTRIES: usize = 1_000;
 
@@ -288,6 +278,8 @@ const PATH_SELECTION_MAX_ENTRIES: usize = 1_000;
 /// repository. It cannot collide with `repo:` and it says which kind of resource the key
 /// names without a second field.
 const WORKSPACE_WRITE_KEY_PREFIX: &str = "root:";
+
+static WORKTREE_PROBE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 /// What a mutation addresses, in the key it serialises and blocks under.
 ///
@@ -390,7 +382,11 @@ fn operation_targets(kind: MutationKind) -> Vec<TargetKind> {
         | MutationKind::ContinueRebase
         | MutationKind::AbortRebase
         | MutationKind::DropCommit
-        | MutationKind::SquashCommit => vec![TargetKind::Worktree],
+        | MutationKind::SquashCommit
+        | MutationKind::Pull
+        | MutationKind::AddSubmodule
+        | MutationKind::UpdateSubmodule
+        | MutationKind::SyncSubmodule => vec![TargetKind::Worktree],
         _ => vec![TargetKind::Repository],
     }
 }
@@ -438,6 +434,9 @@ fn contract_content_kind(kind: crate::files::ContentKind) -> ContentKind {
 /// what keeps the service from having to hold a reference to itself.
 struct ServiceFacts<'a> {
     service: &'a ApplicationService,
+    /// Kept until `MutationEngine::submit` returns, covering the interval between its
+    /// freshness read and queue admission. Effects acquire their own lease when they run.
+    root_lease: Mutex<Option<OwnedRwLockReadGuard<()>>>,
 }
 
 impl ServiceFacts<'_> {
@@ -467,17 +466,26 @@ impl ServiceFacts<'_> {
                 ..PreconditionContext::default()
             });
         };
-        let record = match service.require_record(repository_id) {
+        let aggregate = match service.require_record(repository_id) {
             Ok(record) => record,
             Err(problem) => return Ok(Self::refused(problem)),
         };
+        let worktree_id = match reads::require_worktree(&aggregate, request.worktree_id()) {
+            Ok(worktree_id) => worktree_id,
+            Err(error) => return Ok(Self::refused(error.to_problem())),
+        };
+        let record = match aggregate.selected_worktree(Some(&worktree_id), None) {
+            Some(record) => record,
+            None => return Ok(Self::refused(unknown_worktree(&aggregate, &worktree_id))),
+        };
+        let root_lease = match service.writes_host.lease_root_for_record(&record).await {
+            Ok(lease) => lease,
+            Err(problem) => return Ok(Self::refused(problem)),
+        };
+        *self.root_lease.lock().expect("mutation root lease") = Some(root_lease);
         let target = match service.target_for(&record) {
             Ok(target) => target,
             Err(problem) => return Ok(Self::refused(problem)),
-        };
-        let worktree_id = match reads::require_worktree(&record, request.worktree_id()) {
-            Ok(worktree_id) => worktree_id,
-            Err(error) => return Ok(Self::refused(error.to_problem())),
         };
         let executor = match target.executor() {
             Ok(executor) => executor,
@@ -603,11 +611,15 @@ impl ApplicationService {
         let snapshots = Arc::new(SnapshotStore::default());
         let previews = Arc::new(PreviewStore::with_contract_limits());
         let events = Arc::new(EventSink::new());
+        let roots = Arc::new(Mutex::new(RootState::default()));
+        let root_operations = Arc::new(RwLock::new(()));
         let writes_host = Arc::new(WriteHost::new(
             targets.clone(),
             Arc::clone(&repositories),
             Arc::clone(&paths),
             Arc::clone(&previews),
+            Arc::clone(&roots),
+            Arc::clone(&root_operations),
         ));
         let engine = build_engine(&journal, &recovery, &writes_host, false, &events);
         Self {
@@ -616,12 +628,14 @@ impl ApplicationService {
             repositories,
             paths,
             snapshots,
-            roots: Mutex::new(RootState::default()),
+            roots,
+            root_operations,
             service_instance_id: config.service_instance_id,
             target_id: config.target_id,
             target_generation: config.target_generation,
             home: config.home,
             git_version: Mutex::new(None),
+            worktree_list_z: Mutex::new(None),
             ssh_source: None,
             ssh_environment: None,
             previews,
@@ -650,9 +664,11 @@ impl ApplicationService {
     /// Without this call the journal works and does not survive the process, which is what
     /// a host that named no directory actually has.
     pub fn with_state_root(self, root: PathBuf) -> Result<Self, Problem> {
-        let journal = Arc::new(Journal::open(Some(root))?);
+        let journal = Arc::new(Journal::open(Some(root.clone()))?);
+        let roots = RootState::open(&root)?;
         let recovery = Arc::new(Recovery::new());
         recovery.reconcile(&journal, crate::clock::now_millis())?;
+        *self.roots.lock().expect("root lock") = roots;
         let engine = build_engine_with_options(
             &journal,
             &recovery,
@@ -669,36 +685,22 @@ impl ApplicationService {
         })
     }
 
-    /// Registers the three write effects this build implements: `stagePaths`,
-    /// `unstagePaths` and `commit`.
+    /// Registers the write effects this standalone build implements.
     ///
     /// Registration is explicit rather than part of `new`, because a service that has not
-    /// been given the write path answers exactly as the read-only build did: no operation
-    /// is offered in `capabilities`, and every submission is refused with
-    /// `UnsupportedOperation` before anything is journalled. A read-only inspector, the
-    /// differential fixture and a host whose writes are not yet wired rely on that; a host
-    /// that wants the minimal write loop calls this once, in its composition root.
-    ///
-    /// The effects are the same three whichever target a repository was opened on: the
-    /// planner builds one argument vector and the provider decides whether it runs here or
-    /// over SSH.
+    /// been given the write path offers no operations. Preserve the standalone service's
+    /// registered effect set when rebuilding its engine after a state root is supplied.
+    /// Embedded hosts use `with_embed_options` to select their own allowed subset.
     pub fn with_writes(mut self) -> Self {
         self.writes_enabled = true;
-        self.enabled_mutations = [
-            MutationKind::StagePaths,
-            MutationKind::UnstagePaths,
-            MutationKind::Commit,
-        ]
-        .into_iter()
-        .collect();
-        self.engine = build_engine_with_options(
+        self.engine = build_engine(
             &self.journal,
             &self.recovery,
             &self.writes_host,
-            &self.enabled_mutations,
-            self.queue_limits,
+            true,
             &self.events,
         );
+        self.enabled_mutations = self.engine.implemented_kinds().into_iter().collect();
         self
     }
 
@@ -994,6 +996,7 @@ impl ApplicationService {
     /// What this build can do right now.
     pub async fn capabilities(&self) -> Result<CapabilitiesResponse, Problem> {
         let version = self.git_version().await?;
+        let worktree_list_z = self.probe_worktree_list_z().await;
         // The mutations this build implements and the ones it does not are one list split
         // in two, derived from the effects the engine holds. A build with no effects — this
         // one — therefore names every mutation as unavailable, and a build that registers
@@ -1044,7 +1047,7 @@ impl ApplicationService {
                 version,
                 features: GitCapabilities {
                     porcelain_v2_status: true,
-                    worktree_list_z: false,
+                    worktree_list_z,
                     cat_file_batch: true,
                     push_porcelain: false,
                     fetch_porcelain: false,
@@ -1071,6 +1074,9 @@ impl ApplicationService {
             ReadKind::History,
             ReadKind::Refs,
             ReadKind::Diff,
+            ReadKind::Worktrees,
+            ReadKind::Submodules,
+            ReadKind::Stashes,
         ]
     }
 
@@ -1080,12 +1086,56 @@ impl ApplicationService {
     /// unborn HEAD for a repository with commits would make the launcher show the wrong
     /// state for every open tab.
     pub async fn repositories(&self) -> RepositoriesResponse {
+        let _root_lease = Arc::clone(&self.root_operations).read_owned().await;
+        let active_roots: Vec<(String, String)> = {
+            let roots = self.roots.lock().expect("root lock");
+            roots
+                .roots()
+                .iter()
+                .map(|(allowed_root_id, key)| {
+                    (allowed_root_id.as_str().to_string(), key.display_path())
+                })
+                .collect()
+        };
+        let active_root_ids: BTreeSet<String> = active_roots
+            .iter()
+            .map(|(allowed_root_id, _)| allowed_root_id.clone())
+            .collect();
         let records = self.repositories.list();
         let mut summaries = Vec::with_capacity(records.len());
         for record in &records {
+            let visible_worktrees: Vec<_> = record
+                .worktrees
+                .iter()
+                .filter(|worktree| {
+                    worktree
+                        .root_bindings
+                        .iter()
+                        .any(|binding| active_root_ids.contains(&binding.allowed_root_id))
+                })
+                .collect();
+            let Some(primary) = visible_worktrees
+                .iter()
+                .find(|worktree| worktree.worktree_id == record.worktree_id)
+                .or_else(|| visible_worktrees.first())
+                .copied()
+            else {
+                continue;
+            };
+            let primary_binding = primary
+                .root_bindings
+                .iter()
+                .find(|binding| active_root_ids.contains(&binding.allowed_root_id))
+                .expect("a visible worktree has an active root binding");
+            let scoped_record = record
+                .selected_worktree(
+                    Some(&primary.worktree_id),
+                    Some(&primary_binding.allowed_root_id),
+                )
+                .expect("the visible worktree/root pair is registered");
             // Each row's HEAD is read through the target the repository was opened on, not
             // through this machine's Git: a remote repository's HEAD is remote.
-            let head = match self.read_record_head(record).await {
+            let head = match self.read_record_head(&scoped_record).await {
                 Ok(head) => head,
                 // A repository whose HEAD cannot be read is still a registered
                 // repository; the row says `unborn` and the panel's own read reports the
@@ -1099,30 +1149,49 @@ impl ApplicationService {
             };
             summaries.push(RepositorySummary {
                 repository_id: record.repository_id.clone(),
-                allowed_root_id: record.allowed_root_id.clone(),
-                target_id: Some(record.location.target_id.clone()),
-                display_name: record.display_name.clone(),
-                display_path: record.display_path.clone(),
-                object_format: object_format_of(record),
-                worktree_ids: vec![record.worktree_id.clone()],
-                primary_worktree_id: record.worktree_id.clone(),
+                allowed_root_id: primary_binding
+                    .allowed_root_id
+                    .clone()
+                    .as_str()
+                    .try_into()
+                    .expect("the root registry mints valid root ids"),
+                target_id: Some(primary.location.target_id.clone()),
+                display_name: primary.display_name.clone(),
+                display_path: primary.display_path.clone(),
+                object_format: object_format_of(&scoped_record),
+                worktree_ids: visible_worktrees
+                    .iter()
+                    .map(|worktree| worktree.worktree_id.clone())
+                    .collect(),
+                primary_worktree_id: primary.worktree_id.clone(),
                 head,
                 operation_in_progress: None::<OperationInProgress>,
                 last_fetched_at: None,
             });
         }
-        let roots = self.roots.lock().expect("root lock");
-        let allowed_roots: Vec<AllowedRootSummary> = roots
-            .roots
-            .iter()
-            .map(|(allowed_root_id, key)| AllowedRootSummary {
-                allowed_root_id: allowed_root_id.clone(),
-                display_path: key.display(),
-                repository_ids: summaries
+        let allowed_roots: Vec<AllowedRootSummary> = active_roots
+            .into_iter()
+            .filter_map(|(allowed_root_id, display_path)| {
+                let repository_ids: Vec<String> = records
                     .iter()
-                    .filter(|summary| &summary.allowed_root_id == allowed_root_id)
-                    .map(|summary| summary.repository_id.clone())
-                    .collect(),
+                    .filter(|record| {
+                        record.worktrees.iter().any(|worktree| {
+                            worktree
+                                .root_bindings
+                                .iter()
+                                .any(|binding| binding.allowed_root_id == allowed_root_id)
+                        })
+                    })
+                    .map(|record| record.repository_id.clone())
+                    .collect();
+                (!repository_ids.is_empty()).then(|| AllowedRootSummary {
+                    allowed_root_id: allowed_root_id
+                        .as_str()
+                        .try_into()
+                        .expect("the root registry mints valid root ids"),
+                    display_path,
+                    repository_ids,
+                })
             })
             .collect();
         RepositoriesResponse {
@@ -1207,7 +1276,7 @@ impl ApplicationService {
                 ))
             }
         };
-        let allowed_root_id = self.approve_root(&canonical);
+        let allowed_root_id = self.approve_root(&canonical, &target.target_id)?;
         let mut next_id = || self.repositories.next_id();
         let outcome = open_repository(
             OpenRequest {
@@ -1225,8 +1294,7 @@ impl ApplicationService {
         .await;
         match outcome {
             OpenOutcome::Opened(record) => {
-                self.repositories
-                    .register_with_limit(*record, self.repository_max_count)?;
+                self.register_rooted_repository(*record, &allowed_root_id)?;
                 // The row's HEAD comes from the registry read, so registration itself does
                 // not need a second command.
                 Ok(self.repositories().await)
@@ -1279,7 +1347,7 @@ impl ApplicationService {
                 ))
             }
         };
-        let allowed_root_id = self.approve_remote_root(directory);
+        let allowed_root_id = self.approve_remote_root(directory, &target.target_id)?;
         let mut next_id = || self.repositories.next_id();
         let record = open_remote_repository(
             ssh,
@@ -1291,8 +1359,7 @@ impl ApplicationService {
             &mut next_id,
         )
         .await?;
-        self.repositories
-            .register_with_limit(*record, self.repository_max_count)?;
+        self.register_rooted_repository(*record, &allowed_root_id)?;
         Ok(self.repositories().await)
     }
 
@@ -1308,6 +1375,35 @@ impl ApplicationService {
             ));
         }
         Ok(self.repositories().await)
+    }
+
+    /// Retires one explicitly approved root. Its durable id is removed before any current
+    /// repository row is invalidated; the high-water mark remains, so a later approval
+    /// receives a different identity.
+    pub async fn remove_workspace_root(
+        &self,
+        allowed_root_id: &WorkspaceRootId,
+    ) -> Result<(), Problem> {
+        // A writer-preferring async barrier closes admission and drains every read or
+        // write that already holds a root lease before the durable approval is retired.
+        // New requests queue behind this writer and re-check root liveness afterwards.
+        let _root_barrier = Arc::clone(&self.root_operations).write_owned().await;
+        let mut roots = self.roots.lock().expect("root lock");
+        roots.retire(allowed_root_id)?;
+        let affected_worktrees = self.repositories.revoke_root(allowed_root_id.as_str());
+        let mut affected_repositories = BTreeSet::new();
+        for affected in affected_worktrees {
+            self.paths.invalidate_worktree(&affected.worktree_id);
+            self.snapshots
+                .invalidate_worktree(&affected.repository_id, &affected.worktree_id);
+            self.previews
+                .invalidate_worktree(&affected.repository_id, &affected.worktree_id);
+            affected_repositories.insert(affected.repository_id);
+        }
+        for repository_id in affected_repositories {
+            self.snapshots.invalidate_worktree_inventory(&repository_id);
+        }
+        Ok(())
     }
 
     /// One directory for the local picker: its subdirectories, and which of them are
@@ -1359,7 +1455,13 @@ impl ApplicationService {
 
     /// Working-tree and index state.
     pub async fn status(&self, query: &StatusQuery) -> Result<StatusSnapshot, Problem> {
-        let record = self.require_record(&query.repository_id)?;
+        let aggregate = self.require_record(&query.repository_id)?;
+        let worktree_id = reads::require_worktree(&aggregate, query.worktree_id.as_deref())
+            .map_err(|error| error.to_problem())?;
+        let record = aggregate
+            .selected_worktree(Some(&worktree_id), None)
+            .ok_or_else(|| unknown_worktree(&aggregate, &worktree_id))?;
+        let _root_lease = self.writes_host.lease_root_for_record(&record).await?;
         let target = self.target_for(&record)?;
         reads::status::read_status(
             target.executor()?,
@@ -1376,7 +1478,13 @@ impl ApplicationService {
 
     /// One page of the commit graph.
     pub async fn history(&self, query: &HistoryQuery) -> Result<HistoryPage, Problem> {
-        let record = self.require_record(&query.repository_id)?;
+        let aggregate = self.require_record(&query.repository_id)?;
+        let worktree_id = reads::require_worktree(&aggregate, query.worktree_id.as_deref())
+            .map_err(|error| error.to_problem())?;
+        let record = aggregate
+            .selected_worktree(Some(&worktree_id), None)
+            .ok_or_else(|| unknown_worktree(&aggregate, &worktree_id))?;
+        let _root_lease = self.writes_host.lease_root_for_record(&record).await?;
         let target = self.target_for(&record)?;
         reads::history::read_history(
             target.executor()?,
@@ -1392,7 +1500,31 @@ impl ApplicationService {
 
     /// Branches, remote-tracking refs, tags and remotes.
     pub async fn refs(&self, repository_id: &str) -> Result<RefsSnapshot, Problem> {
-        let record = self.require_record(repository_id)?;
+        self.refs_on_worktree(repository_id, None).await
+    }
+
+    /// Reads the shared ref set and HEAD from one explicitly selected worktree.
+    pub async fn refs_for_worktree(
+        &self,
+        repository_id: &str,
+        worktree_id: &str,
+    ) -> Result<RefsSnapshot, Problem> {
+        self.refs_on_worktree(repository_id, Some(worktree_id))
+            .await
+    }
+
+    async fn refs_on_worktree(
+        &self,
+        repository_id: &str,
+        requested_worktree_id: Option<&str>,
+    ) -> Result<RefsSnapshot, Problem> {
+        let aggregate = self.require_record(repository_id)?;
+        let worktree_id = reads::require_worktree(&aggregate, requested_worktree_id)
+            .map_err(|error| error.to_problem())?;
+        let record = aggregate
+            .selected_worktree(Some(&worktree_id), None)
+            .ok_or_else(|| unknown_worktree(&aggregate, &worktree_id))?;
+        let _root_lease = self.writes_host.lease_root_for_record(&record).await?;
         let target = self.target_for(&record)?;
         reads::refs::read_refs(target.executor()?, &record, &self.snapshots, &now_iso8601())
             .await
@@ -1401,7 +1533,13 @@ impl ApplicationService {
 
     /// A bounded diff, with a patch only for the path the caller named.
     pub async fn diff(&self, query: &DiffQuery) -> Result<DiffResponse, Problem> {
-        let record = self.require_record(&query.repository_id)?;
+        let aggregate = self.require_record(&query.repository_id)?;
+        let worktree_id = reads::require_worktree(&aggregate, query.worktree_id.as_deref())
+            .map_err(|error| error.to_problem())?;
+        let record = aggregate
+            .selected_worktree(Some(&worktree_id), None)
+            .ok_or_else(|| unknown_worktree(&aggregate, &worktree_id))?;
+        let _root_lease = self.writes_host.lease_root_for_record(&record).await?;
         let target = self.target_for(&record)?;
         // An untracked-file diff reads the working tree through this process's filesystem;
         // doing that for a remote repository would read a local path while claiming it came
@@ -1418,6 +1556,71 @@ impl ApplicationService {
             &self.paths,
             &self.snapshots,
             query,
+            &now_iso8601(),
+        )
+        .await
+        .map_err(|error| error.to_problem())
+    }
+
+    /// Enumerates the source worktrees and returns only currently registered root
+    /// bindings in the host-native sidecar. Xross consumes the sidecar for projection;
+    /// the public Refyard DTO remains compatible with the standalone TypeScript API.
+    pub async fn worktrees_with_root_bindings(
+        &self,
+        repository_id: &str,
+    ) -> Result<reads::worktrees::WorktreesWithRootBindings, Problem> {
+        let record = self.require_record(repository_id)?;
+        let _root_lease = self.writes_host.lease_root_for_record(&record).await?;
+        let target = self.target_for(&record)?;
+        reads::worktrees::read_worktrees_with_root_bindings(
+            target.executor()?,
+            &record,
+            &self.repositories,
+            &self.snapshots,
+            &now_iso8601(),
+        )
+        .await
+        .map_err(|error| error.to_problem())
+    }
+
+    /// Reads the stash reflog through one explicitly selected worktree.
+    pub async fn stashes_for_worktree(
+        &self,
+        repository_id: &str,
+        requested_worktree_id: &str,
+    ) -> Result<StashesResponse, Problem> {
+        let aggregate = self.require_record(repository_id)?;
+        let worktree_id = reads::require_worktree(&aggregate, Some(requested_worktree_id))
+            .map_err(|error| error.to_problem())?;
+        let record = aggregate
+            .selected_worktree(Some(&worktree_id), None)
+            .ok_or_else(|| unknown_worktree(&aggregate, &worktree_id))?;
+        let _root_lease = self.writes_host.lease_root_for_record(&record).await?;
+        let target = self.target_for(&record)?;
+        reads::stashes::read_stashes(target.executor()?, &record, &self.snapshots, &now_iso8601())
+            .await
+            .map_err(|error| error.to_problem())
+    }
+
+    /// Reads submodule config, index and checked-out HEAD facts from one worktree.
+    pub async fn submodules_for_worktree(
+        &self,
+        repository_id: &str,
+        requested_worktree_id: &str,
+    ) -> Result<SubmodulesResponse, Problem> {
+        let aggregate = self.require_record(repository_id)?;
+        let worktree_id = reads::require_worktree(&aggregate, Some(requested_worktree_id))
+            .map_err(|error| error.to_problem())?;
+        let record = aggregate
+            .selected_worktree(Some(&worktree_id), None)
+            .ok_or_else(|| unknown_worktree(&aggregate, &worktree_id))?;
+        let _root_lease = self.writes_host.lease_root_for_record(&record).await?;
+        let target = self.target_for(&record)?;
+        reads::submodules::read_submodules(
+            target.executor()?,
+            &record,
+            &self.paths,
+            &self.snapshots,
             &now_iso8601(),
         )
         .await
@@ -1450,10 +1653,14 @@ impl ApplicationService {
     /// the batch, because fingerprinting a prefix of it would be a claim about bytes nobody
     /// read.
     pub async fn previews(&self, query: &PreviewsRequest) -> Result<PreviewsResponse, Problem> {
-        let record = self.require_record(&query.repository_id)?;
-        let target = self.target_for(&record)?;
-        let worktree_id = reads::require_worktree(&record, Some(&query.worktree_id))
+        let aggregate = self.require_record(&query.repository_id)?;
+        let worktree_id = reads::require_worktree(&aggregate, Some(&query.worktree_id))
             .map_err(|error| error.to_problem())?;
+        let record = aggregate
+            .selected_worktree(Some(&worktree_id), None)
+            .ok_or_else(|| unknown_worktree(&aggregate, &worktree_id))?;
+        let _root_lease = self.writes_host.lease_root_for_record(&record).await?;
+        let target = self.target_for(&record)?;
         if query.path_ids.is_empty() {
             return Err(Problem::new(
                 ProblemCode::InvalidRequest,
@@ -1640,6 +1847,16 @@ impl ApplicationService {
         self.engine.list(actor, limit)
     }
 
+    /// Finds a retained operation for one actor without exposing other actors' requests.
+    pub fn get_by_client_request_id(
+        &self,
+        actor: &str,
+        client_request_id: &str,
+    ) -> Result<ClientRequestLookup, Problem> {
+        self.engine
+            .get_by_client_request_id(actor, client_request_id)
+    }
+
     /// Submits one mutation through the write path.
     ///
     /// With no effects registered this refuses every request with `UnsupportedOperation`
@@ -1650,7 +1867,10 @@ impl ApplicationService {
         actor: &str,
         request: MutationRequest,
     ) -> Result<SubmitResult, Problem> {
-        let source = ServiceFacts { service: self };
+        let source = ServiceFacts {
+            service: self,
+            root_lease: Mutex::new(None),
+        };
         self.engine.submit(actor, request, &source).await
     }
 
@@ -1804,6 +2024,19 @@ impl ApplicationService {
     /// refused here rather than read: its paths and snapshots describe a build that no
     /// longer exists, and the executor may no longer be the one that opened it.
     fn target_for(&self, record: &RepositoryRecord) -> Result<TargetRecord, Problem> {
+        let root_id =
+            WorkspaceRootId::try_from(record.allowed_root_id.clone()).map_err(|error| {
+                Problem::new(
+                    ProblemCode::InternalError,
+                    format!("repository registry returned an invalid workspace root id: {error}"),
+                )
+            })?;
+        if !self.roots.lock().expect("root lock").contains(&root_id)? {
+            return Err(Problem::new(
+                ProblemCode::NotFound,
+                "the repository's workspace root is no longer registered",
+            ));
+        }
         self.writes_host.target_for(record)
     }
 
@@ -1820,33 +2053,60 @@ impl ApplicationService {
         .await
     }
 
-    /// Approves a root, minting one id per canonical local directory.
-    fn approve_root(&self, canonical: &Path) -> String {
-        let key = RootKey::Local(canonical.to_path_buf());
-        let mut state = self.roots.lock().expect("root lock");
-        if let Some((id, _)) = state.roots.iter().find(|(_, root)| root == &key) {
-            return id.clone();
-        }
-        state.next += 1;
-        let id = format!("root_{}", base36(state.next));
-        state.roots.push((id.clone(), key));
-        id
+    /// Approves one canonical path on one stable target, durably minting its identity before
+    /// returning it to repository registration. Process generations scope live snapshots and
+    /// PathIds; they deliberately do not rotate this persisted workspace-root identity.
+    fn approve_root(&self, canonical: &Path, target_id: &str) -> Result<String, Problem> {
+        let key = RootKey::Local {
+            target_id: target_id.to_string(),
+            canonical_path: canonical.to_path_buf(),
+        };
+        self.roots
+            .lock()
+            .expect("root lock")
+            .approve(key)
+            .map(|id| id.as_str().to_string())
     }
 
     /// Approves a remote root, minting one id per path text.
     ///
     /// A remote path cannot be canonicalised here; the path Git reported for the layout is
     /// what was opened, and this keys the approval by exactly those bytes as text.
-    fn approve_remote_root(&self, path: &str) -> String {
-        let key = RootKey::Remote(path.to_string());
-        let mut state = self.roots.lock().expect("root lock");
-        if let Some((id, _)) = state.roots.iter().find(|(_, root)| root == &key) {
-            return id.clone();
+    fn approve_remote_root(&self, path: &str, target_id: &str) -> Result<String, Problem> {
+        let key = RootKey::Remote {
+            target_id: target_id.to_string(),
+            path: path.to_string(),
+        };
+        self.roots
+            .lock()
+            .expect("root lock")
+            .approve(key)
+            .map(|id| id.as_str().to_string())
+    }
+
+    /// Linearizes the final registration check with root retirement. The synchronous
+    /// critical section ends before an async repository listing or other I/O begins.
+    fn register_rooted_repository(
+        &self,
+        record: RepositoryRecord,
+        allowed_root_id: &str,
+    ) -> Result<(), Problem> {
+        let root_id = WorkspaceRootId::try_from(allowed_root_id).map_err(|error| {
+            Problem::new(
+                ProblemCode::InternalError,
+                format!("root registry returned an invalid workspace root id: {error}"),
+            )
+        })?;
+        let roots = self.roots.lock().expect("root lock");
+        if !roots.contains(&root_id)? {
+            return Err(Problem::new(
+                ProblemCode::NotFound,
+                "the workspace root was removed while its repository was being registered",
+            ));
         }
-        state.next += 1;
-        let id = format!("root_{}", base36(state.next));
-        state.roots.push((id.clone(), key));
-        id
+        self.repositories
+            .register_with_limit(record, self.repository_max_count)?;
+        Ok(())
     }
 
     /// The Git version this machine reports, probed once.
@@ -1865,6 +2125,62 @@ impl ApplicationService {
         })?;
         *self.git_version.lock().expect("version lock") = Some(version.clone());
         Ok(version)
+    }
+
+    /// Probes the exact worktree inventory command in a private temporary bare repo.
+    ///
+    /// This reports installed-Git support rather than inferring it from a version string
+    /// or claiming the feature just because this build includes a parser. The answer is
+    /// cached because clients may poll capabilities.
+    async fn probe_worktree_list_z(&self) -> bool {
+        if let Some(supported) = *self
+            .worktree_list_z
+            .lock()
+            .expect("worktree capability lock")
+        {
+            return supported;
+        }
+
+        let sequence = WORKTREE_PROBE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let repository = std::env::temp_dir().join(format!(
+            "refyard-worktree-probe-{}-{sequence}",
+            std::process::id()
+        ));
+        let supported = if tokio::fs::create_dir(&repository).await.is_ok() {
+            let initialized = self
+                .git
+                .run(
+                    &repository,
+                    &refyard_core::plan::GitPlan::read(vec![
+                        "init".to_string(),
+                        "--bare".to_string(),
+                    ]),
+                    None,
+                )
+                .await
+                .succeeded();
+            let supported = if initialized {
+                self.git
+                    .run(
+                        &repository,
+                        &refyard_core::plan::status::plan_worktree_list(),
+                        None,
+                    )
+                    .await
+                    .succeeded()
+            } else {
+                false
+            };
+            let _ = tokio::fs::remove_dir_all(&repository).await;
+            supported
+        } else {
+            false
+        };
+        *self
+            .worktree_list_z
+            .lock()
+            .expect("worktree capability lock") = Some(supported);
+        supported
     }
 }
 
@@ -1920,17 +2236,14 @@ mod tests {
                 ReadKind::History,
                 ReadKind::Refs,
                 ReadKind::Diff,
+                ReadKind::Worktrees,
+                ReadKind::Submodules,
+                ReadKind::Stashes,
             ]
         );
-        // Worktrees, submodules, stashes, operations and events are not implemented, so
-        // they must not appear: a client polls what this list names.
-        for absent in [
-            ReadKind::Worktrees,
-            ReadKind::Submodules,
-            ReadKind::Stashes,
-            ReadKind::Operations,
-            ReadKind::Events,
-        ] {
+        // Operations and events are not implemented, so they must not appear: a client
+        // polls what this list names.
+        for absent in [ReadKind::Operations, ReadKind::Events] {
             assert!(!reads.contains(&absent), "{absent:?} must not be claimed");
         }
     }
@@ -1942,6 +2255,10 @@ mod tests {
             .await
             .expect("capabilities");
         assert_eq!(capabilities.host.kind, HostKind::Rust);
+        assert!(
+            capabilities.git.features.worktree_list_z,
+            "the installed Git supports the worktree inventory command"
+        );
         assert!(capabilities.operations.is_empty(), "no write is offered");
         let unavailable = &capabilities.unavailable;
         assert_eq!(unavailable.len(), 1);
@@ -1990,11 +2307,17 @@ mod tests {
     }
 
     #[test]
-    fn the_approved_root_id_is_stable_for_one_directory() {
+    fn the_approved_root_id_is_stable_for_one_target_and_directory() {
         let service = service();
-        let first = service.approve_root(Path::new("/tmp/repo"));
-        let again = service.approve_root(Path::new("/tmp/repo"));
-        let other = service.approve_root(Path::new("/tmp/other"));
+        let first = service
+            .approve_root(Path::new("/tmp/repo"), "target-local")
+            .expect("first root");
+        let again = service
+            .approve_root(Path::new("/tmp/repo"), "target-local")
+            .expect("same root");
+        let other = service
+            .approve_root(Path::new("/tmp/other"), "target-local")
+            .expect("other root");
         assert_eq!(first, again);
         assert_ne!(first, other);
     }

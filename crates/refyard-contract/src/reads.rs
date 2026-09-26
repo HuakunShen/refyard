@@ -21,6 +21,7 @@
 //! permissive than the `strictObject` schemas. Serializing — the direction the wire
 //! uses — is exact.
 
+use serde::de::Error as _;
 use serde::{Deserialize, Serialize};
 
 use crate::problem::Problem;
@@ -214,7 +215,7 @@ pub struct CapabilitiesResponse {
 #[serde(rename_all = "camelCase")]
 pub struct RepositorySummary {
     pub repository_id: String,
-    pub allowed_root_id: String,
+    pub allowed_root_id: WorkspaceRootId,
     /// Optional so a repository list from a service that predates execution targets
     /// stays readable; absence means the session's default local target.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -233,7 +234,7 @@ pub struct RepositorySummary {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AllowedRootSummary {
-    pub allowed_root_id: String,
+    pub allowed_root_id: WorkspaceRootId,
     pub display_path: String,
     pub repository_ids: Vec<String>,
 }
@@ -245,6 +246,150 @@ pub struct AllowedRootSummary {
 pub struct RepositoriesResponse {
     pub repositories: Vec<RepositorySummary>,
     pub allowed_roots: Vec<AllowedRootSummary>,
+}
+
+/// A target-local root explicitly approved for Refyard reads and writes.
+///
+/// The wire representation remains the standalone contract's `AllowedRootId`; this
+/// newtype makes the `root_` domain distinct from repository, worktree and path ids in
+/// Rust callers without changing the JSON shape.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(transparent)]
+pub struct WorkspaceRootId(String);
+
+impl WorkspaceRootId {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for WorkspaceRootId {
+    type Error = &'static str;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        let suffix = value.strip_prefix("root_").ok_or("must start with root_")?;
+        if suffix.is_empty()
+            || suffix.len() > 96
+            || !suffix
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+        {
+            return Err("must be root_ followed by 1–96 ASCII letters, digits, '_' or '-'");
+        }
+        Ok(Self(value))
+    }
+}
+
+impl TryFrom<&str> for WorkspaceRootId {
+    type Error = &'static str;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::try_from(value.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for WorkspaceRootId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::try_from(value).map_err(D::Error::custom)
+    }
+}
+
+/* ------------------------------------------------------------ worktree reads */
+
+/// One worktree of a repository. Worktrees share refs but have independent HEAD,
+/// index and files.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeSummary {
+    pub worktree_id: String,
+    pub display_path: String,
+    pub head: HeadState,
+    pub is_main: bool,
+    pub is_bare: bool,
+    pub is_detached: bool,
+    pub is_locked: bool,
+    pub lock_reason: Option<String>,
+    pub is_prunable: bool,
+}
+
+/// A bounded snapshot of all worktrees belonging to one common Git directory.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreesResponse {
+    pub snapshot_id: String,
+    pub repository_id: String,
+    pub read_at: String,
+    pub worktrees: Vec<WorktreeSummary>,
+}
+
+/* ------------------------------------------------------------ stash reads */
+
+/// One stash. Its locator moves when other stashes are added or dropped, so mutations
+/// must pair it with the object id.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StashEntry {
+    pub oid: String,
+    pub locator: String,
+    pub message: String,
+    pub created_at: String,
+    pub branch_display: Option<String>,
+}
+
+/// A bounded snapshot of the repository's stash reflog, newest first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StashesResponse {
+    pub snapshot_id: String,
+    pub repository_id: String,
+    pub read_at: String,
+    pub stashes: Vec<StashEntry>,
+    pub truncated: bool,
+}
+
+/* --------------------------------------------------------- submodule reads */
+
+/// What the parent commit, parent index and checked-out submodule each say.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SubmoduleState {
+    Uninitialized,
+    Initialized,
+    OutOfSync,
+    Dirty,
+    Unknown,
+}
+
+/// One configured submodule or gitlink, retaining all three object-name facts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubmoduleSummary {
+    pub name: String,
+    pub path_id: String,
+    pub display_path: String,
+    pub recorded_oid: Option<String>,
+    pub index_oid: Option<String>,
+    pub actual_oid: Option<String>,
+    pub state: SubmoduleState,
+    pub url_display: String,
+    pub branch_name: Option<String>,
+    pub submodule_repository_id: Option<String>,
+}
+
+/// Submodule state seen from a single worktree.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubmodulesResponse {
+    pub snapshot_id: String,
+    pub repository_id: String,
+    pub worktree_id: String,
+    pub read_at: String,
+    pub submodules: Vec<SubmoduleSummary>,
+    pub truncated: bool,
 }
 
 /// A person-entered local path to browse. The host expands a leading `~/` against
@@ -887,7 +1032,7 @@ mod tests {
         // `.optional()`: the key must not appear at all.
         let repository = RepositorySummary {
             repository_id: "repo_1".to_string(),
-            allowed_root_id: "root_1".to_string(),
+            allowed_root_id: WorkspaceRootId::try_from("root_1").expect("valid root id"),
             target_id: None,
             display_name: "refyard".to_string(),
             display_path: "~/code/refyard".to_string(),
@@ -1175,5 +1320,160 @@ mod tests {
             serde_json::from_value(json!({ "stage": 1, "mode": "100644", "oid": OID_A }))
                 .expect("stage 1 is the base");
         assert_eq!(parsed.stage, StageNumber::Base);
+    }
+
+    #[test]
+    fn workspace_root_id_enforces_the_public_prefixed_grammar() {
+        let id = WorkspaceRootId::try_from("root_a-B_9-x").expect("valid root id");
+        assert_eq!(id.as_str(), "root_a-B_9-x");
+        assert_eq!(
+            serde_json::to_string(&id).expect("serializes"),
+            "\"root_a-B_9-x\""
+        );
+
+        let invalid_ids = ["", "root_", "root/a", "Root_1", "root_é"]
+            .into_iter()
+            .map(str::to_string)
+            .chain(std::iter::once(format!("root_{}", "a".repeat(97))));
+        for invalid in invalid_ids {
+            assert!(
+                WorkspaceRootId::try_from(invalid.as_str()).is_err(),
+                "invalid id must be rejected: {invalid:?}"
+            );
+        }
+        let parsed: Result<WorkspaceRootId, _> = serde_json::from_str("\"not-a-root\"");
+        assert!(
+            parsed.is_err(),
+            "deserialization validates the same grammar"
+        );
+    }
+
+    #[test]
+    fn worktree_stash_and_submodule_responses_match_the_public_field_shapes() {
+        let worktrees = WorktreesResponse {
+            snapshot_id: "snap_worktrees".to_string(),
+            repository_id: "repo_main".to_string(),
+            read_at: "2026-09-26T01:02:03.000Z".to_string(),
+            worktrees: vec![WorktreeSummary {
+                worktree_id: "wt_main".to_string(),
+                display_path: "/workspace/repo".to_string(),
+                head: HeadState {
+                    kind: HeadKind::Born,
+                    branch_name: Some("main".to_string()),
+                    oid: Some(OID_A.to_string()),
+                    detached: false,
+                },
+                is_main: true,
+                is_bare: false,
+                is_detached: false,
+                is_locked: false,
+                lock_reason: None,
+                is_prunable: false,
+            }],
+        };
+        assert_eq!(
+            serde_json::to_value(worktrees).expect("serializes"),
+            json!({
+                "snapshotId": "snap_worktrees",
+                "repositoryId": "repo_main",
+                "readAt": "2026-09-26T01:02:03.000Z",
+                "worktrees": [{
+                    "worktreeId": "wt_main",
+                    "displayPath": "/workspace/repo",
+                    "head": {
+                        "kind": "born",
+                        "branchName": "main",
+                        "oid": OID_A,
+                        "detached": false,
+                    },
+                    "isMain": true,
+                    "isBare": false,
+                    "isDetached": false,
+                    "isLocked": false,
+                    "lockReason": null,
+                    "isPrunable": false,
+                }],
+            })
+        );
+
+        let stashes = StashesResponse {
+            snapshot_id: "snap_stashes".to_string(),
+            repository_id: "repo_main".to_string(),
+            read_at: "2026-09-26T01:02:03.000Z".to_string(),
+            stashes: vec![StashEntry {
+                oid: OID_B.to_string(),
+                locator: "stash@{0}".to_string(),
+                message: "work in progress".to_string(),
+                created_at: "2026-09-25T22:00:00.000Z".to_string(),
+                branch_display: Some("feature/refyard".to_string()),
+            }],
+            truncated: false,
+        };
+        assert_eq!(
+            serde_json::to_value(stashes).expect("serializes"),
+            json!({
+                "snapshotId": "snap_stashes",
+                "repositoryId": "repo_main",
+                "readAt": "2026-09-26T01:02:03.000Z",
+                "stashes": [{
+                    "oid": OID_B,
+                    "locator": "stash@{0}",
+                    "message": "work in progress",
+                    "createdAt": "2026-09-25T22:00:00.000Z",
+                    "branchDisplay": "feature/refyard",
+                }],
+                "truncated": false,
+            })
+        );
+
+        let submodules = SubmodulesResponse {
+            snapshot_id: "snap_submodules".to_string(),
+            repository_id: "repo_main".to_string(),
+            worktree_id: "wt_main".to_string(),
+            read_at: "2026-09-26T01:02:03.000Z".to_string(),
+            submodules: vec![SubmoduleSummary {
+                name: "library".to_string(),
+                path_id: "path_lib".to_string(),
+                display_path: "vendor/e\u{301}".to_string(),
+                recorded_oid: Some(OID_A.to_string()),
+                index_oid: Some(OID_B.to_string()),
+                actual_oid: None,
+                state: SubmoduleState::OutOfSync,
+                url_display: "https://example.test/library".to_string(),
+                branch_name: None,
+                submodule_repository_id: None,
+            }],
+            truncated: true,
+        };
+        let value = serde_json::to_value(submodules).expect("serializes");
+        assert_eq!(
+            value,
+            json!({
+                "snapshotId": "snap_submodules",
+                "repositoryId": "repo_main",
+                "worktreeId": "wt_main",
+                "readAt": "2026-09-26T01:02:03.000Z",
+                "submodules": [{
+                    "name": "library",
+                    "pathId": "path_lib",
+                    "displayPath": "vendor/e\u{301}",
+                    "recordedOid": OID_A,
+                    "indexOid": OID_B,
+                    "actualOid": null,
+                    "state": "outOfSync",
+                    "urlDisplay": "https://example.test/library",
+                    "branchName": null,
+                    "submoduleRepositoryId": null,
+                }],
+                "truncated": true,
+            })
+        );
+        let display_path = value["submodules"][0]["displayPath"]
+            .as_str()
+            .expect("path is text");
+        assert_eq!(
+            display_path.chars().map(u32::from).collect::<Vec<_>>(),
+            vec![118, 101, 110, 100, 111, 114, 47, 101, 769]
+        );
     }
 }

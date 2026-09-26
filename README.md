@@ -72,9 +72,8 @@ Every artifact is minisign-signed, and each release carries a `latest.json` for 
 > Privacy & Security**). Installing through Homebrew is not affected — Homebrew does not
 > quarantine casks.
 
-Homebrew (macOS), once the first release is published. The cask is versioned off the release
-DMG URLs, declares `auto_updates true` so the app's own updater stays in charge, and has a
-livecheck watching the releases:
+Homebrew (macOS). The cask is versioned off the release DMG URLs and has a livecheck
+watching new releases:
 
 ```sh
 brew install --cask HuakunShen/tap/refyard
@@ -158,8 +157,8 @@ version; **Install and restart** applies it), and an automatic check at startup 
 opt-in and defaults to **off**. Nothing is downloaded on its own.
 
 Update packages are verified against the project's minisign public key, which ships inside the
-app, so an unsigned feed is refused. The same feed backs the Homebrew cask's `auto_updates`
-behaviour, so `brew upgrade` and the in-app updater never fight.
+app, so an unsigned feed is refused. Homebrew and the in-app updater can each update the app;
+use `brew upgrade refyard` to update through Homebrew.
 
 ## The Node runtime and its loopback security model
 

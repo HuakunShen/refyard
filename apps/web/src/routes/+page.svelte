@@ -51,15 +51,23 @@
     FileDiff,
     FolderGit2,
     GitBranch,
+    PanelLeftClose,
+    PanelLeftOpen,
     RefreshCw,
     Server,
   } from "@lucide/svelte";
+  import {
+    resolveUiLocale,
+    setLocale,
+    type UiLanguage,
+  } from "@refyard/git-ui/i18n";
   import { useQueryClient } from "@tanstack/svelte-query";
   import {
     createWorkbenchSessionState,
     describeBackendProblem,
     isDefaultSessionBaseUrl,
   } from "$lib/workbench/session.js";
+  import { pinnedRepository } from "$lib/workbench/pinned-repository.js";
   import {
     createWorkbenchConnectivityState,
     observeBrowserConnectivity,
@@ -81,6 +89,7 @@
   } from "$lib/workbench/queries.svelte.js";
   import { createWorkbenchMutations } from "$lib/workbench/mutations.svelte.js";
   import {
+    adoptRepositoryTabs,
     closeRepositoryTab,
     createRepositoryTabs,
     selectRepositoryTab,
@@ -103,6 +112,9 @@
   import ResizeHandle from "$lib/components/workbench/ResizeHandle.svelte";
   import {
     clampSidebarWidth,
+    NAV_HEIGHT,
+    RAIL_HEIGHT,
+    RAIL_WIDTH,
     SIDEBAR_WIDTHS,
     storedSidebarWidth,
   } from "$lib/workbench/layout-widths.js";
@@ -126,6 +138,8 @@
     storeAvatars,
     readStoredDensity,
     storeDensity,
+    readStoredLanguage,
+    storeLanguage,
   } from "$lib/storage.js";
   import { createDesktopUpdates } from "$lib/runtime/updates.js";
   import type { UpdateOffer, UpdatesProbe } from "@refyard/git-ui";
@@ -152,6 +166,35 @@
     }),
   );
 
+  /**
+   * Single-repository mode: the host owns repository selection.
+   *
+   * An embedding host mounts this workbench in a column of its own chrome and approves one
+   * repository per Session, so the strip of repository tabs, the "+ New repository" action
+   * and the launcher are all answers to a question nobody asked — and their cost is real:
+   * tabs for repositories the host merely happens to know about, closed ones reappearing,
+   * a strip that steals the header. The host asks for this mode with `single=1` and names
+   * the repository with `repositoryId`, which is also what makes two panels on two Sessions
+   * show two different repositories without either of them listing the other's.
+   */
+  const singleRepository =
+    browser && new URLSearchParams(window.location.search).has("single");
+  const pinnedRepositoryId = browser
+    ? new URLSearchParams(window.location.search).get("repositoryId")
+    : null;
+  const pinnedRepositoryPath = browser
+    ? new URLSearchParams(window.location.search).get("repo")
+    : null;
+
+  /**
+   * The repository the reader picked inside a single-repository panel.
+   *
+   * Single mode shows the repository the host named. A click in the panel's own repository
+   * list overrides that for this panel, and the override lives here because the effect that
+   * owns single mode's tab set would otherwise re-pin the host's repository on its next run.
+   */
+  let singleRepositoryChoice = $state<string | null>(null);
+
   let backendSession = $state<BackendSession | null>(null);
   let connectionState = $state<ConnectionState>({
     phase: "connecting",
@@ -171,9 +214,39 @@
   let background = $state(browser ? readStoredBackground() : "none");
   let glass = $state(browser ? readStoredGlass() : false);
   let avatars = $state(browser ? readStoredAvatars() : true);
-  const storedDensity = browser ? readStoredDensity() : "roomy";
+  /**
+   * The reader's language, and the key that re-mounts the page when it changes.
+   *
+   * A message is read at render time, so a switch has to re-render everything that ever
+   * rendered a string; re-mounting the page is the honest way to do that, and it is what the
+   * reader expects a language change to feel like anyway.
+   */
+  let language = $state<UiLanguage>(
+    browser ? (readStoredLanguage() as UiLanguage) : "auto",
+  );
+  let localeEpoch = $state(0);
+
+  /**
+   * Set the locale before the first string is read, not in an effect after it: effects run
+   * once the render has already happened, so a reader whose browser is Chinese would get a
+   * frame of English that nothing ever re-draws.
+   */
+  if (browser) {
+    void setLocale(resolveUiLocale(language, navigator.language), { reload: false });
+  }
+
+  /** One writer for the preference: resolve it, set it, then re-render the page. */
+  function applyLanguage(next: UiLanguage): void {
+    language = next;
+    if (browser) {
+      void setLocale(resolveUiLocale(next, navigator.language), { reload: false });
+    }
+    localeEpoch += 1;
+  }
+
+  const storedDensity = browser ? readStoredDensity() : "compact";
   let density = $state<RowDensity>(
-    isRowDensity(storedDensity) ? storedDensity : "roomy",
+    isRowDensity(storedDensity) ? storedDensity : "compact",
   );
   // One value for the whole list: the virtualizer's row height and the graph's lane
   // spacing must be the same number, or a node stops sitting on its own row.
@@ -193,6 +266,7 @@
     storeGlass(glass);
     storeAvatars(avatars);
     storeDensity(density);
+    storeLanguage(language);
   });
 
   // The updater exists only on the desktop runtime, and its code only loads there.
@@ -325,6 +399,36 @@
           SIDEBAR_WIDTHS.right,
         )
       : SIDEBAR_WIDTHS.right.default,
+  );
+  /**
+   * Height of the repository column while the workbench is stacked.
+   *
+   * The stacked layout exists whenever the workbench is narrower than its three columns need
+   * — an embedded panel, a small window — and it is the only divider the reader can drag
+   * there. Persisted like the column widths, because a panel the reader sizes is a panel they
+   * expect to stay sized.
+   */
+  let navHeight = $state(
+    browser
+      ? storedSidebarWidth(
+          window.localStorage.getItem("refyard.layout.nav.height"),
+          NAV_HEIGHT.default,
+          NAV_HEIGHT,
+        )
+      : NAV_HEIGHT.default,
+  );
+  /**
+   * Whether the repository column is an icon rail.
+   *
+   * The reader's answer, and it is the whole point of the rail: in a panel wide enough for
+   * one workbench column, the labels beside the graph are the cheapest thing to give up.
+   * Persisted, because a reader who collapsed it once means it.
+   */
+  let leftSidebarCollapsed = $state(
+    browser
+      ? window.localStorage.getItem("refyard.layout.sidebar.left.collapsed") ===
+          "true"
+      : false,
   );
   const historyFilterState = $state(createHistoryFilterState());
   $effect(() => {
@@ -542,12 +646,33 @@
     const unseen = candidates
       .map((entry) => tabForRepository(entry))
       .filter((tab) => !knownTabKeys.has(repositoryTabKey(tab)));
-    if (unseen.length > 0) {
-      repositoryTabs.tabs = [...repositoryTabs.tabs, ...unseen];
-      const first = unseen[0];
-      repositoryTabs.activeRepositoryId ??=
-        first === undefined ? null : repositoryTabKey(first);
-      repositoryTabs.revision += 1;
+    if (singleRepository) {
+      // One repository, and exactly one writer for it. The host names the repository; a click
+      // in the panel's repository list moves it. Settling the *selection* here matters as much
+      // as settling the tabs: pinning the tabs alone left the list's default selection in
+      // place, and the effect below re-adopted it on every run — two effects writing each
+      // other's state until Svelte stopped the render.
+      const chosen =
+        repositoryList.find(
+          (entry) => entry.repositoryId === singleRepositoryChoice,
+        ) ?? pinnedRepository(repositoryList, pinnedRepositoryId, pinnedRepositoryPath);
+      if (chosen !== undefined) {
+        const tab = tabForRepository(chosen);
+        const key = repositoryTabKey(tab);
+        if (
+          repositoryTabs.tabs.length !== 1 ||
+          repositoryTabs.activeRepositoryId !== key
+        ) {
+          repositoryTabs.tabs = [tab];
+          repositoryTabs.activeRepositoryId = key;
+          repositoryTabs.revision += 1;
+        }
+        if (selection.repositoryId !== chosen.repositoryId) {
+          selectRepository(selection, chosen.repositoryId);
+        }
+      }
+    } else {
+      adoptRepositoryTabs(repositoryTabs, unseen);
     }
     if (candidates.length > 0) {
       knownRepositoryIds = [
@@ -573,6 +698,9 @@
   // Repo creation and managed approvals can select a repository outside the tab bar.
   $effect(() => {
     if (launcherRequested) return;
+    // Single mode has no tab bar to keep in step: the effect above owns both its one tab and
+    // its selection, and a second writer here is what turned a settled panel into a loop.
+    if (singleRepository) return;
     const entry = repositoryList.find(
       (item) => item.repositoryId === selectedRepositoryId,
     );
@@ -603,6 +731,12 @@
   }
 
   function selectRegisteredRepository(repositoryId: string): void {
+    // In single-repository mode this is the reader overriding the repository the host named,
+    // and the override has to be remembered: that mode's tab set is written by one effect,
+    // which would otherwise put the host's repository straight back.
+    if (singleRepository) {
+      singleRepositoryChoice = repositoryId;
+    }
     const entry = repositoryList.find(
       (item) => item.repositoryId === repositoryId,
     );
@@ -643,12 +777,19 @@
       executionTarget !== null && executionTarget.kind !== "local"
         ? executionTarget
         : null;
-    // A recent entry is what reopens a repository, and it restores a machine with the
-    // path. A repository the host places on a target, opened without a selection that
-    // names that machine, would reopen on this one — the wrong repository at the same
-    // path — so it is not remembered as a recent rather than remembered wrongly.
-    if (entry.targetId !== undefined && remoteChoice === null) return;
-    const target = entry.targetId === undefined ? null : remoteChoice;
+    // A target reported as `local` is this machine under a target id, not another
+    // machine — a host may name every repository's target, this one included. Only a
+    // repository on another machine depends on the open's choice: reopened without it,
+    // it would run on this one — the wrong repository at the same path — so it is not
+    // remembered rather than remembered wrongly.
+    const onThisMachine =
+      entry.targetId === undefined ||
+      queries.targets.some(
+        (candidate) =>
+          candidate.targetId === entry.targetId && candidate.kind === "local",
+      );
+    if (!onThisMachine && remoteChoice === null) return;
+    const target = onThisMachine ? null : remoteChoice;
     const remembered: RecentRepository = {
       repositoryId: entry.repositoryId,
       ...(entry.targetId === undefined ? {} : { targetId: entry.targetId }),
@@ -849,6 +990,17 @@
     );
   }
 
+  /** The stacked divider drags the repository column's height, in the same direction. */
+  function resizeNavHeight(delta: number): void {
+    navHeight = clampSidebarWidth(navHeight + delta, NAV_HEIGHT);
+  }
+
+  /** Collapsing and expanding are the same act, so they share one handler and one record. */
+  function toggleLeftSidebar(): void {
+    leftSidebarCollapsed = !leftSidebarCollapsed;
+    persistSidebarWidths();
+  }
+
   function persistSidebarWidths(): void {
     if (!browser) {
       return;
@@ -860,6 +1012,11 @@
     window.localStorage.setItem(
       "refyard.layout.sidebar.right",
       String(rightSidebarWidth),
+    );
+    window.localStorage.setItem("refyard.layout.nav.height", String(navHeight));
+    window.localStorage.setItem(
+      "refyard.layout.sidebar.left.collapsed",
+      String(leftSidebarCollapsed),
     );
   }
 
@@ -1063,7 +1220,10 @@
   }}
 />
 
-<div class="relative flex h-dvh min-h-0 flex-col bg-canvas text-ink">
+<div
+  class="@container relative flex h-dvh min-h-0 flex-col bg-canvas text-ink"
+>
+  {#key localeEpoch}
   {#if background !== "none"}
     <div
       class="pointer-events-none fixed inset-0 z-0 bg-cover bg-center bg-no-repeat transition-all duration-500"
@@ -1085,6 +1245,34 @@
     class:pl-[84px]={desktopChrome}
   >
     {#if backendSession !== null}
+      <!-- The trigger lives here rather than inside the column it collapses. Beside the
+           navigation it read as one more navigation icon, which is not a thing anyone finds;
+           in the header it sits where the reader already looks, and it stays put when the
+           column it controls is a 48px rail. `outline` rather than `ghost` for the same
+           reason: a control that only appears on hover is a control nobody finds, and the
+           pressed look tells the reader the rail is on when it is. -->
+      <Button
+        variant="outline"
+        size="icon"
+        class="size-7 shrink-0"
+        aria-label={leftSidebarCollapsed
+          ? "Expand repository panel"
+          : "Collapse repository panel"}
+        title={leftSidebarCollapsed
+          ? "Expand repository panel"
+          : "Collapse repository panel"}
+        aria-expanded={!leftSidebarCollapsed}
+        data-testid="repository-sidebar-toggle"
+        onclick={toggleLeftSidebar}
+      >
+        {#if leftSidebarCollapsed}
+          <PanelLeftOpen class="size-4" />
+        {:else}
+          <PanelLeftClose class="size-4" />
+        {/if}
+      </Button>
+    {/if}
+    {#if backendSession !== null && !singleRepository}
       <div
         class="min-w-0 flex-1"
         data-tauri-drag-region
@@ -1101,9 +1289,10 @@
                   ? tab.displayName
                   : `${tab.displayName} · ${selected.label}`,
               displayPath: selected?.path ?? tab.displayPath,
-              // Only a repository on another machine carries one, so two tabs for the
-              // same path are told apart by the machine, not by reading the tooltip.
+              // Only a named target carries the machine chip, and its kind decides the
+              // icon: this machine is a laptop alone, a host is an icon plus its name.
               targetLabel: queries.targetLabelFor(tab.targetId),
+              targetKind: queries.targetKindFor(tab.targetId),
             };
           })}
           activeRepositoryId={repositoryTabs.activeRepositoryId}
@@ -1113,22 +1302,68 @@
           onNew={handleNewRepositoryTab}
         />
       </div>
+    {:else if backendSession !== null}
+      <!-- Single-repository mode: the strip's whole width belongs to naming the repository
+           the host chose. There is nothing to switch between, and a tab strip that cannot
+           be switched is a control that lies. -->
+      <div
+        class="flex min-w-0 flex-1 items-center gap-1.5 text-xs"
+        data-tauri-drag-region
+        data-testid="workbench-single-repository"
+      >
+        {#if repository !== null}
+          <FolderGit2
+            class="pointer-events-none size-3.5 shrink-0 text-primary"
+          />
+          <span
+            class="truncate font-semibold tracking-tight text-ink"
+            title={repository.displayPath}
+            data-tauri-drag-region
+          >
+            {repository.displayName}
+          </span>
+          {#if status.data?.head?.branchName}
+            <span class="pointer-events-none shrink-0 text-ink-faint">·</span>
+            <span
+              class="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground"
+              data-tauri-drag-region
+            >
+              <GitBranch class="pointer-events-none size-3 text-primary/70" />
+              <span class="font-medium text-foreground" data-tauri-drag-region
+                >{status.data.head.branchName}</span
+              >
+            </span>
+          {/if}
+          {#if selectedTargetLabel !== null}
+            <span class="pointer-events-none shrink-0 text-ink-faint">·</span>
+            <span
+              class="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground"
+              data-tauri-drag-region
+            >
+              <Server class="pointer-events-none size-3 text-primary/70" />
+              <span class="font-medium text-foreground" data-tauri-drag-region
+                >{selectedTargetLabel}</span
+              >
+            </span>
+          {/if}
+        {/if}
+      </div>
     {:else}
-      <span class="flex-1" data-tauri-drag-region></span>
+      <span class="min-w-0 flex-1" data-tauri-drag-region></span>
     {/if}
 
-    {#if repository !== null}
+    {#if repository !== null && !singleRepository}
       <!-- Every non-interactive element in the strip carries the drag attribute, because
            Tauri starts a drag only when the exact mousedown target has it — an attributed
            parent behind unattributed children drags nothing. Text keeps its tooltip by
            carrying the attribute itself; pure decoration opt out of pointer events. -->
       <div
-        class="hidden items-center gap-1.5 rounded-full border border-border/80 bg-background/60 px-3 py-1 text-xs shadow-2xs backdrop-blur-xs lg:flex"
+        class="hidden shrink-0 items-center gap-1.5 rounded-full border border-border/80 bg-background/60 px-3 py-1 text-xs shadow-2xs backdrop-blur-xs @5xl:flex"
         data-tauri-drag-region
       >
         <FolderGit2 class="pointer-events-none size-3.5 text-primary" />
         <span
-          class="max-w-44 truncate font-semibold tracking-tight text-ink lg:max-w-64"
+          class="max-w-44 truncate font-semibold tracking-tight text-ink @5xl:max-w-64"
           title={worktreePath}
           data-tauri-drag-region
         >
@@ -1167,7 +1402,7 @@
     {/if}
 
     {#if capabilities.data !== undefined}
-      <div class="flex items-center" data-tauri-drag-region>
+      <div class="flex shrink-0 items-center" data-tauri-drag-region>
         {#if capabilities.data.operations.length === 0}
           <Badge
             tone="muted"
@@ -1192,7 +1427,9 @@
       </div>
     {/if}
 
-    <span class="flex-1" data-tauri-drag-region></span>
+    <!-- No second flexible spacer here: two of them split the free space, which is what left
+         a dead notch in the middle of the strip while the tabs were squeezed to the left.
+         One growing region (the tabs, or the repository name in single mode) takes it all. -->
 
     {#if backendSession !== null}
       <Badge
@@ -1202,7 +1439,7 @@
             ? "branch"
             : "muted"}
         data-testid="connection-state"
-        class="pointer-events-none gap-1.5 py-0.5"
+        class="pointer-events-none shrink-0 gap-1.5 py-0.5"
       >
         <span class="relative flex size-2">
           <span
@@ -1243,6 +1480,8 @@
         onGlassChange={(val) => (glass = val)}
         onAvatarsChange={(val) => (avatars = val)}
         onDensityChange={(val) => (density = val)}
+        {language}
+        onLanguageChange={applyLanguage}
         updates={updatesProbe ?? undefined}
         {autoCheck}
         onAutoCheckChange={(enabled) => {
@@ -1367,8 +1606,8 @@
     </main>
   {:else}
     <main
-      class="relative z-1 flex min-h-0 flex-1 flex-col overflow-y-auto lg:grid lg:overflow-visible lg:grid-cols-[var(--left-sidebar-width)_minmax(0,1fr)_var(--right-sidebar-width)]"
-      style={`--left-sidebar-width: ${mainDiffOpen ? 0 : leftSidebarWidth}px; --right-sidebar-width: ${rightSidebarWidth}px;`}
+      class="relative z-1 flex min-h-0 flex-1 flex-col overflow-hidden @5xl:grid @5xl:overflow-visible @5xl:grid-cols-[var(--left-sidebar-width)_minmax(0,1fr)_var(--right-sidebar-width)]"
+      style={`--left-sidebar-width: ${mainDiffOpen ? 0 : leftSidebarCollapsed ? RAIL_WIDTH : leftSidebarWidth}px; --right-sidebar-width: ${rightSidebarWidth}px; --nav-height: ${leftSidebarCollapsed ? RAIL_HEIGHT : navHeight}px;`}
       data-launcher-open={launcherOpen}
       data-selected-repository={selectedRepositoryId ?? ""}
       data-repository-count={repositoryList.length}
@@ -1376,7 +1615,7 @@
     >
       {#if launcherOpen || selectedRepositoryId === null}
         <section
-          class="min-w-0 flex-1 overflow-y-auto lg:col-span-3"
+          class="min-w-0 flex-1 overflow-y-auto @5xl:col-span-3"
           data-testid="repository-launcher-panel"
         >
           {#if queries.repositories.isError}
@@ -1428,8 +1667,9 @@
       {:else}
         <div
           class={mainDiffOpen
-            ? "hidden min-h-0 min-w-0 overflow-hidden lg:block"
-            : "flex min-h-0 min-w-0 flex-col overflow-hidden"}
+            ? "hidden min-h-0 min-w-0 overflow-hidden @5xl:block"
+            : "flex h-[var(--nav-height)] min-h-0 min-w-0 shrink-0 flex-col overflow-hidden @5xl:h-auto @5xl:shrink"}
+          data-testid="repository-column"
         >
           <div class={mainDiffOpen ? "hidden" : "flex min-h-0 flex-1 flex-col"}>
             <RepositorySidebar
@@ -1442,13 +1682,26 @@
               onOpenWorktree={(id) => openWorktree(id)}
               onOpenWorktreeInTab={(id) => openWorktree(id, true)}
               onWorkingCopy={backToHistory}
+              collapsed={leftSidebarCollapsed}
             />
           </div>
         </div>
+        {#if !mainDiffOpen}
+          <!-- The divider a stacked workbench actually has: it moves the repository list's
+               height, and the column handles below move widths the stacked layout does not
+               have. Exactly one of the two sets is on screen, by the same container query. -->
+          <ResizeHandle
+            orientation="horizontal"
+            side="left"
+            onResize={resizeNavHeight}
+            onResizeEnd={persistSidebarWidths}
+            style={`top: ${navHeight}px`}
+          />
+        {/if}
         <section
           class={mainDiffOpen
             ? "hidden"
-            : "flex h-[44rem] min-h-[32rem] min-w-0 shrink-0 flex-col gap-2 p-3 lg:h-auto lg:min-h-0"}
+            : "flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-hidden p-3"}
           data-testid="history-panel"
         >
           <div class="shrink-0 flex items-center gap-2">
@@ -1609,7 +1862,7 @@
 
         {#if mainDiffOpen}
           <section
-            class="flex h-[44rem] min-h-0 min-w-0 flex-col lg:h-auto"
+            class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden @5xl:flex-none"
             data-testid="main-diff-panel"
           >
             <header
@@ -1672,7 +1925,7 @@
           </section>
         {/if}
         <section
-          class="flex min-h-80 min-w-0 flex-col overflow-hidden border-l border-border bg-panel p-3 lg:min-h-0"
+          class="flex h-[38%] min-h-[12rem] min-w-0 shrink-0 flex-col overflow-hidden border-t border-border bg-panel p-3 @5xl:h-auto @5xl:min-h-0 @5xl:shrink @5xl:border-t-0 @5xl:border-l"
           data-testid="working-copy-sidebar"
         >
           {#if selectedOid !== null}
@@ -1752,7 +2005,7 @@
             />
           </div>
         </section>
-        {#if !mainDiffOpen}
+        {#if !mainDiffOpen && !leftSidebarCollapsed}
           <ResizeHandle
             side="left"
             onResize={resizeLeftSidebar}
@@ -1769,4 +2022,5 @@
       {/if}
     </main>
   {/if}
+  {/key}
 </div>

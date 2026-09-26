@@ -223,6 +223,49 @@ describe("static assets", () => {
       await bare.close();
     }
   });
+
+  it("lets an embedding host name the origins allowed to frame the workbench", async () => {
+    // An embedding host renders the workbench in its own chrome, which the default
+    // `frame-ancestors 'none'` refuses. The option widens exactly that directive: the
+    // script policy and `connect-src` must stay as they were, or embedding would have
+    // quietly bought the page a weaker script policy.
+    const embedded = await startTestService({
+      repo,
+      webRoot,
+      frameAncestors: ["'self'"],
+    });
+    try {
+      const response = await embedded.fetch("/");
+      const policy = response.headers.get("content-security-policy") ?? "";
+      expect(policy).toContain("frame-ancestors 'self'");
+      expect(policy).not.toContain("frame-ancestors 'none'");
+      expect(policy).toContain("script-src 'self'");
+      expect(policy).toContain("connect-src 'self'");
+      // X-Frame-Options cannot express an allowlist, so it must not veto the policy.
+      expect(response.headers.get("x-frame-options")).toBeNull();
+    } finally {
+      await embedded.close();
+    }
+  });
+
+  it("refuses a frame-ancestors value that is not one exact source", async () => {
+    // A value with whitespace would silently become a second source in the directive,
+    // which is the difference between naming an embedder and allowing anyone.
+    const awkward = await startTestService({
+      repo,
+      webRoot,
+      frameAncestors: ["http://127.0.0.1:3080 https://evil.example"],
+    });
+    try {
+      const response = await awkward.fetch("/");
+      expect(response.headers.get("content-security-policy")).toContain(
+        "frame-ancestors 'none'",
+      );
+      expect(response.headers.get("x-frame-options")).toBe("DENY");
+    } finally {
+      await awkward.close();
+    }
+  });
 });
 
 describe("a machine whose Git is older than the baseline", () => {

@@ -21,4 +21,5 @@ pub mod snapshots;
 pub mod ssh;
 pub mod state_root;
 pub mod targets;
+mod workspace_roots;
 pub mod writes;

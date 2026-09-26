@@ -15,6 +15,7 @@
   import {
     BranchPanel,
     Button,
+    cn,
     ConflictPanel,
     RefsPanel,
     RemotePanel,
@@ -42,6 +43,25 @@
     selectSidebarView,
     type SidebarViewId,
   } from "$lib/workbench/sidebar-navigation.js";
+  import { m } from "@refyard/git-ui/i18n";
+
+  /**
+   * The navigation's labels come from the catalogue rather than the view table, because the
+   * table is logic (ids, availability, counts) and the label is the one part of it that
+   * changes with the reader's language.
+   */
+  const SIDEBAR_LABELS: Record<SidebarViewId, () => string> = {
+    repositories: () => m.sidebar_repositories(),
+    "working-copy": () => m.sidebar_working_copy(),
+    branches: () => m.sidebar_branches(),
+    remotes: () => m.sidebar_remotes(),
+    stashes: () => m.sidebar_stashes(),
+    tags: () => m.sidebar_tags(),
+    worktrees: () => m.sidebar_worktrees(),
+    submodules: () => m.sidebar_submodules(),
+    "pull-requests": () => m.sidebar_pull_requests(),
+    refs: () => m.sidebar_refs(),
+  };
 
   interface Props {
     queries: WorkbenchQueries;
@@ -54,6 +74,14 @@
     onOpenWorktree: (id: string) => void;
     onOpenWorktreeInTab: (id: string) => void;
     onWorkingCopy: () => void;
+    /**
+     * Whether the column is an icon rail.
+     *
+     * The reader's answer, held by the page: the same choice decides the column's width and
+     * the navigation's shape, and the two must not be able to disagree. The trigger that
+     * flips it lives in the workbench header, where it stays visible in both shapes.
+     */
+    collapsed: boolean;
   }
 
   let {
@@ -66,6 +94,7 @@
     onOpenWorktree,
     onOpenWorktreeInTab,
     onWorkingCopy,
+    collapsed,
   }: Props = $props();
 
   const repositories = $derived(queries.repositories);
@@ -186,9 +215,10 @@
   const navItems: readonly WorkbenchNavItem[] = $derived(
     sidebarViews
       .filter((entry) => entry.available)
-      .map(({ id, label, count }) =>
-        count === undefined ? { id, label } : { id, label, count },
-      ),
+      .map(({ id, count }) => {
+        const label = SIDEBAR_LABELS[id]();
+        return count === undefined ? { id, label } : { id, label, count };
+      }),
   );
   const navigation = $state(createSidebarNavigationState());
   const activeView = $derived(navigation.activeView);
@@ -209,11 +239,30 @@
 </script>
 
 <aside
-  class="flex h-[28rem] shrink-0 flex-col border-r border-border/80 bg-canvas/40 lg:h-auto lg:min-h-0"
+  class="flex h-full min-h-0 flex-col border-b border-border/80 bg-canvas/40 @5xl:border-b-0 @5xl:border-r"
   data-testid="repository-sidebar"
+  data-collapsed={collapsed}
 >
-  <div class="shrink-0 p-2.5 pb-2">
-    <WorkbenchNav items={navItems} activeId={activeView} onSelect={chooseView}>
+  <!-- The rail keeps the toggle beside the icons rather than above them: stacked, the whole
+       navigation is one band across the top, and a separate header row would spend the
+       height the rail was collapsed to give back. -->
+  <div
+    class={cn(
+      "flex shrink-0 gap-1",
+      collapsed
+        ? "flex-row items-center overflow-auto p-1.5 @5xl:flex-col @5xl:items-stretch"
+        : "flex-col p-2.5 pb-2",
+    )}
+  >
+    <WorkbenchNav
+      items={navItems}
+      activeId={activeView}
+      onSelect={chooseView}
+      {collapsed}
+      class={collapsed
+        ? "min-w-0 flex-1 @5xl:flex-none @5xl:flex-col"
+        : ""}
+    >
       {#snippet icon(item)}
         {#if item.id === "repositories"}
           <FolderGit2 class="size-3.5" />
@@ -237,11 +286,12 @@
       {/snippet}
     </WorkbenchNav>
   </div>
-  <Separator />
-  <div
-    class="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto p-2.5 custom-scrollbar"
-    data-testid={`sidebar-view-${activeView}`}
-  >
+  {#if !collapsed}
+    <Separator />
+    <div
+      class="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto p-2.5 custom-scrollbar"
+      data-testid={`sidebar-view-${activeView}`}
+    >
     <SectionCard
       title="Repositories"
       class={activeView !== "repositories" ? "hidden" : ""}
@@ -505,6 +555,8 @@
                 activeWorktreeId={queries.activeWorktreeId}
                 {onOpenWorktree}
                 {onOpenWorktreeInTab}
+                currentBranch={status.data?.head?.branchName ?? null}
+                onMergeBranch={mergeAvailable ? onBranchMerge : undefined}
                 disabled={mutationBusy}
                 busy={mutationBusy}
                 message={worktreeMessage}
@@ -616,5 +668,6 @@
         </SectionCard>
       {/if}
     {/if}
-  </div>
+    </div>
+  {/if}
 </aside>

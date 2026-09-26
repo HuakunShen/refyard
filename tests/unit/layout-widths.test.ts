@@ -2,6 +2,10 @@
 import { describe, expect, it } from "vitest";
 import {
   clampSidebarWidth,
+  NAV_HEIGHT,
+  RAIL_HEIGHT,
+  RAIL_WIDTH,
+  SIDEBAR_WIDTHS,
   storedSidebarWidth,
 } from "../../apps/web/src/lib/workbench/layout-widths.js";
 
@@ -18,5 +22,13 @@ describe("layout widths", () => {
     expect(storedSidebarWidth(null, 296, bounds)).toBe(296);
     expect(storedSidebarWidth("not-a-width", 296, bounds)).toBe(296);
     expect(storedSidebarWidth("480", 296, bounds)).toBe(480);
+  });
+
+  it("keeps the rail narrower than any column the reader can drag to", () => {
+    // Prevents: collapsing a column that was already squeezed past the rail's width, which
+    // would make the column *wider* — the opposite of what the reader asked for, and a state
+    // with no way out except dragging back out of it.
+    expect(RAIL_WIDTH).toBeLessThan(SIDEBAR_WIDTHS.left.min);
+    expect(RAIL_HEIGHT).toBeLessThan(NAV_HEIGHT.min);
   });
 });

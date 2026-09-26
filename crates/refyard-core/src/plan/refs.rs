@@ -5,7 +5,59 @@
 //! same repository.
 
 use super::{names_stdin, GitPlan};
+use crate::bytes::is_object_name;
 use crate::problem::CoreError;
+
+/// The `.gitmodules` config entries, with NUL-framed key/value records.
+pub fn plan_submodule_config() -> GitPlan {
+    GitPlan::read(vec![
+        "config".to_string(),
+        "-z".to_string(),
+        "--file".to_string(),
+        ".gitmodules".to_string(),
+        "--get-regexp".to_string(),
+        "^submodule\\.".to_string(),
+    ])
+}
+
+/// The recorded tree entries for an explicit set of literal repository paths.
+///
+/// Paths are arguments only after `--literal-pathspecs` and `--`; an invalid path or
+/// non-object revision is refused here rather than becoming Git's option syntax.
+pub fn plan_ls_tree_entries(revision: &str, paths: &[String]) -> Result<GitPlan, CoreError> {
+    if !is_object_name(revision.as_bytes()) {
+        return Err(CoreError::invalid_input(
+            "plan_ls_tree_entries requires a 40- or 64-character lowercase object name",
+        ));
+    }
+    if paths.is_empty() {
+        return Err(CoreError::invalid_input(
+            "plan_ls_tree_entries requires at least one path",
+        ));
+    }
+    for path in paths {
+        if path.is_empty()
+            || path.starts_with('/')
+            || path.contains('\0')
+            || path
+                .split('/')
+                .any(|segment| segment.is_empty() || segment == "." || segment == "..")
+        {
+            return Err(CoreError::invalid_input(
+                "plan_ls_tree_entries requires normalized repository-relative paths",
+            ));
+        }
+    }
+    let mut argv = vec![
+        "--literal-pathspecs".to_string(),
+        "ls-tree".to_string(),
+        "-z".to_string(),
+        revision.to_string(),
+        "--".to_string(),
+    ];
+    argv.extend(paths.iter().cloned());
+    Ok(GitPlan::read(argv))
+}
 
 /// Resolves a name that should be a commit, refusing to treat a tag object as one.
 pub fn plan_rev_parse_commit(revision: &str) -> GitPlan {
@@ -90,5 +142,46 @@ mod tests {
         // `cat-file --batch-check` with no input would wait for stdin that never comes.
         let error = plan_cat_file_exists(&[]).expect_err("empty");
         assert!(matches!(error, CoreError::InvalidInput { .. }));
+    }
+
+    #[test]
+    fn submodule_config_is_scoped_to_gitmodules_and_nul_delimited() {
+        let plan = plan_submodule_config();
+        assert_eq!(
+            plan.argv,
+            vec![
+                "config",
+                "-z",
+                "--file",
+                ".gitmodules",
+                "--get-regexp",
+                "^submodule\\.",
+            ]
+        );
+        assert_eq!(plan.deadline_class, DeadlineClass::Read);
+        assert!(plan.stdin.is_empty());
+    }
+
+    #[test]
+    fn recorded_submodule_entries_are_literal_and_cannot_escape_the_tree() {
+        let oid = "0123456789abcdef0123456789abcdef01234567";
+        let plan = plan_ls_tree_entries(oid, &["modules/child".into(), "-name[*]".into()])
+            .expect("literal pathspecs");
+        assert_eq!(
+            plan.argv,
+            vec![
+                "--literal-pathspecs",
+                "ls-tree",
+                "-z",
+                oid,
+                "--",
+                "modules/child",
+                "-name[*]",
+            ]
+        );
+        assert_eq!(plan.deadline_class, DeadlineClass::Read);
+        assert!(plan.stdin.is_empty());
+        assert!(plan_ls_tree_entries(oid, &["../outside".into()]).is_err());
+        assert!(plan_ls_tree_entries("HEAD", &["modules/child".into()]).is_err());
     }
 }

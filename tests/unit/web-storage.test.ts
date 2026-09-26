@@ -135,11 +135,11 @@ describe("the browser's stored session", () => {
     expect(session.getItem("refyard.baseUrl")).toBeNull();
   });
 
-  it("reads a row density as a name, and defaults to the roomy one", () => {
+  it("reads a row density as a name, and defaults to the compact one", () => {
     // Stored as a name rather than a pixel count: a later change to the density scale
-    // must not have to interpret numbers written by an older build. Roomy is
-    // GitKraken's spacing, which is the experience this history table is built to match.
-    expect(storage.readStoredDensity()).toBe("roomy");
+    // must not have to interpret numbers written by an older build. Compact is the
+    // default this workbench opens at, and the name is what the reader round-trips.
+    expect(storage.readStoredDensity()).toBe("compact");
 
     storage.storeDensity("roomy");
 

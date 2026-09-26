@@ -1,4 +1,9 @@
-//! The three write effects this build implements: stage, unstage and commit.
+//! The thirty-five write effects this build implements: stage, unstage, commit and
+//! amend, the ref writes (branch create/switch/rename/delete, upstream, tag
+//! create/delete), the remote config writes (add/update/remove), the stash family
+//! (create/apply/pop/drop), merge with its continue and abort, revert, reset,
+//! cherry-pick with its continue and abort, rebase with its continue and abort, drop,
+//! and squash.
 //!
 //! One workflow per effect, run through whatever executor the repository's target names —
 //! the local provider or the SSH provider. There is no second implementation for SSH: the
@@ -23,10 +28,18 @@
 //! visible as "the commit exists and Git complained" rather than as a failure, and what
 //! stops a dropped connection from being reported as a clean no-op.
 
+pub mod branch;
 pub mod commit;
+pub mod merge;
+pub mod remotes;
+pub mod replay;
+pub mod sequencer;
 pub mod stage;
+pub mod stash;
+pub mod submodules;
+pub mod worktrees;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use refyard_contract::problem::{DetailValue, Problem, ProblemCode};
 use refyard_contract::reads::OperationResult;
@@ -39,9 +52,12 @@ use crate::jobs::journal::EffectOutcome;
 use crate::jobs::{MutationEffect, MutationRequest};
 use crate::paths::PathRegistry;
 use crate::providers::GitExecutor;
-use crate::reads::status::{read_write_facts, WriteFacts};
+use crate::reads::status::read_write_facts;
+pub(crate) use crate::reads::status::WriteFacts;
 use crate::registry::{RepositoryRecord, RepositoryRegistry};
 use crate::targets::{TargetRecord, TargetRegistry};
+use crate::workspace_roots::RootState;
+use tokio::sync::{OwnedRwLockReadGuard, RwLock};
 
 /// The most paths one path-scoped write may name, from `LIMITS.pathSelectionMaxEntries`.
 pub const PATH_SELECTION_MAX_ENTRIES: usize = 1_000;
@@ -58,6 +74,8 @@ pub struct WriteHost {
     repositories: Arc<RepositoryRegistry>,
     paths: Arc<PathRegistry>,
     previews: Arc<PreviewStore>,
+    roots: Arc<Mutex<RootState>>,
+    root_operations: Arc<RwLock<()>>,
 }
 
 /// One request resolved to the place Git will run.
@@ -66,6 +84,7 @@ pub struct WriteTarget {
     pub record: RepositoryRecord,
     pub executor: GitExecutor,
     pub worktree_id: String,
+    _root_lease: OwnedRwLockReadGuard<()>,
 }
 
 /// One path id resolved to the bytes it was minted for.
@@ -76,21 +95,27 @@ pub struct ResolvedPath {
 }
 
 impl WriteHost {
-    pub fn new(
+    pub(crate) fn new(
         targets: TargetRegistry,
         repositories: Arc<RepositoryRegistry>,
         paths: Arc<PathRegistry>,
         previews: Arc<PreviewStore>,
+        roots: Arc<Mutex<RootState>>,
+        root_operations: Arc<RwLock<()>>,
     ) -> Self {
         Self {
             targets,
             repositories,
             paths,
             previews,
+            roots,
+            root_operations,
         }
     }
 
-    /// The three effects this build registers, in the order the contract lists them.
+    /// The forty-two effects this build registers, in the order the contract lists
+    /// them. The contract's own order is what `implemented_kinds` publishes, so the
+    /// capability answer the UI gates its menus on is stable across builds.
     pub fn effects(host: &Arc<Self>) -> Vec<Box<dyn MutationEffect>> {
         vec![
             Box::new(stage::StageEffect {
@@ -100,6 +125,123 @@ impl WriteHost {
                 host: Arc::clone(host),
             }),
             Box::new(commit::CommitEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(commit::AmendCommitEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(branch::CreateBranchEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(branch::SwitchBranchEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(branch::RenameBranchEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(branch::DeleteBranchEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(branch::SetBranchUpstreamEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(remotes::AddRemoteEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(remotes::UpdateRemoteEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(remotes::RemoveRemoteEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(remotes::FetchEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(remotes::PushEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(remotes::PullEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(stash::CreateStashEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(stash::ApplyStashEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(stash::PopStashEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(stash::DropStashEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(branch::CreateTagEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(branch::DeleteTagEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(remotes::PushTagEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(worktrees::CreateWorktreeEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(worktrees::RemoveWorktreeEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(worktrees::LockWorktreeEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(worktrees::UnlockWorktreeEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(submodules::AddSubmoduleEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(submodules::UpdateSubmoduleEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(submodules::SyncSubmoduleEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(merge::MergeEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(sequencer::ContinueMergeEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(sequencer::AbortMergeEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(replay::RevertCommitEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(replay::ResetBranchEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(replay::CherryPickEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(sequencer::ContinueCherryPickEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(sequencer::AbortCherryPickEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(replay::RebaseEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(sequencer::ContinueRebaseEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(sequencer::AbortRebaseEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(replay::DropCommitEffect {
+                host: Arc::clone(host),
+            }),
+            Box::new(replay::SquashCommitEffect {
                 host: Arc::clone(host),
             }),
         ]
@@ -144,24 +286,34 @@ impl WriteHost {
     }
 
     /// Resolves a request to the repository, target and worktree it addresses.
-    pub fn resolve(&self, request: &MutationRequest) -> Result<WriteTarget, Problem> {
+    pub async fn resolve(&self, request: &MutationRequest) -> Result<WriteTarget, Problem> {
         let repository_id = request.repository_id().ok_or_else(|| {
             Problem::new(
                 ProblemCode::InvalidRequest,
                 "this operation must target a repository or a worktree",
             )
         })?;
-        self.resolve_ids(repository_id, request.worktree_id())
+        self.resolve_ids(repository_id, request.worktree_id()).await
     }
 
     /// The same resolution, for a caller that names the repository and worktree directly
     /// (the preview redemption a client may perform before submitting a stage).
-    pub fn resolve_ids(
+    pub async fn resolve_ids(
         &self,
         repository_id: &str,
         worktree_id: Option<&str>,
     ) -> Result<WriteTarget, Problem> {
-        let record = self.require_record(repository_id)?;
+        let aggregate = self.require_record(repository_id)?;
+        let worktree_id = crate::reads::require_worktree(&aggregate, worktree_id)
+            .map_err(|error| error.to_problem())?;
+        let record = aggregate
+            .selected_worktree(Some(&worktree_id), None)
+            .ok_or_else(|| {
+                Problem::new(
+                    ProblemCode::NotFound,
+                    format!("unknown worktree {worktree_id} in {repository_id}"),
+                )
+            })?;
         if record.layout.is_bare {
             return Err(Problem::new(
                 ProblemCode::UnsupportedOperation,
@@ -171,15 +323,44 @@ impl WriteHost {
                 ),
             ));
         }
+        let root_lease = self.lease_root(&record.allowed_root_id).await?;
         let target = self.target_for(&record)?;
-        let worktree_id = crate::reads::require_worktree(&record, worktree_id)
-            .map_err(|error| error.to_problem())?;
         let executor = target.executor()?.clone();
         Ok(WriteTarget {
             record,
             executor,
             worktree_id,
+            _root_lease: root_lease,
         })
+    }
+
+    /// Holds admission open only while the named root is still approved. A root-removal
+    /// writer waits for this lease, then future readers queue behind it and fail the
+    /// active-root check after retirement.
+    async fn lease_root(&self, allowed_root_id: &str) -> Result<OwnedRwLockReadGuard<()>, Problem> {
+        let lease = Arc::clone(&self.root_operations).read_owned().await;
+        let root_id = refyard_contract::reads::WorkspaceRootId::try_from(allowed_root_id).map_err(
+            |error| {
+                Problem::new(
+                    ProblemCode::InternalError,
+                    format!("repository registry returned an invalid workspace root id: {error}"),
+                )
+            },
+        )?;
+        if !self.roots.lock().expect("root lock").contains(&root_id)? {
+            return Err(Problem::new(
+                ProblemCode::NotFound,
+                "the repository's workspace root is no longer registered",
+            ));
+        }
+        Ok(lease)
+    }
+
+    pub(crate) async fn lease_root_for_record(
+        &self,
+        record: &RepositoryRecord,
+    ) -> Result<OwnedRwLockReadGuard<()>, Problem> {
+        self.lease_root(&record.allowed_root_id).await
     }
 
     /// Resolves every selected path id to the bytes it was minted for.
@@ -271,7 +452,7 @@ impl WriteHost {
         path_ids: &[String],
         preview_tokens: &[String],
     ) -> Result<(), Problem> {
-        let target = self.resolve_ids(repository_id, Some(worktree_id))?;
+        let target = self.resolve_ids(repository_id, Some(worktree_id)).await?;
         let selected = self.resolve_paths(&target, path_ids)?;
         self.redeem_previews(&target, &selected, preview_tokens)
             .await
@@ -422,7 +603,7 @@ pub fn classify_write(
 }
 
 /// The refusal a failed command carries, with the read-back stated as its evidence.
-fn refusal_problem(command: &'static str, outcome: &RunOutcome) -> Problem {
+pub(crate) fn refusal_problem(command: &'static str, outcome: &RunOutcome) -> Problem {
     let unchanged = "; the index and HEAD were re-read and are unchanged";
     let (code, message) = match (outcome.state, outcome.termination) {
         (ExecutionState::NotStarted, _) => (
@@ -470,7 +651,7 @@ fn refusal_problem(command: &'static str, outcome: &RunOutcome) -> Problem {
 }
 
 /// The reason an outcome is unknown, in the one vocabulary the journal keeps.
-fn unknown_problem(command: &'static str, message: &str) -> Problem {
+pub(crate) fn unknown_problem(command: &'static str, message: &str) -> Problem {
     Problem::new(
         ProblemCode::UncertainOutcome,
         format!("{command}: {message}"),
@@ -478,7 +659,7 @@ fn unknown_problem(command: &'static str, message: &str) -> Problem {
 }
 
 /// Git's diagnostic text, bounded for the wire.
-fn diagnostic_of(outcome: &RunOutcome) -> String {
+pub(crate) fn diagnostic_of(outcome: &RunOutcome) -> String {
     String::from_utf8_lossy(&outcome.stderr)
         .trim_end()
         .chars()
@@ -495,6 +676,23 @@ pub fn result_of(
     OperationResult {
         summary,
         changed_refs: Vec::new(),
+        changed_paths,
+        snapshot_invalidated: true,
+        new_head_oid,
+    }
+}
+
+/// A result that names which refs changed — the per-ref answer a fetch/push owes,
+/// beyond what a bare `result_of` reports.
+pub(crate) fn result_of_refs(
+    summary: String,
+    changed_refs: Vec<String>,
+    changed_paths: Option<u64>,
+    new_head_oid: Option<String>,
+) -> OperationResult {
+    OperationResult {
+        summary,
+        changed_refs,
         changed_paths,
         snapshot_invalidated: true,
         new_head_oid,
@@ -530,6 +728,53 @@ pub(crate) fn selected_paths(selected: &[ResolvedPath]) -> Vec<Vec<u8>> {
         }
     }
     paths
+}
+
+/// A completed run that Git finished and reported zero on.
+pub(crate) fn clean_exit(outcome: &RunOutcome) -> bool {
+    outcome.state == ExecutionState::Completed
+        && outcome.output_complete
+        && outcome.exit_code == Some(0)
+}
+
+/// Whether one read-only probe answers "yes" (`true`), "no" (`false`), or could not be
+/// read at all (`None`) — through the same executor the write itself will use, so a
+/// repository on another machine answers about itself.
+pub(crate) async fn probe(target: &WriteTarget, plan: &GitPlan) -> Option<bool> {
+    let outcome = target
+        .executor
+        .try_run(
+            target.record.location.canonical_worktree.as_str(),
+            plan,
+            None,
+        )
+        .await
+        .ok()?;
+    Some(clean_exit(&outcome))
+}
+
+/// Distinct paths with unmerged index stages, deduplicated by raw path bytes: two byte
+/// sequences that render as the same text are still two paths.
+pub(crate) async fn conflicted_count(target: &WriteTarget) -> Option<u64> {
+    let plan = refyard_core::plan::merge::plan_ls_files_unmerged();
+    let outcome = target
+        .executor
+        .try_run(
+            target.record.location.canonical_worktree.as_str(),
+            &plan,
+            None,
+        )
+        .await
+        .ok()?;
+    if !clean_exit(&outcome) {
+        return None;
+    }
+    let stages = refyard_core::parse::lsfiles::parse_ls_files_unmerged(&outcome.stdout).ok()?;
+    let mut paths = std::collections::HashSet::new();
+    for stage in stages {
+        paths.insert(stage.path);
+    }
+    Some(paths.len() as u64)
 }
 
 /// The paths a stage plans over: the selected paths plus, when it can be addressed, the
@@ -608,6 +853,27 @@ pub(crate) fn invalid_payload(operation_id: &str, message: String) -> EffectOutc
 pub(crate) fn refused(operation_id: &str, problem: Problem) -> EffectOutcome {
     EffectOutcome::Failed {
         problem: problem.for_operation(operation_id.to_string()),
+    }
+}
+
+/// A destructive operation's gate. Without the explicit confirmation the contract's
+/// `confirmed` literal carries, the write is refused before anything runs — the
+/// fail-closed half of "a destructive operation requires explicit confirmation".
+pub(crate) fn require_confirmed(
+    operation_id: &str,
+    confirmed: bool,
+    what: &str,
+) -> Result<(), EffectOutcome> {
+    if confirmed {
+        Ok(())
+    } else {
+        Err(refused(
+            operation_id,
+            Problem::new(
+                ProblemCode::InvalidRequest,
+                format!("{what} requires explicit confirmation; nothing was changed"),
+            ),
+        ))
     }
 }
 
