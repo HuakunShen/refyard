@@ -213,16 +213,19 @@ fn run_ssh_double(arguments: &[String]) -> i32 {
     let Some(remote_directory) = words.get(2) else {
         return 2;
     };
-    if remote_directory != "/repo" && remote_directory != "." {
-        eprintln!("scripted transport refused remote directory: {remote_directory:?}");
-        return 2;
-    }
     let (Some(repository), Some(git)) = (
         std::env::var_os("REFYARD_FIXTURE_REPO"),
         std::env::var_os("REFYARD_FIXTURE_GIT"),
     ) else {
         return 2;
     };
+    if remote_directory != "/repo"
+        && remote_directory != "."
+        && !matches_fixture_directory(remote_directory, &repository)
+    {
+        eprintln!("scripted transport refused remote directory: {remote_directory:?}");
+        return 2;
+    }
     let output = match std::process::Command::new(git)
         .args(&words[3..])
         .current_dir(&repository)
@@ -241,6 +244,21 @@ fn run_ssh_double(arguments: &[String]) -> i32 {
         return 1;
     }
     output.status.code().unwrap_or(1)
+}
+
+#[cfg(not(test))]
+fn matches_fixture_directory(remote: &str, repository: &std::ffi::OsStr) -> bool {
+    #[cfg(windows)]
+    {
+        let repository = repository.to_string_lossy().replace('\\', "/");
+        let repository = repository.strip_prefix("//?/").unwrap_or(&repository);
+        remote.eq_ignore_ascii_case(repository)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (remote, repository);
+        false
+    }
 }
 
 #[cfg(not(test))]
