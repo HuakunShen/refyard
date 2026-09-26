@@ -20,6 +20,7 @@ use refyard_contract::diff::{DiffKind, DiffQuery};
 use refyard_contract::history::{HistoryQuery, Topology};
 use refyard_contract::host::{ExecutionTargetKind, ExecutionTargetState};
 use refyard_contract::problem::ProblemCode;
+use refyard_core::plan::status::{plan_status, StatusOptions};
 use refyard_host::providers::local::LocalGit;
 use refyard_host::providers::ssh::SshGit;
 use refyard_host::providers::GitExecutor;
@@ -215,6 +216,21 @@ impl Fixture {
         let service = ApplicationService::with_targets(self.config(), registry.clone());
         (service, registry)
     }
+
+    async fn scripted_status_diagnostic(&self) -> String {
+        let target = self.scripted_target(SCRIPTED_GENERATION);
+        let Some(GitExecutor::Ssh(executor)) = target.executor else {
+            unreachable!("the scripted target is an SSH executor")
+        };
+        let outcome = executor
+            .try_run(
+                self.target_repo_path(),
+                &plan_status(StatusOptions::default()),
+                None,
+            )
+            .await;
+        format!("scripted status probe: {outcome:?}")
+    }
 }
 
 fn git_program() -> PathBuf {
@@ -373,10 +389,13 @@ async fn the_same_path_on_two_targets_is_two_repositories() {
     assert_ne!(remote_id, local_id, "the two targets are two repositories");
 
     // Both read the same repository bytes, each through its own target's executor.
-    let remote_status = service
-        .status(&StatusQuery::new(&remote_id))
-        .await
-        .expect("remote status");
+    let remote_status = match service.status(&StatusQuery::new(&remote_id)).await {
+        Ok(status) => status,
+        Err(problem) => panic!(
+            "remote status: {problem:?}; {}",
+            fixture.scripted_status_diagnostic().await
+        ),
+    };
     let local_status = service
         .status(&StatusQuery::new(&local_id))
         .await
@@ -677,10 +696,12 @@ async fn a_repository_on_a_rebuilt_target_is_refused_until_it_is_opened_again() 
         .await
         .expect("registration");
     let repository_id = registered.repositories[0].repository_id.clone();
-    service
-        .status(&StatusQuery::new(&repository_id))
-        .await
-        .expect("reads before the rebuild");
+    if let Err(problem) = service.status(&StatusQuery::new(&repository_id)).await {
+        panic!(
+            "reads before the rebuild: {problem:?}; {}",
+            fixture.scripted_status_diagnostic().await
+        );
+    }
 
     // The target is rebuilt: same id, new generation, a fresh executor.
     registry.insert(fixture.scripted_target("gen_ssh_rebuilt"));
