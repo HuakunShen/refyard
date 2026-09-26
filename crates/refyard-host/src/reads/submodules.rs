@@ -262,7 +262,16 @@ async fn read_actual_oid(
         Ok(layout) => layout,
         Err(_) => return Ok(None),
     };
-    if layout.top_level.as_deref() != Some(directory.as_str()) {
+    let is_exact_child = if runs.is_remote() {
+        layout.top_level.as_deref() == Some(directory.as_str())
+    } else {
+        layout
+            .top_level
+            .as_deref()
+            .and_then(|top_level| std::fs::canonicalize(top_level).ok())
+            .is_some_and(|top_level| top_level == Path::new(&directory))
+    };
+    if !is_exact_child {
         // An uninitialized submodule directory discovers its parent repository. Do not
         // report the parent's HEAD as the child's actual object name.
         return Ok(None);

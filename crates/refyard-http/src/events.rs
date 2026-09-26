@@ -67,6 +67,12 @@ pub fn response(since: Option<u64>, sink: &EventSink) -> axum::response::Respons
                     let Some(event) = event else { return; };
                     match event {
                         SubscriberEvent::Event(envelope) => {
+                            // Subscribing precedes the replay snapshot, so an event published
+                            // between those calls is both replayed and queued here. Never
+                            // deliver it twice or move this stream's cursor backwards.
+                            if envelope.sequence <= delivered {
+                                continue;
+                            }
                             if let Some(from) = pending_gap_from.take() {
                                 if envelope.sequence > from + 1 {
                                     let gap = gap_envelope(from + 1, envelope.sequence - 1);

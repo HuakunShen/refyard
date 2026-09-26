@@ -137,7 +137,7 @@ describe("the native event stream on the wire", () => {
     const repositories = repositoriesResponseSchema.parse(await client.repositories());
     const repositoryId = repositories.repositories[0]?.repositoryId as string;
     const status = statusSnapshotSchema.parse(await client.status({ repositoryId }));
-    service.repo.write("events.txt", "an event should name this\n");
+    await service.repo.write("events.txt", "an event should name this\n");
     const changed = statusSnapshotSchema.parse(await client.status({ repositoryId }));
     const pathId = changed.entries[0]?.pathId as string;
     const previews = previewsResponseSchema.parse(
@@ -191,7 +191,7 @@ describe("the native event stream on the wire", () => {
     const repositories = repositoriesResponseSchema.parse(await client.repositories());
     const repositoryId = repositories.repositories[0]?.repositoryId as string;
     const status = statusSnapshotSchema.parse(await client.status({ repositoryId }));
-    service.repo.write("replay.txt", "written while nobody listened\n");
+    await service.repo.write("replay.txt", "written while nobody listened\n");
     const changed = statusSnapshotSchema.parse(await client.status({ repositoryId }));
     const pathId = changed.entries[0]?.pathId as string;
     const previews = previewsResponseSchema.parse(

@@ -64,10 +64,26 @@ pub async fn read_worktrees_with_root_bindings(
     let mut identities = Vec::with_capacity(worktrees.len());
     for (index, worktree) in worktrees.iter().enumerate() {
         let identity_path = identity_path(runs, &worktree.path_bytes).await;
-        let path_key = identity_path
-            .as_ref()
-            .map(|path| native_path_bytes(path))
-            .unwrap_or_else(|| worktree.path_bytes.clone());
+        let canonical_key = || {
+            identity_path
+                .as_ref()
+                .map(|path| native_path_bytes(path))
+                .unwrap_or_else(|| worktree.path_bytes.clone())
+        };
+        // Registration stores Git's reported worktree path. On Windows, filesystem
+        // canonicalization changes its spelling (for example to a \\?\ path), so the
+        // canonical path remains for containment but cannot key the registry lookup.
+        #[cfg(windows)]
+        let path_key = if runs.is_remote() {
+            canonical_key()
+        } else {
+            native_path_from_git_bytes(&worktree.path_bytes)
+                .as_deref()
+                .map(native_path_bytes)
+                .unwrap_or_else(canonical_key)
+        };
+        #[cfg(not(windows))]
+        let path_key = canonical_key();
         let worktree_id = repositories
             .worktree_id_for_path(&record.repository_id, &path_key)
             .ok_or_else(|| {

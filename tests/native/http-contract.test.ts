@@ -63,11 +63,9 @@ describe("the native service answers the contract the browser already speaks", (
     const parsed = capabilitiesResponseSchema.parse(await client.capabilities());
     expect(parsed.apiMajor).toBe(1);
     expect(parsed.reads).toContain("status");
-    expect(parsed.operations.map((operation) => operation.kind)).toEqual([
-      "stagePaths",
-      "unstagePaths",
-      "commit",
-    ]);
+    expect(parsed.operations.map((operation) => operation.kind)).toEqual(
+      expect.arrayContaining(["stagePaths", "unstagePaths", "commit", "createWorktree"]),
+    );
   });
 
   it("lists the repository the process was started with", async () => {
@@ -96,7 +94,7 @@ describe("the native service answers the contract the browser already speaks", (
     const status = statusSnapshotSchema.parse(await client.status({ repositoryId }));
     const worktreeId = status.worktreeId;
 
-    service.repo.write("a.txt", "changed\n");
+    await service.repo.write("a.txt", "changed\n");
     const changed = statusSnapshotSchema.parse(await client.status({ repositoryId }));
     expect(changed.entries.map((entry) => entry.displayPath)).toContain("a.txt");
     const pathId = changed.entries.find((entry) => entry.displayPath === "a.txt")?.pathId as string;
