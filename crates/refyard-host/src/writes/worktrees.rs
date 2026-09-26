@@ -61,7 +61,7 @@ async fn create_worktree(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> 
     }
     let joined = target.record.root_path.join(relative_destination);
     let destination = match joined.to_str() {
-        Some(text) => text.to_string(),
+        Some(text) => git_compatible_destination(text),
         None => {
             return refused(
                 operation_id,
@@ -111,6 +111,46 @@ async fn create_worktree(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> 
     // `worktree add` is local: a real refusal (branch checked out elsewhere, destination
     // taken) is failed; an unfinished run is unknown and never retried.
     network_failure(operation_id, "git worktree add", &outcome)
+}
+
+/// Windows canonical paths use the extended `\\?\` prefix. The filesystem
+/// accepts it, but Git for Windows rejects that prefix when creating a linked
+/// worktree. Convert only the already-confined destination passed to Git;
+/// retain the canonical path for approval and containment checks.
+fn git_compatible_destination(path: &str) -> String {
+    #[cfg(windows)]
+    {
+        if let Some(unc) = path.strip_prefix(r"\\?\UNC\") {
+            return format!(r"\\{unc}");
+        }
+        if let Some(local) = path.strip_prefix(r"\\?\") {
+            if local.as_bytes().get(1) == Some(&b':') {
+                return local.to_string();
+            }
+        }
+    }
+    path.to_string()
+}
+
+#[cfg(all(test, windows))]
+mod windows_path_tests {
+    use super::git_compatible_destination;
+
+    #[test]
+    fn git_receives_ordinary_drive_and_unc_paths_after_approval() {
+        assert_eq!(
+            git_compatible_destination(r"\\?\C:\repo\linked"),
+            r"C:\repo\linked"
+        );
+        assert_eq!(
+            git_compatible_destination(r"\\?\UNC\server\share\linked"),
+            r"\\server\share\linked"
+        );
+        assert_eq!(
+            git_compatible_destination(r"\\?\Volume{1234}\linked"),
+            r"\\?\Volume{1234}\linked"
+        );
+    }
 }
 
 /// `git worktree lock` — lock a linked worktree, with an optional reason.

@@ -68,7 +68,7 @@ pub fn runtime_environment() -> Vec<(String, String)> {
     }
 }
 
-#[cfg(unix)]
+#[cfg(all(test, unix))]
 pub fn process_is_running(pid: &str) -> bool {
     std::process::Command::new("/bin/kill")
         .args(["-0", pid])
@@ -76,7 +76,7 @@ pub fn process_is_running(pid: &str) -> bool {
         .is_ok_and(|output| output.status.success())
 }
 
-#[cfg(windows)]
+#[cfg(all(test, windows))]
 pub fn process_is_running(pid: &str) -> bool {
     use windows_sys::Win32::Foundation::{CloseHandle, STILL_ACTIVE};
     use windows_sys::Win32::System::Threading::{
@@ -101,7 +101,7 @@ pub fn process_is_running(pid: &str) -> bool {
     }
 }
 
-#[cfg(not(any(unix, windows)))]
+#[cfg(all(test, not(any(unix, windows))))]
 pub fn process_is_running(_pid: &str) -> bool {
     false
 }
@@ -124,7 +124,7 @@ fn main() -> std::process::ExitCode {
 
 #[cfg(not(test))]
 fn run_process_case(case: &str) -> i32 {
-    use std::io::{Read, Write};
+    use std::io::Write;
 
     match case {
         "copy-stdin" => {
