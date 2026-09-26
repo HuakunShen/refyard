@@ -14,7 +14,7 @@ use refyard_contract::problem::DetailValue;
 use refyard_contract::problem::ProblemCode;
 use refyard_contract::reads::{
     EventPayload, FilesystemEntriesQuery, MutationKind, MutationTarget, OperationStatus,
-    PreviewsRequest, SubmoduleState,
+    PreviewsRequest, SubmoduleState, WorkspaceRootId,
 };
 use refyard_host::embed::{EmbedConfig, EmbedLimits, EmbeddedRefyard};
 use refyard_host::events::SubscriberEvent;
@@ -292,6 +292,246 @@ async fn removing_a_workspace_root_invalidates_its_repository_and_never_reuses_i
         .allowed_root_id
         .clone();
     assert_ne!(first, second);
+}
+
+#[tokio::test]
+async fn root_scoped_embedded_reads_refuse_a_root_from_another_repository_before_git() {
+    let state_root = tempfile::tempdir().expect("state root");
+    let repositories_root = tempfile::tempdir().expect("repositories root");
+    let requested_repo = init_repository(repositories_root.path(), "requested");
+    let unrelated_repo = init_repository(repositories_root.path(), "unrelated");
+    let host = EmbeddedRefyard::open(config(state_root.path())).expect("host");
+    let requested = host
+        .register_repository(requested_repo.to_str().expect("requested repo path"))
+        .await
+        .expect("register requested repo")
+        .repositories[0]
+        .clone();
+    let unrelated = host
+        .register_repository(unrelated_repo.to_str().expect("unrelated repo path"))
+        .await
+        .expect("register unrelated repo")
+        .repositories
+        .into_iter()
+        .find(|repository| repository.repository_id != requested.repository_id)
+        .expect("unrelated repository summary");
+    let unrelated_root = WorkspaceRootId::try_from(unrelated.allowed_root_id.as_str())
+        .expect("root id from registry");
+
+    // If either scoped entry falls back to the repository's primary root, Git would run
+    // after the selected repository disappears. The exact repository/root pair must be
+    // rejected before any command can observe that path.
+    std::fs::remove_dir_all(&requested_repo).expect("remove isolated requested fixture");
+    let mut query = StatusQuery::new(&requested.repository_id);
+    query.worktree_id = Some(requested.primary_worktree_id.clone());
+    assert_eq!(
+        host.status_for_root(&query, &unrelated_root)
+            .await
+            .expect_err("a root owned by another repository must not authorize status")
+            .code,
+        ProblemCode::NotFound
+    );
+    assert_eq!(
+        host.worktrees_with_root_bindings_for_root(&requested.repository_id, &unrelated_root)
+            .await
+            .expect_err("a root owned by another repository must not authorize worktree reads")
+            .code,
+        ProblemCode::NotFound
+    );
+}
+
+#[tokio::test]
+async fn root_scoped_embedded_reads_follow_the_selected_worktree_and_refuse_a_retired_root() {
+    let state_root = tempfile::tempdir().expect("state root");
+    let repositories_root = tempfile::tempdir().expect("repositories root");
+    let primary = init_repository(repositories_root.path(), "primary");
+    let linked = repositories_root.path().join("linked");
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&primary)
+        .args(["worktree", "add", "-q", "-b", "secondary"])
+        .arg(&linked)
+        .output()
+        .expect("git worktree add");
+    assert!(
+        output.status.success(),
+        "git worktree add failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let host = EmbeddedRefyard::open(config(state_root.path())).expect("host");
+    let first = host
+        .register_repository(primary.to_str().expect("primary path"))
+        .await
+        .expect("register primary worktree");
+    let repository_id = first.repositories[0].repository_id.clone();
+    let primary_root = WorkspaceRootId::try_from(first.repositories[0].allowed_root_id.as_str())
+        .expect("primary root id");
+    let registered = host
+        .register_repository(linked.to_str().expect("linked path"))
+        .await
+        .expect("register linked worktree");
+    let repository = &registered.repositories[0];
+    let linked_worktree_id = repository
+        .worktree_ids
+        .iter()
+        .find(|worktree_id| **worktree_id != repository.primary_worktree_id)
+        .expect("linked worktree id")
+        .clone();
+    let linked_root_text = registered
+        .allowed_roots
+        .iter()
+        .find(|root| root.allowed_root_id.as_str() != primary_root.as_str())
+        .expect("linked root")
+        .allowed_root_id
+        .as_str();
+    let linked_root = WorkspaceRootId::try_from(linked_root_text).expect("linked root id");
+
+    let standalone_worktrees = host
+        .worktrees_with_root_bindings(&repository_id)
+        .await
+        .expect("standalone inventory retains the full Git worktree listing");
+    assert_eq!(standalone_worktrees.response.worktrees.len(), 2);
+
+    let scoped_worktrees = host
+        .worktrees_with_root_bindings_for_root(&repository_id, &linked_root)
+        .await
+        .expect("read through the selected root");
+    assert!(scoped_worktrees
+        .root_relative_paths
+        .contains_key(&(linked_worktree_id.clone(), linked_root.clone())));
+    assert!(scoped_worktrees
+        .root_relative_paths
+        .keys()
+        .all(|(_, root_id)| root_id == &linked_root));
+    assert_eq!(
+        scoped_worktrees
+            .response
+            .worktrees
+            .iter()
+            .map(|worktree| worktree.worktree_id.as_str())
+            .collect::<Vec<_>>(),
+        [linked_worktree_id.as_str()]
+    );
+    assert!(!scoped_worktrees
+        .response
+        .worktrees
+        .iter()
+        .any(|worktree| worktree.worktree_id == repository.primary_worktree_id));
+
+    // An omitted id keeps StatusQuery's primary-worktree default. It does not guess a
+    // linked worktree from the root argument or fall back across roots.
+    assert_eq!(
+        host.status_for_root(&StatusQuery::new(&repository_id), &linked_root)
+            .await
+            .expect_err("linked-root status requires its exact worktree id")
+            .code,
+        ProblemCode::NotFound
+    );
+    let mut linked_query = StatusQuery::new(&repository_id);
+    linked_query.worktree_id = Some(linked_worktree_id.clone());
+    let linked_status = host
+        .status_for_root(&linked_query, &linked_root)
+        .await
+        .expect("status through the selected root/worktree binding");
+    assert_eq!(linked_status.worktree_id, linked_worktree_id);
+
+    host.remove_workspace_root(&linked_root)
+        .await
+        .expect("retire selected root while primary root remains");
+    // A surviving primary root must not authorize a request still scoped to the retired
+    // linked root.
+    assert_eq!(
+        host.status_for_root(&StatusQuery::new(&repository_id), &linked_root)
+            .await
+            .expect_err("a retired root must not fall through to the live primary root")
+            .code,
+        ProblemCode::NotFound
+    );
+    // The scoped inventory must refuse the retired root instead of returning the primary
+    // root's current mapping.
+    assert_eq!(
+        host.worktrees_with_root_bindings_for_root(&repository_id, &linked_root)
+            .await
+            .expect_err("a retired root must not enumerate another root's worktrees")
+            .code,
+        ProblemCode::NotFound
+    );
+    let standalone_status = host
+        .status(&StatusQuery::new(&repository_id))
+        .await
+        .expect("standalone status keeps its primary-worktree semantics");
+    assert_eq!(
+        standalone_status.worktree_id,
+        repository.primary_worktree_id
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn root_scoped_embedded_reads_do_not_probe_unrelated_registered_repositories() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let state_root = tempfile::tempdir().expect("state root");
+    let repositories_root = tempfile::tempdir().expect("repositories root");
+    let requested_repo = init_repository(repositories_root.path(), "requested");
+    let unrelated_repo = init_repository(repositories_root.path(), "unrelated");
+    let real_git = LocalGit::discover().expect("real Git");
+    let cwd_log = state_root.path().join("git-cwd.log");
+    let escaped_log = cwd_log.to_string_lossy().replace('\'', "'\\''");
+    let escaped_git = real_git.program().to_string_lossy().replace('\'', "'\\''");
+    let wrapper = state_root.path().join("git-wrapper");
+    std::fs::write(
+        &wrapper,
+        format!("#!/bin/sh\npwd -P >> '{escaped_log}'\nexec '{escaped_git}' \"$@\"\n"),
+    )
+    .expect("write Git wrapper");
+    let mut permissions = std::fs::metadata(&wrapper)
+        .expect("wrapper metadata")
+        .permissions();
+    permissions.set_mode(0o755);
+    std::fs::set_permissions(&wrapper, permissions).expect("make wrapper executable");
+
+    let mut cfg = config(state_root.path());
+    cfg.git = LocalGit::at(&wrapper, real_git.environment().to_vec());
+    let host = EmbeddedRefyard::open(cfg).expect("host");
+    let requested = host
+        .register_repository(requested_repo.to_str().expect("requested repo path"))
+        .await
+        .expect("register requested repo")
+        .repositories[0]
+        .clone();
+    let registered = host
+        .register_repository(unrelated_repo.to_str().expect("unrelated repo path"))
+        .await
+        .expect("register unrelated repo");
+    assert!(registered
+        .repositories
+        .iter()
+        .any(|repository| repository.repository_id != requested.repository_id));
+    std::fs::write(&cwd_log, "").expect("clear registration probes");
+
+    let root =
+        WorkspaceRootId::try_from(requested.allowed_root_id.as_str()).expect("requested root id");
+    let mut query = StatusQuery::new(&requested.repository_id);
+    query.worktree_id = Some(requested.primary_worktree_id.clone());
+    host.status_for_root(&query, &root)
+        .await
+        .expect("status exact repository/root pair");
+    host.worktrees_with_root_bindings_for_root(&requested.repository_id, &root)
+        .await
+        .expect("worktrees exact repository/root pair");
+
+    let probed_directories = std::fs::read_to_string(&cwd_log).expect("read Git probe log");
+    let requested_canonical = std::fs::canonicalize(&requested_repo).expect("requested path");
+    let unrelated_canonical = std::fs::canonicalize(&unrelated_repo).expect("unrelated path");
+    assert!(probed_directories
+        .lines()
+        .any(|directory| Path::new(directory) == requested_canonical));
+    // Root-scoped embedding must not enumerate registered repositories to find one row.
+    assert!(!probed_directories
+        .lines()
+        .any(|directory| Path::new(directory) == unrelated_canonical));
 }
 
 #[tokio::test]

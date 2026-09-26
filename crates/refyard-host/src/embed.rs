@@ -146,6 +146,13 @@ impl EmbeddedRefyard {
     pub async fn status(&self, query: &StatusQuery) -> Result<StatusSnapshot, Problem> {
         self.service.status(query).await
     }
+    pub async fn status_for_root(
+        &self,
+        query: &StatusQuery,
+        allowed_root_id: &WorkspaceRootId,
+    ) -> Result<StatusSnapshot, Problem> {
+        self.service.status_for_root(query, allowed_root_id).await
+    }
     pub async fn history(&self, query: &HistoryQuery) -> Result<HistoryPage, Problem> {
         self.service.history(query).await
     }
@@ -194,6 +201,15 @@ impl EmbeddedRefyard {
     ) -> Result<crate::reads::worktrees::WorktreesWithRootBindings, Problem> {
         self.service
             .worktrees_with_root_bindings(repository_id)
+            .await
+    }
+    pub async fn worktrees_with_root_bindings_for_root(
+        &self,
+        repository_id: &str,
+        allowed_root_id: &WorkspaceRootId,
+    ) -> Result<crate::reads::worktrees::WorktreesWithRootBindings, Problem> {
+        self.service
+            .worktrees_with_root_bindings_for_root(repository_id, allowed_root_id)
             .await
     }
     pub async fn filesystem_entries(

@@ -1476,6 +1476,40 @@ impl ApplicationService {
         .map_err(|error| error.to_problem())
     }
 
+    /// Working-tree and index state through one exact approved root/worktree binding.
+    ///
+    /// Embedded callers that already own a workspace-root scope must not let a live
+    /// sibling root keep a retired or mismatched binding usable. Resolve the binding
+    /// before the lease and before any Git command; the lease then closes root-removal
+    /// races for the exact record selected here. When `query.worktree_id` is `None`,
+    /// this preserves `StatusQuery` semantics and selects the primary worktree; callers
+    /// scoped to a linked-worktree root must supply that worktree's id explicitly.
+    pub async fn status_for_root(
+        &self,
+        query: &StatusQuery,
+        allowed_root_id: &WorkspaceRootId,
+    ) -> Result<StatusSnapshot, Problem> {
+        let aggregate = self.require_record(&query.repository_id)?;
+        let worktree_id = reads::require_worktree(&aggregate, query.worktree_id.as_deref())
+            .map_err(|error| error.to_problem())?;
+        let record = aggregate
+            .selected_worktree(Some(&worktree_id), Some(allowed_root_id.as_str()))
+            .ok_or_else(|| unknown_worktree(&aggregate, &worktree_id))?;
+        let _root_lease = self.writes_host.lease_root_for_record(&record).await?;
+        let target = self.target_for(&record)?;
+        reads::status::read_status(
+            target.executor()?,
+            &record,
+            &self.paths,
+            &self.snapshots,
+            query.include_ignored,
+            &now_iso8601(),
+        )
+        .await
+        .map(|(snapshot, _)| snapshot)
+        .map_err(|error| error.to_problem())
+    }
+
     /// One page of the commit graph.
     pub async fn history(&self, query: &HistoryQuery) -> Result<HistoryPage, Problem> {
         let aggregate = self.require_record(&query.repository_id)?;
@@ -1581,6 +1615,66 @@ impl ApplicationService {
         )
         .await
         .map_err(|error| error.to_problem())
+    }
+
+    /// Enumerates worktrees through a repository binding approved by one exact root.
+    ///
+    /// The registry lookup stays limited to `repository_id`; a root that is absent from
+    /// that repository is refused before taking a lease or issuing Git commands. The
+    /// returned response and sidecar contain only worktrees proven beneath the requested
+    /// root. The standalone inventory method continues to return the full Git listing.
+    pub async fn worktrees_with_root_bindings_for_root(
+        &self,
+        repository_id: &str,
+        allowed_root_id: &WorkspaceRootId,
+    ) -> Result<reads::worktrees::WorktreesWithRootBindings, Problem> {
+        let aggregate = self.require_record(repository_id)?;
+        let worktree_id = aggregate
+            .worktrees
+            .iter()
+            .find(|worktree| {
+                worktree
+                    .root_bindings
+                    .iter()
+                    .any(|binding| binding.allowed_root_id == allowed_root_id.as_str())
+            })
+            .map(|worktree| worktree.worktree_id.as_str())
+            .ok_or_else(|| {
+                Problem::new(
+                    ProblemCode::NotFound,
+                    format!(
+                        "repository {repository_id} has no worktree registered under workspace root {}",
+                        allowed_root_id.as_str()
+                    ),
+                )
+            })?;
+        let record = aggregate
+            .selected_worktree(Some(worktree_id), Some(allowed_root_id.as_str()))
+            .ok_or_else(|| unknown_worktree(&aggregate, worktree_id))?;
+        let _root_lease = self.writes_host.lease_root_for_record(&record).await?;
+        let target = self.target_for(&record)?;
+        let mut worktrees = reads::worktrees::read_worktrees_with_root_bindings(
+            target.executor()?,
+            &record,
+            &self.repositories,
+            &self.snapshots,
+            &now_iso8601(),
+        )
+        .await
+        .map_err(|error| error.to_problem())?;
+        worktrees
+            .root_relative_paths
+            .retain(|(_, root_id), _| root_id == allowed_root_id);
+        let allowed_worktree_ids: BTreeSet<_> = worktrees
+            .root_relative_paths
+            .keys()
+            .map(|(worktree_id, _)| worktree_id.clone())
+            .collect();
+        worktrees
+            .response
+            .worktrees
+            .retain(|worktree| allowed_worktree_ids.contains(&worktree.worktree_id));
+        Ok(worktrees)
     }
 
     /// Reads the stash reflog through one explicitly selected worktree.
