@@ -9,7 +9,7 @@
 //! The fingerprint is a *string of facts*, not a hash: when a write is refused, the
 //! interesting question is which row differs, and a hash cannot answer it.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -231,6 +231,41 @@ impl SnapshotStore {
     pub fn get(&self, snapshot_id: &str) -> Option<SnapshotRecord> {
         let state = self.inner.lock().expect("snapshot lock");
         state.by_id.get(snapshot_id).cloned()
+    }
+
+    /// Invalidates every snapshot and cursor scoped to one retired worktree.
+    pub fn invalidate_worktree(&self, repository_id: &str, worktree_id: &str) -> usize {
+        self.invalidate_matching(|snapshot| {
+            snapshot.repository_id == repository_id
+                && snapshot.worktree_id.as_deref() == Some(worktree_id)
+        })
+    }
+
+    /// Invalidates the inventory snapshot whose host-only root sidecar changed.
+    pub fn invalidate_worktree_inventory(&self, repository_id: &str) -> usize {
+        self.invalidate_matching(|snapshot| {
+            snapshot.repository_id == repository_id && snapshot.kind == SnapshotKind::Worktrees
+        })
+    }
+
+    fn invalidate_matching(&self, matches: impl Fn(&SnapshotRecord) -> bool) -> usize {
+        let mut state = self.inner.lock().expect("snapshot lock");
+        let invalidated: HashSet<String> = state
+            .by_id
+            .iter()
+            .filter(|(_, snapshot)| matches(snapshot))
+            .map(|(snapshot_id, _)| snapshot_id.clone())
+            .collect();
+        if invalidated.is_empty() {
+            return 0;
+        }
+        for snapshot_id in &invalidated {
+            state.by_id.remove(snapshot_id);
+        }
+        state
+            .order
+            .retain(|snapshot_id| !invalidated.contains(snapshot_id));
+        invalidated.len()
     }
 
     /// Mints a continuation for a paged read.
@@ -466,6 +501,23 @@ mod tests {
         // A second snapshot evicts the first, because the store holds one entry.
         store.mint(request(SnapshotKind::History, "repo_1", None));
         assert_eq!(store.resolve_cursor(&cursor), CursorResult::Expired);
+    }
+
+    #[test]
+    fn root_retirement_invalidates_only_affected_worktree_and_inventory_snapshots() {
+        let store = SnapshotStore::default();
+        let retired = store.mint(request(SnapshotKind::Status, "repo_1", Some("wt_1")));
+        let retained = store.mint(request(SnapshotKind::Status, "repo_1", Some("wt_2")));
+        let inventory = store.mint(request(SnapshotKind::Worktrees, "repo_1", None));
+        let cursor = store.mint_cursor(&retired, 0, 10);
+
+        assert_eq!(store.invalidate_worktree("repo_1", "wt_1"), 1);
+        assert!(store.get(&retired.snapshot_id).is_none());
+        assert_eq!(store.resolve_cursor(&cursor), CursorResult::Expired);
+        assert!(store.get(&retained.snapshot_id).is_some());
+        assert_eq!(store.invalidate_worktree_inventory("repo_1"), 1);
+        assert!(store.get(&inventory.snapshot_id).is_none());
+        assert!(store.get(&retained.snapshot_id).is_some());
     }
 
     #[test]

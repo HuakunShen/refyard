@@ -11,3 +11,5 @@ pub mod numstat;
 pub mod patch;
 pub mod refs;
 pub mod status;
+pub mod submodules;
+pub mod worktree;

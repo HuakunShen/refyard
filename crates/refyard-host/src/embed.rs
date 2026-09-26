@@ -9,13 +9,14 @@ use refyard_contract::problem::{Problem, ProblemCode};
 use refyard_contract::reads::{
     CapabilitiesResponse, EventEnvelope, FilesystemEntriesQuery, FilesystemEntriesResponse,
     MutationKind, OperationRecord, OperationsListResponse, PreviewsRequest, PreviewsResponse,
-    RepositoriesResponse, StatusSnapshot,
+    RepositoriesResponse, StashesResponse, StatusSnapshot, SubmodulesResponse, WorkspaceRootId,
+    WorktreesResponse,
 };
 use refyard_contract::refs::RefsSnapshot;
 
 use crate::events::EventSubscription;
 use crate::jobs::queue::QueueLimits;
-use crate::jobs::{MutationRequest, SubmitResult};
+use crate::jobs::{ClientRequestLookup, MutationRequest, SubmitResult};
 use crate::providers::local::LocalGit;
 use crate::service::{ApplicationService, ApplicationServiceConfig, StatusQuery};
 
@@ -135,6 +136,13 @@ impl EmbeddedRefyard {
     ) -> Result<RepositoriesResponse, Problem> {
         self.service.revoke_repository(repository_id).await
     }
+    pub async fn remove_workspace_root(
+        &self,
+        allowed_root_id: &WorkspaceRootId,
+    ) -> Result<RepositoriesResponse, Problem> {
+        self.service.remove_workspace_root(allowed_root_id).await?;
+        Ok(self.service.repositories().await)
+    }
     pub async fn status(&self, query: &StatusQuery) -> Result<StatusSnapshot, Problem> {
         self.service.status(query).await
     }
@@ -144,8 +152,49 @@ impl EmbeddedRefyard {
     pub async fn refs(&self, repository_id: &str) -> Result<RefsSnapshot, Problem> {
         self.service.refs(repository_id).await
     }
+    pub async fn refs_for_worktree(
+        &self,
+        repository_id: &str,
+        worktree_id: &str,
+    ) -> Result<RefsSnapshot, Problem> {
+        self.service
+            .refs_for_worktree(repository_id, worktree_id)
+            .await
+    }
+    pub async fn stashes_for_worktree(
+        &self,
+        repository_id: &str,
+        worktree_id: &str,
+    ) -> Result<StashesResponse, Problem> {
+        self.service
+            .stashes_for_worktree(repository_id, worktree_id)
+            .await
+    }
+    pub async fn submodules_for_worktree(
+        &self,
+        repository_id: &str,
+        worktree_id: &str,
+    ) -> Result<SubmodulesResponse, Problem> {
+        self.service
+            .submodules_for_worktree(repository_id, worktree_id)
+            .await
+    }
     pub async fn diff(&self, query: &DiffQuery) -> Result<DiffResponse, Problem> {
         self.service.diff(query).await
+    }
+    pub async fn worktrees(&self, repository_id: &str) -> Result<WorktreesResponse, Problem> {
+        self.service
+            .worktrees_with_root_bindings(repository_id)
+            .await
+            .map(|result| result.response)
+    }
+    pub async fn worktrees_with_root_bindings(
+        &self,
+        repository_id: &str,
+    ) -> Result<crate::reads::worktrees::WorktreesWithRootBindings, Problem> {
+        self.service
+            .worktrees_with_root_bindings(repository_id)
+            .await
     }
     pub async fn filesystem_entries(
         &self,
@@ -171,6 +220,14 @@ impl EmbeddedRefyard {
         operation_id: &str,
     ) -> Result<OperationRecord, Problem> {
         self.service.operation_for(actor, operation_id)
+    }
+    pub fn get_by_client_request_id(
+        &self,
+        actor: &str,
+        client_request_id: &str,
+    ) -> Result<ClientRequestLookup, Problem> {
+        self.service
+            .get_by_client_request_id(actor, client_request_id)
     }
     pub fn operations(&self, actor: &str, limit: usize) -> OperationsListResponse {
         self.service.operations(actor, limit)

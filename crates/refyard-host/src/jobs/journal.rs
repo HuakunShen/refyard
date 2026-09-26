@@ -30,7 +30,7 @@
 //! different thing — the directory was edited by something that is not this service — and
 //! interpreting it anyway would mean guessing which records are real.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 #[cfg(unix)]
@@ -46,6 +46,20 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::clock::{format_iso8601_millis, now_millis};
+
+const JOURNAL_MAX_BYTES: usize = 16 * 1024 * 1024;
+const TERMINAL_RETENTION_MS: i64 = 24 * 60 * 60 * 1_000;
+
+#[derive(Debug, Clone, Copy)]
+struct JournalRetentionPolicy {
+    max_bytes: usize,
+    terminal_ttl_ms: i64,
+}
+
+const DEFAULT_RETENTION: JournalRetentionPolicy = JournalRetentionPolicy {
+    max_bytes: JOURNAL_MAX_BYTES,
+    terminal_ttl_ms: TERMINAL_RETENTION_MS,
+};
 
 /// One operation's metadata, as it is stored and as it is read back.
 ///
@@ -137,6 +151,9 @@ impl JournalRecord {
 #[serde(rename_all = "camelCase")]
 struct JournalIndex {
     next_sequence: u64,
+    /// Monotonic operation-id suffix high-water mark; unlike records this is never pruned.
+    #[serde(default)]
+    operation_id_high_water: u64,
     operations: Vec<IndexEntry>,
 }
 
@@ -152,14 +169,26 @@ struct IndexEntry {
 pub struct Journal {
     inner: Mutex<JournalState>,
     root: Option<PathBuf>,
+    /// Holds exclusive ownership of the state root for this Journal's full lifetime.
+    _state_root_lock: Option<File>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct JournalState {
     /// Keyed by operation id; the index holds the order.
     records: BTreeMap<String, JournalRecord>,
     order: Vec<String>,
     next_sequence: u64,
+    operation_id_high_water: u64,
+    /// Rebuilt from validated durable records and updated in the same lock as admission.
+    client_requests: HashMap<(String, String), String>,
+}
+
+/// The result of atomically checking an actor/request key and, if absent, accepting it.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum ClientRequestAdmission {
+    Appended(JournalRecord),
+    Existing(JournalRecord),
 }
 
 impl Journal {
@@ -177,9 +206,10 @@ impl Journal {
         root: Option<PathBuf>,
         secure: fn(&Path) -> Result<(), Problem>,
     ) -> Result<Self, Problem> {
-        let journal = Self {
+        let mut journal = Self {
             inner: Mutex::new(JournalState::default()),
             root,
+            _state_root_lock: None,
         };
         journal.load(secure)?;
         Ok(journal)
@@ -188,6 +218,14 @@ impl Journal {
     /// The state directory this journal writes to, when it has one.
     pub fn state_root(&self) -> Option<&Path> {
         self.root.as_deref()
+    }
+
+    /// Highest operation-id suffix ever durably admitted, including records later pruned.
+    pub fn operation_id_high_water(&self) -> u64 {
+        self.inner
+            .lock()
+            .expect("journal lock")
+            .operation_id_high_water
     }
 
     /// The directory holding one file per operation, when there is one.
@@ -226,7 +264,42 @@ impl Journal {
 
     /// Writes a new record, durably, before returning.
     pub fn append(&self, record: JournalRecord) -> Result<(), Problem> {
+        match self.admit(record, now_millis())? {
+            ClientRequestAdmission::Appended(_) => Ok(()),
+            ClientRequestAdmission::Existing(existing) => Err(internal(format!(
+                "client request {} for actor {} already exists as operation {}; use the existing record",
+                existing.client_request_id, existing.actor, existing.operation_id
+            ))),
+        }
+    }
+
+    /// Atomically checks an actor/request key and durably accepts a new record.
+    ///
+    /// The request-id lookup and operation append share one lock. A concurrent retry can
+    /// therefore observe either the old record or the new accepted record, never slip
+    /// between a separate lookup and append.
+    pub(crate) fn admit(
+        &self,
+        record: JournalRecord,
+        now_ms: i64,
+    ) -> Result<ClientRequestAdmission, Problem> {
+        self.admit_with_policy(record, now_ms, DEFAULT_RETENTION)
+    }
+
+    fn admit_with_policy(
+        &self,
+        record: JournalRecord,
+        now_ms: i64,
+        policy: JournalRetentionPolicy,
+    ) -> Result<ClientRequestAdmission, Problem> {
         let mut state = self.inner.lock().expect("journal lock");
+        let request_key = (record.actor.clone(), record.client_request_id.clone());
+        if let Some(operation_id) = state.client_requests.get(&request_key) {
+            let existing = state.records.get(operation_id).cloned().ok_or_else(|| {
+                internal("the client-request index points to a missing operation".to_string())
+            })?;
+            return Ok(ClientRequestAdmission::Existing(existing));
+        }
         if state.records.contains_key(&record.operation_id) {
             // Appending is how a record *comes into being*; a transition has its own
             // methods that enforce the order. Overwriting here would let a caller skip
@@ -238,13 +311,50 @@ impl Journal {
         }
         let sequence = state.next_sequence.max(record.sequence);
         let record = JournalRecord { sequence, ..record };
-        let next = sequence + 1;
+        let mut next_state = state.clone();
+        next_state.next_sequence = sequence + 1;
+        next_state.operation_id_high_water = next_state
+            .operation_id_high_water
+            .max(operation_id_number(&record.operation_id).unwrap_or(0));
+        next_state.order.push(record.operation_id.clone());
+        next_state
+            .client_requests
+            .insert(request_key, record.operation_id.clone());
+        next_state
+            .records
+            .insert(record.operation_id.clone(), record.clone());
+
+        let mut pruned_records = Vec::new();
+        if journal_bytes(&next_state)? > policy.max_bytes {
+            let (compacted, pruned) = prune_expired(&next_state, now_ms, policy.terminal_ttl_ms);
+            next_state = compacted;
+            pruned_records = pruned;
+            if pruned_records.is_empty() || journal_bytes(&next_state)? > policy.max_bytes {
+                return Err(Problem::new(
+                    ProblemCode::ResourceBusy,
+                    "the operation journal is full; no expired terminal records could make enough room, so no new operation was accepted",
+                ));
+            }
+        }
+
         self.write_record(&record)?;
-        state.next_sequence = next;
-        state.order.push(record.operation_id.clone());
-        state.records.insert(record.operation_id.clone(), record);
-        self.write_index(&state)?;
-        Ok(())
+        // The index is the journal's commit point. Do not publish the in-memory record or
+        // request key until the durable index names the new record.
+        self.write_index(&next_state)?;
+        *state = next_state;
+        // The index rename above is the durable commit point. If an old record file cannot
+        // be removed, it is now an unindexed orphan and is never exposed as a journal record.
+        self.remove_pruned_record_files(&pruned_records);
+        Ok(ClientRequestAdmission::Appended(record))
+    }
+
+    fn remove_pruned_record_files(&self, records: &[JournalRecord]) {
+        let Some(directory) = self.records_dir() else {
+            return;
+        };
+        for record in records {
+            let _ = std::fs::remove_file(directory.join(format!("{}.json", record.operation_id)));
+        }
     }
 
     /// Records that an operation has started. Only an accepted record may start.
@@ -507,12 +617,10 @@ impl Journal {
         client_request_id: &str,
     ) -> Option<JournalRecord> {
         let state = self.inner.lock().expect("journal lock");
-        state
-            .records
-            .values()
-            .filter(|record| record.actor == actor && record.client_request_id == client_request_id)
-            .max_by_key(|record| record.sequence)
-            .cloned()
+        let operation_id = state
+            .client_requests
+            .get(&(actor.to_string(), client_request_id.to_string()))?;
+        state.records.get(operation_id).cloned()
     }
 
     /// Every record, in creation order.
@@ -539,7 +647,7 @@ impl Journal {
 
     /* ------------------------------------------------------------ the files */
 
-    fn load(&self, secure: fn(&Path) -> Result<(), Problem>) -> Result<(), Problem> {
+    fn load(&mut self, secure: fn(&Path) -> Result<(), Problem>) -> Result<(), Problem> {
         let Some(root) = &self.root else {
             return Ok(());
         };
@@ -554,6 +662,7 @@ impl Journal {
             })?;
             secure(path)?;
         }
+        self._state_root_lock = Some(acquire_state_root_lock(root)?);
         let index_path = directory.join("index.json");
         let index: JournalIndex = match std::fs::read(&index_path) {
             Ok(bytes) => serde_json::from_slice(&bytes).map_err(|error| {
@@ -562,8 +671,17 @@ impl Journal {
                     index_path.display()
                 ))
             })?,
-            // No index is a journal that has never been written to.
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => JournalIndex::default(),
+            // No index and no published records is a new journal. Once a record file has
+            // been published, absence of the index is ambiguous and must fail closed.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                if journal_record_files_exist(&records)? {
+                    return Err(internal(format!(
+                        "the journal index {} is missing while operation records remain; refusing to guess which requests were accepted",
+                        index_path.display()
+                    )));
+                }
+                JournalIndex::default()
+            }
             Err(error) => {
                 return Err(internal(format!(
                     "the journal index {} could not be read: {error}",
@@ -572,6 +690,8 @@ impl Journal {
             }
         };
         let mut state = self.inner.lock().expect("journal lock");
+        let mut seen_operations = std::collections::HashSet::new();
+        let mut repair_index = false;
         for entry in &index.operations {
             if !is_operation_id(&entry.operation_id) {
                 // A name this host would not mint cannot be safely turned into a file name.
@@ -593,6 +713,39 @@ impl Journal {
                     path.display()
                 ))
             })?;
+            if record.operation_id != entry.operation_id {
+                return Err(internal(format!(
+                    "the journal index entry for {} names a different operation record",
+                    entry.operation_id
+                )));
+            }
+            if entry.sequence > record.sequence {
+                return Err(internal(format!(
+                    "the journal index sequence for {} is newer than its durable record",
+                    entry.operation_id
+                )));
+            }
+            if entry.sequence < record.sequence {
+                // State transitions publish the record before the index. A crash in that
+                // interval leaves a newer, durable record with an older index sequence.
+                repair_index = true;
+            }
+            if !seen_operations.insert(record.operation_id.clone()) {
+                return Err(internal(format!(
+                    "the journal index lists operation {} more than once",
+                    record.operation_id
+                )));
+            }
+            let request_key = (record.actor.clone(), record.client_request_id.clone());
+            if let Some(previous) = state
+                .client_requests
+                .insert(request_key, record.operation_id.clone())
+            {
+                return Err(internal(format!(
+                    "the journal contains client request ids shared by operations {previous} and {} for one actor",
+                    record.operation_id
+                )));
+            }
             state.order.push(record.operation_id.clone());
             state.records.insert(record.operation_id.clone(), record);
         }
@@ -604,6 +757,85 @@ impl Journal {
                 .max()
                 .unwrap_or(1),
         );
+        state.operation_id_high_water = index.operation_id_high_water.max(
+            state
+                .records
+                .keys()
+                .filter_map(|operation_id| operation_id_number(operation_id))
+                .max()
+                .unwrap_or(0),
+        );
+        if index.operation_id_high_water < state.operation_id_high_water {
+            repair_index = true;
+        }
+        self.remove_expired_unindexed_record_files(&state, now_millis())?;
+        if repair_index {
+            self.write_index(&state)?;
+        }
+        Ok(())
+    }
+
+    fn remove_expired_unindexed_record_files(
+        &self,
+        state: &JournalState,
+        now_ms: i64,
+    ) -> Result<(), Problem> {
+        let Some(directory) = self.records_dir() else {
+            return Ok(());
+        };
+        let entries = std::fs::read_dir(&directory).map_err(|error| {
+            internal(format!(
+                "the journal record directory {} could not be scanned: {error}",
+                directory.display()
+            ))
+        })?;
+        for entry in entries {
+            let entry = entry.map_err(|error| {
+                internal(format!(
+                    "the journal record directory could not be read: {error}"
+                ))
+            })?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let Some(operation_id) = name.strip_suffix(".json") else {
+                continue;
+            };
+            if !is_operation_id(operation_id) {
+                return Err(internal(format!(
+                    "the journal contains a record file with an invalid operation id: {name}"
+                )));
+            }
+            if state.records.contains_key(operation_id) {
+                continue;
+            }
+            let bytes = std::fs::read(entry.path()).map_err(|error| {
+                internal(format!(
+                    "the unindexed journal record {} could not be read: {error}",
+                    entry.path().display()
+                ))
+            })?;
+            let record: JournalRecord = serde_json::from_slice(&bytes).map_err(|error| {
+                internal(format!(
+                    "the unindexed journal record {} is not readable: {error}",
+                    entry.path().display()
+                ))
+            })?;
+            let expired_terminal = record.is_terminal()
+                && !record.blocks_writes()
+                && now_ms.saturating_sub(record.finished_at_ms.unwrap_or(record.accepted_at_ms))
+                    >= TERMINAL_RETENTION_MS;
+            if record.operation_id != operation_id || !expired_terminal {
+                return Err(internal(format!(
+                    "the journal contains an unindexed record that cannot be safely discarded: {}",
+                    entry.path().display()
+                )));
+            }
+            std::fs::remove_file(entry.path()).map_err(|error| {
+                internal(format!(
+                    "an expired unindexed journal record {} could not be removed: {error}",
+                    entry.path().display()
+                ))
+            })?;
+        }
         Ok(())
     }
 
@@ -632,18 +864,7 @@ impl Journal {
         let Some(path) = self.index_path() else {
             return Ok(());
         };
-        let index = JournalIndex {
-            next_sequence: state.next_sequence,
-            operations: state
-                .order
-                .iter()
-                .filter_map(|id| state.records.get(id))
-                .map(|record| IndexEntry {
-                    operation_id: record.operation_id.clone(),
-                    sequence: record.sequence,
-                })
-                .collect(),
-        };
+        let index = journal_index(state);
         let bytes = serde_json::to_vec(&index).map_err(|error| {
             internal(format!(
                 "the journal index could not be serialized: {error}"
@@ -651,6 +872,102 @@ impl Journal {
         })?;
         write_atomic(&path, &bytes)
     }
+}
+
+fn journal_index(state: &JournalState) -> JournalIndex {
+    JournalIndex {
+        next_sequence: state.next_sequence,
+        operation_id_high_water: state.operation_id_high_water,
+        operations: state
+            .order
+            .iter()
+            .filter_map(|id| state.records.get(id))
+            .map(|record| IndexEntry {
+                operation_id: record.operation_id.clone(),
+                sequence: record.sequence,
+            })
+            .collect(),
+    }
+}
+
+fn journal_record_files_exist(directory: &Path) -> Result<bool, Problem> {
+    let entries = std::fs::read_dir(directory).map_err(|error| {
+        internal(format!(
+            "the journal record directory {} could not be scanned: {error}",
+            directory.display()
+        ))
+    })?;
+    for entry in entries {
+        let entry = entry.map_err(|error| {
+            internal(format!(
+                "the journal record directory could not be read: {error}"
+            ))
+        })?;
+        if entry.file_name().to_string_lossy().ends_with(".json") {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn operation_id_number(operation_id: &str) -> Option<u64> {
+    operation_id
+        .strip_prefix("op_")
+        .and_then(|suffix| u64::from_str_radix(suffix, 36).ok())
+}
+
+/// The Rust host stores one latest-state JSON record per operation plus the operation index.
+/// Both are counted so its private state remains bounded despite using a different layout
+/// from the TypeScript JSONL journal.
+fn journal_bytes(state: &JournalState) -> Result<usize, Problem> {
+    let mut total = 0usize;
+    for record in state.records.values() {
+        let bytes = serde_json::to_vec(record).map_err(|error| {
+            internal(format!(
+                "a journal record could not be serialized for size accounting: {error}"
+            ))
+        })?;
+        total = total.saturating_add(bytes.len());
+    }
+    let index = serde_json::to_vec(&journal_index(state)).map_err(|error| {
+        internal(format!(
+            "the journal index could not be serialized for size accounting: {error}"
+        ))
+    })?;
+    Ok(total.saturating_add(index.len()))
+}
+
+fn prune_expired(
+    state: &JournalState,
+    now_ms: i64,
+    terminal_ttl_ms: i64,
+) -> (JournalState, Vec<JournalRecord>) {
+    let pruned: Vec<JournalRecord> = state
+        .records
+        .values()
+        .filter(|record| {
+            record.is_terminal()
+                && !record.blocks_writes()
+                && now_ms.saturating_sub(record.finished_at_ms.unwrap_or(record.accepted_at_ms))
+                    >= terminal_ttl_ms
+        })
+        .cloned()
+        .collect();
+    if pruned.is_empty() {
+        return (state.clone(), pruned);
+    }
+
+    let mut retained = state.clone();
+    for record in &pruned {
+        retained.records.remove(&record.operation_id);
+        retained
+            .client_requests
+            .remove(&(record.actor.clone(), record.client_request_id.clone()));
+    }
+    retained
+        .order
+        .retain(|operation_id| retained.records.contains_key(operation_id));
+    (retained, pruned)
 }
 
 /// The terminal record an effect's outcome produces.
@@ -774,6 +1091,68 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), Problem> {
         let _ = directory.sync_all();
     }
     Ok(())
+}
+
+/// Acquires exclusive ownership before either the journal or the workspace-root ledger
+/// reads or writes state. The file stays open in `Journal`, so another process cannot
+/// recover the journal or mint root identities concurrently.
+fn acquire_state_root_lock(root: &Path) -> Result<File, Problem> {
+    let path = root.join(".refyard-state.lock");
+    match std::fs::symlink_metadata(&path) {
+        Ok(metadata) if !metadata.file_type().is_file() || metadata.file_type().is_symlink() => {
+            return Err(Problem::new(
+                ProblemCode::Unavailable,
+                "the embedded state-root lock is not a regular file",
+            ));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(Problem::new(
+                ProblemCode::Unavailable,
+                format!("cannot inspect embedded state-root lock: {error}"),
+            ));
+        }
+    }
+    let mut options = OpenOptions::new();
+    options.read(true).write(true).create(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let file = options.open(&path).map_err(|error| {
+        Problem::new(
+            ProblemCode::Unavailable,
+            format!("cannot open embedded state-root lock: {error}"),
+        )
+    })?;
+    let metadata = file.metadata().map_err(|error| {
+        Problem::new(
+            ProblemCode::Unavailable,
+            format!("cannot inspect embedded state-root lock: {error}"),
+        )
+    })?;
+    if !metadata.is_file() {
+        return Err(Problem::new(
+            ProblemCode::Unavailable,
+            "the embedded state-root lock is not a regular file",
+        ));
+    }
+    #[cfg(unix)]
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).map_err(|error| {
+        Problem::new(
+            ProblemCode::Unavailable,
+            format!("cannot secure embedded state-root lock: {error}"),
+        )
+    })?;
+    file.try_lock().map_err(|error| {
+        Problem::new(
+            ProblemCode::Unavailable,
+            format!("embedded state root is already owned by another Refyard host: {error}"),
+        )
+    })?;
+    Ok(file)
 }
 
 #[cfg(unix)]
@@ -973,8 +1352,334 @@ mod tests {
             .join("op_1.json")
             .is_file());
         // And it reads back from the directory rather than from memory.
+        drop(journal);
         let reopened = Journal::open(Some(temp.path().join("nested/state"))).expect("reopen");
         assert_eq!(reopened.records().len(), 1);
+    }
+
+    #[test]
+    fn reopen_repairs_a_record_written_before_its_index_sequence() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let root = temp.path().join("state");
+        let journal = Journal::open(Some(root.clone())).expect("open");
+        journal.append(record("op_1", 1)).expect("append");
+        drop(journal);
+
+        // Simulate the durable record rename succeeding while the process dies before the
+        // matching index rename.
+        let record_path = root.join("journal/records/op_1.json");
+        let mut durable: JournalRecord =
+            serde_json::from_slice(&std::fs::read(&record_path).expect("read record"))
+                .expect("parse record");
+        durable.sequence = 7;
+        durable.status = OperationStatus::Unknown;
+        durable.finished_at_ms = Some(7);
+        std::fs::write(
+            &record_path,
+            serde_json::to_vec(&durable).expect("serialize updated record"),
+        )
+        .expect("write newer record");
+
+        let reopened = Journal::open(Some(root.clone())).expect("repair record-first crash");
+        assert_eq!(reopened.get("op_1").expect("record").sequence, 7);
+        let index: JournalIndex = serde_json::from_slice(
+            &std::fs::read(root.join("journal/index.json")).expect("read repaired index"),
+        )
+        .expect("parse repaired index");
+        assert_eq!(index.operations[0].sequence, 7);
+        assert!(index.next_sequence > 7);
+    }
+
+    #[test]
+    fn missing_index_with_published_records_fails_closed_without_deleting_them() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let root = temp.path().join("state");
+        let journal = Journal::open(Some(root.clone())).expect("open");
+        journal.append(record("op_1", 1)).expect("append");
+        drop(journal);
+        let record_path = root.join("journal/records/op_1.json");
+        std::fs::remove_file(root.join("journal/index.json")).expect("remove index fixture");
+
+        let error = Journal::open(Some(root)).expect_err("missing authority must fail closed");
+        assert_eq!(error.code, ProblemCode::InternalError);
+        assert!(
+            record_path.is_file(),
+            "recovery evidence must remain untouched"
+        );
+    }
+
+    #[test]
+    fn an_index_ahead_of_its_durable_record_fails_closed() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let root = temp.path().join("state");
+        let journal = Journal::open(Some(root.clone())).expect("open");
+        journal.append(record("op_1", 1)).expect("append");
+        drop(journal);
+
+        let index_path = root.join("journal/index.json");
+        let mut index: JournalIndex =
+            serde_json::from_slice(&std::fs::read(&index_path).expect("read index"))
+                .expect("parse index");
+        index.operations[0].sequence += 1;
+        std::fs::write(
+            &index_path,
+            serde_json::to_vec(&index).expect("serialize index"),
+        )
+        .expect("write ahead index");
+
+        let error = Journal::open(Some(root)).expect_err("an index cannot lead its record");
+        assert_eq!(error.code, ProblemCode::InternalError);
+        assert!(error.message.contains("newer than its durable record"));
+    }
+
+    #[test]
+    fn an_unindexed_nonexpired_record_is_not_silently_discarded() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let root = temp.path().join("state");
+        let journal = Journal::open(Some(root.clone())).expect("open");
+        journal
+            .append(record("op_1", 1))
+            .expect("append indexed record");
+        drop(journal);
+
+        let orphan = record("op_2", 2);
+        std::fs::write(
+            root.join("journal/records/op_2.json"),
+            serde_json::to_vec(&orphan).expect("serialize orphan"),
+        )
+        .expect("write unindexed record");
+
+        let error = Journal::open(Some(root)).expect_err("live ambiguity must fail closed");
+        assert_eq!(error.code, ProblemCode::InternalError);
+        assert!(error.message.contains("cannot be safely discarded"));
+    }
+
+    #[test]
+    fn operation_id_high_water_survives_terminal_pruning_and_restart() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let root = temp.path().join("state");
+        let journal = Journal::open(Some(root.clone())).expect("open");
+        journal
+            .append(JournalRecord {
+                operation_id: "op_z".to_string(),
+                client_request_id: "old-key".to_string(),
+                status: OperationStatus::Unknown,
+                finished_at_ms: Some(10),
+                acknowledged_at_ms: Some(20),
+                ..record("op_z", 1)
+            })
+            .expect("highest id");
+
+        let incoming = record("op_1", 0);
+        let mut projected = JournalState {
+            next_sequence: 3,
+            operation_id_high_water: 35,
+            ..JournalState::default()
+        };
+        projected.order.push("op_1".to_string());
+        projected
+            .records
+            .insert("op_1".to_string(), incoming.clone());
+        projected.client_requests.insert(
+            (incoming.actor.clone(), incoming.client_request_id.clone()),
+            incoming.operation_id.clone(),
+        );
+        let policy = JournalRetentionPolicy {
+            max_bytes: journal_bytes(&projected).expect("size"),
+            terminal_ttl_ms: 50,
+        };
+        journal
+            .admit_with_policy(incoming, 100, policy)
+            .expect("prune old terminal and admit newer request");
+        assert!(journal.get("op_z").is_none());
+        drop(journal);
+
+        let reopened = Journal::open(Some(root)).expect("reopen");
+        assert_eq!(reopened.operation_id_high_water(), 35);
+        assert_eq!(reopened.records().len(), 1);
+        assert_eq!(reopened.records()[0].operation_id, "op_1");
+    }
+
+    #[test]
+    fn request_lookup_is_actor_scoped_and_rebuilt_from_durable_records() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let root = temp.path().join("state");
+        let journal = Journal::open(Some(root.clone())).expect("open");
+        journal
+            .append(JournalRecord {
+                client_request_id: "shared-request".to_string(),
+                ..record("op_1", 1)
+            })
+            .expect("owner record");
+        journal
+            .append(JournalRecord {
+                operation_id: "op_2".to_string(),
+                actor: "other".to_string(),
+                client_request_id: "shared-request".to_string(),
+                sequence: 2,
+                ..record("op_2", 2)
+            })
+            .expect("other actor can use the same id");
+        drop(journal);
+
+        let reopened = Journal::open(Some(root)).expect("reopen");
+        assert_eq!(
+            reopened
+                .find_client_request("owner", "shared-request")
+                .expect("owner lookup")
+                .operation_id,
+            "op_1"
+        );
+        assert_eq!(
+            reopened
+                .find_client_request("other", "shared-request")
+                .expect("other lookup")
+                .operation_id,
+            "op_2"
+        );
+        assert!(reopened
+            .find_client_request("stranger", "shared-request")
+            .is_none());
+        assert!(reopened.find_client_request("owner", "missing").is_none());
+    }
+
+    #[test]
+    fn expired_terminal_records_are_pruned_only_when_admission_needs_room() {
+        let journal = Journal::open(None).expect("in-memory journal");
+        journal
+            .append(JournalRecord {
+                status: OperationStatus::Unknown,
+                finished_at_ms: Some(10),
+                acknowledged_at_ms: Some(20),
+                ..record("op_1", 1)
+            })
+            .expect("old terminal");
+
+        let incoming = record("op_2", 0);
+        let mut projected = JournalState {
+            next_sequence: 3,
+            ..JournalState::default()
+        };
+        projected.order.push("op_2".to_string());
+        projected
+            .records
+            .insert("op_2".to_string(), incoming.clone());
+        projected.client_requests.insert(
+            (incoming.actor.clone(), incoming.client_request_id.clone()),
+            incoming.operation_id.clone(),
+        );
+        let policy = JournalRetentionPolicy {
+            max_bytes: journal_bytes(&projected).expect("size"),
+            terminal_ttl_ms: 50,
+        };
+
+        let admitted = journal
+            .admit_with_policy(incoming, 100, policy)
+            .expect("prune and admit");
+        assert!(matches!(admitted, ClientRequestAdmission::Appended(_)));
+        assert!(journal.find_client_request("owner", "crid-op_1").is_none());
+        assert!(journal.find_client_request("owner", "crid-op_2").is_some());
+    }
+
+    #[test]
+    fn admission_refuses_when_live_or_unexpired_records_prevent_compaction() {
+        for existing in [
+            JournalRecord {
+                status: OperationStatus::Running,
+                started_at_ms: Some(20),
+                ..record("op_1", 1)
+            },
+            JournalRecord {
+                status: OperationStatus::Succeeded,
+                finished_at_ms: Some(95),
+                ..record("op_1", 1)
+            },
+            JournalRecord {
+                status: OperationStatus::Unknown,
+                finished_at_ms: Some(10),
+                ..record("op_1", 1)
+            },
+            JournalRecord {
+                status: OperationStatus::NeedsAttention,
+                finished_at_ms: Some(10),
+                ..record("op_1", 1)
+            },
+        ] {
+            let journal = Journal::open(None).expect("in-memory journal");
+            journal.append(existing.clone()).expect("existing record");
+            let incoming = record("op_2", 0);
+            let mut projected = JournalState {
+                next_sequence: 3,
+                ..JournalState::default()
+            };
+            projected.order.push("op_2".to_string());
+            projected
+                .records
+                .insert("op_2".to_string(), incoming.clone());
+            projected.client_requests.insert(
+                (incoming.actor.clone(), incoming.client_request_id.clone()),
+                incoming.operation_id.clone(),
+            );
+            let policy = JournalRetentionPolicy {
+                max_bytes: journal_bytes(&projected).expect("size"),
+                terminal_ttl_ms: 50,
+            };
+
+            let error = journal
+                .admit_with_policy(incoming, 100, policy)
+                .expect_err("the existing record is not eligible for pruning");
+            assert_eq!(error.code, ProblemCode::ResourceBusy);
+            assert!(journal.get(&existing.operation_id).is_some());
+            assert!(journal.get("op_2").is_none());
+        }
+    }
+
+    #[test]
+    fn opening_a_journal_with_ambiguous_actor_request_ids_fails_closed() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let root = temp.path().join("state");
+        let records = root.join("journal/records");
+        std::fs::create_dir_all(&records).expect("records dir");
+        let first = JournalRecord {
+            client_request_id: "duplicate".to_string(),
+            ..record("op_1", 1)
+        };
+        let second = JournalRecord {
+            operation_id: "op_2".to_string(),
+            sequence: 2,
+            client_request_id: "duplicate".to_string(),
+            ..record("op_2", 2)
+        };
+        for record in [&first, &second] {
+            std::fs::write(
+                records.join(format!("{}.json", record.operation_id)),
+                serde_json::to_vec(record).expect("serialize record"),
+            )
+            .expect("write record");
+        }
+        let index = JournalIndex {
+            next_sequence: 3,
+            operation_id_high_water: 2,
+            operations: vec![
+                IndexEntry {
+                    operation_id: first.operation_id.clone(),
+                    sequence: first.sequence,
+                },
+                IndexEntry {
+                    operation_id: second.operation_id.clone(),
+                    sequence: second.sequence,
+                },
+            ],
+        };
+        std::fs::write(
+            root.join("journal/index.json"),
+            serde_json::to_vec(&index).expect("serialize index"),
+        )
+        .expect("write index");
+
+        let error = Journal::open(Some(root)).expect_err("ambiguous lookup must fail closed");
+        assert_eq!(error.code, ProblemCode::InternalError);
+        assert!(error.message.contains("client request ids"));
     }
 
     #[test]
@@ -1003,6 +1708,7 @@ mod tests {
         assert!(!acknowledged.blocks_writes());
 
         // The next process reads the confirmation from the directory, not from memory.
+        drop(journal);
         let reopened = Journal::open(Some(root)).expect("reopen");
         assert!(
             reopened.unacknowledged().is_empty(),

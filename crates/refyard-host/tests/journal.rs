@@ -25,8 +25,8 @@ use refyard_host::jobs::journal::{canonical_payload_digest, Journal, JournalReco
 use refyard_host::jobs::queue::{EnqueueRefusal, Queue, QueueLimits, QueueMode};
 use refyard_host::jobs::recovery::Recovery;
 use refyard_host::jobs::{
-    EffectRequest, MutationEffect, MutationEngine, MutationOperation, MutationRequest,
-    PreconditionSource, SubmitResult,
+    ClientRequestLookup, EffectRequest, MutationEffect, MutationEngine, MutationOperation,
+    MutationRequest, PreconditionSource, SubmitResult,
 };
 
 /* ------------------------------------------------------------------ fixture */
@@ -102,6 +102,73 @@ impl PreconditionSource for AlwaysFresh {
                 snapshot_head_oid: None,
                 current_head_oid: None,
                 index_unchanged: true,
+                operation_in_progress: None,
+                may_run_during: Vec::new(),
+                restart_block: None,
+                preview_checks: Vec::new(),
+                refusal: None,
+            })
+        })
+    }
+}
+
+/// Forces two concurrent submits past their initial lookup before either reaches admission.
+struct YieldingFresh;
+
+impl PreconditionSource for YieldingFresh {
+    fn write_key(&self, _request: &MutationRequest) -> Result<String, Problem> {
+        Ok("repo_1".to_string())
+    }
+
+    fn context<'a>(
+        &'a self,
+        _request: &'a MutationRequest,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<PreconditionContext, Problem>> + Send + 'a>,
+    > {
+        Box::pin(async {
+            tokio::task::yield_now().await;
+            Ok(PreconditionContext {
+                snapshot_head_oid: None,
+                current_head_oid: None,
+                index_unchanged: true,
+                operation_in_progress: None,
+                may_run_during: Vec::new(),
+                restart_block: None,
+                preview_checks: Vec::new(),
+                refusal: None,
+            })
+        })
+    }
+}
+
+/// The first submit gets fresh facts; its retry observes a stale snapshot after the first
+/// operation is already accepted, exercising idempotency across precondition failure.
+struct FreshThenStale {
+    calls: AtomicUsize,
+}
+
+impl PreconditionSource for FreshThenStale {
+    fn write_key(&self, _request: &MutationRequest) -> Result<String, Problem> {
+        Ok("repo_1".to_string())
+    }
+
+    fn context<'a>(
+        &'a self,
+        _request: &'a MutationRequest,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<PreconditionContext, Problem>> + Send + 'a>,
+    > {
+        let call = self.calls.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async move {
+            tokio::task::yield_now().await;
+            if call > 0 {
+                tokio::task::yield_now().await;
+            }
+            Ok(PreconditionContext {
+                snapshot_head_oid: None,
+                current_head_oid: None,
+                index_unchanged: call == 0,
                 operation_in_progress: None,
                 may_run_during: Vec::new(),
                 restart_block: None,
@@ -251,22 +318,23 @@ async fn a_restart_reads_back_every_record_from_the_directory_alone() {
     // A temporary file that was never renamed is a write that did not happen, not a
     // record: reading it would attribute a state nobody observed.
     let records = reopened.records_dir().expect("records dir");
+    let state_root = reopened.state_root().expect("root").to_path_buf();
+    drop(reopened);
     std::fs::write(records.join("torn.json.tmp"), "{ this is not a record").expect("write");
-    let after =
-        Journal::open(Some(reopened.state_root().expect("root").to_path_buf())).expect("reopen");
+    let after = Journal::open(Some(state_root.clone())).expect("reopen");
     assert_eq!(after.records().len(), 2, "a torn write is not a record");
 
     // A published record that cannot be read is a different thing: the file was written
     // by something that is not this service, and guessing which records are real is worse
     // than refusing to interpret the directory.
-    let victim = reopened
+    let victim = after
         .on_disk_files()
         .into_iter()
         .find(|path| path.to_string_lossy().contains("op_1"))
         .expect("a record file for op_1");
+    drop(after);
     std::fs::write(&victim, "not json at all").expect("corrupt the record");
-    let refused = Journal::open(Some(reopened.state_root().expect("root").to_path_buf()))
-        .expect_err("an unreadable record is refused");
+    let refused = Journal::open(Some(state_root)).expect_err("an unreadable record is refused");
     assert_eq!(refused.code, ProblemCode::InternalError, "{refused:?}");
 }
 
@@ -447,6 +515,144 @@ async fn the_same_request_id_and_payload_is_the_same_operation_and_runs_once() {
         .expect("the same payload in another key order");
     assert!(duplicate.duplicate);
     assert_eq!(runs.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn concurrent_submissions_with_one_actor_request_id_enqueue_one_operation() {
+    let temp = tempfile::tempdir().expect("temp dir");
+    let journal = Arc::new(journal_at(&temp));
+    let runs = Arc::new(AtomicUsize::new(0));
+    let engine = MutationEngine::new(
+        Arc::clone(&journal),
+        Arc::new(Recovery::new()),
+        vec![Box::new(CountingEffect {
+            runs: Arc::clone(&runs),
+        })],
+    );
+    let request = commit_request("concurrent-request", "same payload");
+
+    // Both calls see Unknown at their first lookup. The yielding source then forces them to
+    // overlap before they contend on the journal's atomic admission lock.
+    let (first, second) = tokio::join!(
+        engine.submit("owner", request.clone(), &YieldingFresh),
+        engine.submit("owner", request, &YieldingFresh),
+    );
+    let first = first.expect("first submit");
+    let second = second.expect("retry submit");
+    assert_eq!(first.record.operation_id, second.record.operation_id);
+    assert_ne!(first.duplicate, second.duplicate);
+
+    wait_terminal(&engine, &first.record.operation_id).await;
+    assert_eq!(runs.load(Ordering::SeqCst), 1);
+    assert!(matches!(
+        engine
+            .get_by_client_request_id("owner", "concurrent-request")
+            .expect("typed lookup"),
+        ClientRequestLookup::Found(_)
+    ));
+}
+
+#[tokio::test]
+async fn duplicate_retry_returns_accepted_operation_when_its_preconditions_are_stale() {
+    let temp = tempfile::tempdir().expect("temp dir");
+    let journal = Arc::new(journal_at(&temp));
+    let runs = Arc::new(AtomicUsize::new(0));
+    let engine = MutationEngine::new(
+        Arc::clone(&journal),
+        Arc::new(Recovery::new()),
+        vec![Box::new(CountingEffect {
+            runs: Arc::clone(&runs),
+        })],
+    );
+    let source = FreshThenStale {
+        calls: AtomicUsize::new(0),
+    };
+    let request = commit_request("stale-retry", "same payload");
+
+    let (first, retry) = tokio::join!(
+        engine.submit("owner", request.clone(), &source),
+        engine.submit("owner", request, &source),
+    );
+    let first = first.expect("first submit should be accepted");
+    let retry = retry.expect("stale preconditions must not override an accepted duplicate");
+    assert_eq!(first.record.operation_id, retry.record.operation_id);
+    assert!(!first.duplicate);
+    assert!(retry.duplicate);
+
+    wait_terminal(&engine, &first.record.operation_id).await;
+    assert_eq!(runs.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn typed_request_lookup_survives_reopen_and_hides_cross_actor_or_unknown_ids() {
+    let temp = tempfile::tempdir().expect("temp dir");
+    let root = temp.path().join("state");
+    let journal = Arc::new(Journal::open(Some(root.clone())).expect("open"));
+    let records = [
+        committed_record(
+            "op_1",
+            "accepted-key",
+            "repo_1",
+            1,
+            OperationStatus::Accepted,
+        ),
+        JournalRecord {
+            status: OperationStatus::Running,
+            started_at_ms: Some(1_100),
+            ..committed_record("op_2", "running-key", "repo_1", 2, OperationStatus::Running)
+        },
+        JournalRecord {
+            finished_at_ms: Some(1_200),
+            ..committed_record(
+                "op_3",
+                "terminal-key",
+                "repo_1",
+                3,
+                OperationStatus::Succeeded,
+            )
+        },
+        JournalRecord {
+            finished_at_ms: Some(1_300),
+            ..committed_record("op_4", "unknown-key", "repo_1", 4, OperationStatus::Unknown)
+        },
+        JournalRecord {
+            actor: "other".to_string(),
+            ..committed_record("op_5", "private-key", "repo_1", 5, OperationStatus::Failed)
+        },
+    ];
+    for record in records {
+        journal.append(record).expect("append seed operation");
+    }
+    drop(journal);
+
+    let reopened = Arc::new(Journal::open(Some(root)).expect("reopen"));
+    let engine = MutationEngine::new(Arc::clone(&reopened), Arc::new(Recovery::new()), Vec::new());
+    for (request_id, expected_status) in [
+        ("accepted-key", OperationStatus::Accepted),
+        ("running-key", OperationStatus::Running),
+        ("terminal-key", OperationStatus::Succeeded),
+        ("unknown-key", OperationStatus::Unknown),
+    ] {
+        let ClientRequestLookup::Found(record) = engine
+            .get_by_client_request_id("owner", request_id)
+            .expect("lookup")
+        else {
+            panic!("expected retained record for {request_id}");
+        };
+        assert_eq!(record.status, expected_status);
+    }
+    assert_eq!(
+        engine
+            .get_by_client_request_id("owner", "private-key")
+            .expect("cross-actor lookup"),
+        ClientRequestLookup::Unknown
+    );
+    assert_eq!(
+        engine
+            .get_by_client_request_id("owner", "missing-key")
+            .expect("missing lookup"),
+        ClientRequestLookup::Unknown
+    );
 }
 
 /* ------------------------------------------------------------------ the queue */

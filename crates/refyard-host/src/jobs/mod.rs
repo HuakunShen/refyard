@@ -33,7 +33,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::clock::now_millis;
 use crate::events::EventSink;
-use crate::jobs::journal::{canonical_payload_digest, EffectOutcome, Journal, JournalRecord};
+use crate::jobs::journal::{
+    canonical_payload_digest, ClientRequestAdmission, EffectOutcome, Journal, JournalRecord,
+};
 use crate::jobs::queue::{EnqueueRefusal, Queue, QueueLimits, QueueMode, QueueTicket};
 use crate::jobs::recovery::{Recovery, WriteBlock};
 use crate::paths::base36;
@@ -234,6 +236,14 @@ pub struct SubmitResult {
     pub duplicate: bool,
 }
 
+/// A private-by-actor result for recovering a submit response that may have been lost.
+/// `Unknown` intentionally does not distinguish missing, pruned, or another actor's id.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ClientRequestLookup {
+    Found(Box<OperationRecord>),
+    Unknown,
+}
+
 /// The write path: journal, queue, effects and the rules that join them.
 pub struct MutationEngine {
     journal: Arc<Journal>,
@@ -281,7 +291,9 @@ impl MutationEngine {
         events: Option<Arc<EventSink>>,
         queue_limits: QueueLimits,
     ) -> Arc<Self> {
-        let next_operation = next_operation_seed(&journal.records());
+        let next_operation = journal
+            .operation_id_high_water()
+            .max(next_operation_seed(&journal.records()));
         Arc::new(Self {
             journal,
             recovery,
@@ -368,21 +380,10 @@ impl MutationEngine {
 
         // Idempotency: the same client request id and the same payload is the same
         // operation, and the answer is the record that already exists.
-        if let Some(existing) = self
-            .journal
-            .find_client_request(actor, &request.client_request_id)
+        if let Some(existing) =
+            self.existing_submission(actor, &request.client_request_id, &digest)?
         {
-            if existing.payload_digest != digest {
-                return Err(Problem::new(
-                    ProblemCode::IdempotencyConflict,
-                    "that client request id was already used with a different payload; use a new id for the changed request",
-                )
-                .for_operation(existing.operation_id));
-            }
-            return Ok(SubmitResult {
-                record: existing.to_operation_record(),
-                duplicate: true,
-            });
+            return Ok(existing);
         }
 
         let kind = request.operation.kind();
@@ -395,15 +396,42 @@ impl MutationEngine {
             ));
         }
 
-        let write_key = source.write_key(&request)?;
+        let write_key = match source.write_key(&request) {
+            Ok(write_key) => write_key,
+            Err(problem) => {
+                return self.existing_submission_or_problem(
+                    actor,
+                    &request.client_request_id,
+                    &digest,
+                    problem,
+                )
+            }
+        };
 
         // Freshness and the write block. The block is filled in here from the recovery —
         // never from the source — so an effect cannot be accepted for a repository that is
         // blocked because a source forgot to look.
         let block = self.recovery.block_for(&write_key);
-        let mut context = source.context(&request).await?;
+        let mut context = match source.context(&request).await {
+            Ok(context) => context,
+            Err(problem) => {
+                return self.existing_submission_or_problem(
+                    actor,
+                    &request.client_request_id,
+                    &digest,
+                    problem,
+                )
+            }
+        };
         context.restart_block = block.as_ref().map(restart_block_of);
-        check_preconditions(&context)?;
+        if let Err(problem) = check_preconditions(&context) {
+            return self.existing_submission_or_problem(
+                actor,
+                &request.client_request_id,
+                &digest,
+                problem,
+            );
+        }
 
         let operation_id = format!(
             "op_{}",
@@ -422,7 +450,7 @@ impl MutationEngine {
             accepted_at_ms: now_millis(),
             started_at_ms: None,
             finished_at_ms: None,
-            payload_digest: digest,
+            payload_digest: digest.clone(),
             write_key: write_key.clone(),
             result: None,
             problem: None,
@@ -431,15 +459,31 @@ impl MutationEngine {
         };
         // Persist `accepted` before the operation may run. A failure here means the
         // operation is refused, not accepted-and-forgotten.
-        if let Err(problem) = self.journal.append(accepted) {
-            return Err(Problem::new(
-                ProblemCode::ResourceBusy,
-                format!(
-                    "the operation journal could not record this request: {}",
-                    problem.message
-                ),
-            )
-            .retryable());
+        match self.journal.admit(accepted, now_millis()) {
+            Ok(ClientRequestAdmission::Appended(_)) => {}
+            Ok(ClientRequestAdmission::Existing(existing)) => {
+                if existing.payload_digest != digest {
+                    return Err(Problem::new(
+                        ProblemCode::IdempotencyConflict,
+                        "that client request id was already used with a different payload; use a new id for the changed request",
+                    )
+                    .for_operation(existing.operation_id));
+                }
+                return Ok(SubmitResult {
+                    record: existing.to_operation_record(),
+                    duplicate: true,
+                });
+            }
+            Err(problem) => {
+                return Err(Problem::new(
+                    ProblemCode::ResourceBusy,
+                    format!(
+                        "the operation journal could not record this request: {}",
+                        problem.message
+                    ),
+                )
+                .retryable());
+            }
         }
         if let Some(record) = self.journal.get(&operation_id) {
             self.publish(&record);
@@ -499,6 +543,41 @@ impl MutationEngine {
         })
     }
 
+    fn existing_submission(
+        &self,
+        actor: &str,
+        client_request_id: &str,
+        digest: &str,
+    ) -> Result<Option<SubmitResult>, Problem> {
+        let Some(existing) = self.journal.find_client_request(actor, client_request_id) else {
+            return Ok(None);
+        };
+        if existing.payload_digest != digest {
+            return Err(Problem::new(
+                ProblemCode::IdempotencyConflict,
+                "that client request id was already used with a different payload; use a new id for the changed request",
+            )
+            .for_operation(existing.operation_id));
+        }
+        Ok(Some(SubmitResult {
+            record: existing.to_operation_record(),
+            duplicate: true,
+        }))
+    }
+
+    fn existing_submission_or_problem(
+        &self,
+        actor: &str,
+        client_request_id: &str,
+        digest: &str,
+        problem: Problem,
+    ) -> Result<SubmitResult, Problem> {
+        match self.existing_submission(actor, client_request_id, digest)? {
+            Some(existing) => Ok(existing),
+            None => Err(problem),
+        }
+    }
+
     /// One operation, as its client may read it.
     pub fn get(&self, actor: &str, operation_id: &str) -> Result<OperationRecord, Problem> {
         let record = self.journal.get(operation_id).ok_or_else(|| {
@@ -516,6 +595,20 @@ impl MutationEngine {
             ));
         }
         Ok(record.to_operation_record())
+    }
+
+    /// Looks up a retained request id without revealing whether another actor used it.
+    pub fn get_by_client_request_id(
+        &self,
+        actor: &str,
+        client_request_id: &str,
+    ) -> Result<ClientRequestLookup, Problem> {
+        Ok(
+            match self.journal.find_client_request(actor, client_request_id) {
+                Some(record) => ClientRequestLookup::Found(Box::new(record.to_operation_record())),
+                None => ClientRequestLookup::Unknown,
+            },
+        )
     }
 
     /// This actor's recent operations, newest first.
