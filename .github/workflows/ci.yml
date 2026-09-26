@@ -175,7 +175,7 @@ jobs:
         run: cargo clippy -p refyard-contract -p refyard-core -p refyard-host --all-targets -- -D warnings
 
       - name: Contract, parser, embed and journal tests
-        run: cargo test -p refyard-contract -p refyard-core -p refyard-host --all-targets
+        run: cargo test -p refyard-contract -p refyard-core -p refyard-host --all-targets --no-fail-fast
 
       - name: Windows fail-closed journal startup ran one test
         if: runner.os == 'Windows'
