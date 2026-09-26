@@ -39,7 +39,7 @@ pub mod stash;
 pub mod submodules;
 pub mod worktrees;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use refyard_contract::problem::{DetailValue, Problem, ProblemCode};
 use refyard_contract::reads::OperationResult;
@@ -56,6 +56,8 @@ use crate::reads::status::read_write_facts;
 pub(crate) use crate::reads::status::WriteFacts;
 use crate::registry::{RepositoryRecord, RepositoryRegistry};
 use crate::targets::{TargetRecord, TargetRegistry};
+use crate::workspace_roots::RootState;
+use tokio::sync::{OwnedRwLockReadGuard, RwLock};
 
 /// The most paths one path-scoped write may name, from `LIMITS.pathSelectionMaxEntries`.
 pub const PATH_SELECTION_MAX_ENTRIES: usize = 1_000;
@@ -72,6 +74,8 @@ pub struct WriteHost {
     repositories: Arc<RepositoryRegistry>,
     paths: Arc<PathRegistry>,
     previews: Arc<PreviewStore>,
+    roots: Arc<Mutex<RootState>>,
+    root_operations: Arc<RwLock<()>>,
 }
 
 /// One request resolved to the place Git will run.
@@ -80,6 +84,7 @@ pub struct WriteTarget {
     pub record: RepositoryRecord,
     pub executor: GitExecutor,
     pub worktree_id: String,
+    _root_lease: OwnedRwLockReadGuard<()>,
 }
 
 /// One path id resolved to the bytes it was minted for.
@@ -90,17 +95,21 @@ pub struct ResolvedPath {
 }
 
 impl WriteHost {
-    pub fn new(
+    pub(crate) fn new(
         targets: TargetRegistry,
         repositories: Arc<RepositoryRegistry>,
         paths: Arc<PathRegistry>,
         previews: Arc<PreviewStore>,
+        roots: Arc<Mutex<RootState>>,
+        root_operations: Arc<RwLock<()>>,
     ) -> Self {
         Self {
             targets,
             repositories,
             paths,
             previews,
+            roots,
+            root_operations,
         }
     }
 
@@ -277,24 +286,34 @@ impl WriteHost {
     }
 
     /// Resolves a request to the repository, target and worktree it addresses.
-    pub fn resolve(&self, request: &MutationRequest) -> Result<WriteTarget, Problem> {
+    pub async fn resolve(&self, request: &MutationRequest) -> Result<WriteTarget, Problem> {
         let repository_id = request.repository_id().ok_or_else(|| {
             Problem::new(
                 ProblemCode::InvalidRequest,
                 "this operation must target a repository or a worktree",
             )
         })?;
-        self.resolve_ids(repository_id, request.worktree_id())
+        self.resolve_ids(repository_id, request.worktree_id()).await
     }
 
     /// The same resolution, for a caller that names the repository and worktree directly
     /// (the preview redemption a client may perform before submitting a stage).
-    pub fn resolve_ids(
+    pub async fn resolve_ids(
         &self,
         repository_id: &str,
         worktree_id: Option<&str>,
     ) -> Result<WriteTarget, Problem> {
-        let record = self.require_record(repository_id)?;
+        let aggregate = self.require_record(repository_id)?;
+        let worktree_id = crate::reads::require_worktree(&aggregate, worktree_id)
+            .map_err(|error| error.to_problem())?;
+        let record = aggregate
+            .selected_worktree(Some(&worktree_id), None)
+            .ok_or_else(|| {
+                Problem::new(
+                    ProblemCode::NotFound,
+                    format!("unknown worktree {worktree_id} in {repository_id}"),
+                )
+            })?;
         if record.layout.is_bare {
             return Err(Problem::new(
                 ProblemCode::UnsupportedOperation,
@@ -304,15 +323,44 @@ impl WriteHost {
                 ),
             ));
         }
+        let root_lease = self.lease_root(&record.allowed_root_id).await?;
         let target = self.target_for(&record)?;
-        let worktree_id = crate::reads::require_worktree(&record, worktree_id)
-            .map_err(|error| error.to_problem())?;
         let executor = target.executor()?.clone();
         Ok(WriteTarget {
             record,
             executor,
             worktree_id,
+            _root_lease: root_lease,
         })
+    }
+
+    /// Holds admission open only while the named root is still approved. A root-removal
+    /// writer waits for this lease, then future readers queue behind it and fail the
+    /// active-root check after retirement.
+    async fn lease_root(&self, allowed_root_id: &str) -> Result<OwnedRwLockReadGuard<()>, Problem> {
+        let lease = Arc::clone(&self.root_operations).read_owned().await;
+        let root_id = refyard_contract::reads::WorkspaceRootId::try_from(allowed_root_id).map_err(
+            |error| {
+                Problem::new(
+                    ProblemCode::InternalError,
+                    format!("repository registry returned an invalid workspace root id: {error}"),
+                )
+            },
+        )?;
+        if !self.roots.lock().expect("root lock").contains(&root_id)? {
+            return Err(Problem::new(
+                ProblemCode::NotFound,
+                "the repository's workspace root is no longer registered",
+            ));
+        }
+        Ok(lease)
+    }
+
+    pub(crate) async fn lease_root_for_record(
+        &self,
+        record: &RepositoryRecord,
+    ) -> Result<OwnedRwLockReadGuard<()>, Problem> {
+        self.lease_root(&record.allowed_root_id).await
     }
 
     /// Resolves every selected path id to the bytes it was minted for.
@@ -404,7 +452,7 @@ impl WriteHost {
         path_ids: &[String],
         preview_tokens: &[String],
     ) -> Result<(), Problem> {
-        let target = self.resolve_ids(repository_id, Some(worktree_id))?;
+        let target = self.resolve_ids(repository_id, Some(worktree_id)).await?;
         let selected = self.resolve_paths(&target, path_ids)?;
         self.redeem_previews(&target, &selected, preview_tokens)
             .await

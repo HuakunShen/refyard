@@ -70,6 +70,8 @@ pub enum EnqueueRefusal {
     QueueFull,
     /// The same operation id is already queued.
     AlreadyQueued,
+    /// The host is closing and will not accept new work.
+    Closed,
 }
 
 /// The queue. Generic over the work it carries, because the limits are about Git processes
@@ -86,6 +88,7 @@ struct QueueState<J> {
     running: HashMap<String, QueueTicket<J>>,
     writers: HashSet<String>,
     readers: HashMap<String, usize>,
+    closed: bool,
 }
 
 impl<J: Clone> Default for Queue<J> {
@@ -102,6 +105,7 @@ impl<J: Clone> Queue<J> {
                 running: HashMap::new(),
                 writers: HashSet::new(),
                 readers: HashMap::new(),
+                closed: false,
             }),
             limits,
         }
@@ -118,6 +122,9 @@ impl<J: Clone> Queue<J> {
     ) -> Result<QueueTicket<J>, EnqueueRefusal> {
         let id = id.into();
         let mut state = self.inner.lock().expect("queue lock");
+        if state.closed {
+            return Err(EnqueueRefusal::Closed);
+        }
         let depth = state
             .pending
             .iter()
@@ -151,6 +158,13 @@ impl<J: Clone> Queue<J> {
         true
     }
 
+    /// Removes every ticket that has not started, for lifecycle shutdown.
+    pub fn close(&self) -> Vec<QueueTicket<J>> {
+        let mut state = self.inner.lock().expect("queue lock");
+        state.closed = true;
+        std::mem::take(&mut state.pending)
+    }
+
     /// Takes every ticket that may start now, recording each as running.
     ///
     /// One pass in queue order: a job that cannot start does not block the one behind it,
@@ -159,6 +173,9 @@ impl<J: Clone> Queue<J> {
     /// the limits self-healing after a failure rather than dependent on a happy path.
     pub fn take_startable(&self) -> Vec<QueueTicket<J>> {
         let mut state = self.inner.lock().expect("queue lock");
+        if state.closed {
+            return Vec::new();
+        }
         let mut started = Vec::new();
         let mut index = 0;
         while index < state.pending.len() {

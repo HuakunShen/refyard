@@ -238,6 +238,16 @@ impl PreviewStore {
         self.inner.lock().expect("preview lock").entries.len()
     }
 
+    /// Invalidates write previews when the root that scoped their worktree is retired.
+    pub fn invalidate_worktree(&self, repository_id: &str, worktree_id: &str) -> usize {
+        let mut state = self.inner.lock().expect("preview lock");
+        let before = state.entries.len();
+        state.entries.retain(|_, entry| {
+            entry.claim.repository_id != repository_id || entry.claim.worktree_id != worktree_id
+        });
+        before - state.entries.len()
+    }
+
     fn check(state: &StoreState, check: &PreviewCheck) -> Result<(), PreviewRefusal> {
         let Some(entry) = state.entries.get(&check.preview_token) else {
             return Err(PreviewRefusal::UnknownToken);
@@ -459,6 +469,19 @@ mod tests {
         assert_eq!(
             store.verify(&[wrong_path]),
             Err(PreviewRefusal::StaleGeneration)
+        );
+    }
+
+    #[test]
+    fn retiring_a_worktree_invalidates_its_write_previews() {
+        let store = PreviewStore::new(60_000, 32);
+        let issued = store.issue(claim("path_1"));
+
+        assert_eq!(store.invalidate_worktree("repo_1", "wt_1"), 1);
+        assert_eq!(store.size(), 0);
+        assert_eq!(
+            store.verify(&[check(&issued.preview_token, "path_1", Some("fingerprint"))]),
+            Err(PreviewRefusal::UnknownToken)
         );
     }
 

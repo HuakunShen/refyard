@@ -257,6 +257,20 @@ fn git_program() -> PathBuf {
         .to_path_buf()
 }
 
+fn git_compatible_path(path: &Path) -> String {
+    let path = path.to_string_lossy();
+    #[cfg(windows)]
+    {
+        path.strip_prefix(r"\\?\")
+            .unwrap_or(path.as_ref())
+            .to_string()
+    }
+    #[cfg(not(windows))]
+    {
+        path.into_owned()
+    }
+}
+
 /// Waits for one operation to reach a terminal state.
 async fn wait_terminal(
     service: &ApplicationService,
@@ -1285,13 +1299,8 @@ async fn a_worktree_lock_and_unlock_toggle_the_lock_and_refuse_the_wrong_state()
         .expect("utf8")
         .trim()
         .to_string();
-    let wt_str = fixture
-        .temp
-        .path()
-        .join("lock-wt")
-        .to_str()
-        .expect("utf8")
-        .to_string();
+    let wt_path = fixture.temp.path().join("lock-wt");
+    let wt_str = git_compatible_path(&wt_path);
     run_git_in(
         &fixture,
         &fixture.repo,
@@ -1428,13 +1437,8 @@ async fn a_worktree_remove_needs_confirmation_then_clears_the_worktree() {
         .expect("utf8")
         .trim()
         .to_string();
-    let wt_str = fixture
-        .temp
-        .path()
-        .join("rm-wt")
-        .to_str()
-        .expect("utf8")
-        .to_string();
+    let wt_path = fixture.temp.path().join("rm-wt");
+    let wt_str = git_compatible_path(&wt_path);
     run_git_in(
         &fixture,
         &fixture.repo,
@@ -1525,7 +1529,7 @@ async fn a_locked_worktree_refuses_to_be_removed() {
         .trim()
         .to_string();
     let wt_path = fixture.temp.path().join("locked-rm");
-    let wt_str = wt_path.to_str().expect("utf8").to_string();
+    let wt_str = git_compatible_path(&wt_path);
     run_git_in(
         &fixture,
         &fixture.repo,

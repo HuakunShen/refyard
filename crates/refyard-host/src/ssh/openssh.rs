@@ -267,12 +267,18 @@ mod tests {
 
     #[test]
     fn a_chosen_config_source_is_appended_and_never_replaces_a_safety_option() {
-        let argv =
-            exec_argv("prod", "true", Some(Path::new("/scratch/.ssh/config"))).expect("argv");
+        #[cfg(windows)]
+        let config = Path::new(r"C:\scratch\.ssh\config");
+        #[cfg(not(windows))]
+        let config = Path::new("/scratch/.ssh/config");
+        let argv = exec_argv("prod", "true", Some(config)).expect("argv");
         // The fixed options keep their exact positions, with the source after them.
         assert_eq!(&argv[..base_options().len()], base_options().as_slice());
         assert_eq!(argv[base_options().len()], "-F");
-        assert_eq!(argv[base_options().len() + 1], "/scratch/.ssh/config");
+        assert_eq!(
+            argv[base_options().len() + 1],
+            config.to_str().expect("test path")
+        );
         assert_eq!(argv[argv.len() - 2], "prod");
     }
 
