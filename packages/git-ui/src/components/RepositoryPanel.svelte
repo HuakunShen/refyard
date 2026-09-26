@@ -21,6 +21,7 @@
   import { Badge } from "./ui/badge/index.js";
   import { Button } from "./ui/button/index.js";
   import { cn } from "../lib/utils.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   export interface WorkspaceRoot {
     readonly allowedRootId: string;
@@ -79,6 +80,7 @@
     onClone,
     class: className = "",
   }: Props = $props();
+  const { t } = useGitViewI18n();
 
   let mode = $state<"init" | "clone">("init");
   /** Null means "the first root the service reports", which may arrive after mount. */
@@ -136,7 +138,7 @@
     <div
       class="flex overflow-hidden rounded border border-input"
       role="group"
-      aria-label="what to create"
+      aria-label={t("repository.create.what")}
     >
       <button
         type="button"
@@ -151,7 +153,7 @@
         onclick={() => (mode = "init")}
         data-testid="repository-mode-init"
       >
-        Create new
+        {t("repository.create.new")}
       </button>
       <button
         type="button"
@@ -166,20 +168,20 @@
         onclick={() => (mode = "clone")}
         data-testid="repository-mode-clone"
       >
-        Clone
+        {t("repository.create.clone")}
       </button>
     </div>
     {#if available === "unknown"}
-      <Badge tone="muted">the service has not reported its operations</Badge>
+      <Badge tone="muted">{t("repository.create.operationsUnknown")}</Badge>
     {:else if !modeAvailable}
-      <Badge tone="muted">not implemented in this build</Badge>
+      <Badge tone="muted">{t("repository.create.notImplemented")}</Badge>
     {/if}
   </div>
 
   {#if roots.length > 1}
     <select
       class="w-full rounded border border-input bg-panel px-2 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-      aria-label="approved root"
+      aria-label={t("repository.create.approvedRoot")}
       value={rootId}
       onchange={(event) => (chosenRootId = event.currentTarget.value)}
       disabled={locked}
@@ -194,14 +196,14 @@
       class="truncate font-mono text-[11px] text-ink-faint"
       title={roots[0]?.displayPath ?? ""}
     >
-      inside {roots[0]?.displayPath ?? ""}
+      {t("repository.create.inside")} {roots[0]?.displayPath ?? ""}
     </p>
   {/if}
 
   <input
     class="w-full rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-    placeholder="relative/path"
-    aria-label="repository destination"
+    placeholder={t("repository.create.relativePath")}
+    aria-label={t("repository.create.destination")}
     bind:value={destination}
     disabled={locked}
     data-testid="repository-destination"
@@ -210,8 +212,8 @@
   {#if mode === "clone"}
     <input
       class="w-full rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-      placeholder="https://host/project.git or an approved local path"
-      aria-label="remote URL"
+      placeholder={t("repository.create.remotePlaceholder")}
+      aria-label={t("repository.create.remoteUrl")}
       bind:value={remoteUrl}
       disabled={locked}
       data-testid="repository-remote-url"
@@ -224,13 +226,13 @@
         disabled={locked}
         data-testid="repository-submodules"
       />
-      Initialise submodules
+      {t("repository.create.submodules")}
     </label>
   {:else}
     <input
       class="w-full rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring placeholder:text-ink-faint"
-      placeholder="initial branch (optional: Git's default)"
-      aria-label="initial branch"
+      placeholder={t("repository.create.branchPlaceholder")}
+      aria-label={t("repository.create.initialBranch")}
       bind:value={initialBranch}
       disabled={locked}
     />
@@ -243,7 +245,7 @@
     onclick={submit}
     data-testid="repository-submit"
   >
-    {mode === "init" ? "Create repository" : "Clone repository"}
+    {t(mode === "init" ? "repository.create.confirmInit" : "repository.create.confirmClone")}
   </Button>
 
   {#if message !== null}

@@ -21,7 +21,10 @@ pub mod diff;
 pub mod filesystem;
 pub mod history;
 pub mod refs;
+pub mod stashes;
 pub mod status;
+pub mod submodules;
+pub mod worktrees;
 
 use std::path::Path;
 
@@ -284,17 +287,30 @@ pub fn require_repository(
 
 /// The worktree a read addresses.
 ///
-/// This host has one worktree per registration, so a request naming another one is
-/// refused rather than answered from the primary checkout: reporting one worktree's
-/// files for a worktree the caller believes is somewhere else is the one lie a user
-/// cannot see.
+/// Requests may name any currently registered worktree in the repository aggregate.
+/// Callers must then project the record to that exact worktree before selecting a cwd,
+/// Git directory or index; validating the id while continuing to use the primary record
+/// would report one checkout as another.
 pub fn require_worktree(
     record: &RepositoryRecord,
     requested: Option<&str>,
 ) -> Result<String, ReadError> {
     match requested {
-        None => Ok(record.worktree_id.clone()),
-        Some(worktree_id) if worktree_id == record.worktree_id => Ok(record.worktree_id.clone()),
+        None => Ok(record
+            .worktrees
+            .iter()
+            .find(|worktree| worktree.worktree_id == record.worktree_id)
+            .or_else(|| record.worktrees.first())
+            .map(|worktree| worktree.worktree_id.clone())
+            .unwrap_or_else(|| record.worktree_id.clone())),
+        Some(worktree_id)
+            if record
+                .worktrees
+                .iter()
+                .any(|worktree| worktree.worktree_id == worktree_id) =>
+        {
+            Ok(worktree_id.to_string())
+        }
         Some(worktree_id) => Err(ReadError::problem(
             Problem::new(
                 ProblemCode::NotFound,

@@ -61,7 +61,7 @@ async fn add_submodule(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> Ef
         Ok(plan) => plan,
         Err(error) => return invalid_payload(operation_id, error.to_string()),
     };
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };
@@ -181,7 +181,7 @@ async fn update_submodules(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -
     else {
         return wrong_payload(operation_id, "updateSubmodule");
     };
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };
@@ -238,7 +238,7 @@ async fn sync_submodules(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> 
     else {
         return wrong_payload(operation_id, "syncSubmodule");
     };
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };

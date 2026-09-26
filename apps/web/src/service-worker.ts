@@ -28,7 +28,8 @@ const CACHE = `refyard-shell-${version}`;
  * is how this was found: the offline reload failed with `net::ERR_FAILED`.
  */
 const SHELL = [...build, ...files];
-const DOCUMENTS = ["/index.html", "/200.html"];
+const xrossHosted = import.meta.env.VITE_REFYARD_BUILD_TARGET === "xross-hosted";
+const DOCUMENTS = xrossHosted ? ["/xross/index.html", "/200.html"] : ["/index.html", "/200.html"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -76,7 +77,7 @@ self.addEventListener("fetch", (event) => {
   if (request.mode === "navigate") {
     event.respondWith(
       fetch(request).catch(async () => {
-        const cached = await caches.match("/index.html");
+        const cached = await caches.match(xrossHosted ? "/xross/index.html" : "/index.html");
         return cached ?? Response.error();
       }),
     );

@@ -18,8 +18,10 @@
   import { buttonVariants } from "./ui/button/index.js";
   import * as DropdownMenu from "./ui/dropdown-menu/index.js";
   import { cn } from "../lib/utils.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   let { class: className = "" }: { class?: string } = $props();
+  const { t } = useGitViewI18n();
 </script>
 
 <DropdownMenu.Root>
@@ -29,8 +31,8 @@
       "relative",
       className,
     )}
-    aria-label="Toggle theme"
-    title="Toggle theme"
+    aria-label={t("theme.toggle")}
+    title={t("theme.toggle")}
   >
     <SunIcon
       class="size-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0"
@@ -42,15 +44,15 @@
   <DropdownMenu.Content align="end">
     <DropdownMenu.Item onclick={() => setMode("light")}>
       <SunIcon class="size-4" />
-      Light
+      {t("theme.light")}
     </DropdownMenu.Item>
     <DropdownMenu.Item onclick={() => setMode("dark")}>
       <MoonIcon class="size-4" />
-      Dark
+      {t("theme.dark")}
     </DropdownMenu.Item>
     <DropdownMenu.Item onclick={resetMode}>
       <MonitorIcon class="size-4" />
-      System
+      {t("theme.system")}
     </DropdownMenu.Item>
   </DropdownMenu.Content>
 </DropdownMenu.Root>

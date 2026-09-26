@@ -12,6 +12,7 @@
    */
   import type { Snippet } from "svelte";
   import { cn } from "../lib/utils.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   export interface WorkbenchNavItem {
     readonly id: string;
@@ -40,11 +41,13 @@
     class: className = "",
     "data-testid": testId = "workbench-nav",
   }: Props = $props();
+  const i18n = useGitViewI18n();
+  const { t } = i18n;
 </script>
 
 <nav
   class={cn("flex gap-0.5", collapsed ? "flex-row" : "flex-col", className)}
-  aria-label="Repository navigation"
+  aria-label={t("navigation.repository")}
   data-testid={testId}
   data-collapsed={collapsed}
 >
@@ -85,7 +88,7 @@
                 : "bg-muted text-ink-faint",
             )}
           >
-            {item.count > 99 ? "99+" : item.count}
+            {item.count > 99 ? "99+" : i18n.count(item.count)}
           </span>
         {/if}
       {:else}
@@ -99,7 +102,7 @@
                 : "bg-muted/70 text-ink-faint group-hover:text-muted-foreground",
             )}
           >
-            {item.count}
+            {i18n.count(item.count)}
           </span>
         {/if}
       {/if}

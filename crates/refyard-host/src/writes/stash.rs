@@ -239,7 +239,7 @@ async fn create_stash(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> Eff
         Ok(plan) => plan,
         Err(error) => return invalid_payload(operation_id, error.to_string()),
     };
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };
@@ -283,7 +283,7 @@ async fn apply_stash(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> Effe
         Ok(plan) => plan,
         Err(error) => return invalid_payload(operation_id, error.to_string()),
     };
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };
@@ -351,7 +351,7 @@ async fn pop_stash(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> Effect
         Ok(plan) => plan,
         Err(error) => return invalid_payload(operation_id, error.to_string()),
     };
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };
@@ -423,7 +423,7 @@ async fn drop_stash(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> Effec
         Ok(plan) => plan,
         Err(error) => return invalid_payload(operation_id, error.to_string()),
     };
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };

@@ -11,6 +11,7 @@
    */
   import { Button } from "./ui/button/index.js";
   import { cn } from "../lib/utils.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   interface Props {
     label: string;
@@ -35,6 +36,7 @@
     class: className = "",
     "data-testid": testId = undefined,
   }: Props = $props();
+  const { t } = useGitViewI18n();
 
   let armed = $state(false);
 
@@ -60,10 +62,10 @@
       onclick={confirm}
       data-testid={testId === undefined ? undefined : `${testId}-confirm`}
     >
-      {busy ? "Working…" : confirmLabel}
+      {busy ? t("action.working") : confirmLabel}
     </Button>
     <Button size="sm" variant="ghost" onclick={() => (armed = false)}>
-      Cancel
+      {t("action.cancel")}
     </Button>
   </span>
 {:else}

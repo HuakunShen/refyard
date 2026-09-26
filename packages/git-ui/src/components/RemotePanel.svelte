@@ -23,6 +23,7 @@
   import ContextActionMenu from "./ContextActionMenu.svelte";
   import type { ContextAction } from "../lib/context-actions.js";
   import { cn } from "../lib/utils.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   interface Props {
     refs: RefsSnapshot | null;
@@ -58,6 +59,7 @@
     onPull,
     class: className = "",
   }: Props = $props();
+  const { t } = useGitViewI18n();
 
   let remoteName = $state("");
   let remoteUrl = $state("");
@@ -93,7 +95,7 @@
       {
         kind: "action",
         id: "edit",
-        label: "Edit…",
+        label: t("remote.editMore"),
         disabled: actionDisabled,
         onSelect: () => beginRemoteEdit(remoteName),
       },
@@ -101,7 +103,7 @@
       {
         kind: "action",
         id: "fetch",
-        label: "Fetch",
+        label: t("remote.fetch"),
         disabled: actionDisabled,
         onSelect: () => onFetch(remoteName),
       },
@@ -111,14 +113,14 @@
             {
               kind: "action" as const,
               id: "pull",
-              label: "Pull (ff-only)",
+              label: t("remote.pullFastForward"),
               disabled: actionDisabled,
               onSelect: () => onPull(remoteName),
             },
             {
               kind: "action" as const,
               id: "push",
-              label: `Push ${currentBranch}`,
+              label: t("remote.pushNamed").replace("{branch}", () => currentBranch),
               disabled: actionDisabled,
               onSelect: () => onPush(remoteName, currentBranch),
             },
@@ -127,7 +129,7 @@
       {
         kind: "action",
         id: "remove",
-        label: "Remove…",
+        label: t("remote.removeMore"),
         destructive: true,
         disabled: actionDisabled,
         onSelect: () => askRemove(remoteName),
@@ -161,9 +163,9 @@
 
 <div class={cn("flex flex-col gap-2.5", className)} data-testid="remote-panel">
   {#if refs === null}
-    <p class="text-xs text-ink-faint">No refs loaded.</p>
+    <p class="text-xs text-ink-faint">{t("refs.empty.notLoaded")}</p>
   {:else if remotes.length === 0}
-    <p class="text-xs text-ink-faint italic py-1">No remotes configured.</p>
+    <p class="text-xs text-ink-faint italic py-1">{t("refs.remote.empty")}</p>
   {:else}
     <!-- Remote list -->
     <ul class="flex flex-col gap-1.5" data-testid="remote-list">
@@ -191,7 +193,7 @@
                   name="remote-select"
                   checked={isSelected}
                   disabled={disabled || busy}
-                  aria-label={`select remote ${remote.name}`}
+                  aria-label={t("remote.selectNamed").replace("{name}", () => remote.name)}
                   onchange={() => (selected = remote.name)}
                 />
                 <div class="flex flex-col min-w-0 flex-1">
@@ -213,13 +215,13 @@
                   onclick={() => beginRemoteEdit(remote.name)}
                   data-testid={`edit-remote-${remote.name}`}
                 >
-                  Edit
+                  {t("remote.edit")}
                 </Button>
                 <span class="shrink-0">
                   <ConfirmAction
-                    label="Remove"
-                    confirmLabel={`Remove ${remote.name}`}
-                    description="Local branches are untouched; remote-tracking refs go with it."
+                    label={t("remote.remove")}
+                    confirmLabel={t("remote.removeNamed").replace("{name}", () => remote.name)}
+                    description={t("remote.removeDescription")}
                     disabled={disabled || busy}
                     {busy}
                     onConfirm={() => onRemove(remote.name)}
@@ -236,10 +238,10 @@
                     <label
                       class="flex min-w-0 flex-col gap-1 text-[11px] text-ink-muted"
                     >
-                      Name
+                      {t("remote.name")}
                       <input
                         class="min-w-0 rounded border border-input bg-transparent px-2 py-1 font-mono text-xs text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        aria-label={`remote name for ${remote.name}`}
+                        aria-label={t("remote.nameFor").replace("{name}", () => remote.name)}
                         bind:value={editName}
                         disabled={disabled || busy}
                       />
@@ -247,10 +249,10 @@
                     <label
                       class="flex min-w-0 flex-col gap-1 text-[11px] text-ink-muted"
                     >
-                      Fetch URL
+                      {t("remote.fetchUrl")}
                       <input
                         class="min-w-0 rounded border border-input bg-transparent px-2 py-1 font-mono text-xs text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        aria-label={`fetch URL for ${remote.name}`}
+                        aria-label={t("remote.fetchUrlFor").replace("{name}", () => remote.name)}
                         placeholder={remote.fetchUrlDisplay}
                         bind:value={editFetchUrl}
                         disabled={disabled || busy}
@@ -259,12 +261,12 @@
                     <label
                       class="flex min-w-0 flex-col gap-1 text-[11px] text-ink-muted"
                     >
-                      Push URL
+                      {t("remote.pushUrl")}
                       <input
                         class="min-w-0 rounded border border-input bg-transparent px-2 py-1 font-mono text-xs text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        aria-label={`push URL for ${remote.name}`}
+                        aria-label={t("remote.pushUrlFor").replace("{name}", () => remote.name)}
                         placeholder={remote.pushUrlDisplay ??
-                          "same as fetch URL"}
+                          t("remote.sameAsFetch")}
                         bind:value={editPushUrl}
                         disabled={disabled || busy}
                       />
@@ -272,8 +274,7 @@
                   </div>
                   <div class="flex items-center gap-2">
                     <span class="min-w-0 flex-1 text-[11px] text-ink-faint">
-                      URL fields start blank on purpose; blank keeps the current
-                      value.
+                      {t("remote.blankKeepsValue")}
                     </span>
                     <Button
                       size="sm"
@@ -285,7 +286,7 @@
                       onclick={() => saveRemoteEdit(remote.name)}
                       data-testid={`save-remote-${remote.name}`}
                     >
-                      Save
+                      {t("branch.save")}
                     </Button>
                     <Button
                       size="sm"
@@ -295,7 +296,7 @@
                       onclick={() => (editing = null)}
                       data-testid={`cancel-edit-remote-${remote.name}`}
                     >
-                      Cancel
+                      {t("action.cancel")}
                     </Button>
                   </div>
                 </div>
@@ -322,7 +323,7 @@
         }}
         data-testid="fetch-remote"
       >
-        Fetch
+        {t("remote.fetch")}
       </Button>
       <Button
         size="sm"
@@ -336,7 +337,7 @@
         }}
         data-testid="pull-remote"
       >
-        Pull (ff-only)
+        {t("remote.pullFastForward")}
       </Button>
       <Button
         size="sm"
@@ -349,7 +350,7 @@
         }}
         data-testid="push-remote"
       >
-        Push {currentBranch ?? ""}
+        {t("remote.pushNamed").replace("{branch}", () => currentBranch ?? "")}
       </Button>
     </div>
   {/if}
@@ -361,20 +362,20 @@
     <span
       class="text-[11px] font-semibold tracking-wider text-ink-muted uppercase"
     >
-      Add remote
+      {t("remote.addTitle")}
     </span>
     <div class="flex items-center gap-2">
       <input
         class="w-24 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
-        placeholder="origin"
-        aria-label="remote name"
+        placeholder={t("remote.nameExample")}
+        aria-label={t("remote.name")}
         bind:value={remoteName}
         disabled={disabled || busy}
       />
       <input
         class="min-w-0 flex-1 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-        placeholder="https://… or /path/to/repo.git"
-        aria-label="remote url"
+        placeholder={t("remote.urlPlaceholder")}
+        aria-label={t("remote.url")}
         bind:value={remoteUrl}
         disabled={disabled || busy}
       />
@@ -392,7 +393,7 @@
         }}
         data-testid="add-remote"
       >
-        Add
+        {t("remote.add")}
       </Button>
     </div>
   </div>
@@ -405,12 +406,12 @@
 <ConfirmDialog
   bind:open={removeDialogOpen}
   title={pendingRemoveRemote === null
-    ? "Remove remote"
-    : `Remove ${pendingRemoveRemote}?`}
-  description="Remove this remote and its remote-tracking refs. Local branches are untouched."
+    ? t("remote.removeTitle")
+    : t("remote.removeQuestion").replace("{name}", () => pendingRemoveRemote ?? "")}
+  description={t("remote.removeDialogDescription")}
   confirmLabel={pendingRemoveRemote === null
-    ? "Remove remote"
-    : `Remove ${pendingRemoveRemote}`}
+    ? t("remote.removeTitle")
+    : t("remote.removeNamed").replace("{name}", () => pendingRemoveRemote ?? "")}
   disabled={pendingRemoveRemote === null || disabled}
   {busy}
   onConfirm={() => {

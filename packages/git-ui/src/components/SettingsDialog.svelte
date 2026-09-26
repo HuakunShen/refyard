@@ -33,6 +33,7 @@
     type UpdatesProbe,
   } from "../lib/updates.js";
   import type { RowDensity } from "../lib/geometry.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   interface SettingsAbout {
     /** The app shell's own version, when the runtime knows one (desktop via Tauri). */
@@ -85,6 +86,8 @@
     autoCheck = false,
     onAutoCheckChange = undefined,
   }: Props = $props();
+  const i18n = useGitViewI18n();
+  const { t } = i18n;
 
   let open = $state(false);
   let updatesPhase = $state<UpdatesPhase>({ state: "idle" });
@@ -112,12 +115,22 @@
   const MODE_OPTIONS = [
     {
       id: "light",
-      label: "Light",
+      label: t("theme.light"),
       icon: SunIcon,
       pick: () => setMode("light"),
     },
-    { id: "dark", label: "Dark", icon: MoonIcon, pick: () => setMode("dark") },
-    { id: "system", label: "System", icon: MonitorIcon, pick: resetMode },
+    {
+      id: "dark",
+      label: t("theme.dark"),
+      icon: MoonIcon,
+      pick: () => setMode("dark"),
+    },
+    {
+      id: "system",
+      label: t("theme.system"),
+      icon: MonitorIcon,
+      pick: resetMode,
+    },
   ] as const;
 
   async function runUpdatesStep(): Promise<void> {
@@ -147,24 +160,27 @@
     [
       about?.appVersion === undefined
         ? undefined
-        : { label: "Version", value: about.appVersion },
+        : { label: t("settings.version"), value: about.appVersion },
       about?.gitVersion === undefined
         ? undefined
         : { label: "Git", value: about.gitVersion },
       about?.serviceInstanceId === undefined
         ? undefined
-        : { label: "Service instance", value: about.serviceInstanceId },
+        : {
+            label: t("settings.serviceInstance"),
+            value: about.serviceInstanceId,
+          },
       about?.backendLabel === undefined
         ? undefined
-        : { label: "Backend", value: about.backendLabel },
+        : { label: t("settings.backend"), value: about.backendLabel },
       about?.operations === undefined
         ? undefined
         : {
-            label: "Write operations",
+            label: t("settings.writeOperations"),
             value:
               about.operations === 0
-                ? "none — read-only build"
-                : String(about.operations),
+                ? t("settings.readOnly")
+                : i18n.count(about.operations),
           },
     ].filter((row) => row !== undefined),
   );
@@ -251,7 +267,7 @@
             <h3
               class="text-xs font-semibold uppercase tracking-wider text-ink-muted"
             >
-              Updates
+              {t("settings.updates")}
             </h3>
             <div class="flex items-center gap-2">
               {#if updatesBusy}
@@ -262,8 +278,8 @@
                   data-testid="updates-busy"
                 >
                   {updatesPhase.state === "checking"
-                    ? "Checking…"
-                    : "Downloading and installing…"}
+                    ? t("settings.checking")
+                    : t("settings.installing")}
                 </Button>
               {:else if availableUpdate !== null}
                 <Button
@@ -271,7 +287,7 @@
                   onclick={() => void runUpdatesStep()}
                   data-testid="updates-install"
                 >
-                  Download and install
+                  {t("settings.downloadInstall")}
                   {availableUpdate.version === null
                     ? ""
                     : `v${availableUpdate.version}`}
@@ -282,7 +298,7 @@
                   onclick={() => void readyOffer.relaunch()}
                   data-testid="updates-restart"
                 >
-                  Restart to finish
+                  {t("settings.restart")}
                 </Button>
               {:else}
                 <Button
@@ -291,7 +307,7 @@
                   onclick={() => void runUpdatesStep()}
                   data-testid="updates-check"
                 >
-                  Check for updates
+                  {t("settings.checkUpdates")}
                 </Button>
               {/if}
               {#if updatesPhase.state === "up-to-date"}
@@ -299,7 +315,7 @@
                   class="text-xs text-muted-foreground"
                   data-testid="updates-up-to-date"
                 >
-                  Refyard is up to date.
+                  {t("settings.upToDate")}
                 </span>
               {/if}
               {#if updatesMessage.length > 0}
@@ -317,7 +333,7 @@
                     onAutoCheckChange(event.currentTarget.checked)}
                   data-testid="updates-auto-check"
                 />
-                Check automatically when the app starts
+                {t("settings.autoCheck")}
               </label>
             {/if}
           </section>
@@ -328,7 +344,7 @@
             <h3
               class="text-xs font-semibold uppercase tracking-wider text-ink-muted"
             >
-              About & connection
+              {t("settings.about")}
             </h3>
             <div
               class="flex flex-col gap-1 rounded-lg border border-border/60 bg-card/50 p-3"
@@ -349,7 +365,7 @@
             </div>
             {#if onDisconnect !== undefined}
               <Button size="sm" variant="outline" onclick={onDisconnect}
-                >Disconnect</Button
+                >{t("settings.disconnect")}</Button
               >
             {/if}
           </section>

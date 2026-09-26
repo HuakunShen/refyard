@@ -352,6 +352,7 @@ async fn a_restart_reports_an_in_flight_operation_as_unknown_and_blocks_its_repo
     let write_key = first
         .write_key_for_repository(&repository_id)
         .expect("the key an operation on this repository is serialised under");
+    drop(first);
 
     // A process that dispatches a write and then dies: the journal on disk is left with a
     // record that says `running`, and nothing on this machine can say what Git did.
@@ -380,10 +381,7 @@ async fn a_restart_reports_an_in_flight_operation_as_unknown_and_blocks_its_repo
             acknowledged_at_ms: None,
         })
         .expect("the running record is on disk");
-    assert!(
-        first.blocked_repositories().is_empty(),
-        "the first process has not reconciled anything yet"
-    );
+    drop(dispatched);
 
     // The restart: a second service over the same state directory. It reads what the first
     // one left and refuses to call an unfinished write a success.
@@ -407,6 +405,7 @@ async fn a_restart_reports_an_in_flight_operation_as_unknown_and_blocks_its_repo
         problem.message.contains("unknown") && problem.message.contains("not be retried"),
         "the message must say what is unknown and that it will not be retried: {problem:?}"
     );
+    drop(second);
 
     // The journal itself now holds the reconciled fact, so a third process reads the same
     // answer rather than re-reconciling it.
@@ -448,7 +447,7 @@ async fn a_restart_reports_an_in_flight_operation_as_unknown_and_blocks_its_repo
 }
 
 #[tokio::test]
-async fn a_dispatched_write_that_never_returns_still_leaves_the_next_process_a_block() {
+async fn a_live_write_host_keeps_exclusive_ownership_of_its_state_root() {
     let fixture = Fixture::new();
     // One engine, dispatching through the real state directory, with an effect that never
     // returns and a repository key the tests state.
@@ -465,24 +464,11 @@ async fn a_dispatched_write_that_never_returns_still_leaves_the_next_process_a_b
     let operation_id = submitted.record.operation_id.clone();
     wait_running(&engine, &operation_id).await;
 
-    // A second process reads the same directory while the first one's task is still stuck
-    // inside Git. What it must not do is retry it or call it finished.
-    let restarted = Journal::open(Some(fixture.state_root())).expect("reopen");
-    let recovery = Recovery::new();
-    let reconciled = recovery
-        .reconcile(&restarted, 2_000)
-        .expect("the in-flight record is reconciled");
-    assert_eq!(reconciled.len(), 1);
-    assert_eq!(reconciled[0].operation_id, operation_id);
-    assert_eq!(reconciled[0].status, OperationStatus::Unknown);
-    assert_eq!(
-        reconciled[0].sequence,
-        restarted
-            .get(&operation_id)
-            .expect("the reconciled record is on disk")
-            .sequence
-    );
-    assert!(!recovery.blocked_keys().is_empty());
+    // Recovery cannot run against a state root while the prior host still owns it, even
+    // if that host is stuck in an effect. The OS releases this lock on process exit.
+    let refused = Journal::open(Some(fixture.state_root()))
+        .expect_err("a second process cannot race an in-flight owner");
+    assert_eq!(refused.code, ProblemCode::Unavailable, "{refused:?}");
 }
 
 /* ------------------------------------------------------------------ acknowledgement */
@@ -526,6 +512,7 @@ async fn an_acknowledgement_lifts_the_block_only_against_a_fresh_snapshot() {
         .register_repository(other.to_str().expect("utf8"))
         .await
         .expect("the second repository opens");
+    drop(first);
 
     let journal = Journal::open(Some(fixture.state_root())).expect("open the journal");
     journal
@@ -552,6 +539,7 @@ async fn an_acknowledgement_lifts_the_block_only_against_a_fresh_snapshot() {
             acknowledged_at_ms: None,
         })
         .expect("written");
+    drop(journal);
 
     let service = fixture.service();
     assert_eq!(service.blocked_repositories(), vec![write_key.clone()]);
@@ -660,6 +648,7 @@ async fn a_block_covers_one_repository_and_leaves_the_others_readable() {
     let write_key = service
         .write_key_for_repository(&repository_id)
         .expect("write key");
+    drop(service);
 
     let journal = Journal::open(Some(fixture.state_root())).expect("open the journal");
     journal
@@ -686,6 +675,7 @@ async fn a_block_covers_one_repository_and_leaves_the_others_readable() {
             acknowledged_at_ms: None,
         })
         .expect("written");
+    drop(journal);
 
     let service = fixture.service();
     // An accepted record that never started is recovered too: the process died between

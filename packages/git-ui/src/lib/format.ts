@@ -173,3 +173,64 @@ export function headLabel(head: {
   }
   return head.oid === null ? "unknown" : shortOid(head.oid);
 }
+
+/** Exact, bounded wire milliseconds for locale-aware embedded view formatting. */
+function checkedWireMillis(value: string): number | null {
+  if (!/^(0|[1-9][0-9]{0,19})$/.test(value)) return null;
+  const exact = BigInt(value);
+  return exact <= 8_640_000_000_000_000n ? Number(exact) : null;
+}
+
+export function localizedAbsoluteTime(unixMillis: string, locale: string): string | null {
+  const millis = checkedWireMillis(unixMillis);
+  if (millis === null) return null;
+  return localizedAbsoluteMillis(millis, locale);
+}
+
+export function localizedAbsoluteMillis(millis: number, locale: string): string | null {
+  if (!Number.isFinite(millis) || Math.abs(millis) > 8_640_000_000_000_000) return null;
+  return new Intl.DateTimeFormat(locale, {
+    year: "numeric", month: "short", day: "numeric", hour: "2-digit",
+    minute: "2-digit", second: "2-digit", timeZoneName: "short",
+  }).format(millis);
+}
+
+export function localizedRelativeTime(unixMillis: string, now: number, locale: string): string | null {
+  const millis = checkedWireMillis(unixMillis);
+  if (millis === null) return null;
+  return localizedRelativeMillis(millis, now, locale);
+}
+
+export function localizedRelativeMillis(millis: number, now: number, locale: string): string | null {
+  if (!Number.isFinite(millis) || !Number.isFinite(now) || Math.abs(millis) > 8_640_000_000_000_000) return null;
+  const difference = millis - now;
+  const units: readonly (readonly [Intl.RelativeTimeFormatUnit, number])[] = [
+    ["year", 365 * 24 * 3600_000], ["month", 30 * 24 * 3600_000],
+    ["day", 24 * 3600_000], ["hour", 3600_000], ["minute", 60_000], ["second", 1000],
+  ];
+  const formatter = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+  for (const [unit, size] of units) {
+    if (Math.abs(difference) >= size || unit === "second") {
+      return formatter.format(Math.round(difference / size), unit);
+    }
+  }
+  return null;
+}
+
+export function localizedBytes(decimal: string, locale: string): string | null {
+  if (!/^(0|[1-9][0-9]{0,19})$/.test(decimal)) return null;
+  const exact = BigInt(decimal);
+  if (exact > 18_446_744_073_709_551_615n) return null;
+  const units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"];
+  let divisor = 1n;
+  let index = 0;
+  while (exact >= divisor * 1024n && index < units.length - 1) {
+    divisor *= 1024n;
+    index += 1;
+  }
+  const whole = exact / divisor;
+  const fraction = divisor === 1n ? 0 : Number((exact % divisor) * 10n / divisor);
+  const formatted = divisor === 1n ? new Intl.NumberFormat(locale).format(whole) :
+    new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(Number(whole) + fraction / 10);
+  return `${formatted} ${units[index]}`;
+}

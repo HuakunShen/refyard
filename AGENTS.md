@@ -176,12 +176,9 @@ packages/git-provider/     opt-in forge axis: remote->forge parser, GitHub REST 
 packages/npm-dist/         publication staging (T13)
 scripts/                   TypeScript dev scripts (boundaries, contract, portable, pack, bench)
 tests/{support,contract,core,node,integration,portable,graph,e2e,pack,security,compat,fixtures}
-integrations/              hosts that embed Refyard rather than being Refyard: `kunkun/`, `xross/`,
-                           and `dsh/` — the DeepSeek Harness plugin. Each is transport glue over
-                           the same packages, is built by its own script under `scripts/`, and
-                           must not grow a second Git engine. `integrations/dsh/README.md` records
-                           how it mounts the workbench and why its host half needs a Harness
-                           restart to reload.
+integrations/              hosts that embed Refyard rather than being Refyard: `kunkun/` and
+                           `xross/`. Each is transport glue over the same packages and must not
+                           grow a second Git engine.
 docs/                      product/north-star.md, discussions/, plans/, goals/, evidence/, installation.md, browser-support.md
 .repowiki/                 agent-maintained wiki and generated artifacts: en/content/ wiki pages,
                            en/meta/repowiki-metadata.json, en/diagrams/ diagram specs + HTML +

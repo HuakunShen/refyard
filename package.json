@@ -23,7 +23,6 @@
     "test:compat": "pnpm build && bun scripts/bundle-cli.ts && playwright test --config tests/compat/playwright.config.ts",
     "bench:runtime": "bun scripts/bench-runtime.ts",
     "build:web": "pnpm --dir apps/web build",
-    "build:dsh": "bun scripts/build-dsh-plugin.ts",
     "desktop:build": "bun scripts/build-desktop.ts",
     "native:ssh:fixture": "bun scripts/native-ssh-fixture.ts",
     "native:verify": "bun scripts/verify-native-artifacts.ts",

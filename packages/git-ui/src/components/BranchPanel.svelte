@@ -20,6 +20,7 @@
   import ContextActionMenu from "./ContextActionMenu.svelte";
   import type { ContextAction } from "../lib/context-actions.js";
   import { cn } from "../lib/utils.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   interface Props {
     refs: RefsSnapshot | null;
@@ -55,6 +56,8 @@
     onMerge,
     class: className = "",
   }: Props = $props();
+  const i18n = useGitViewI18n();
+  const { t } = i18n;
 
   let newBranch = $state("");
   let renaming = $state<string | null>(null);
@@ -98,14 +101,14 @@
             {
               kind: "action" as const,
               id: "switch",
-              label: "Switch",
+              label: t("branch.switch"),
               disabled: actionDisabled,
               onSelect: () => onSwitch(branch.name),
             },
             {
               kind: "action" as const,
               id: "merge",
-              label: "Merge into Current",
+              label: t("branch.mergeCurrent"),
               disabled: actionDisabled,
               onSelect: () => onMerge(branch.name, mergeNoFf),
             },
@@ -114,14 +117,14 @@
       {
         kind: "action" as const,
         id: "upstream",
-        label: "Upstream…",
+        label: t("branch.upstreamEdit"),
         disabled: actionDisabled,
         onSelect: () => editUpstream(branch),
       },
       {
         kind: "action" as const,
         id: "rename",
-        label: "Rename…",
+        label: t("branch.renameEdit"),
         disabled: actionDisabled,
         onSelect: () => {
           renaming = branch.name;
@@ -136,7 +139,7 @@
             {
               kind: "action" as const,
               id: "delete",
-              label: "Delete…",
+              label: t("branch.deleteEdit"),
               destructive: true,
               disabled: actionDisabled,
               onSelect: () => askDelete(branch.name),
@@ -167,7 +170,7 @@
 
 <div class={cn("flex flex-col gap-2.5", className)} data-testid="branch-panel">
   {#if refs === null}
-    <p class="text-xs text-ink-faint">No refs loaded.</p>
+    <p class="text-xs text-ink-faint">{t("refs.empty.notLoaded")}</p>
   {:else}
     <ul
       class="flex max-h-60 flex-col gap-1.5 overflow-y-auto pr-0.5"
@@ -193,7 +196,7 @@
                 <div class="flex items-center gap-1.5">
                   <input
                     class="min-w-0 flex-1 rounded border border-input bg-transparent px-2 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    aria-label={`new name for ${branch.name}`}
+                    aria-label={t("branch.newNameFor").replace("{name}", () => branch.name)}
                     bind:value={renameValue}
                     disabled={disabled || busy}
                   />
@@ -209,7 +212,7 @@
                     }}
                     data-testid={`save-rename-${branch.name}`}
                   >
-                    Rename
+                    {t("branch.rename")}
                   </Button>
                   <Button
                     size="sm"
@@ -217,7 +220,7 @@
                     class="h-7 text-xs px-2"
                     onclick={() => (renaming = null)}
                   >
-                    Cancel
+                    {t("action.cancel")}
                   </Button>
                 </div>
               {:else}
@@ -244,8 +247,8 @@
                   {#if branch.upstream !== null}
                     <span class="text-[11px] text-ink-faint shrink-0 font-mono">
                       {branch.upstream.gone
-                        ? "upstream gone"
-                        : `${branch.upstream.ahead}↑ ${branch.upstream.behind}↓`}
+                        ? t("branch.upstreamGone")
+                        : `${i18n.count(branch.upstream.ahead)}↑ ${i18n.count(branch.upstream.behind)}↓`}
                     </span>
                   {/if}
                 </div>
@@ -256,11 +259,11 @@
                   >
                     <select
                       class="min-w-0 flex-1 rounded border border-input bg-background px-2 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                      aria-label={`upstream for ${branch.name}`}
+                      aria-label={t("branch.upstreamFor").replace("{name}", () => branch.name)}
                       bind:value={upstreamValue}
                       disabled={disabled || busy}
                     >
-                      <option value="">No upstream</option>
+                      <option value="">{t("branch.noUpstream")}</option>
                       {#each remoteBranches as remoteBranch (remoteBranch.fullName)}
                         <option value={remoteBranch.name}
                           >{remoteBranch.name}</option
@@ -272,13 +275,13 @@
                       class="h-7 px-2.5 text-xs"
                       disabled={disabled || busy}
                       onclick={() => saveUpstream(branch.name)}
-                      data-testid={`save-upstream-${branch.name}`}>Save</Button
+                      data-testid={`save-upstream-${branch.name}`}>{t("branch.save")}</Button
                     >
                     <Button
                       size="sm"
                       variant="ghost"
                       class="h-7 px-2 text-xs"
-                      onclick={() => (editingUpstream = null)}>Cancel</Button
+                      onclick={() => (editingUpstream = null)}>{t("action.cancel")}</Button
                     >
                   </div>
                 {/if}
@@ -288,7 +291,7 @@
                 >
                   {#if branch.isCurrent}
                     <span class="text-[11px] text-ink-faint italic py-0.5"
-                      >Current branch</span
+                      >{t("branch.current")}</span
                     >
                   {:else}
                     <Button
@@ -299,7 +302,7 @@
                       onclick={() => onSwitch(branch.name)}
                       data-testid={`switch-${branch.name}`}
                     >
-                      Switch
+                      {t("branch.switch")}
                     </Button>
                     <Button
                       size="sm"
@@ -309,7 +312,7 @@
                       onclick={() => onMerge(branch.name, mergeNoFf)}
                       data-testid={`merge-${branch.name}`}
                     >
-                      Merge in
+                      {t("branch.mergeIn")}
                     </Button>
                   {/if}
                   <Button
@@ -320,7 +323,7 @@
                     onclick={() => editUpstream(branch)}
                     data-testid={`edit-upstream-${branch.name}`}
                   >
-                    Upstream…
+                    {t("branch.upstreamEdit")}
                   </Button>
                   <Button
                     size="sm"
@@ -333,13 +336,13 @@
                     }}
                     data-testid={`rename-${branch.name}`}
                   >
-                    Rename…
+                    {t("branch.renameEdit")}
                   </Button>
                   {#if !branch.isCurrent}
                     <ConfirmAction
-                      label="Delete"
-                      confirmLabel={`Delete ${branch.name}`}
-                      description="Merged branches only; an unmerged branch is refused."
+                      label={t("branch.delete")}
+                      confirmLabel={t("branch.deleteNamed").replace("{name}", () => branch.name)}
+                      description={t("branch.deleteDescription")}
                       disabled={disabled || busy}
                       {busy}
                       onConfirm={() => onDelete(branch.name)}
@@ -358,8 +361,8 @@
       <div class="flex items-center gap-2">
         <input
           class="min-w-0 flex-1 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          placeholder="new-branch-name"
-          aria-label="new branch name"
+          placeholder={t("branch.newPlaceholder")}
+          aria-label={t("branch.newName")}
           bind:value={newBranch}
           disabled={disabled || busy}
         />
@@ -373,7 +376,7 @@
           }}
           data-testid="create-branch"
         >
-          Create
+          {t("branch.create")}
         </Button>
       </div>
       <label
@@ -382,11 +385,11 @@
         <input
           type="checkbox"
           class="size-3.5 accent-primary rounded"
-          aria-label="merge creates a commit"
+          aria-label={t("branch.mergeCreatesCommit")}
           bind:checked={mergeNoFf}
           disabled={disabled || busy}
         />
-        merge always creates a commit (--no-ff)
+        {t("branch.mergeNoFf")}
       </label>
     </div>
   {/if}
@@ -399,12 +402,12 @@
 <ConfirmDialog
   bind:open={deleteDialogOpen}
   title={pendingDeleteBranch === null
-    ? "Delete branch"
-    : `Delete ${pendingDeleteBranch}?`}
-  description="Only fully merged branches can be deleted; unmerged work is refused by Git."
+    ? t("branch.deleteTitle")
+    : t("branch.deleteQuestion").replace("{name}", () => pendingDeleteBranch ?? "")}
+  description={t("branch.deleteDialogDescription")}
   confirmLabel={pendingDeleteBranch === null
-    ? "Delete branch"
-    : `Delete ${pendingDeleteBranch}`}
+    ? t("branch.deleteTitle")
+    : t("branch.deleteNamed").replace("{name}", () => pendingDeleteBranch ?? "")}
   disabled={pendingDeleteBranch === null || disabled}
   {busy}
   onConfirm={() => {

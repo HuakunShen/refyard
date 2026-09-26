@@ -13,6 +13,7 @@
   import { Badge } from "./ui/badge/index.js";
   import { cn } from "../lib/utils.js";
   import { shortOid } from "../lib/format.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   interface Props {
     refs: RefsSnapshot | null;
@@ -20,20 +21,22 @@
   }
 
   let { refs, class: className = "" }: Props = $props();
+  const i18n = useGitViewI18n();
+  const { t } = i18n;
 </script>
 
 {#if refs === null}
-  <p class={cn("text-xs text-ink-faint", className)}>No refs loaded.</p>
+  <p class={cn("text-xs text-ink-faint", className)}>{t("refs.empty.notLoaded")}</p>
 {:else}
   <div class={cn("flex flex-col gap-4", className)}>
     <section class="flex flex-col gap-1.5">
       <h3 class="text-xs font-semibold tracking-wide text-ink-muted uppercase">
-        Branches <span class="font-normal text-ink-faint"
-          >({refs.branches.length})</span
+        {t("refs.branch.title")} <span class="font-normal text-ink-faint"
+          >({i18n.count(refs.branches.length)})</span
         >
       </h3>
       {#if refs.branches.length === 0}
-        <p class="text-xs text-ink-faint">No branches yet.</p>
+        <p class="text-xs text-ink-faint">{t("refs.branch.empty")}</p>
       {:else}
         <ul class="flex flex-col gap-0.5">
           {#each refs.branches as branch (branch.fullName)}
@@ -49,12 +52,12 @@
                 {#if branch.upstream.gone}
                   <Badge
                     tone="danger"
-                    title={`upstream ${branch.upstream.fullName} is gone`}
-                    >gone</Badge
+                    title={t("refs.upstream.goneHelp").replace("{name}", () => branch.upstream?.fullName ?? "")}
+                    >{t("refs.upstream.gone")}</Badge
                   >
                 {:else if branch.upstream.ahead > 0 || branch.upstream.behind > 0}
                   <span class="text-xs text-ink-muted">
-                    {branch.upstream.ahead}↑ {branch.upstream.behind}↓
+                    {i18n.count(branch.upstream.ahead)}↑ {i18n.count(branch.upstream.behind)}↓
                   </span>
                 {/if}
               {/if}
@@ -66,11 +69,11 @@
 
     <section class="flex flex-col gap-1.5">
       <h3 class="text-xs font-semibold tracking-wide text-ink-muted uppercase">
-        Tags <span class="font-normal text-ink-faint">({refs.tags.length})</span
+        {t("refs.tag.title")} <span class="font-normal text-ink-faint">({i18n.count(refs.tags.length)})</span
         >
       </h3>
       {#if refs.tags.length === 0}
-        <p class="text-xs text-ink-faint">No tags.</p>
+        <p class="text-xs text-ink-faint">{t("refs.tag.empty")}</p>
       {:else}
         <ul class="flex flex-col gap-0.5">
           {#each refs.tags as tag (tag.fullName)}
@@ -82,8 +85,8 @@
               {#if tag.annotated}
                 <Badge
                   tone="tag"
-                  title={`annotated tag object ${shortOid(tag.oid)}`}
-                  >annotated</Badge
+                  title={t("refs.tag.annotatedHelp").replace("{oid}", () => shortOid(tag.oid))}
+                  >{t("refs.tag.annotated")}</Badge
                 >
               {/if}
             </li>
@@ -94,12 +97,12 @@
 
     <section class="flex flex-col gap-1.5">
       <h3 class="text-xs font-semibold tracking-wide text-ink-muted uppercase">
-        Remotes <span class="font-normal text-ink-faint"
-          >({refs.remotes.length})</span
+        {t("refs.remote.title")} <span class="font-normal text-ink-faint"
+          >({i18n.count(refs.remotes.length)})</span
         >
       </h3>
       {#if refs.remotes.length === 0}
-        <p class="text-xs text-ink-faint">No remotes configured.</p>
+        <p class="text-xs text-ink-faint">{t("refs.remote.empty")}</p>
       {:else}
         <ul class="flex flex-col gap-1">
           {#each refs.remotes as remote (remote.name)}
@@ -118,9 +121,8 @@
     </section>
 
     <p class="text-xs text-ink-faint">
-      Read at <time datetime={refs.readAt}>{refs.readAt}</time>. Ahead/behind
-      reflect local remote-tracking refs after the last fetch, not the server's
-      current state.
+      {t("refs.readAt.label")} <time datetime={refs.readAt}>{i18n.absoluteIso(refs.readAt)}</time>.
+      {t("refs.readAt.caveat")}
     </p>
   </div>
 {/if}

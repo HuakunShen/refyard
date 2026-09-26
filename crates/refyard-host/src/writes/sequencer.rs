@@ -143,7 +143,7 @@ async fn run_plan(
     postcondition: Postcondition,
     summary: String,
 ) -> EffectOutcome {
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return refused(request.operation_id, problem),
     };
@@ -188,7 +188,7 @@ async fn continue_merge(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> E
             Ok(plan) => plan,
             Err(error) => return invalid_payload(operation_id, error.to_string()),
         };
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };
@@ -212,7 +212,7 @@ async fn abort_merge(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> Effe
         return wrong_payload(operation_id, "abortMerge");
     };
     let plan = refyard_core::plan::merge::plan_merge_abort();
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };
@@ -236,7 +236,7 @@ async fn continue_cherry_pick(host: &Arc<WriteHost>, request: &EffectRequest<'_>
         return wrong_payload(operation_id, "continueCherryPick");
     };
     let plan = refyard_core::plan::replay::plan_cherry_pick_continue();
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };
@@ -262,7 +262,7 @@ async fn abort_cherry_pick(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -
         return wrong_payload(operation_id, "abortCherryPick");
     };
     let plan = refyard_core::plan::replay::plan_cherry_pick_abort();
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };
@@ -288,7 +288,7 @@ async fn continue_rebase(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> 
         return wrong_payload(operation_id, "continueRebase");
     };
     let plan = refyard_core::plan::replay::plan_rebase_continue();
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };
@@ -312,7 +312,7 @@ async fn abort_rebase(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> Eff
         return wrong_payload(operation_id, "abortRebase");
     };
     let plan = refyard_core::plan::replay::plan_rebase_abort();
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };

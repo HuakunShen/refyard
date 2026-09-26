@@ -11,3 +11,5 @@ pub mod host;
 pub mod problem;
 pub mod reads;
 pub mod refs;
+
+pub use reads::WorkspaceRootId;

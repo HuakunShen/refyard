@@ -11,6 +11,7 @@
   import { Button } from "./ui/button/index.js";
   import ConfirmAction from "./ConfirmAction.svelte";
   import { cn } from "../lib/utils.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   interface TagEntry {
     readonly name: string;
@@ -41,6 +42,7 @@
     onPush,
     class: className = "",
   }: Props = $props();
+  const { t } = useGitViewI18n();
 
   let tagName = $state("");
   let annotation = $state("");
@@ -54,15 +56,15 @@
     <div class="flex items-center gap-2">
       <input
         class="w-28 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
-        placeholder="v1.0.0"
-        aria-label="tag name"
+        placeholder={t("tag.nameExample")}
+        aria-label={t("tag.name")}
         bind:value={tagName}
         disabled={disabled || busy}
       />
       <input
         class="min-w-0 flex-1 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-        placeholder="annotation (empty = lightweight)"
-        aria-label="tag annotation"
+        placeholder={t("tag.annotationPlaceholder")}
+        aria-label={t("tag.annotation")}
         bind:value={annotation}
         disabled={disabled || busy}
       />
@@ -80,15 +82,15 @@
         }}
         data-testid="create-tag"
       >
-        Create
+        {t("tag.create")}
       </Button>
     </div>
   </div>
 
   {#if tags === null}
-    <p class="text-xs text-ink-faint">No tags loaded.</p>
+    <p class="text-xs text-ink-faint">{t("tag.notLoaded")}</p>
   {:else if tags.length === 0}
-    <p class="text-xs text-ink-faint italic py-1">No tags.</p>
+    <p class="text-xs text-ink-faint italic py-1">{t("tag.empty")}</p>
   {:else}
     <ul
       class="flex max-h-60 flex-col gap-1.5 overflow-y-auto pr-0.5"
@@ -110,7 +112,7 @@
               tone={tag.annotated ? "tag" : "muted"}
               class="text-[10px] h-4.5 px-1.5 shrink-0"
             >
-              {tag.annotated ? "annotated" : "lightweight"}
+              {t(tag.annotated ? "tag.annotated" : "tag.lightweight")}
             </Badge>
           </div>
 
@@ -124,13 +126,13 @@
                 onclick={() => onPush(tag.name)}
                 data-testid={`push-tag-${tag.name}`}
               >
-                Push
+                {t("tag.push")}
               </Button>
             {/if}
             <ConfirmAction
-              label="Delete"
-              confirmLabel={`Delete ${tag.name} locally`}
-              description="A remote tag is never touched."
+              label={t("tag.delete")}
+              confirmLabel={t("tag.deleteConfirm").replace("{name}", () => tag.name)}
+              description={t("tag.deleteDescription")}
               disabled={disabled || busy}
               {busy}
               onConfirm={() => onDelete(tag.name)}

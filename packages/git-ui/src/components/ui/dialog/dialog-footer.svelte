@@ -3,6 +3,7 @@
   import { Button } from "../button/index.js";
   import { cn, type WithElementRef } from "../../../lib/utils.js";
   import type { HTMLAttributes } from "svelte/elements";
+  import { useGitViewI18n } from "../../../lib/i18n/context.svelte.js";
 
   let {
     ref = $bindable(null),
@@ -13,6 +14,7 @@
   }: WithElementRef<HTMLAttributes<HTMLDivElement>> & {
     showCloseButton?: boolean;
   } = $props();
+  const { t } = useGitViewI18n();
 </script>
 
 <div
@@ -28,7 +30,7 @@
   {#if showCloseButton}
     <DialogPrimitive.Close>
       {#snippet child({ props })}
-        <Button variant="outline" {...props}>Close</Button>
+        <Button variant="outline" {...props}>{t("dialog.close")}</Button>
       {/snippet}
     </DialogPrimitive.Close>
   {/if}

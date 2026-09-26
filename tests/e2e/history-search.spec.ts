@@ -160,6 +160,9 @@ test.describe("history search", () => {
     await expect(
       page.getByText("Filtered history · graph hidden"),
     ).toBeVisible();
+    // The expanded editor fills the stacked pane at this viewport. Close it to
+    // inspect the result list while retaining the applied filter.
+    await search.getByRole("button", { name: "Filters", exact: true }).click();
     // Prevents a stacked narrow pane expanding to all rows and defeating virtualization.
     const visibleRows = page.locator('[data-testid^="commit-row-"]');
     await expect(visibleRows.first()).toBeVisible();
@@ -234,6 +237,7 @@ test.describe("history search", () => {
       page.getByText("End of the loaded history", { exact: true }),
     ).toHaveCount(0);
     await expect(page.locator("svg[data-slot='graph-gutter']")).toHaveCount(0);
+    await search.getByRole("button", { name: "Filters", exact: true }).click();
     await page.getByLabel("Commit SHA", { exact: true }).fill("xyz");
     await search.getByRole("button", { name: "Apply", exact: true }).click();
     await expect(search.getByRole("alert")).toHaveText(

@@ -19,11 +19,7 @@
   import ContextActionMenu from "./ContextActionMenu.svelte";
   import type { ContextAction } from "../lib/context-actions.js";
   import { cn } from "../lib/utils.js";
-  import {
-    headLabel,
-    statusEntryLabel,
-    statusLetterLabel,
-  } from "../lib/format.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   interface Props {
     snapshot: StatusSnapshot | null;
@@ -48,6 +44,8 @@
     onDiscard = undefined,
     class: className = "",
   }: Props = $props();
+  const i18n = useGitViewI18n();
+  const { t } = i18n;
 
   let discardDialogOpen = $state(false);
   let pendingDiscardEntry = $state<StatusEntry | null>(null);
@@ -89,6 +87,12 @@
     discardDialogOpen = true;
   }
 
+  function discardTitle(entry: StatusEntry | null): string {
+    return entry === null
+      ? t("working.discardPath")
+      : t("working.discardQuestion").replace("{path}", () => entry.displayPath);
+  }
+
   function pathContextActions(entry: StatusEntry): readonly ContextAction[] {
     const actionDisabled = disabled || busy;
     return [
@@ -98,7 +102,7 @@
             {
               kind: "action" as const,
               id: "stage",
-              label: "Stage",
+              label: t("status.action.stage"),
               disabled: actionDisabled || !canStage(entry),
               onSelect: () => onStage([entry.pathId]),
             },
@@ -109,7 +113,7 @@
             {
               kind: "action" as const,
               id: "unstage",
-              label: "Unstage",
+              label: t("status.action.unstage"),
               disabled: actionDisabled || !canUnstage(entry),
               onSelect: () => onUnstage([entry.pathId]),
             },
@@ -121,7 +125,7 @@
             {
               kind: "action" as const,
               id: "discard",
-              label: "Discard…",
+              label: t("status.action.discard"),
               destructive: true,
               disabled: actionDisabled || !canDiscard(entry),
               onSelect: () => askDiscard(entry),
@@ -141,36 +145,34 @@
 </script>
 
 {#if snapshot === null}
-  <p class={cn("text-xs text-ink-faint", className)}>No status loaded.</p>
+  <p class={cn("text-xs text-ink-faint", className)}>{t("status.empty.notLoaded")}</p>
 {:else}
   <div class={cn("flex flex-col gap-2", className)}>
     <div
       class="flex flex-wrap items-center gap-2 text-xs text-ink-muted pb-1 border-b border-border/20"
     >
       <span class="font-mono font-medium text-ink"
-        >{headLabel(snapshot.head)}</span
+        >{i18n.head(snapshot.head)}</span
       >
       {#if snapshot.upstream !== null}
         <span class="font-mono text-[11px] text-ink-faint">
-          {snapshot.upstream.ahead}↑ {snapshot.upstream.behind}↓ vs {snapshot
+          {i18n.count(snapshot.upstream.ahead)}↑ {i18n.count(snapshot.upstream.behind)}↓ {t("status.upstream.versus")} {snapshot
             .upstream.name}
         </span>
       {/if}
       {#if snapshot.operationInProgress !== null}
         <Badge tone="warn" class="text-[10px]"
-          >{snapshot.operationInProgress} in progress</Badge
+          >{snapshot.operationInProgress} {t("repository.operation.inProgress")}</Badge
         >
       {/if}
       <span class="ml-auto text-[11px] font-mono text-ink-faint">
-        {snapshot.entryCount} changed {snapshot.entryCount === 1
-          ? "path"
-          : "paths"}
+        {i18n.paths(snapshot.entryCount)}
       </span>
     </div>
 
     {#if snapshot.entries.length === 0}
       <p class="text-xs text-ink-faint italic py-1">
-        Working tree and index match the last commit.
+        {t("status.empty.clean")}
       </p>
     {:else}
       <ul class="flex flex-col gap-1 max-h-60 overflow-y-auto pr-0.5">
@@ -188,7 +190,7 @@
                   type="button"
                   onclick={() => onSelect(entry)}
                   aria-current={selected ? "true" : undefined}
-                  title={statusEntryLabel(entry)}
+                  title={`${t("status.legend.index")}: ${i18n.statusLetter(entry.indexStatus)}, ${t("status.legend.workingTree")}: ${i18n.statusLetter(entry.worktreeStatus)}`}
                   class={cn(
                     "group flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition-all cursor-pointer",
                     selected
@@ -227,34 +229,34 @@
                       tone={KIND_TONES[entry.kind]}
                       class="text-[10px] h-4.5 px-1.5 shrink-0"
                     >
-                      {entry.kind}
+                      {i18n.statusKind(entry.kind)}
                     </Badge>
                   {/if}
                   {#if entry.pathEncoding === "unrepresentable"}
                     <Badge
                       tone="warn"
                       class="text-[10px] h-4.5 px-1.5 shrink-0"
-                      title="This path's bytes are not valid UTF-8, so it can be read as metadata but not handed back for an operation."
+                      title={t("status.path.metadataOnlyHelp")}
                     >
-                      metadata only
+                      {t("status.path.metadataOnly")}
                     </Badge>
                   {/if}
                   {#if entry.stages !== null && entry.stages.length > 0}
                     <Badge
                       tone="danger"
                       class="text-[10px] h-4.5 px-1.5 shrink-0"
-                      title="Conflicted: base, ours and theirs are all present in the index."
+                      title={t("status.path.conflictedHelp")}
                     >
-                      {entry.stages.length} stages
+                      {i18n.count(entry.stages.length)} {t("status.path.stages")}
                     </Badge>
                   {/if}
                   {#if entry.submodule !== null}
                     <Badge
                       tone="muted"
                       class="text-[10px] h-4.5 px-1.5 shrink-0"
-                      title="Submodule with changed commit, modified content or untracked files."
+                      title={t("status.path.submoduleHelp")}
                     >
-                      submodule
+                      {t("status.path.submodule")}
                     </Badge>
                   {/if}
                 </button>
@@ -266,21 +268,17 @@
     {/if}
 
     <p class="text-[11px] text-ink-faint">
-      Letters are Git's own: index first, then working tree ({statusLetterLabel(
-        "M",
-      )} = modified,
-      {statusLetterLabel("?")} = untracked).
+      {t("status.legend.description")} ({i18n.statusLetter("M")} = {t("status.letter.modified")},
+      {i18n.statusLetter("?")} = {t("status.letter.untracked")}).
     </p>
   </div>
 {/if}
 
 <ConfirmDialog
   bind:open={discardDialogOpen}
-  title={pendingDiscardEntry === null
-    ? "Discard path"
-    : `Discard ${pendingDiscardEntry.displayPath}?`}
-  description="Restore this tracked path to the index version. Refyard writes a recovery backup before changing the working tree."
-  confirmLabel="Discard path"
+  title={discardTitle(pendingDiscardEntry)}
+  description={t("working.discardDescription")}
+  confirmLabel={t("working.discardPath")}
   disabled={pendingDiscardEntry === null || disabled}
   {busy}
   onConfirm={() => {

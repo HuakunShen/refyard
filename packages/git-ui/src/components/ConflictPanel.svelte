@@ -20,6 +20,7 @@
   import { Button } from "./ui/button/index.js";
   import ConfirmAction from "./ConfirmAction.svelte";
   import { cn } from "../lib/utils.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   interface ConflictedPath {
     readonly pathId: string;
@@ -49,6 +50,8 @@
     onAbort,
     class: className = "",
   }: Props = $props();
+  const i18n = useGitViewI18n();
+  const { t } = i18n;
 
   /**
    * Operations this build can finish: the sequencer states its own effects can
@@ -59,10 +62,10 @@
   /** The operation's own name, for the buttons that finish it. */
   const operationName = $derived(
     operationInProgress === "cherry-pick"
-      ? "cherry-pick"
+      ? t("conflict.cherryPick")
       : operationInProgress === "rebase"
-        ? "rebase"
-        : "merge",
+        ? t("conflict.rebase")
+        : t("conflict.merge"),
   );
 
   const isOurs = $derived(
@@ -71,8 +74,8 @@
   const stageSummary = (entry: ConflictedPath): string => {
     const stages = (entry.stages ?? []).map((stage) => stage.stage).sort();
     return stages.length === 0
-      ? "no stages read"
-      : `stages ${stages.join("/")}`;
+      ? t("conflict.noStages")
+      : t("conflict.stages").replace("{stages}", stages.join("/"));
   };
 </script>
 
@@ -91,12 +94,12 @@
   >
     {#if operationInProgress !== null}
       <div class="flex flex-wrap items-center gap-2">
-        <Badge tone="warn">{operationInProgress} in progress</Badge>
+        <Badge tone="warn">{t("conflict.inProgress").replace("{operation}", () => isOurs ? operationName : operationInProgress ?? "")}</Badge>
         {#if isOurs}
           <span class="text-xs text-ink-muted">
             {conflicted.length === 0
-              ? "no conflicted paths remain — continue to commit the result"
-              : `${conflicted.length} conflicted path(s)`}
+              ? t("conflict.noneRemaining")
+              : i18n.plural(conflicted.length, "conflict.pathOne", "conflict.pathOther")}
           </span>
         {/if}
       </div>
@@ -123,9 +126,7 @@
           {/each}
         </ul>
         <p class="text-xs text-ink-muted">
-          Resolve these files outside Refyard, stage the results with the
-          staging panel above, then continue. Nothing here edits a conflicted
-          file.
+          {t("conflict.resolveHelp")}
         </p>
       {/if}
       <div class="flex flex-wrap items-center gap-2">
@@ -135,12 +136,12 @@
           onclick={onContinue}
           data-testid="continue-merge"
         >
-          Continue {operationName}
+          {t("conflict.continue").replace("{operation}", () => operationName)}
         </Button>
         <ConfirmAction
-          label="Abort {operationName}"
-          confirmLabel="Abort and restore the state it started from"
-          description="Restores the commit and index the operation started from."
+          label={t("conflict.abort").replace("{operation}", () => operationName)}
+          confirmLabel={t("conflict.abortConfirm")}
+          description={t("conflict.abortDescription")}
           disabled={disabled || busy}
           {busy}
           onConfirm={onAbort}
@@ -149,10 +150,7 @@
       </div>
     {:else if operationInProgress !== null}
       <p class="text-xs text-ink-muted" data-testid="foreign-operation-note">
-        This operation was started outside Refyard, and this build does not
-        finish another tool's operation. Complete or abandon it with the tool
-        that started it; writes stay blocked in this worktree until the state is
-        resolved.
+        {t("conflict.foreignOperation")}
       </p>
     {/if}
 

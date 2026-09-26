@@ -3,9 +3,8 @@
  *
  * This is the only place that wires the handle registry, the Git host, the engine, the
  * registries, the read service, the mutation effects and the two journals into a working
- * whole. It lives here rather than in the CLI because the CLI is one of several hosts: an
- * embedding host (`integrations/dsh`) runs the same service in its own process, and a
- * second copy of this wiring is how the two would drift apart on which effects exist and
+ * whole. It lives here rather than in the CLI because the CLI is one of several hosts;
+ * embedding hosts use the same wiring rather than drifting on which effects exist and
  * which reads are advertised.
  *
  * Two decisions are recorded here because they are the ones the user actually made:

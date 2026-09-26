@@ -67,6 +67,7 @@
     describeBackendProblem,
     isDefaultSessionBaseUrl,
   } from "$lib/workbench/session.js";
+  import { pinnedRepository } from "$lib/workbench/pinned-repository.js";
   import {
     createWorkbenchConnectivityState,
     observeBrowserConnectivity,
@@ -193,35 +194,6 @@
    * owns single mode's tab set would otherwise re-pin the host's repository on its next run.
    */
   let singleRepositoryChoice = $state<string | null>(null);
-
-  /**
-   * The repository a single-repository panel is about.
-   *
-   * The host names it; the id is exact and wins. The path is the fallback for a host that
-   * only knows the directory it approved, and it is compared after stripping the `/private`
-   * prefix macOS puts in front of `/tmp` and friends — the host approves a real path, while
-   * the caller names the one it was given.
-   */
-  function pinnedRepository<T extends { repositoryId: string; displayPath: string }>(
-    list: readonly T[],
-  ): T | undefined {
-    if (pinnedRepositoryId !== null) {
-      const byId = list.find((entry) => entry.repositoryId === pinnedRepositoryId);
-      if (byId !== undefined) {
-        return byId;
-      }
-    }
-    if (pinnedRepositoryPath !== null) {
-      const wanted = pinnedRepositoryPath.replace(/^\/private/, "");
-      const byPath = list.find(
-        (entry) => entry.displayPath.replace(/^\/private/, "") === wanted,
-      );
-      if (byPath !== undefined) {
-        return byPath;
-      }
-    }
-    return list[0];
-  }
 
   let backendSession = $state<BackendSession | null>(null);
   let connectionState = $state<ConnectionState>({
@@ -683,7 +655,7 @@
       const chosen =
         repositoryList.find(
           (entry) => entry.repositoryId === singleRepositoryChoice,
-        ) ?? pinnedRepository(repositoryList);
+        ) ?? pinnedRepository(repositoryList, pinnedRepositoryId, pinnedRepositoryPath);
       if (chosen !== undefined) {
         const tab = tabForRepository(chosen);
         const key = repositoryTabKey(tab);
@@ -1634,7 +1606,7 @@
     </main>
   {:else}
     <main
-      class="relative z-1 flex min-h-0 flex-1 flex-col overflow-hidden @5xl:grid @5xl:overflow-visible @5xl:grid-cols-[var(--left-sidebar-width)_minmax(0,1fr)_var(--right-sidebar-width)]"
+      class="relative z-1 flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto @5xl:grid @5xl:overflow-visible @5xl:grid-cols-[var(--left-sidebar-width)_minmax(0,1fr)_var(--right-sidebar-width)]"
       style={`--left-sidebar-width: ${mainDiffOpen ? 0 : leftSidebarCollapsed ? RAIL_WIDTH : leftSidebarWidth}px; --right-sidebar-width: ${rightSidebarWidth}px; --nav-height: ${leftSidebarCollapsed ? RAIL_HEIGHT : navHeight}px;`}
       data-launcher-open={launcherOpen}
       data-selected-repository={selectedRepositoryId ?? ""}
@@ -1729,7 +1701,7 @@
         <section
           class={mainDiffOpen
             ? "hidden"
-            : "flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-hidden p-3"}
+            : "flex h-[28rem] min-h-0 min-w-0 flex-none flex-col gap-2 overflow-hidden p-3 @5xl:h-auto @5xl:flex-1"}
           data-testid="history-panel"
         >
           <div class="shrink-0 flex items-center gap-2">
