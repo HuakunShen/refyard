@@ -686,12 +686,38 @@
       : githubCommitUrl(githubRemoteUrl, commit.oid);
   }
 
+  /**
+   * The right button's *press* must not start anything. WebKit places the caret on
+   * right-mouse-down, so right-clicking a commit highlighted the words under and below
+   * the pointer; the `contextmenu` event's own preventDefault is too late, because the
+   * selection began one event earlier. Refusing the press's default stops exactly that,
+   * and the `contextmenu` event still fires, which is what opens the menu.
+   */
+  function refuseRightPress(event: MouseEvent): void {
+    if (event.button === 2) {
+      event.preventDefault();
+    }
+  }
+
+  /**
+   * Clears whatever the right press may have selected. WebKit's own handling can place
+   * a caret — and with it a word selection — on the press itself, before any DOM
+   * handler runs, so the menu's opener sweeps the selection away rather than trusting
+   * the mousedown's preventDefault to have stopped it. A selection a user made earlier
+   * with the left button is theirs, but it is also already gone the moment the right
+   * press landed, so there is nothing of theirs to protect here.
+   */
+  function clearRightPressSelection(): void {
+    window.getSelection()?.removeAllRanges();
+  }
+
   function openCommitMenu(event: MouseEvent, commit: CommitSummary): void {
     const actions = commitActionsFor(commit);
     if (actions.length === 0) {
       return;
     }
     event.preventDefault();
+    clearRightPressSelection();
     openContextMenu(
       commitMenu,
       actions,
@@ -780,7 +806,10 @@
               {
                 kind: "action" as const,
                 id: "merge",
-                label: `Merge into ${currentBranch ?? "current branch"}`,
+                // GitKraken names both sides — "Merge feature into main" — because a
+                // menu opened on a ref label sits between other rows and the direction
+                // is the one thing a misread click cannot undo.
+                label: `Merge ${ref.branchName} into ${currentBranch ?? "current branch"}`,
                 disabled: contextDisabled,
                 onSelect: () => onMergeBranch(ref.branchName),
               },
@@ -791,7 +820,7 @@
               {
                 kind: "action" as const,
                 id: "rebase-onto",
-                label: `Rebase ${currentBranch ?? "current branch"} onto This`,
+                label: `Rebase ${currentBranch ?? "current branch"} onto ${ref.branchName}`,
                 disabled: contextDisabled,
                 onSelect: () => onRebaseOntoBranch(ref.branchName, commit.oid),
               },
@@ -912,6 +941,7 @@
   ): void {
     event.preventDefault();
     event.stopPropagation();
+    clearRightPressSelection();
     // One pill can stand for several refs (local branch + its remote twins).
     // The menu is the union: the primary ref's actions first, then each other
     // ref's honest copy-only actions, so right-clicking a merged pill can
@@ -1309,6 +1339,7 @@
                   ? ` background-color: color-mix(in oklab, ${segmentTint} 12%, transparent);`
                   : ''}"
                 onclick={() => onSelect(commit)}
+                onmousedown={refuseRightPress}
                 oncontextmenu={(event) => openCommitMenu(event, commit)}
               >
                 {#if selected}
@@ -1347,6 +1378,7 @@
                             .map((entry) => entry.refName)
                             .join(" ")}
                           onclick={() => onSelect(commit)}
+                          onmousedown={refuseRightPress}
                           oncontextmenu={(event) =>
                             openRefMenu(event, group, commit)}
                           onmouseenter={(event) =>

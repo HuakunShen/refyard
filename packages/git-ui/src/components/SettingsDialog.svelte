@@ -15,6 +15,8 @@
     DialogTrigger,
   } from "./ui/dialog/index.js";
   import { Button } from "./ui/button/index.js";
+  import { m, type UiLanguage } from "../i18n.js";
+  import { ScrollArea } from "./ui/scroll-area/index.js";
   import SettingsIcon from "@lucide/svelte/icons/settings";
   import SunIcon from "@lucide/svelte/icons/sun";
   import MoonIcon from "@lucide/svelte/icons/moon";
@@ -48,7 +50,10 @@
     glass: boolean;
     avatars?: boolean;
     density?: RowDensity;
+    /** The reader's language preference; `auto` follows the browser. */
+    language?: UiLanguage;
     onAccentChange: (accent: string) => void;
+    onLanguageChange?: (language: UiLanguage) => void;
     onBackgroundChange: (bg: string) => void;
     onGlassChange: (glass: boolean) => void;
     onAvatarsChange?: (avatars: boolean) => void;
@@ -66,8 +71,10 @@
     background,
     glass,
     avatars = true,
-    density = "roomy",
+    density = "compact",
+    language = "auto",
     onAccentChange,
+    onLanguageChange = undefined,
     onBackgroundChange,
     onGlassChange,
     onAvatarsChange = undefined,
@@ -171,8 +178,8 @@
         size="icon"
         variant="ghost"
         class="size-7"
-        title="Settings"
-        aria-label="Settings"
+        title={m.settings_title()}
+        aria-label={m.settings_title()}
         data-testid="settings-open"
       >
         <SettingsIcon class="size-4" />
@@ -181,169 +188,173 @@
   </DialogTrigger>
 
   <DialogContent
-    class="sm:max-w-[500px] border-border/80 bg-panel/95 backdrop-blur-xl"
+    class="flex max-h-[calc(100dvh-2rem)] min-h-0 flex-col overflow-hidden border-border/80 bg-panel/95 backdrop-blur-xl sm:max-w-[500px]"
   >
     <DialogHeader>
       <DialogTitle class="flex items-center gap-2 text-base font-semibold">
         <Sparkles class="size-4 text-primary" />
-        Settings
+        {m.settings_title()}
       </DialogTitle>
       <DialogDescription class="text-xs text-ink-muted">
-        Appearance and connection details. Preferences are saved locally.
+        {m.settings_description()}
       </DialogDescription>
     </DialogHeader>
 
-    <div class="flex flex-col gap-6 py-2">
-      <section class="flex flex-col gap-3" data-testid="settings-appearance">
-        <h3
-          class="text-xs font-semibold uppercase tracking-wider text-ink-muted"
-        >
-          Appearance
-        </h3>
-        <div
-          class="flex items-center gap-1 self-start rounded-lg border border-border/60 bg-card/60 p-1"
-        >
-          {#each MODE_OPTIONS as option (option.id)}
-            {@const active = activeMode === option.id}
-            <button
-              type="button"
-              onclick={option.pick}
-              aria-pressed={active}
-              class={cn(
-                buttonVariants({ variant: "ghost", size: "sm" }),
-                "gap-1.5 text-xs",
-                active
-                  ? "bg-accent/60 font-medium text-foreground"
-                  : "text-ink-muted hover:text-ink",
-              )}
-            >
-              <option.icon class="size-3.5" />
-              {option.label}
-            </button>
-          {/each}
-        </div>
-        <AppearanceFields
-          {accent}
-          {background}
-          {glass}
-          {avatars}
-          {density}
-          {onAccentChange}
-          {onBackgroundChange}
-          {onGlassChange}
-          {onAvatarsChange}
-          {onDensityChange}
-        />
-      </section>
-
-      {#if updates !== undefined}
-        <section class="flex flex-col gap-3" data-testid="settings-updates">
+    <ScrollArea class="min-h-0 flex-1" data-testid="settings-scroll-area">
+      <div class="flex flex-col gap-6 py-2">
+        <section class="flex flex-col gap-3" data-testid="settings-appearance">
           <h3
             class="text-xs font-semibold uppercase tracking-wider text-ink-muted"
           >
-            Updates
-          </h3>
-          <div class="flex items-center gap-2">
-            {#if updatesBusy}
-              <Button
-                size="sm"
-                variant="outline"
-                disabled
-                data-testid="updates-busy"
-              >
-                {updatesPhase.state === "checking"
-                  ? "Checking…"
-                  : "Downloading and installing…"}
-              </Button>
-            {:else if availableUpdate !== null}
-              <Button
-                size="sm"
-                onclick={() => void runUpdatesStep()}
-                data-testid="updates-install"
-              >
-                Download and install
-                {availableUpdate.version === null
-                  ? ""
-                  : `v${availableUpdate.version}`}
-              </Button>
-            {:else if readyOffer !== null}
-              <Button
-                size="sm"
-                onclick={() => void readyOffer.relaunch()}
-                data-testid="updates-restart"
-              >
-                Restart to finish
-              </Button>
-            {:else}
-              <Button
-                size="sm"
-                variant="outline"
-                onclick={() => void runUpdatesStep()}
-                data-testid="updates-check"
-              >
-                Check for updates
-              </Button>
-            {/if}
-            {#if updatesPhase.state === "up-to-date"}
-              <span
-                class="text-xs text-muted-foreground"
-                data-testid="updates-up-to-date"
-              >
-                Refyard is up to date.
-              </span>
-            {/if}
-            {#if updatesMessage.length > 0}
-              <span class="text-xs text-danger" data-testid="updates-error">
-                {updatesMessage}
-              </span>
-            {/if}
-          </div>
-          {#if onAutoCheckChange !== undefined}
-            <label class="flex items-center gap-2 text-xs text-ink-muted">
-              <input
-                type="checkbox"
-                checked={autoCheck}
-                onchange={(event) =>
-                  onAutoCheckChange(event.currentTarget.checked)}
-                data-testid="updates-auto-check"
-              />
-              Check automatically when the app starts
-            </label>
-          {/if}
-        </section>
-      {/if}
-
-      {#if ABOUT_ROWS.length > 0 || onDisconnect !== undefined}
-        <section class="flex flex-col gap-2" data-testid="settings-about">
-          <h3
-            class="text-xs font-semibold uppercase tracking-wider text-ink-muted"
-          >
-            About & connection
+            {m.settings_appearance()}
           </h3>
           <div
-            class="flex flex-col gap-1 rounded-lg border border-border/60 bg-card/50 p-3"
+            class="flex items-center gap-1 self-start rounded-lg border border-border/60 bg-card/60 p-1"
           >
-            <div class="flex items-center gap-2 pb-1">
-              <RefyardLogo variant="mark" size={18} />
-              <span class="text-xs font-semibold">refyard</span>
-            </div>
-            {#each ABOUT_ROWS as row (row.label)}
-              <div class="flex items-baseline justify-between gap-3 text-xs">
-                <span class="text-ink-faint">{row.label}</span>
-                <span
-                  class="min-w-0 truncate text-right font-mono text-ink-muted"
-                  >{row.value}</span
-                >
-              </div>
+            {#each MODE_OPTIONS as option (option.id)}
+              {@const active = activeMode === option.id}
+              <button
+                type="button"
+                onclick={option.pick}
+                aria-pressed={active}
+                class={cn(
+                  buttonVariants({ variant: "ghost", size: "sm" }),
+                  "gap-1.5 text-xs",
+                  active
+                    ? "bg-accent/60 font-medium text-foreground"
+                    : "text-ink-muted hover:text-ink",
+                )}
+              >
+                <option.icon class="size-3.5" />
+                {option.label}
+              </button>
             {/each}
           </div>
-          {#if onDisconnect !== undefined}
-            <Button size="sm" variant="outline" onclick={onDisconnect}
-              >Disconnect</Button
-            >
-          {/if}
+          <AppearanceFields
+            {accent}
+            {background}
+            {glass}
+            {avatars}
+            {density}
+            {language}
+            {onAccentChange}
+            {onLanguageChange}
+            {onBackgroundChange}
+            {onGlassChange}
+            {onAvatarsChange}
+            {onDensityChange}
+          />
         </section>
-      {/if}
-    </div>
+
+        {#if updates !== undefined}
+          <section class="flex flex-col gap-3" data-testid="settings-updates">
+            <h3
+              class="text-xs font-semibold uppercase tracking-wider text-ink-muted"
+            >
+              Updates
+            </h3>
+            <div class="flex items-center gap-2">
+              {#if updatesBusy}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled
+                  data-testid="updates-busy"
+                >
+                  {updatesPhase.state === "checking"
+                    ? "Checking…"
+                    : "Downloading and installing…"}
+                </Button>
+              {:else if availableUpdate !== null}
+                <Button
+                  size="sm"
+                  onclick={() => void runUpdatesStep()}
+                  data-testid="updates-install"
+                >
+                  Download and install
+                  {availableUpdate.version === null
+                    ? ""
+                    : `v${availableUpdate.version}`}
+                </Button>
+              {:else if readyOffer !== null}
+                <Button
+                  size="sm"
+                  onclick={() => void readyOffer.relaunch()}
+                  data-testid="updates-restart"
+                >
+                  Restart to finish
+                </Button>
+              {:else}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onclick={() => void runUpdatesStep()}
+                  data-testid="updates-check"
+                >
+                  Check for updates
+                </Button>
+              {/if}
+              {#if updatesPhase.state === "up-to-date"}
+                <span
+                  class="text-xs text-muted-foreground"
+                  data-testid="updates-up-to-date"
+                >
+                  Refyard is up to date.
+                </span>
+              {/if}
+              {#if updatesMessage.length > 0}
+                <span class="text-xs text-danger" data-testid="updates-error">
+                  {updatesMessage}
+                </span>
+              {/if}
+            </div>
+            {#if onAutoCheckChange !== undefined}
+              <label class="flex items-center gap-2 text-xs text-ink-muted">
+                <input
+                  type="checkbox"
+                  checked={autoCheck}
+                  onchange={(event) =>
+                    onAutoCheckChange(event.currentTarget.checked)}
+                  data-testid="updates-auto-check"
+                />
+                Check automatically when the app starts
+              </label>
+            {/if}
+          </section>
+        {/if}
+
+        {#if ABOUT_ROWS.length > 0 || onDisconnect !== undefined}
+          <section class="flex flex-col gap-2" data-testid="settings-about">
+            <h3
+              class="text-xs font-semibold uppercase tracking-wider text-ink-muted"
+            >
+              About & connection
+            </h3>
+            <div
+              class="flex flex-col gap-1 rounded-lg border border-border/60 bg-card/50 p-3"
+            >
+              <div class="flex items-center gap-2 pb-1">
+                <RefyardLogo variant="mark" size={18} />
+                <span class="text-xs font-semibold">refyard</span>
+              </div>
+              {#each ABOUT_ROWS as row (row.label)}
+                <div class="flex items-baseline justify-between gap-3 text-xs">
+                  <span class="text-ink-faint">{row.label}</span>
+                  <span
+                    class="min-w-0 truncate text-right font-mono text-ink-muted"
+                    >{row.value}</span
+                  >
+                </div>
+              {/each}
+            </div>
+            {#if onDisconnect !== undefined}
+              <Button size="sm" variant="outline" onclick={onDisconnect}
+                >Disconnect</Button
+              >
+            {/if}
+          </section>
+        {/if}
+      </div>
+    </ScrollArea>
   </DialogContent>
 </Dialog>

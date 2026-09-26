@@ -382,7 +382,11 @@ fn operation_targets(kind: MutationKind) -> Vec<TargetKind> {
         | MutationKind::ContinueRebase
         | MutationKind::AbortRebase
         | MutationKind::DropCommit
-        | MutationKind::SquashCommit => vec![TargetKind::Worktree],
+        | MutationKind::SquashCommit
+        | MutationKind::Pull
+        | MutationKind::AddSubmodule
+        | MutationKind::UpdateSubmodule
+        | MutationKind::SyncSubmodule => vec![TargetKind::Worktree],
         _ => vec![TargetKind::Repository],
     }
 }
@@ -681,36 +685,22 @@ impl ApplicationService {
         })
     }
 
-    /// Registers the three write effects this build implements: `stagePaths`,
-    /// `unstagePaths` and `commit`.
+    /// Registers the write effects this standalone build implements.
     ///
     /// Registration is explicit rather than part of `new`, because a service that has not
-    /// been given the write path answers exactly as the read-only build did: no operation
-    /// is offered in `capabilities`, and every submission is refused with
-    /// `UnsupportedOperation` before anything is journalled. A read-only inspector, the
-    /// differential fixture and a host whose writes are not yet wired rely on that; a host
-    /// that wants the minimal write loop calls this once, in its composition root.
-    ///
-    /// The effects are the same three whichever target a repository was opened on: the
-    /// planner builds one argument vector and the provider decides whether it runs here or
-    /// over SSH.
+    /// been given the write path offers no operations. Preserve the standalone service's
+    /// registered effect set when rebuilding its engine after a state root is supplied.
+    /// Embedded hosts use `with_embed_options` to select their own allowed subset.
     pub fn with_writes(mut self) -> Self {
         self.writes_enabled = true;
-        self.enabled_mutations = [
-            MutationKind::StagePaths,
-            MutationKind::UnstagePaths,
-            MutationKind::Commit,
-        ]
-        .into_iter()
-        .collect();
-        self.engine = build_engine_with_options(
+        self.engine = build_engine(
             &self.journal,
             &self.recovery,
             &self.writes_host,
-            &self.enabled_mutations,
-            self.queue_limits,
+            true,
             &self.events,
         );
+        self.enabled_mutations = self.engine.implemented_kinds().into_iter().collect();
         self
     }
 

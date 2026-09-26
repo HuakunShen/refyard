@@ -1,6 +1,7 @@
 /** Repository launcher and tab state stays deterministic outside Svelte components. */
 import { describe, expect, it } from "vitest";
 import {
+  adoptRepositoryTabs,
   closeRepositoryTab,
   createRepositoryTabs,
   openRepositoryTab,
@@ -54,6 +55,49 @@ describe("repository tabs", () => {
 
     expect(state.tabs).toEqual([repoA]);
     expect(state.activeRepositoryId).toBe("repo_a");
+  });
+
+  it("lands a new tab beside the active one instead of at the end of the strip", () => {
+    // Prevents: every newly opened repository appearing past the edge of a long strip, so
+    // the tab the reader just asked for is the one they cannot see.
+    const state = createRepositoryTabs([repoA, repoB]);
+    const repoC: RepositoryTab = {
+      repositoryId: "repo_c",
+      displayName: "gamma",
+      displayPath: "/projects/gamma",
+    };
+
+    openRepositoryTab(state, repoC);
+
+    expect(state.tabs).toEqual([repoA, repoC, repoB]);
+    expect(state.activeRepositoryId).toBe("repo_c");
+  });
+
+  it("adopts a Session's repository as the active tab, next to the current one", () => {
+    // Prevents: a panel that silently keeps showing the previous project because adoption
+    // only appended and only ever filled an empty selection.
+    const state = createRepositoryTabs([repoA]);
+    const adopted = adoptRepositoryTabs(state, [repoB]);
+
+    expect(adopted).toBe(true);
+    expect(state.tabs).toEqual([repoA, repoB]);
+    expect(state.activeRepositoryId).toBe("repo_b");
+  });
+
+  it("keeps a closed repository closed when the service lists it again", () => {
+    // Prevents: "it forgets what I closed and remembers what I opened". Adoption reads the
+    // service's repository list, and a close leaves no trace in that list, so without a
+    // record of the close the tab returns on the next read.
+    const state = createRepositoryTabs([repoA, repoB]);
+    closeRepositoryTab(state, "repo_b");
+
+    expect(adoptRepositoryTabs(state, [repoB])).toBe(false);
+    expect(state.tabs).toEqual([repoA]);
+
+    // Asking for it again is the reader changing their mind.
+    openRepositoryTab(state, repoB);
+    expect(state.tabs).toEqual([repoA, repoB]);
+    expect(adoptRepositoryTabs(state, [repoB])).toBe(false);
   });
 
   it("does not activate an unknown repository", () => {

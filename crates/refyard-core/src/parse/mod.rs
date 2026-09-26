@@ -6,7 +6,9 @@
 //! repository with an awkward file name produces a corrupted status.
 
 pub mod cat_file;
+pub mod lsfiles;
 pub mod meta;
+pub mod network;
 pub mod numstat;
 pub mod patch;
 pub mod refs;

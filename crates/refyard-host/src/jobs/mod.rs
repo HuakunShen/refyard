@@ -54,6 +54,97 @@ fn next_operation_seed(records: &[JournalRecord]) -> u64 {
         .unwrap_or(0)
 }
 
+/// The merge modes the contract's merge operation carries, as the wire spells them.
+///
+/// The spellings are pinned per variant: a derived case conversion turns `NoFF` into
+/// `no-f-f`, which no client sends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MergeMode {
+    /// Git's own decision: fast-forward when the history allows it.
+    #[serde(rename = "default")]
+    Default,
+    /// `--no-ff`: the merge is a merge commit even when a fast-forward is possible.
+    #[serde(rename = "no-ff")]
+    NoFF,
+}
+
+/// The reset modes the contract offers — the two that cannot lose working-tree content.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ResetMode {
+    /// The branch moves; the index stays exactly as it is.
+    Soft,
+    /// The branch and the index move to the target; staged work becomes unstaged.
+    Mixed,
+}
+
+/// Which tags a fetch follows: `none` disables tag fetching entirely, `following`
+/// allows Git's default behaviour — explicit both ways, so a fetch never sweeps in tags
+/// the user did not ask about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FetchTagMode {
+    None,
+    Following,
+}
+
+/// What a new worktree checks out: an existing branch, a new branch at a commit, or a
+/// detached commit. A branch already checked out elsewhere is refused by Git, never
+/// overridden here.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+pub enum WorktreeReference {
+    ExistingBranch {
+        branch_name: String,
+    },
+    NewBranch {
+        branch_name: String,
+        start_oid: String,
+    },
+    Detached {
+        oid: String,
+    },
+}
+
+/// How a pull moves the branch. This build offers only `ff-only`: a divergence fails
+/// and nothing is merged or rebased implicitly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PullMode {
+    #[serde(rename = "ff-only")]
+    FfOnly,
+}
+
+/// The remote and branch an upstream names, as the contract's `setUpstream` carries it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpstreamSpec {
+    pub remote_name: String,
+    pub branch_name: String,
+}
+
+/// The message of an annotated tag, as the contract's `annotation` object carries it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TagAnnotation {
+    pub message: String,
+}
+
+/// A stash entry: the object name it resolved to, plus the reflog locator it was listed
+/// under. `stash@{n}` is a moving label — anyone's `git stash` shifts every position
+/// after it — so every write re-resolves the locator and compares it to `oid` before
+/// touching anything. A mismatch is a stale request, never a different entry to act on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StashRef {
+    pub oid: String,
+    pub locator: String,
+}
+
 /// The mutation the write path can carry, as the host understands it.
 ///
 /// A projection of the contract's closed union: only the operations this slice can reason
@@ -79,6 +170,160 @@ pub enum MutationOperation {
     Commit {
         message: String,
     },
+    AmendCommit {
+        message: Option<String>,
+        confirmed: bool,
+    },
+    CreateBranch {
+        branch_name: String,
+        start_oid: Option<String>,
+        switch_to_it: bool,
+    },
+    SwitchBranch {
+        branch_name: String,
+    },
+    RenameBranch {
+        branch_name: String,
+        new_name: String,
+    },
+    DeleteBranch {
+        branch_name: String,
+        confirmed: bool,
+    },
+    SetBranchUpstream {
+        branch_name: String,
+        upstream: Option<UpstreamSpec>,
+    },
+    AddRemote {
+        remote_name: String,
+        fetch_url: String,
+        push_url: Option<String>,
+    },
+    UpdateRemote {
+        remote_name: String,
+        new_name: Option<String>,
+        fetch_url: Option<String>,
+        push_url: Option<String>,
+    },
+    RemoveRemote {
+        remote_name: String,
+        confirmed: bool,
+    },
+    Fetch {
+        remote_name: String,
+        prune: bool,
+        tags: FetchTagMode,
+    },
+    Push {
+        remote_name: String,
+        source_ref: String,
+        destination_ref: String,
+        set_upstream: bool,
+    },
+    Pull {
+        remote_name: String,
+        mode: PullMode,
+    },
+    CreateStash {
+        message: Option<String>,
+        include_untracked: bool,
+        keep_index: bool,
+    },
+    ApplyStash {
+        stash: StashRef,
+        restore_index: bool,
+    },
+    PopStash {
+        stash: StashRef,
+        restore_index: bool,
+        confirmed: bool,
+    },
+    DropStash {
+        stash: StashRef,
+        confirmed: bool,
+    },
+    CreateTag {
+        tag_name: String,
+        target_oid: Option<String>,
+        annotation: Option<TagAnnotation>,
+    },
+    DeleteTag {
+        tag_name: String,
+        confirmed: bool,
+    },
+    PushTag {
+        remote_name: String,
+        tag_name: String,
+    },
+    CreateWorktree {
+        relative_destination: String,
+        reference: WorktreeReference,
+    },
+    RemoveWorktree {
+        worktree_id: String,
+        confirmed: bool,
+    },
+    LockWorktree {
+        worktree_id: String,
+        reason: Option<String>,
+    },
+    UnlockWorktree {
+        worktree_id: String,
+    },
+    AddSubmodule {
+        remote_url: String,
+        relative_path: String,
+        branch_name: Option<String>,
+        initialize: bool,
+    },
+    UpdateSubmodule {
+        path_ids: Vec<String>,
+        initialize: bool,
+        recursive: bool,
+    },
+    SyncSubmodule {
+        path_ids: Vec<String>,
+        recursive: bool,
+    },
+    Merge {
+        source_oid: String,
+        mode: MergeMode,
+        message: Option<String>,
+    },
+    ContinueMerge {
+        message: Option<String>,
+    },
+    AbortMerge {
+        confirmed: bool,
+    },
+    RevertCommit {
+        oid: String,
+    },
+    ResetBranch {
+        oid: String,
+        mode: ResetMode,
+    },
+    CherryPick {
+        oid: String,
+    },
+    ContinueCherryPick {},
+    AbortCherryPick {
+        confirmed: bool,
+    },
+    Rebase {
+        upstream_oid: String,
+    },
+    ContinueRebase {},
+    AbortRebase {
+        confirmed: bool,
+    },
+    DropCommit {
+        oid: String,
+        confirmed: bool,
+    },
+    SquashCommit {
+        message: Option<String>,
+    },
 }
 
 impl MutationOperation {
@@ -87,14 +332,93 @@ impl MutationOperation {
             Self::StagePaths { .. } => MutationKind::StagePaths,
             Self::UnstagePaths { .. } => MutationKind::UnstagePaths,
             Self::Commit { .. } => MutationKind::Commit,
+            Self::AmendCommit { .. } => MutationKind::AmendCommit,
+            Self::CreateBranch { .. } => MutationKind::CreateBranch,
+            Self::SwitchBranch { .. } => MutationKind::SwitchBranch,
+            Self::RenameBranch { .. } => MutationKind::RenameBranch,
+            Self::DeleteBranch { .. } => MutationKind::DeleteBranch,
+            Self::SetBranchUpstream { .. } => MutationKind::SetBranchUpstream,
+            Self::AddRemote { .. } => MutationKind::AddRemote,
+            Self::UpdateRemote { .. } => MutationKind::UpdateRemote,
+            Self::RemoveRemote { .. } => MutationKind::RemoveRemote,
+            Self::Fetch { .. } => MutationKind::Fetch,
+            Self::Push { .. } => MutationKind::Push,
+            Self::Pull { .. } => MutationKind::Pull,
+            Self::CreateStash { .. } => MutationKind::CreateStash,
+            Self::ApplyStash { .. } => MutationKind::ApplyStash,
+            Self::PopStash { .. } => MutationKind::PopStash,
+            Self::DropStash { .. } => MutationKind::DropStash,
+            Self::CreateTag { .. } => MutationKind::CreateTag,
+            Self::DeleteTag { .. } => MutationKind::DeleteTag,
+            Self::PushTag { .. } => MutationKind::PushTag,
+            Self::CreateWorktree { .. } => MutationKind::CreateWorktree,
+            Self::RemoveWorktree { .. } => MutationKind::RemoveWorktree,
+            Self::LockWorktree { .. } => MutationKind::LockWorktree,
+            Self::UnlockWorktree { .. } => MutationKind::UnlockWorktree,
+            Self::AddSubmodule { .. } => MutationKind::AddSubmodule,
+            Self::UpdateSubmodule { .. } => MutationKind::UpdateSubmodule,
+            Self::SyncSubmodule { .. } => MutationKind::SyncSubmodule,
+            Self::Merge { .. } => MutationKind::Merge,
+            Self::ContinueMerge { .. } => MutationKind::ContinueMerge,
+            Self::AbortMerge { .. } => MutationKind::AbortMerge,
+            Self::RevertCommit { .. } => MutationKind::RevertCommit,
+            Self::ResetBranch { .. } => MutationKind::ResetBranch,
+            Self::CherryPick { .. } => MutationKind::CherryPick,
+            Self::ContinueCherryPick { .. } => MutationKind::ContinueCherryPick,
+            Self::AbortCherryPick { .. } => MutationKind::AbortCherryPick,
+            Self::Rebase { .. } => MutationKind::Rebase,
+            Self::ContinueRebase { .. } => MutationKind::ContinueRebase,
+            Self::AbortRebase { .. } => MutationKind::AbortRebase,
+            Self::DropCommit { .. } => MutationKind::DropCommit,
+            Self::SquashCommit { .. } => MutationKind::SquashCommit,
         }
     }
 
     /// The paths this operation selected, for a precondition check that needs them.
     pub fn path_ids(&self) -> Vec<String> {
         match self {
+            Self::UpdateSubmodule { path_ids, .. } | Self::SyncSubmodule { path_ids, .. } => {
+                path_ids.clone()
+            }
             Self::StagePaths { path_ids, .. } | Self::UnstagePaths { path_ids } => path_ids.clone(),
-            Self::Commit { .. } => Vec::new(),
+            Self::Commit { .. }
+            | Self::CreateBranch { .. }
+            | Self::SwitchBranch { .. }
+            | Self::CreateTag { .. }
+            | Self::Merge { .. }
+            | Self::RevertCommit { .. }
+            | Self::ResetBranch { .. }
+            | Self::CherryPick { .. }
+            | Self::RenameBranch { .. }
+            | Self::DeleteBranch { .. }
+            | Self::SetBranchUpstream { .. }
+            | Self::DeleteTag { .. }
+            | Self::ContinueMerge { .. }
+            | Self::AbortMerge { .. }
+            | Self::ContinueCherryPick { .. }
+            | Self::AbortCherryPick { .. }
+            | Self::Rebase { .. }
+            | Self::ContinueRebase { .. }
+            | Self::AbortRebase { .. }
+            | Self::DropCommit { .. }
+            | Self::SquashCommit { .. }
+            | Self::AmendCommit { .. }
+            | Self::CreateStash { .. }
+            | Self::ApplyStash { .. }
+            | Self::PopStash { .. }
+            | Self::DropStash { .. }
+            | Self::AddRemote { .. }
+            | Self::UpdateRemote { .. }
+            | Self::RemoveRemote { .. }
+            | Self::Push { .. }
+            | Self::PushTag { .. }
+            | Self::Fetch { .. }
+            | Self::Pull { .. }
+            | Self::RemoveWorktree { .. }
+            | Self::LockWorktree { .. }
+            | Self::UnlockWorktree { .. }
+            | Self::CreateWorktree { .. }
+            | Self::AddSubmodule { .. } => Vec::new(),
         }
     }
 
@@ -225,6 +549,460 @@ mod seed_tests {
         // A foreign id is skipped, not parsed as zero: the counter only avoids what is
         // demonstrably present.
         assert_eq!(next_operation_seed(&[record_with_id("operation-9")]), 0);
+    }
+
+    #[test]
+    fn a_merge_payload_round_trips_with_the_wire_spelling_the_contract_publishes() {
+        // Prevents: a payload the browser could send and the host could not read (or the
+        // reverse), because the projection's field or mode spelling drifted from the
+        // contract's `merge` operation.
+        let json = serde_json::json!({
+            "kind": "merge",
+            "sourceOid": "0123456789abcdef0123456789abcdef01234567",
+            "mode": "no-ff",
+            "message": null
+        });
+        let parsed: MutationOperation =
+            serde_json::from_value(json.clone()).expect("the contract's merge payload parses");
+        assert_eq!(
+            parsed,
+            MutationOperation::Merge {
+                source_oid: "0123456789abcdef0123456789abcdef01234567".to_string(),
+                mode: MergeMode::NoFF,
+                message: None,
+            }
+        );
+        assert_eq!(
+            serde_json::from_value::<MutationOperation>(serde_json::json!({
+                "kind": "merge",
+                "sourceOid": "0123456789abcdef0123456789abcdef01234567",
+                "mode": "default",
+                "message": "merge it"
+            }))
+            .expect("the default mode parses"),
+            MutationOperation::Merge {
+                source_oid: "0123456789abcdef0123456789abcdef01234567".to_string(),
+                mode: MergeMode::Default,
+                message: Some("merge it".to_string()),
+            }
+        );
+        assert_eq!(serde_json::to_value(&parsed).unwrap(), json);
+        // An unknown field is a payload the host does not understand, not one it
+        // half-understands.
+        assert!(
+            serde_json::from_value::<MutationOperation>(serde_json::json!({
+                "kind": "merge",
+                "sourceOid": "0123456789abcdef0123456789abcdef01234567",
+                "mode": "no-ff",
+                "message": null,
+                "extra": true
+            }))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn the_branch_tag_revert_reset_and_pick_payloads_round_trip_on_the_wire() {
+        // Prevents: a browser sending a payload the host cannot read (or the reverse),
+        // because one of these projections drifted from the contract's spelling.
+        let oid = "0123456789abcdef0123456789abcdef01234567";
+        for (json, expected) in [
+            (
+                serde_json::json!({
+                    "kind": "createBranch",
+                    "branchName": "feature",
+                    "startOid": oid,
+                    "switchToIt": true
+                }),
+                MutationOperation::CreateBranch {
+                    branch_name: "feature".to_string(),
+                    start_oid: Some(oid.to_string()),
+                    switch_to_it: true,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "switchBranch",
+                    "branchName": "main"
+                }),
+                MutationOperation::SwitchBranch {
+                    branch_name: "main".to_string(),
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "createTag",
+                    "tagName": "v1",
+                    "targetOid": null,
+                    "annotation": { "message": "release" }
+                }),
+                MutationOperation::CreateTag {
+                    tag_name: "v1".to_string(),
+                    target_oid: None,
+                    annotation: Some(TagAnnotation {
+                        message: "release".to_string(),
+                    }),
+                },
+            ),
+            (
+                serde_json::json!({ "kind": "revertCommit", "oid": oid }),
+                MutationOperation::RevertCommit {
+                    oid: oid.to_string(),
+                },
+            ),
+            (
+                serde_json::json!({ "kind": "resetBranch", "oid": oid, "mode": "mixed" }),
+                MutationOperation::ResetBranch {
+                    oid: oid.to_string(),
+                    mode: ResetMode::Mixed,
+                },
+            ),
+            (
+                serde_json::json!({ "kind": "cherryPick", "oid": oid }),
+                MutationOperation::CherryPick {
+                    oid: oid.to_string(),
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "deleteBranch",
+                    "branchName": "feature",
+                    "confirmed": true
+                }),
+                MutationOperation::DeleteBranch {
+                    branch_name: "feature".to_string(),
+                    confirmed: true,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "deleteTag",
+                    "tagName": "v1",
+                    "confirmed": true
+                }),
+                MutationOperation::DeleteTag {
+                    tag_name: "v1".to_string(),
+                    confirmed: true,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "renameBranch",
+                    "branchName": "old",
+                    "newName": "new"
+                }),
+                MutationOperation::RenameBranch {
+                    branch_name: "old".to_string(),
+                    new_name: "new".to_string(),
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "setBranchUpstream",
+                    "branchName": "main",
+                    "upstream": { "remoteName": "origin", "branchName": "main" }
+                }),
+                MutationOperation::SetBranchUpstream {
+                    branch_name: "main".to_string(),
+                    upstream: Some(UpstreamSpec {
+                        remote_name: "origin".to_string(),
+                        branch_name: "main".to_string(),
+                    }),
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "setBranchUpstream",
+                    "branchName": "main",
+                    "upstream": null
+                }),
+                MutationOperation::SetBranchUpstream {
+                    branch_name: "main".to_string(),
+                    upstream: None,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "continueMerge",
+                    "message": null
+                }),
+                MutationOperation::ContinueMerge { message: None },
+            ),
+            (
+                serde_json::json!({ "kind": "abortMerge", "confirmed": true }),
+                MutationOperation::AbortMerge { confirmed: true },
+            ),
+            (
+                serde_json::json!({ "kind": "continueCherryPick" }),
+                MutationOperation::ContinueCherryPick {},
+            ),
+            (
+                serde_json::json!({ "kind": "abortCherryPick", "confirmed": true }),
+                MutationOperation::AbortCherryPick { confirmed: true },
+            ),
+            (
+                serde_json::json!({ "kind": "rebase", "upstreamOid": oid }),
+                MutationOperation::Rebase {
+                    upstream_oid: oid.to_string(),
+                },
+            ),
+            (
+                serde_json::json!({ "kind": "continueRebase" }),
+                MutationOperation::ContinueRebase {},
+            ),
+            (
+                serde_json::json!({ "kind": "abortRebase", "confirmed": true }),
+                MutationOperation::AbortRebase { confirmed: true },
+            ),
+            (
+                serde_json::json!({ "kind": "dropCommit", "oid": oid, "confirmed": true }),
+                MutationOperation::DropCommit {
+                    oid: oid.to_string(),
+                    confirmed: true,
+                },
+            ),
+            (
+                serde_json::json!({ "kind": "squashCommit", "message": null }),
+                MutationOperation::SquashCommit { message: None },
+            ),
+            (
+                serde_json::json!({ "kind": "amendCommit", "message": null, "confirmed": true }),
+                MutationOperation::AmendCommit {
+                    message: None,
+                    confirmed: true,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "createStash",
+                    "message": "wip",
+                    "includeUntracked": true,
+                    "keepIndex": false
+                }),
+                MutationOperation::CreateStash {
+                    message: Some("wip".to_string()),
+                    include_untracked: true,
+                    keep_index: false,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "applyStash",
+                    "stash": { "oid": oid, "locator": "stash@{0}" },
+                    "restoreIndex": true
+                }),
+                MutationOperation::ApplyStash {
+                    stash: StashRef {
+                        oid: oid.to_string(),
+                        locator: "stash@{0}".to_string(),
+                    },
+                    restore_index: true,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "popStash",
+                    "stash": { "oid": oid, "locator": "stash@{1}" },
+                    "restoreIndex": false,
+                    "confirmed": true
+                }),
+                MutationOperation::PopStash {
+                    stash: StashRef {
+                        oid: oid.to_string(),
+                        locator: "stash@{1}".to_string(),
+                    },
+                    restore_index: false,
+                    confirmed: true,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "dropStash",
+                    "stash": { "oid": oid, "locator": "stash@{2}" },
+                    "confirmed": true
+                }),
+                MutationOperation::DropStash {
+                    stash: StashRef {
+                        oid: oid.to_string(),
+                        locator: "stash@{2}".to_string(),
+                    },
+                    confirmed: true,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "addRemote",
+                    "remoteName": "origin",
+                    "fetchUrl": "https://e.com/r",
+                    "pushUrl": null
+                }),
+                MutationOperation::AddRemote {
+                    remote_name: "origin".to_string(),
+                    fetch_url: "https://e.com/r".to_string(),
+                    push_url: None,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "updateRemote",
+                    "remoteName": "origin",
+                    "newName": "upstream",
+                    "fetchUrl": "ssh://e.com/r",
+                    "pushUrl": null
+                }),
+                MutationOperation::UpdateRemote {
+                    remote_name: "origin".to_string(),
+                    new_name: Some("upstream".to_string()),
+                    fetch_url: Some("ssh://e.com/r".to_string()),
+                    push_url: None,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "removeRemote",
+                    "remoteName": "origin",
+                    "confirmed": true
+                }),
+                MutationOperation::RemoveRemote {
+                    remote_name: "origin".to_string(),
+                    confirmed: true,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "push",
+                    "remoteName": "origin",
+                    "sourceRef": "refs/heads/main",
+                    "destinationRef": "refs/heads/main",
+                    "setUpstream": true
+                }),
+                MutationOperation::Push {
+                    remote_name: "origin".to_string(),
+                    source_ref: "refs/heads/main".to_string(),
+                    destination_ref: "refs/heads/main".to_string(),
+                    set_upstream: true,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "pushTag",
+                    "remoteName": "origin",
+                    "tagName": "v1"
+                }),
+                MutationOperation::PushTag {
+                    remote_name: "origin".to_string(),
+                    tag_name: "v1".to_string(),
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "fetch",
+                    "remoteName": "origin",
+                    "prune": true,
+                    "tags": "following"
+                }),
+                MutationOperation::Fetch {
+                    remote_name: "origin".to_string(),
+                    prune: true,
+                    tags: FetchTagMode::Following,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "createWorktree",
+                    "relativeDestination": "feature-wt",
+                    "reference": { "kind": "existingBranch", "branchName": "feature" }
+                }),
+                MutationOperation::CreateWorktree {
+                    relative_destination: "feature-wt".to_string(),
+                    reference: WorktreeReference::ExistingBranch {
+                        branch_name: "feature".to_string(),
+                    },
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "removeWorktree",
+                    "worktreeId": "wt_abc",
+                    "confirmed": true
+                }),
+                MutationOperation::RemoveWorktree {
+                    worktree_id: "wt_abc".to_string(),
+                    confirmed: true,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "lockWorktree",
+                    "worktreeId": "wt_abc",
+                    "reason": "on ice"
+                }),
+                MutationOperation::LockWorktree {
+                    worktree_id: "wt_abc".to_string(),
+                    reason: Some("on ice".to_string()),
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "unlockWorktree",
+                    "worktreeId": "wt_abc"
+                }),
+                MutationOperation::UnlockWorktree {
+                    worktree_id: "wt_abc".to_string(),
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "addSubmodule",
+                    "remoteUrl": "/local/repo",
+                    "relativePath": "vendor/lib",
+                    "branchName": null,
+                    "initialize": true
+                }),
+                MutationOperation::AddSubmodule {
+                    remote_url: "/local/repo".to_string(),
+                    relative_path: "vendor/lib".to_string(),
+                    branch_name: None,
+                    initialize: true,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "updateSubmodule",
+                    "pathIds": ["p1"],
+                    "initialize": true,
+                    "recursive": false
+                }),
+                MutationOperation::UpdateSubmodule {
+                    path_ids: vec!["p1".to_string()],
+                    initialize: true,
+                    recursive: false,
+                },
+            ),
+            (
+                serde_json::json!({
+                    "kind": "syncSubmodule",
+                    "pathIds": [],
+                    "recursive": true
+                }),
+                MutationOperation::SyncSubmodule {
+                    path_ids: vec![],
+                    recursive: true,
+                },
+            ),
+        ] {
+            assert_eq!(
+                serde_json::from_value::<MutationOperation>(json.clone())
+                    .unwrap_or_else(|error| panic!("{json} must parse: {error}")),
+                expected,
+                "{json}"
+            );
+            assert_eq!(
+                serde_json::to_value(&expected).unwrap(),
+                json,
+                "the host's own payload must round-trip"
+            );
+        }
     }
 }
 

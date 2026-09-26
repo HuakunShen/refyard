@@ -99,7 +99,16 @@ export function extractTicketFromText(raw: string): string {
   return trimmed;
 }
 
-/** A normalised `http(s)` origin, or null when the value is missing or unusable. */
+/**
+ * A normalised `http(s)` service address, or null when the value is missing or unusable.
+ *
+ * The path is part of the address, not noise. A service mounted under a prefix — an
+ * embedding host that serves the workbench at `/refyard` beside its own routes — is a real
+ * deployment, and dropping the path there would send every request to the host's own
+ * `/api/v1/…`. The query and fragment stay meaningless, and trailing slashes are removed
+ * because every request is built as `${baseUrl}${path}`: keeping one would request
+ * `//api/v1/…`.
+ */
 export function normalizeBaseUrl(value: string | null): string | null {
   const trimmed = clean(value);
   if (trimmed === null) {
@@ -109,9 +118,7 @@ export function normalizeBaseUrl(value: string | null): string | null {
   if (url === null || (url.protocol !== "http:" && url.protocol !== "https:")) {
     return null;
   }
-  // The path, query and fragment of a service address are meaningless: every request is
-  // built as `${baseUrl}${path}`, so a trailing slash would produce `//api/v1/…`.
-  return url.origin;
+  return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
 }
 
 function firstValidUrl(...candidates: readonly (string | null)[]): {

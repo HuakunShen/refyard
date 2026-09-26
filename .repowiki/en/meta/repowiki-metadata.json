@@ -1,0 +1,153 @@
+{
+  "version": "2026-09-23",
+  "last_commit": "9ccc2e351133fdcd3c3fcbbdec983dcef2e7b717",
+  "wiki_items": [
+    {
+      "id": "aa4f928f-afc8-43b0-bdac-0efbceec1a49",
+      "title": "System Overview",
+      "path": "content/System Overview.md"
+    },
+    {
+      "id": "6eb006ac-024e-4d1b-a24f-cd26eb4bb120",
+      "title": "Architecture",
+      "path": "content/Architecture/Architecture.md"
+    },
+    {
+      "id": "da63a1c5-4fab-4512-bdcc-6d8ffa3a21dc",
+      "title": "Node CLI and HTTP Service",
+      "path": "content/Services/Node CLI and HTTP Service.md"
+    },
+    {
+      "id": "fab02d4f-8793-4bc7-aad9-433c4cd70d4f",
+      "title": "Native Desktop and SSH",
+      "path": "content/Services/Native Desktop and SSH.md"
+    },
+    {
+      "id": "c80bad50-6d00-447b-b965-57295eeaf664",
+      "title": "Git Provider Integration",
+      "path": "content/Services/Git Provider Integration.md"
+    },
+    {
+      "id": "ef810731-eea7-45ba-a8ac-6438fb493882",
+      "title": "Workbench UI and Sessions",
+      "path": "content/Services/Workbench UI and Sessions.md"
+    },
+    {
+      "id": "11c81f4f-018a-47db-8094-a8e24df721b1",
+      "title": "Documentation Site",
+      "path": "content/Services/Documentation Site.md"
+    },
+    {
+      "id": "f9e8fb9a-454d-40db-ae0f-c8a3747b3c82",
+      "title": "git-provider Package",
+      "path": "content/Packages/git-provider Package.md"
+    },
+    {
+      "id": "ceae4ede-e06b-4064-907a-205aa2e01451",
+      "title": "git-ui Package",
+      "path": "content/Packages/git-ui Package.md"
+    },
+    {
+      "id": "21446520-0ed2-469b-9a50-31854e8684cf",
+      "title": "host-node Package",
+      "path": "content/Packages/host-node Package.md"
+    },
+    {
+      "id": "c1a7b3fb-3a28-4e69-9833-63b0ad82876a",
+      "title": "Release and Packaging",
+      "path": "content/Infrastructure/Release and Packaging.md"
+    },
+    {
+      "id": "00a31835-2394-415c-99b6-67475d210c53",
+      "title": "Testing and Safety",
+      "path": "content/Infrastructure/Testing and Safety.md"
+    }
+  ],
+  "knowledge_relations": [
+    {
+      "source": "aa4f928f-afc8-43b0-bdac-0efbceec1a49",
+      "target": "6eb006ac-024e-4d1b-a24f-cd26eb4bb120",
+      "type": "PARENT_CHILD"
+    },
+    {
+      "source": "aa4f928f-afc8-43b0-bdac-0efbceec1a49",
+      "target": "da63a1c5-4fab-4512-bdcc-6d8ffa3a21dc",
+      "type": "PARENT_CHILD"
+    },
+    {
+      "source": "aa4f928f-afc8-43b0-bdac-0efbceec1a49",
+      "target": "fab02d4f-8793-4bc7-aad9-433c4cd70d4f",
+      "type": "PARENT_CHILD"
+    },
+    {
+      "source": "aa4f928f-afc8-43b0-bdac-0efbceec1a49",
+      "target": "c80bad50-6d00-447b-b965-57295eeaf664",
+      "type": "PARENT_CHILD"
+    },
+    {
+      "source": "aa4f928f-afc8-43b0-bdac-0efbceec1a49",
+      "target": "11c81f4f-018a-47db-8094-a8e24df721b1",
+      "type": "PARENT_CHILD"
+    },
+    {
+      "source": "aa4f928f-afc8-43b0-bdac-0efbceec1a49",
+      "target": "c1a7b3fb-3a28-4e69-9833-63b0ad82876a",
+      "type": "PARENT_CHILD"
+    },
+    {
+      "source": "aa4f928f-afc8-43b0-bdac-0efbceec1a49",
+      "target": "00a31835-2394-415c-99b6-67475d210c53",
+      "type": "PARENT_CHILD"
+    },
+    {
+      "source": "c80bad50-6d00-447b-b965-57295eeaf664",
+      "target": "f9e8fb9a-454d-40db-ae0f-c8a3747b3c82",
+      "type": "PARENT_CHILD"
+    },
+    {
+      "source": "c80bad50-6d00-447b-b965-57295eeaf664",
+      "target": "21446520-0ed2-469b-9a50-31854e8684cf",
+      "type": "PARENT_CHILD"
+    },
+    {
+      "source": "ef810731-eea7-45ba-a8ac-6438fb493882",
+      "target": "ceae4ede-e06b-4064-907a-205aa2e01451",
+      "type": "PARENT_CHILD"
+    },
+    {
+      "source": "c80bad50-6d00-447b-b965-57295eeaf664",
+      "target": "ef810731-eea7-45ba-a8ac-6438fb493882",
+      "type": "REFERENCE"
+    },
+    {
+      "source": "fab02d4f-8793-4bc7-aad9-433c4cd70d4f",
+      "target": "6eb006ac-024e-4d1b-a24f-cd26eb4bb120",
+      "type": "REFERENCE"
+    },
+    {
+      "source": "00a31835-2394-415c-99b6-67475d210c53",
+      "target": "6eb006ac-024e-4d1b-a24f-cd26eb4bb120",
+      "type": "REFERENCE"
+    },
+    {
+      "source": "21446520-0ed2-469b-9a50-31854e8684cf",
+      "target": "da63a1c5-4fab-4512-bdcc-6d8ffa3a21dc",
+      "type": "REFERENCE"
+    },
+    {
+      "source": "c1a7b3fb-3a28-4e69-9833-63b0ad82876a",
+      "target": "11c81f4f-018a-47db-8094-a8e24df721b1",
+      "type": "REFERENCE"
+    },
+    {
+      "source": "ceae4ede-e06b-4064-907a-205aa2e01451",
+      "target": "ef810731-eea7-45ba-a8ac-6438fb493882",
+      "type": "REFERENCE"
+    },
+    {
+      "source": "00a31835-2394-415c-99b6-67475d210c53",
+      "target": "c80bad50-6d00-447b-b965-57295eeaf664",
+      "type": "REFERENCE"
+    }
+  ]
+}

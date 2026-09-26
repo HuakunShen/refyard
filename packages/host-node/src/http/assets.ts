@@ -59,6 +59,17 @@ export interface AssetServerOptions {
   readonly inlineDocument?: string;
   /** Exact API origins an embedding static host needs to call from its own origin. */
   readonly connectOrigins?: readonly string[];
+  /**
+   * Origins allowed to frame a served document, as a CSP `frame-ancestors` source list.
+   *
+   * Absent means `'none'`, which is the product default: the workbench is a page a user
+   * opens, not one that gets embedded. An embedder that puts the workbench inside its own
+   * chrome — a host application's panel — passes the exact origin it frames from, and this
+   * is the whole of what changes: `connect-src` and the script policy are untouched, and
+   * `X-Frame-Options` is dropped because it cannot express an allowlist and would veto the
+   * policy the caller just asked for.
+   */
+  readonly frameAncestors?: readonly string[];
 }
 
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
@@ -105,7 +116,10 @@ export const HTML_HEADERS: Readonly<Record<string, string>> = {
 
 export function createAssetServer(options: AssetServerOptions): AssetServer {
   const fallback = options.fallbackDocument ?? "200.html";
-  const htmlHeaders = headersWithConnectOrigins(options.connectOrigins);
+  const htmlHeaders = headersForEmbedding(
+    options.connectOrigins,
+    options.frameAncestors,
+  );
   let resolvedRoot: string | null = null;
   let rootReady = false;
   /**
@@ -155,7 +169,11 @@ export function createAssetServer(options: AssetServerOptions): AssetServer {
       const hashes = inlineScriptHashes(html);
       headers =
         hashes.length === 0
-          ? HTML_HEADERS
+          ? // The document has nothing to hash, so the policy stays as configured. This
+            // was `HTML_HEADERS` — the module constant — which silently discarded an
+            // embedder's `connectOrigins`/`frameAncestors` for exactly the documents that
+            // need no inline-script hash. It is the same value when neither is configured.
+            htmlHeaders
           : {
               ...htmlHeaders,
               "content-security-policy": policyWithInlineScripts(
@@ -414,24 +432,62 @@ export function createAssetServer(options: AssetServerOptions): AssetServer {
   };
 }
 
-/** Add only exact configured API origins to the static document's connect policy. */
-function headersWithConnectOrigins(
-  origins: readonly string[] | undefined,
+/**
+ * The document policy an embedder asked for.
+ *
+ * Two independent widenings, both opt-in and both exact: configured API origins join
+ * `connect-src`, and configured sources replace `frame-ancestors 'none'`. They are applied
+ * to one copy of the policy so an embedder that asks for both gets a header naming both,
+ * rather than the second call overwriting the first.
+ */
+function headersForEmbedding(
+  connectOrigins: readonly string[] | undefined,
+  frameAncestors: readonly string[] | undefined,
 ): Readonly<Record<string, string>> {
   const valid = [
-    ...new Set((origins ?? []).filter((origin) => isHttpOrigin(origin))),
+    ...new Set((connectOrigins ?? []).filter((origin) => isHttpOrigin(origin))),
   ];
-  if (valid.length === 0) {
+  const frames = (frameAncestors ?? []).filter((source) => isFrameAncestor(source));
+  if (valid.length === 0 && frames.length === 0) {
     return HTML_HEADERS;
   }
-  const policy = HTML_HEADERS["content-security-policy"] ?? "";
-  return {
-    ...HTML_HEADERS,
-    "content-security-policy": policy.replace(
+  let policy = HTML_HEADERS["content-security-policy"] ?? "";
+  if (valid.length > 0) {
+    policy = policy.replace(
       "connect-src 'self'",
       `connect-src 'self' ${valid.join(" ")}`,
-    ),
-  };
+    );
+  }
+  const headers: Record<string, string> = { ...HTML_HEADERS };
+  if (frames.length > 0) {
+    policy = policy.replace(
+      "frame-ancestors 'none'",
+      `frame-ancestors ${frames.join(" ")}`,
+    );
+    // X-Frame-Options has no allowlist form, so leaving DENY in place would veto the
+    // framing the policy above now permits.
+    delete headers["x-frame-options"];
+  }
+  headers["content-security-policy"] = policy;
+  return headers;
+}
+
+/**
+ * Whether a value is safe to write into `frame-ancestors`.
+ *
+ * The directive is a space-separated source list, so a value containing whitespace would
+ * quietly become two sources — or, worse, a source the caller never named. Anything that
+ * is not exactly `'none'`, `'self'`, or one `http(s)` origin is dropped rather than
+ * escaped, because the caller's intent is an exact origin and a near-miss is a mistake.
+ */
+function isFrameAncestor(value: string): boolean {
+  if (value === "'none'" || value === "'self'") {
+    return true;
+  }
+  if (/\s/.test(value)) {
+    return false;
+  }
+  return isHttpOrigin(value);
 }
 
 function isHttpOrigin(value: string): boolean {

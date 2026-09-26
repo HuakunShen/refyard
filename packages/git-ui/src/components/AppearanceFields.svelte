@@ -14,6 +14,18 @@
     ROW_DENSITIES,
     type RowDensity,
   } from "../lib/geometry.js";
+  import { m, type UiLanguage } from "../i18n.js";
+
+  /** The three choices, named in their own languages: a reader picking a language reads it
+   * in the language they are picking, not in the one they are leaving. */
+  const LANGUAGE_CHOICES: readonly {
+    readonly id: UiLanguage;
+    readonly label: string;
+  }[] = [
+    { id: "auto", label: "" },
+    { id: "en", label: "" },
+    { id: "zh", label: "" },
+  ];
 
   interface Props {
     accent: string;
@@ -21,7 +33,10 @@
     glass: boolean;
     avatars: boolean;
     density: RowDensity;
+    /** The reader's language preference; `auto` follows the browser. */
+    language: UiLanguage;
     onAccentChange: (accent: string) => void;
+    onLanguageChange?: (language: UiLanguage) => void;
     onBackgroundChange: (bg: string) => void;
     onGlassChange: (glass: boolean) => void;
     onAvatarsChange?: (avatars: boolean) => void;
@@ -34,18 +49,14 @@
     glass,
     avatars,
     density,
+    language,
     onAccentChange,
+    onLanguageChange = undefined,
     onBackgroundChange,
     onGlassChange,
     onAvatarsChange = undefined,
     onDensityChange = undefined,
   }: Props = $props();
-
-  const DENSITY_NOTES: Record<RowDensity, string> = {
-    compact: "28px rows — the most commits per screen",
-    comfortable: "36px rows — the middle size",
-    roomy: "44px rows — the default, GitKraken's spacing",
-  };
 
   /** The three buttons, each drawn with its own node size so the choice is visible. */
   const DENSITIES = ROW_DENSITIES.map((id) => {
@@ -288,20 +299,64 @@
     </label>
   </div>
 
+  <!-- Language -->
+  <div class="flex flex-col gap-2">
+    <div class="flex items-center justify-between">
+      <span
+        class="text-xs font-semibold uppercase tracking-wider text-ink-muted"
+      >
+        {m.settings_language()}
+      </span>
+      <span class="text-[11px] text-ink-faint"
+        >{language === "auto" ? m.settings_language_auto_hint() : ""}</span
+      >
+    </div>
+    <div
+      class="grid grid-cols-3 gap-2"
+      role="radiogroup"
+      aria-label={m.settings_language()}
+    >
+      {#each LANGUAGE_CHOICES as choice (choice.id)}
+        {@const active = language === choice.id}
+        <button
+          type="button"
+          role="radio"
+          aria-checked={active}
+          onclick={() => onLanguageChange?.(choice.id)}
+          class={cn(
+            "flex items-center justify-center gap-2 rounded-lg border p-2 text-left text-xs transition-all",
+            active
+              ? "border-primary bg-primary/10 font-medium text-foreground shadow-xs"
+              : "border-border/60 bg-card/60 hover:border-border hover:bg-accent/40 text-ink-muted",
+          )}
+          data-testid={`settings-language-${choice.id}`}
+        >
+          <span class="truncate">{choice.label}</span>
+        </button>
+      {/each}
+    </div>
+  </div>
+
   <!-- Row Density -->
   <div class="flex flex-col gap-2">
     <div class="flex items-center justify-between">
       <span
         class="text-xs font-semibold uppercase tracking-wider text-ink-muted"
       >
-        Row Density
+        {m.settings_density()}
       </span>
-      <span class="text-[11px] text-ink-faint">{DENSITY_NOTES[density]}</span>
+      <span class="text-[11px] text-ink-faint"
+        >{density === "compact"
+          ? m.settings_density_compact()
+          : density === "comfortable"
+            ? m.settings_density_comfortable()
+            : m.settings_density_roomy()}</span
+      >
     </div>
     <div
       class="grid grid-cols-3 gap-2"
       role="radiogroup"
-      aria-label="History row density"
+      aria-label={m.settings_density()}
     >
       {#each DENSITIES as item (item.id)}
         {@const active = density === item.id}

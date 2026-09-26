@@ -195,3 +195,54 @@ test("reopens a closed repository tab from a home-relative path", async ({
     await repo.dispose();
   }
 });
+
+test("offers to merge a linked worktree's branch into the checked-out branch", async ({
+  page,
+}) => {
+  // Prevents: a worktree menu that can only open and remove checkouts — the reason a
+  // worktree exists beside the current one is to bring its branch back, and the menu is
+  // where that action has to be offered. The item's direction is asserted in its label
+  // ("Merge feature-ui into main"), and the effect on disk, because a menu item that
+  // renders but merges the wrong way would still pass a visibility check.
+  const repo = await createRepo({ initialCommit: true });
+  const linked = join(repo.root, ".worktrees", "feature");
+  await repo.git(["worktree", "add", "-b", "feature-ui", linked]);
+  await writeFile(join(linked, "feature-only.txt"), "feature work\n");
+  await repo.git(["-C", linked, "add", "feature-only.txt"]);
+  await repo.git(["-C", linked, "commit", "--quiet", "-m", "feature work"]);
+
+  const service = await startE2eService({ repo });
+  try {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto(service.pairingUrl);
+    await page.getByRole("button", { name: /Worktrees/ }).first().click();
+    const linkedRow = page
+      .locator('[data-testid^="worktree-row-"]')
+      .filter({ hasText: "feature-ui" });
+    await expect(linkedRow).toBeVisible();
+
+    await linkedRow.click({ button: "right" });
+    const mergeItem = page
+      .locator('[data-testid$="-merge"]')
+      .filter({ hasText: "Merge feature-ui into main" });
+    await expect(mergeItem).toBeVisible();
+    await mergeItem.click();
+
+    // The merge fast-forwards main to the feature tip: the work the linked checkout
+    // held is now on the branch the window is working in.
+    await expect
+      .poll(async () =>
+        new TextDecoder()
+          .decode(await repo.git(["rev-parse", "main"]))
+          .trim(),
+      )
+      .toBe(
+        new TextDecoder()
+          .decode(await repo.git(["-C", linked, "rev-parse", "HEAD"]))
+          .trim(),
+      );
+  } finally {
+    await service.stop();
+    await repo.dispose();
+  }
+});

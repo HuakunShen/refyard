@@ -132,13 +132,21 @@ describe("service address", () => {
     expect(config.overridden).toBe(true);
   });
 
-  it("normalises away a path, query and trailing slash", () => {
+  it("keeps a service path and normalises away the query and trailing slash", () => {
     // Requests are built as `base + path`; a trailing slash would request `//api/v1/…`.
     expect(normalizeBaseUrl("http://127.0.0.1:9595/")).toBe(
       "http://127.0.0.1:9595",
     );
     expect(normalizeBaseUrl("http://127.0.0.1:9595/app/?x=1#y")).toBe(
-      "http://127.0.0.1:9595",
+      "http://127.0.0.1:9595/app",
+    );
+    // An embedding host serves the workbench under a prefix; dropping it would send every
+    // request to that host's own `/api/v1/…` instead of the mounted service.
+    expect(normalizeBaseUrl("http://127.0.0.1:3080/refyard")).toBe(
+      "http://127.0.0.1:3080/refyard",
+    );
+    expect(normalizeBaseUrl("http://127.0.0.1:3080/refyard/")).toBe(
+      "http://127.0.0.1:3080/refyard",
     );
   });
 

@@ -49,6 +49,14 @@
     activeWorktreeId?: string | null;
     onOpenWorktree?: (worktreeId: string) => void;
     onOpenWorktreeInTab?: (worktreeId: string) => void;
+    /**
+     * The checked-out branch, which is what a worktree's branch would merge *into*.
+     * Both this and `onMergeBranch` are needed for the item to exist: a caller whose
+     * host cannot merge omits the callback, and a worktree on a detached head has no
+     * branch to name.
+     */
+    currentBranch?: string | null;
+    onMergeBranch?: (branchName: string, noFf: boolean) => void;
     class?: string;
   }
 
@@ -65,6 +73,8 @@
     activeWorktreeId = null,
     onOpenWorktree = undefined,
     onOpenWorktreeInTab = undefined,
+    currentBranch = null,
+    onMergeBranch = undefined,
     class: className = "",
   }: Props = $props();
 
@@ -114,6 +124,25 @@
     worktree: WorktreeEntry,
   ): readonly ContextAction[] {
     const actionDisabled = disabled || busy;
+    // A worktree's branch is what the *current* branch would merge in from it — the
+    // same item GitKraken's worktree menu carries. The current branch itself, a
+    // detached head, and a host without the merge capability all simply leave the item
+    // out rather than showing a dead one.
+    const branch = worktree.head.branchName;
+    const mergeAction: ContextAction | null =
+      onMergeBranch !== undefined &&
+      branch !== null &&
+      currentBranch !== null &&
+      currentBranch.length > 0 &&
+      branch !== currentBranch
+        ? {
+            kind: "action",
+            id: "merge",
+            label: `Merge ${branch} into ${currentBranch}`,
+            disabled: actionDisabled,
+            onSelect: () => onMergeBranch(branch, false),
+          }
+        : null;
     return [
       ...(onOpenWorktree === undefined
         ? []
@@ -137,6 +166,7 @@
               onSelect: () => onOpenWorktreeInTab(worktree.worktreeId),
             },
           ]),
+      ...(mergeAction === null ? [] : [mergeAction]),
     ];
   }
 </script>

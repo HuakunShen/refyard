@@ -1,6 +1,6 @@
 <script lang="ts">
   /** Top-level repository tabs; one tab is active while the session may keep many open. */
-  import { X, Plus } from "@lucide/svelte";
+  import { Laptop, Plus, Server, X } from "@lucide/svelte";
   import { cn } from "../lib/utils.js";
 
   export interface RepositoryTabItem {
@@ -8,11 +8,13 @@
     readonly displayName: string;
     readonly displayPath: string;
     /**
-     * The machine this tab's Git runs on, when it is not this one. Without it two tabs
-     * for the same path on different machines would look identical, which is exactly
-     * the confusion the tab bar must not create.
+     * The machine this tab's Git runs on, when the host names one: `targetKind` says
+     * which, and this machine's own target gets an icon alone rather than two words.
+     * Without any of this, two tabs for the same path on different machines would look
+     * identical, which is exactly the confusion the tab bar must not create.
      */
     readonly targetLabel?: string | null;
+    readonly targetKind?: "local" | "remote";
   }
 
   interface Props {
@@ -58,29 +60,34 @@
       <button
         type="button"
         {disabled}
-        class="min-w-0 flex-1 truncate text-left font-medium"
+        class="flex min-w-0 flex-1 items-center gap-1 text-left font-medium"
         title={tab.displayPath}
         aria-current={tab.repositoryId === activeRepositoryId
           ? "page"
           : undefined}
         onclick={() => onSelect(tab.repositoryId)}
       >
-        {tab.displayName}
+        <span class="min-w-0 truncate">{tab.displayName}</span>
+        {#if tab.targetLabel !== undefined && tab.targetLabel !== null}
+          <!--
+            The machine, inside the tab's own button so a click on it selects the tab:
+            this machine gets an icon alone, a named host keeps its label, because the
+            two answers a tab can carry are "here" and "there".
+          -->
+          <span
+            class="flex shrink-0 items-center gap-0.5 rounded bg-background/70 px-1 py-px text-[10px] font-normal text-muted-foreground"
+            title={`Git runs on ${tab.targetLabel}`}
+            data-testid={`repository-target-${tab.repositoryId}`}
+          >
+            {#if tab.targetKind === "remote"}
+              <Server class="size-2.5 shrink-0" />
+              <span class="max-w-20 truncate">{tab.targetLabel}</span>
+            {:else}
+              <Laptop class="size-2.5 shrink-0" />
+            {/if}
+          </span>
+        {/if}
       </button>
-      {#if tab.targetLabel !== undefined && tab.targetLabel !== null}
-        <!--
-          The machine, next to the name rather than only in a tooltip: the point is to
-          tell two tabs apart at a glance, and a tooltip tells nobody anything until
-          they already suspect the difference.
-        -->
-        <span
-          class="max-w-20 shrink-0 truncate rounded bg-background/70 px-1 py-px text-[10px] font-normal text-muted-foreground"
-          title={`Git runs on ${tab.targetLabel}`}
-          data-testid={`repository-target-${tab.repositoryId}`}
-        >
-          {tab.targetLabel}
-        </span>
-      {/if}
       <button
         type="button"
         {disabled}

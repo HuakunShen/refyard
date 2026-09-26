@@ -1,0 +1,369 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Refyard System Architecture",
+    "locale": "en",
+    "output": "refyard-architecture.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "main-path",
+        "label": "Main request path",
+        "focus": [
+          "browser",
+          "http",
+          "coordinator",
+          "core",
+          "hostport",
+          "git",
+          "repo"
+        ],
+        "note": "Git intentions travel from the UI to the machine's own git, never as raw argv."
+      },
+      {
+        "id": "provider-axis",
+        "label": "Opt-in provider axis",
+        "focus": [
+          "coordinator",
+          "provider",
+          "github"
+        ],
+        "note": "GitHub reads sit behind an explicit scope gate and never leak the token."
+      },
+      {
+        "id": "native-form",
+        "label": "Native desktop form",
+        "focus": [
+          "native",
+          "browser"
+        ],
+        "note": "The Rust host reuses the same Svelte components over Tauri IPC with no JS runtime."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "browser",
+      "type": "frontend",
+      "label": "Workbench UI",
+      "sublabel": "SvelteKit SPA",
+      "pos": [
+        20,
+        270
+      ],
+      "size": [
+        150,
+        76
+      ],
+      "tag": "packages/git-ui"
+    },
+    {
+      "id": "http",
+      "type": "security",
+      "label": "Loopback HTTP API",
+      "sublabel": "127.0.0.1:9595",
+      "tag": "ticket → bearer",
+      "pos": [
+        195,
+        270
+      ],
+      "size": [
+        160,
+        76
+      ]
+    },
+    {
+      "id": "coordinator",
+      "type": "backend",
+      "label": "Node Coordinator",
+      "sublabel": "scopes · jobs · SSE",
+      "pos": [
+        380,
+        270
+      ],
+      "size": [
+        175,
+        76
+      ]
+    },
+    {
+      "id": "core",
+      "type": "backend",
+      "label": "Git Core",
+      "sublabel": "host-free planners",
+      "pos": [
+        580,
+        270
+      ],
+      "size": [
+        165,
+        76
+      ]
+    },
+    {
+      "id": "hostport",
+      "type": "backend",
+      "label": "GitHostPort",
+      "sublabel": "argv + approved I/O",
+      "pos": [
+        770,
+        270
+      ],
+      "size": [
+        165,
+        76
+      ]
+    },
+    {
+      "id": "git",
+      "type": "external",
+      "label": "System git CLI",
+      "sublabel": "hooks · credentials intact",
+      "pos": [
+        960,
+        270
+      ],
+      "size": [
+        155,
+        76
+      ]
+    },
+    {
+      "id": "repo",
+      "type": "database",
+      "label": "Repository",
+      "sublabel": "approved local repo",
+      "pos": [
+        1140,
+        270
+      ],
+      "size": [
+        155,
+        76
+      ]
+    },
+    {
+      "id": "journal",
+      "type": "database",
+      "label": "Journal",
+      "sublabel": "append-only audit",
+      "pos": [
+        380,
+        110
+      ],
+      "size": [
+        175,
+        76
+      ]
+    },
+    {
+      "id": "provider",
+      "type": "backend",
+      "label": "Provider Service",
+      "sublabel": "cached PR reads",
+      "pos": [
+        380,
+        450
+      ],
+      "size": [
+        175,
+        76
+      ]
+    },
+    {
+      "id": "github",
+      "type": "external",
+      "label": "GitHub",
+      "sublabel": "REST · device flow",
+      "pos": [
+        580,
+        450
+      ],
+      "size": [
+        175,
+        76
+      ]
+    },
+    {
+      "id": "native",
+      "type": "backend",
+      "label": "refyard-native",
+      "sublabel": "Rust + Tauri 2 host",
+      "pos": [
+        0,
+        450
+      ],
+      "size": [
+        190,
+        76
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Node host — refyard CLI process",
+      "wraps": [
+        "http",
+        "coordinator",
+        "core",
+        "hostport",
+        "journal",
+        "provider"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "Loopback only · exact Origin/Host · all reads authenticated",
+      "wraps": [
+        "http",
+        "coordinator"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "req",
+      "from": "browser",
+      "to": "http",
+      "label": "intentions: closed JSON contract",
+      "variant": "emphasis",
+      "labelAt": [
+        190,
+        360
+      ]
+    },
+    {
+      "id": "authz",
+      "from": "http",
+      "to": "coordinator",
+      "label": "verified ticket → scoped session",
+      "labelAt": [
+        367,
+        360
+      ]
+    },
+    {
+      "id": "plan",
+      "from": "coordinator",
+      "to": "core",
+      "label": "intention → planned argv",
+      "labelAt": [
+        567,
+        360
+      ]
+    },
+    {
+      "id": "port",
+      "from": "core",
+      "to": "hostport",
+      "label": "core-only argv",
+      "labelAt": [
+        757,
+        360
+      ]
+    },
+    {
+      "id": "spawn",
+      "from": "hostport",
+      "to": "git",
+      "label": "spawn as user",
+      "labelAt": [
+        947,
+        360
+      ]
+    },
+    {
+      "id": "tree",
+      "from": "git",
+      "to": "repo",
+      "label": "read / write working tree",
+      "labelAt": [
+        1127,
+        360
+      ]
+    },
+    {
+      "id": "sse",
+      "from": "coordinator",
+      "to": "browser",
+      "label": "authenticated SSE: graph, status, panels",
+      "fromSide": "top",
+      "toSide": "top"
+    },
+    {
+      "id": "audit",
+      "from": "coordinator",
+      "to": "journal",
+      "label": "append-only, no token bytes",
+      "labelAt": [
+        467,
+        205
+      ]
+    },
+    {
+      "id": "gate",
+      "from": "coordinator",
+      "to": "provider",
+      "label": "scope gate: provider:manage",
+      "labelAt": [
+        467,
+        400
+      ]
+    },
+    {
+      "id": "forge",
+      "from": "provider",
+      "to": "github",
+      "label": "GitHub REST; token only in Authorization header",
+      "labelAt": [
+        567,
+        540
+      ]
+    },
+    {
+      "id": "adapt",
+      "from": "native",
+      "to": "browser",
+      "label": "same components via BackendAdapter",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Trust boundary",
+      "items": [
+        "Loopback only; every read authenticated",
+        "Pairing tickets single-use, minted only on trusted local channels"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Git safety",
+      "items": [
+        "One writer per common git directory",
+        "Only Git Core builds argv; destructive ops back up first and fail closed"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Native form",
+      "items": [
+        "Rust + Tauri 2 binary: no JS runtime, no localhost HTTP",
+        "SSH via the host's OpenSSH; capabilities reports every gap honestly"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Provider axis",
+      "items": [
+        "Opt-in GitHub reads behind provider:manage scope",
+        "Token never appears in responses or the journal"
+      ]
+    }
+  ]
+}
