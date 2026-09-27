@@ -136,8 +136,23 @@ impl Fixture {
         repository_id: &str,
         named: &str,
     ) -> String {
+        self.path_id_in_worktree(service, repository_id, None, named)
+            .await
+    }
+
+    async fn path_id_in_worktree(
+        &self,
+        service: &ApplicationService,
+        repository_id: &str,
+        worktree_id: Option<&str>,
+        named: &str,
+    ) -> String {
         let status = service
-            .status(&StatusQuery::new(repository_id))
+            .status(&StatusQuery {
+                repository_id: repository_id.to_string(),
+                worktree_id: worktree_id.map(str::to_string),
+                include_ignored: false,
+            })
             .await
             .expect("status");
         status
@@ -189,6 +204,66 @@ impl Fixture {
             preview_tokens: vec![token.to_string()],
         }
     }
+}
+
+#[tokio::test]
+async fn a_linked_worktree_preview_reads_and_redeems_its_own_content() {
+    let fixture = Fixture::new();
+    let linked = fixture.temp.path().join("linked");
+    let output = Command::new(git_program())
+        .args(["worktree", "add", "--quiet", "-b", "preview-linked"])
+        .arg(&linked)
+        .current_dir(&fixture.repo)
+        .env_clear()
+        .envs(
+            fixture
+                .env
+                .iter()
+                .map(|(name, value)| (name.as_str(), value.as_str())),
+        )
+        .output()
+        .expect("create linked worktree");
+    assert!(
+        output.status.success(),
+        "git worktree add failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    fixture.write("a.txt", "primary worktree bytes\n");
+    std::fs::write(linked.join("a.txt"), "linked worktree bytes\n").expect("write linked file");
+    let service = fixture.service();
+    let primary = service
+        .register_repository(fixture.path())
+        .await
+        .expect("register primary worktree");
+    let repository_id = primary.repositories[0].repository_id.clone();
+    let primary_worktree_id = primary.repositories[0].primary_worktree_id.clone();
+    let linked_registration = service
+        .register_repository(linked.to_str().expect("linked path"))
+        .await
+        .expect("register linked worktree");
+    let linked_worktree_id = linked_registration.repositories[0]
+        .worktree_ids
+        .iter()
+        .find(|worktree_id| **worktree_id != primary_worktree_id)
+        .expect("linked worktree id")
+        .clone();
+    let path_id = fixture
+        .path_id_in_worktree(&service, &repository_id, Some(&linked_worktree_id), "a.txt")
+        .await;
+    let (token, _) = fixture
+        .preview(&service, &repository_id, &linked_worktree_id, &path_id)
+        .await;
+
+    service
+        .redeem_previews(&Fixture::submission(
+            &repository_id,
+            &linked_worktree_id,
+            &path_id,
+            &token,
+        ))
+        .await
+        .expect("the token fingerprints the bytes from the selected linked worktree");
 }
 
 fn git_add(fixture: &Fixture, relative: &str) {
@@ -534,13 +609,16 @@ fn one_local_reader_answers_every_kind_of_path_with_its_own_typed_result() {
     std::fs::create_dir_all(root.join("docs")).expect("create a directory");
     assert_eq!(local::read(&root, b"docs"), FileRead::Directory);
 
-    let symlink = root.join("link.txt");
-    std::os::unix::fs::symlink(root.join("a.txt"), &symlink).expect("create symlink");
-    assert_eq!(
-        local::read(&root, b"link.txt"),
-        FileRead::Symlink,
-        "a symlink is not a regular file: following it would read bytes the path does not own"
-    );
+    #[cfg(unix)]
+    {
+        let symlink = root.join("link.txt");
+        std::os::unix::fs::symlink(root.join("a.txt"), &symlink).expect("create symlink");
+        assert_eq!(
+            local::read(&root, b"link.txt"),
+            FileRead::Symlink,
+            "a symlink is not a regular file: following it would read bytes the path does not own"
+        );
+    }
 
     // A submodule is a directory whose contents belong to another repository.
     let submodule = root.join("vendor");
@@ -567,18 +645,21 @@ fn one_local_reader_answers_every_kind_of_path_with_its_own_typed_result() {
 
     // A name that is not UTF-8 is still a name on this machine, and the reader keeps its
     // bytes rather than substituting a replacement character.
-    use std::os::unix::ffi::OsStrExt;
-    let raw = root.join(std::ffi::OsStr::from_bytes(b"caf\xe9.txt"));
-    if std::fs::write(&raw, b"latin-1 name").is_ok() {
-        match local::read(&root, b"caf\xe9.txt") {
-            FileRead::Bytes {
-                bytes,
-                content_kind,
-            } => {
-                assert_eq!(bytes, b"latin-1 name");
-                assert_eq!(content_kind, FileContentKind::Text);
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let raw = root.join(std::ffi::OsStr::from_bytes(b"caf\xe9.txt"));
+        if std::fs::write(&raw, b"latin-1 name").is_ok() {
+            match local::read(&root, b"caf\xe9.txt") {
+                FileRead::Bytes {
+                    bytes,
+                    content_kind,
+                } => {
+                    assert_eq!(bytes, b"latin-1 name");
+                    assert_eq!(content_kind, FileContentKind::Text);
+                }
+                other => panic!("a non-UTF-8 name must still be readable locally, got {other:?}"),
             }
-            other => panic!("a non-UTF-8 name must still be readable locally, got {other:?}"),
         }
     }
 }

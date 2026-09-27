@@ -121,6 +121,18 @@ impl Recovery {
             .is_some()
     }
 
+    pub fn resolve_operation(&self, operation_id: &str) -> bool {
+        let mut blocks = self.blocks.lock().expect("recovery lock");
+        let key = blocks.iter().find_map(|(key, block)| {
+            block
+                .operation_ids
+                .iter()
+                .any(|id| id == operation_id)
+                .then(|| key.clone())
+        });
+        key.and_then(|key| blocks.remove(&key)).is_some()
+    }
+
     pub fn blocks(&self) -> Vec<WriteBlock> {
         self.blocks
             .lock()

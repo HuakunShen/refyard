@@ -790,6 +790,7 @@ async fn naming_a_state_directory_after_registering_the_writes_keeps_them() {
 /// It exists so "the batch was refused before Git was started" can be measured: a test
 /// that only asserted the problem code could not tell a refusal-before-Git from a refusal
 /// after Git ran and changed nothing.
+#[cfg(unix)]
 fn logging_git(fixture: &Fixture, log: &Path) -> LocalGit {
     let script = fixture.temp.path().join("logging-git.sh");
     let body = format!(
@@ -813,6 +814,7 @@ fn logging_git(fixture: &Fixture, log: &Path) -> LocalGit {
 /// Node reference performs too — so a test cannot assert "no Git process ran at all". It
 /// can and does assert that no *write* command ran, which is what "the batch is refused
 /// before Git is started" means for a mutation.
+#[cfg(unix)]
 fn write_invocations(log: &Path) -> usize {
     std::fs::read_to_string(log)
         .map(|text| {
@@ -824,6 +826,7 @@ fn write_invocations(log: &Path) -> usize {
 }
 
 #[tokio::test]
+#[cfg(unix)]
 async fn a_refused_batch_never_started_git_and_left_the_repository_alone() {
     // Prevents: a batch that runs `git add` for the paths it could resolve and then fails
     // on the one it could not — the index would hold half of what the user selected, and
@@ -921,6 +924,7 @@ async fn a_refused_batch_never_started_git_and_left_the_repository_alone() {
 /* ------------------------------------------------------------------ hooks */
 
 #[tokio::test]
+#[cfg(unix)]
 async fn a_failing_pre_commit_hook_is_reported_and_leaves_the_repository_unchanged() {
     // Prevents: a hook failure turned into "succeeded because git was run", or a retry
     // (or a `--no-verify`) that commits what the user's own hook refused.
@@ -976,6 +980,7 @@ async fn a_failing_pre_commit_hook_is_reported_and_leaves_the_repository_unchang
 }
 
 #[tokio::test]
+#[cfg(unix)]
 async fn a_commit_that_exists_while_git_reported_failure_is_needs_attention_not_a_failure() {
     // Prevents: a commit that landed being reported as "nothing happened" — and a commit
     // that landed being reported as a plain success when Git also complained. The JSON
@@ -1044,6 +1049,7 @@ async fn a_commit_that_exists_while_git_reported_failure_is_needs_attention_not_
 
 /// A `git` that stages for real and then dies without reporting a status, standing in for
 /// a connection that dropped after the remote command had already run.
+#[cfg(unix)]
 fn dying_git(fixture: &Fixture) -> LocalGit {
     let script = fixture.temp.path().join("dying-git.sh");
     std::fs::write(
@@ -1059,6 +1065,7 @@ fn dying_git(fixture: &Fixture) -> LocalGit {
     LocalGit::at(script, fixture.env.clone())
 }
 
+#[cfg(unix)]
 fn make_executable(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
     let mut permissions = std::fs::metadata(path).expect("exists").permissions();
@@ -1067,6 +1074,7 @@ fn make_executable(path: &Path) {
 }
 
 #[tokio::test]
+#[cfg(unix)]
 async fn a_stage_whose_git_died_after_the_index_moved_is_unknown_and_blocks_the_repository() {
     // Prevents: a dropped connection reported as "nothing happened" when the index has
     // already changed, and an automatic retry that stages on top of an outcome nobody

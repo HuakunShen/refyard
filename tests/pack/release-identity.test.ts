@@ -25,7 +25,7 @@ async function readManifest(path: string): Promise<PackageManifest> {
 describe("public release identity", () => {
   it("declares AGPLv3 and the next publishable version", async () => {
     // Prevents: a public source repository and npm artifact silently carrying the old
-    // proprietary metadata, or a tag that tries to republish immutable 0.1.1.
+    // proprietary metadata, or a stale tag that publishes a different version.
     const root = await readManifest(join(repoRoot, "package.json"));
     const published = await readManifest(
       join(repoRoot, "packages", "npm-dist", "package.json"),
@@ -33,7 +33,7 @@ describe("public release identity", () => {
 
     expect(root.license).toBe("AGPL-3.0-only");
     expect(published.license).toBe("AGPL-3.0-only");
-    expect(published.version).toBe("0.1.2");
+    expect(published.version).toBe("0.2.0");
     expect(published.private).toBeUndefined();
     expect(published.repository).toEqual({
       type: "git",

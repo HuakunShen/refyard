@@ -24,6 +24,7 @@
     type WorkingCopyGroups,
   } from "../lib/working-copy.js";
   import { cn } from "../lib/utils.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   export type WorkingCopySide = "staged" | "unstaged";
 
@@ -73,6 +74,8 @@
     onAmend,
     class: className = "",
   }: Props = $props();
+  const i18n = useGitViewI18n();
+  const { t } = i18n;
 
   const groups = $derived<WorkingCopyGroups>(
     groupWorkingCopyEntries(status?.entries ?? []),
@@ -123,14 +126,14 @@
       {
         kind: "action",
         id: "stage",
-        label: "Stage",
+        label: t("status.action.stage"),
         disabled: disabledAction || !canStage(entry),
         onSelect: () => onStage([entry.pathId]),
       },
       {
         kind: "action",
         id: "unstage",
-        label: "Unstage",
+        label: t("status.action.unstage"),
         disabled: disabledAction || !canUnstage(entry),
         onSelect: () => onUnstage([entry.pathId]),
       },
@@ -138,7 +141,7 @@
       {
         kind: "action",
         id: "discard",
-        label: "Discard…",
+        label: t("status.action.discard"),
         destructive: true,
         disabled: disabledAction || !canDiscard(entry),
         onSelect: () => askDiscard(entry),
@@ -159,6 +162,12 @@
 
   function selectEntry(entry: StatusEntry, side: WorkingCopySide): void {
     onSelect(entry, side);
+  }
+
+  function discardTitle(entry: StatusEntry | null): string {
+    return entry === null
+      ? t("working.discardPath")
+      : t("working.discardQuestion").replace("{path}", () => entry.displayPath);
   }
 </script>
 
@@ -182,18 +191,18 @@
       {#if conflicts.length > 0}
         <Badge tone="danger" class="gap-1 text-[10px]">
           <AlertTriangle class="size-3" />
-          {conflicts.length} conflict{conflicts.length === 1 ? "" : "s"}
+          {i18n.count(conflicts.length)} {t(conflicts.length === 1 ? "working.conflictOne" : "working.conflictOther")}
         </Badge>
       {/if}
       {#if status === null}
         <span class="rounded-full border border-border/50 px-2 py-0.5">
-          Status unavailable
+          {t("working.statusUnavailable")}
         </span>
       {:else}
         <span
           class="rounded-full border border-border/50 px-2 py-0.5 font-mono"
         >
-          {status.entryCount} changed
+          {i18n.count(status.entryCount)} {t("working.changed")}
         </span>
       {/if}
     </div>
@@ -206,14 +215,14 @@
       data-testid="working-copy-conflict-warning"
     >
       <AlertTriangle class="mt-0.5 size-3.5 shrink-0 text-destructive" />
-      <span>Resolve and stage every conflicted file before committing.</span>
+      <span>{t("working.resolveBeforeCommit")}</span>
     </div>
   {/if}
 
   <div
     class="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-2"
   >
-    {#each [{ side: "unstaged" as const, label: "Unstaged Files", entries: groups.unstaged }, { side: "staged" as const, label: "Staged Files", entries: groups.staged }] as group (group.side)}
+    {#each [{ side: "unstaged" as const, label: t("working.unstagedFiles"), entries: groups.unstaged }, { side: "staged" as const, label: t("working.stagedFiles"), entries: groups.staged }] as group (group.side)}
       <section
         class="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/40"
         data-testid={`${group.side}-files`}
@@ -228,7 +237,7 @@
             <span
               class="rounded-full bg-muted px-1.5 py-0.5 font-mono text-[10px] text-ink-faint"
             >
-              {group.entries.length}
+              {i18n.count(group.entries.length)}
             </span>
           </div>
           <Button
@@ -245,10 +254,10 @@
                 onUnstage(paths);
               }
             }}
-            aria-label={`${group.side === "unstaged" ? "Stage" : "Unstage"} all ${group.label.toLowerCase()}`}
+            aria-label={group.side === "unstaged" ? t("working.stageAllFiles") : t("working.unstageAllFiles")}
             data-testid={`${group.side}-all`}
           >
-            {group.side === "unstaged" ? "Stage all" : "Unstage all"}
+            {t(group.side === "unstaged" ? "working.stageAll" : "working.unstageAll")}
           </Button>
         </div>
 
@@ -256,11 +265,11 @@
           {#if group.entries.length === 0}
             <p class="px-2 py-4 text-center text-xs italic text-ink-faint">
               {#if status === null}
-                Waiting for status…
+                {t("working.waitingStatus")}
               {:else if group.side === "unstaged"}
-                Working tree is clean.
+                {t("working.clean")}
               {:else}
-                Nothing staged.
+                {t("working.nothingStaged")}
               {/if}
             </p>
           {:else}
@@ -303,7 +312,7 @@
                                 ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
                                 : "bg-amber-500/15 text-amber-600 dark:text-amber-400",
                             )}
-                            title="index / worktree status"
+                            title={t("staging.statusTitle")}
                           >
                             {entry.indexStatus}{entry.worktreeStatus}
                           </span>
@@ -318,14 +327,14 @@
                               tone="danger"
                               class="h-4.5 shrink-0 px-1.5 text-[10px]"
                             >
-                              conflict
+                              {t("working.conflictOne")}
                             </Badge>
                           {:else if entry.kind === "untracked"}
                             <Badge
                               tone="warn"
                               class="h-4.5 shrink-0 px-1.5 text-[10px]"
                             >
-                              untracked
+                              {t("status.kind.untracked")}
                             </Badge>
                           {/if}
                         </button>
@@ -337,8 +346,8 @@
                             class="size-6 text-ink-muted hover:text-emerald-600"
                             disabled={rowActionDisabled || !canStage(entry)}
                             onclick={() => onStage([entry.pathId])}
-                            title={`Stage ${entry.displayPath}`}
-                            aria-label={`Stage ${entry.displayPath}`}
+                            title={t("working.stagePath").replace("{path}", () => entry.displayPath)}
+                            aria-label={t("working.stagePath").replace("{path}", () => entry.displayPath)}
                             data-testid={`stage-${entry.pathId}`}
                           >
                             <Plus class="size-3.5" />
@@ -350,8 +359,8 @@
                             class="size-6 text-ink-muted hover:text-amber-600"
                             disabled={rowActionDisabled || !canUnstage(entry)}
                             onclick={() => onUnstage([entry.pathId])}
-                            title={`Unstage ${entry.displayPath}`}
-                            aria-label={`Unstage ${entry.displayPath}`}
+                            title={t("working.unstagePath").replace("{path}", () => entry.displayPath)}
+                            aria-label={t("working.unstagePath").replace("{path}", () => entry.displayPath)}
                             data-testid={`unstage-${entry.pathId}`}
                           >
                             <Minus class="size-3.5" />
@@ -377,9 +386,9 @@
       class="mb-2 flex items-center gap-2 text-xs font-semibold text-ink-muted"
     >
       <Check class="size-3.5" />
-      Commit
+      {t("commit.composer.commit")}
       {#if conflicts.length > 0}
-        <span class="font-normal text-destructive">Resolve conflicts first</span
+        <span class="font-normal text-destructive">{t("working.resolveFirst")}</span
         >
       {/if}
     </div>
@@ -409,11 +418,9 @@
 
 <ConfirmDialog
   bind:open={discardDialogOpen}
-  title={pendingDiscardEntry === null
-    ? "Discard path"
-    : `Discard ${pendingDiscardEntry.displayPath}?`}
-  description="Restore this tracked path to the index version. Refyard writes a recovery backup before changing the working tree."
-  confirmLabel="Discard path"
+  title={discardTitle(pendingDiscardEntry)}
+  description={t("working.discardDescription")}
+  confirmLabel={t("working.discardPath")}
   disabled={pendingDiscardEntry === null || disabled || busy}
   {busy}
   onConfirm={() => {

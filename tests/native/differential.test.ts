@@ -268,7 +268,10 @@ describe("native capabilities", () => {
       "history",
       "refs",
       "repositories",
+      "stashes",
       "status",
+      "submodules",
+      "worktrees",
     ]);
     expect(parsed.data.unavailable.length).toBeGreaterThan(0);
   });

@@ -170,7 +170,7 @@ async fn run_ref_write(
         Ok(plan) => plan,
         Err(error) => return invalid_payload(operation_id, error.to_string()),
     };
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };
@@ -305,7 +305,7 @@ async fn create_branch(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> Ef
         Ok(plan) => plan,
         Err(error) => return invalid_payload(operation_id, error.to_string()),
     };
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };
@@ -361,7 +361,7 @@ async fn switch_branch(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> Ef
         Ok(plan) => plan,
         Err(error) => return invalid_payload(operation_id, error.to_string()),
     };
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };
@@ -438,7 +438,7 @@ async fn create_tag(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> Effec
         Ok(plan) => plan,
         Err(error) => return invalid_payload(operation_id, error.to_string()),
     };
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };

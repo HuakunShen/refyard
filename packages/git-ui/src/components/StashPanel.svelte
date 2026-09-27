@@ -12,6 +12,7 @@
   import { Button } from "./ui/button/index.js";
   import ConfirmAction from "./ConfirmAction.svelte";
   import { cn } from "../lib/utils.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   interface StashEntry {
     readonly oid: string;
@@ -42,6 +43,7 @@
     onDrop,
     class: className = "",
   }: Props = $props();
+  const { t } = useGitViewI18n();
 
   let stashMessage = $state("");
   let includeUntracked = $state(false);
@@ -55,8 +57,8 @@
     <div class="flex items-center gap-2">
       <input
         class="min-w-0 flex-1 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-        placeholder="stash message (optional)"
-        aria-label="stash message"
+        placeholder={t("stash.messagePlaceholder")}
+        aria-label={t("stash.messageLabel")}
         bind:value={stashMessage}
         disabled={disabled || busy}
       />
@@ -71,7 +73,7 @@
         }}
         data-testid="create-stash"
       >
-        Stash
+        {t("stash.create")}
       </Button>
     </div>
     <label
@@ -80,18 +82,18 @@
       <input
         type="checkbox"
         class="size-3.5 accent-primary rounded"
-        aria-label="include untracked files"
+        aria-label={t("stash.includeUntracked")}
         bind:checked={includeUntracked}
         disabled={disabled || busy}
       />
-      include untracked files
+      {t("stash.includeUntracked")}
     </label>
   </div>
 
   {#if stashes === null}
-    <p class="text-xs text-ink-faint">No stashes loaded.</p>
+    <p class="text-xs text-ink-faint">{t("stash.notLoaded")}</p>
   {:else if stashes.length === 0}
-    <p class="text-xs text-ink-faint italic py-1">No stashes.</p>
+    <p class="text-xs text-ink-faint italic py-1">{t("stash.empty")}</p>
   {:else}
     <ul
       class="flex max-h-60 flex-col gap-1.5 overflow-y-auto pr-0.5"
@@ -127,12 +129,12 @@
               onclick={() => onApply(stash)}
               data-testid={`apply-stash-${stash.locator}`}
             >
-              Apply
+              {t("stash.apply")}
             </Button>
             <ConfirmAction
-              label="Pop"
-              confirmLabel="Pop and drop the entry"
-              description="Applies, and drops only if it applies cleanly."
+              label={t("stash.pop")}
+              confirmLabel={t("stash.popConfirm")}
+              description={t("stash.popDescription")}
               disabled={disabled || busy}
               {busy}
               onConfirm={() => onPop(stash)}
@@ -140,9 +142,9 @@
             />
             <span class="ml-auto">
               <ConfirmAction
-                label="Drop"
-                confirmLabel="Drop for good"
-                description="Removes the entry without applying it."
+                label={t("stash.drop")}
+                confirmLabel={t("stash.dropConfirm")}
+                description={t("stash.dropDescription")}
                 disabled={disabled || busy}
                 {busy}
                 onConfirm={() => onDrop(stash)}

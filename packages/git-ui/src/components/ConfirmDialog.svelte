@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Button } from "./ui/button/index.js";
   import * as Dialog from "./ui/dialog/index.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   interface Props {
     open?: boolean;
@@ -20,13 +21,14 @@
     title,
     description,
     confirmLabel,
-    cancelLabel = "Cancel",
+    cancelLabel = undefined,
     disabled = false,
     busy = false,
     destructive = true,
     onConfirm,
     "data-testid": testId = undefined,
   }: Props = $props();
+  const { t } = useGitViewI18n();
 
   function confirm(): void {
     open = false;
@@ -42,7 +44,7 @@
     </Dialog.Header>
     <Dialog.Footer>
       <Button variant="ghost" disabled={busy} onclick={() => (open = false)}>
-        {cancelLabel}
+        {cancelLabel ?? t("action.cancel")}
       </Button>
       <Button
         variant={destructive ? "destructive" : "default"}
@@ -50,7 +52,7 @@
         onclick={confirm}
         data-testid={testId === undefined ? undefined : `${testId}-confirm`}
       >
-        {busy ? "Working…" : confirmLabel}
+        {busy ? t("action.working") : confirmLabel}
       </Button>
     </Dialog.Footer>
   </Dialog.Content>

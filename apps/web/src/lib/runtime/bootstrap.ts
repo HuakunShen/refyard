@@ -34,6 +34,16 @@ import {
   isNativeWebview,
   type BackendKind,
 } from "./backend-registry.js";
+import { createXrossSessionFromConnection } from "../workbench/xross-session.svelte.js";
+
+/** The /xross route has a separate typed session; it never creates a BackendSession. */
+export function createXrossWorkbenchRuntime(loadHost?: () => Promise<unknown>) {
+  const registry = createBackendRegistry({ surface: "xross", ...(loadHost === undefined ? {} : { loadXrossHost: loadHost }) });
+  return {
+    kind: registry.kind,
+    start: async () => createXrossSessionFromConnection(await registry.connect()),
+  };
+}
 
 export interface WorkbenchStoragePorts {
   storeToken(token: string | null): void;

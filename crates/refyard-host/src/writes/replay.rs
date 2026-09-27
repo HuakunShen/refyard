@@ -169,7 +169,7 @@ async fn prepare(
     request: &EffectRequest<'_>,
     states: &[Sequencer],
 ) -> Result<(super::WriteTarget, super::WriteFacts), EffectOutcome> {
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return Err(refused(request.operation_id, problem)),
     };
@@ -882,7 +882,7 @@ async fn prepare_for_replay(
     host: &Arc<WriteHost>,
     request: &EffectRequest<'_>,
 ) -> Result<(WriteTarget, WriteFacts), EffectOutcome> {
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return Err(refused(operation_id, problem)),
     };

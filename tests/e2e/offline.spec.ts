@@ -122,9 +122,10 @@ test.describe("an offline workbench", () => {
     expect(
       await page.evaluate("navigator.serviceWorker.controller !== null"),
     ).toBe(true);
-    // Exact, or the substring match also lands on the repository rows, whose
-    // temporary fixture paths contain "refyard-fixture-".
-    await expect(page.getByText("refyard", { exact: true })).toBeVisible();
+    // The current shell opens the repository launcher when its service cannot
+    // answer; a legacy wordmark is not its identity or its offline oracle.
+    await expect(page.getByTestId("repository-launcher-panel")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Repositories" })).toBeVisible();
     // The badge reports the event stream — no live updates, because there is no service to
     // stream from — and the read that had no answer says so where the data would have been.
     await expect(page.getByTestId("connection-state")).toHaveText(

@@ -10,7 +10,7 @@
  * @param {Intl.PluralRulesOptions} [options]
  * @returns {string}
  */
-export function plural(locale, input, options) { 
+export function plural(locale, input, options) {
 	return new Intl.PluralRules(locale, options).select(Number(input))
 };
 

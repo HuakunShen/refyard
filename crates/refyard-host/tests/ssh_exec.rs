@@ -588,10 +588,11 @@ fn the_fixture_client_files_exist_and_the_key_is_private() {
         fixture.local_repo_path
     );
     let key = fixture.home.join(".ssh/id_ed25519");
-    let metadata = std::fs::metadata(&key).expect("the fixture generated a client key");
+    assert!(key.is_file(), "the fixture generated a client key");
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
+        let metadata = std::fs::metadata(&key).expect("the fixture generated a client key");
         assert_eq!(
             metadata.permissions().mode() & 0o077,
             0,

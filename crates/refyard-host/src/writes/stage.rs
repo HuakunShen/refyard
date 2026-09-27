@@ -86,7 +86,7 @@ async fn stage(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> EffectOutc
     // are resolved in the registry this worktree minted them in, and the preview tokens
     // are redeemed against freshly read content. A refusal here means no command ran and
     // the repository is exactly as it was.
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };
@@ -150,7 +150,7 @@ async fn unstage(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> EffectOu
             ),
         );
     }
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };

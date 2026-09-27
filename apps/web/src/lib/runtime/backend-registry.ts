@@ -30,10 +30,14 @@ import type {
   BackendSession,
 } from "@refyard/git-service";
 import type { HttpBackendAdapterOptions } from "@refyard/backend-http";
+import { connectXrossView, type XrossViewConnection } from "./xross.js";
 
 export type BackendKind = "http" | "tauri";
 
+export type BackendSurface = "default" | "xross";
+
 export interface BackendRegistryOptions {
+  readonly surface?: "default";
   /** Everything the HTTP adapter needs: address, fetch, and where the caller stores a bearer. */
   readonly http: HttpBackendAdapterOptions;
   /**
@@ -47,9 +51,22 @@ export interface BackendRegistryOptions {
   readonly loadNativePorts?: () => Promise<NativePorts>;
 }
 
+export interface XrossRegistryOptions {
+  /** Select the Xross-only entry explicitly; no HTTP options exist on this surface. */
+  readonly surface: "xross";
+  readonly runtime?: unknown;
+  /** Test seam for the Xross facade; production reads only `xrossRefyardV1`. */
+  readonly loadXrossHost?: () => Promise<unknown>;
+}
+
 export interface BackendRegistry {
   readonly kind: BackendKind;
   connect(options?: BackendConnectOptions): Promise<BackendSession>;
+}
+
+export interface XrossRegistry {
+  readonly kind: "xross";
+  connect(): Promise<XrossViewConnection>;
 }
 
 /**
@@ -69,9 +86,20 @@ export function isNativeWebview(runtime: unknown = globalThis): boolean {
   return Reflect.has(runtime, "__TAURI_INTERNALS__");
 }
 
-export function createBackendRegistry(
-  options: BackendRegistryOptions,
-): BackendRegistry {
+export function createBackendRegistry(options: XrossRegistryOptions): XrossRegistry;
+export function createBackendRegistry(options: BackendRegistryOptions): BackendRegistry;
+export function createBackendRegistry(options: BackendRegistryOptions | XrossRegistryOptions): BackendRegistry | XrossRegistry {
+  if (options.surface === "xross") {
+    return {
+      kind: "xross",
+      connect() {
+        const loadHost =
+          options.loadXrossHost ??
+          (() => Promise.resolve(Reflect.get(options.runtime ?? globalThis, "xrossRefyardV1")));
+        return connectXrossView(loadHost);
+      },
+    };
+  }
   if (!isNativeWebview(options.runtime)) {
     return createHttpRegistry(options);
   }

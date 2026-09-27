@@ -8,6 +8,7 @@
   import ChevronRight from "@lucide/svelte/icons/chevron-right";
   import { Badge } from "./ui/badge/index.js";
   import { cn } from "../lib/utils.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   interface Props {
     title: string;
@@ -34,6 +35,8 @@
     headerAction,
     class: className = "",
   }: Props = $props();
+  const i18n = useGitViewI18n();
+  const { t } = i18n;
 
   function toggle(): void {
     open = !open;
@@ -56,7 +59,7 @@
       onclick={toggle}
       class="flex min-w-0 flex-1 items-center gap-2 text-left cursor-pointer hover:opacity-80 transition-opacity"
       aria-expanded={open}
-      aria-label={`Toggle ${title}`}
+      aria-label={t("section.toggle").replace("{title}", () => title)}
     >
       <span class="text-ink-muted shrink-0 transition-transform duration-150">
         {#if open}
@@ -76,7 +79,7 @@
           tone={countTone}
           class="text-[10px] h-4.5 px-1.5 min-w-5 justify-center"
         >
-          {count}
+          {typeof count === "number" ? i18n.count(count) : count}
         </Badge>
       {/if}
     </button>

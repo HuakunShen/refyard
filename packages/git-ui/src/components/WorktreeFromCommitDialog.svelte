@@ -7,6 +7,7 @@
    */
   import { Button } from "./ui/button/index.js";
   import * as Dialog from "./ui/dialog/index.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   interface Props {
     open?: boolean;
@@ -26,6 +27,7 @@
     onConfirm,
     "data-testid": testId = undefined,
   }: Props = $props();
+  const { t } = useGitViewI18n();
 
   let relativeDestination = $state("");
   let branchName = $state("");
@@ -50,34 +52,32 @@
     <Dialog.Header>
       <Dialog.Title>
         {subject === null
-          ? "Create worktree from here"
-          : `Create worktree from "${subject}"?`}
+          ? t("worktreeCommit.titleHere")
+          : t("worktreeCommit.titleSubject").replace("{subject}", () => subject)}
       </Dialog.Title>
       <Dialog.Description>
-        Adds a linked worktree inside the approved root, with a new branch
-        starting at this commit. Your checked-out branch and working tree stay
-        where they are.
+        {t("worktreeCommit.description")}
       </Dialog.Description>
     </Dialog.Header>
     <div class="flex flex-col gap-3">
       <label class="flex flex-col gap-1.5 text-sm">
-        <span class="text-muted-foreground">New branch name</span>
+        <span class="text-muted-foreground">{t("worktreeCommit.branchName")}</span>
         <!-- svelte-ignore a11y_autofocus -->
         <input
           autofocus
           bind:value={branchName}
-          placeholder="branch this worktree works on"
+          placeholder={t("worktreeCommit.branchPlaceholder")}
           class="h-9 rounded-lg border border-border/60 bg-transparent px-3"
           data-testid={testId === undefined ? undefined : `${testId}-branch`}
         />
       </label>
       <label class="flex flex-col gap-1.5 text-sm">
         <span class="text-muted-foreground">
-          Worktree folder, relative to the approved root
+          {t("worktreeCommit.folder")}
         </span>
         <input
           bind:value={relativeDestination}
-          placeholder="e.g. worktrees/my-branch"
+          placeholder={t("worktreeCommit.folderPlaceholder")}
           class="h-9 rounded-lg border border-border/60 bg-transparent px-3"
           data-testid={testId === undefined
             ? undefined
@@ -87,7 +87,7 @@
     </div>
     <Dialog.Footer>
       <Button variant="ghost" disabled={busy} onclick={() => (open = false)}>
-        Cancel
+        {t("action.cancel")}
       </Button>
       <Button
         variant="default"
@@ -95,7 +95,7 @@
         onclick={confirm}
         data-testid={testId === undefined ? undefined : `${testId}-confirm`}
       >
-        {busy ? "Working…" : "Create worktree"}
+        {busy ? t("action.working") : t("worktreeCommit.confirm")}
       </Button>
     </Dialog.Footer>
   </Dialog.Content>

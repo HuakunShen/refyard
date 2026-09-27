@@ -10,33 +10,37 @@
 //! - a command with no deadline can outlive the operation that started it, and the
 //!   child that keeps running knows nothing about the session that gave up on it.
 //!
-//! `/bin/sh` is used here as the *subject* of the test, never by the runner: the
-//! runner takes a program and an argument vector and has no shell of its own.
-
 use std::path::PathBuf;
+use std::process::Command;
 use std::time::{Duration, Instant};
 
 use refyard_core::plan::{DeadlineClass, GitPlan, ProcessSpec};
 use refyard_host::process::{cancellation, run, ExecutionState, TerminationReason};
+use refyard_host::providers::local::LocalGit;
 
-fn spec(program: &str, args: &[&str]) -> ProcessSpec {
+#[path = "support/process_fixture.rs"]
+mod process_fixture;
+
+fn spec(program: impl Into<PathBuf>, args: &[&str]) -> ProcessSpec {
+    let mut env = process_fixture::runtime_environment();
+    env.push(("LC_ALL".to_string(), "C".to_string()));
     ProcessSpec {
-        program: PathBuf::from(program),
+        program: program.into(),
         argv: args.iter().map(|value| (*value).to_string()).collect(),
         stdin: Vec::new(),
         cwd: None,
-        env: vec![
-            ("PATH".to_string(), "/usr/bin:/bin".to_string()),
-            ("LC_ALL".to_string(), "C".to_string()),
-        ],
+        env,
         deadline: Duration::from_secs(5),
         stdout_limit: 1 << 20,
         stderr_limit: 1 << 16,
     }
 }
 
-fn sh(script: &str) -> ProcessSpec {
-    spec("/bin/sh", &["-c", script])
+fn fixture_child(case: &str) -> ProcessSpec {
+    spec(
+        process_fixture::program().to_path_buf(),
+        &["--runner", case],
+    )
 }
 
 #[tokio::test]
@@ -44,7 +48,7 @@ async fn closes_stdin_so_a_filter_finishes() {
     // A Git command that reads pathspecs or a commit message from stdin blocks until
     // the write end closes. Forgetting to close it turns every such command into a
     // deadline timeout.
-    let mut request = spec("/bin/cat", &[]);
+    let mut request = fixture_child("copy-stdin");
     request.stdin = b"a.txt\0b.txt\0".to_vec();
     let outcome = run(request, None).await;
     assert!(
@@ -58,12 +62,9 @@ async fn closes_stdin_so_a_filter_finishes() {
 
 #[tokio::test]
 async fn drains_both_streams_concurrently() {
-    // 128 KiB on each stream is far more than a pipe buffer. Reading one stream to
+    // More than a pipe buffer on each stream: reading one stream to
     // completion before the other deadlocks here.
-    let mut request = sh(
-        "i=0; while [ $i -lt 8192 ]; do printf 'out-%06d\\n' \"$i\"; i=$((i+1)); done; \
-         i=0; while [ $i -lt 8192 ]; do printf 'err-%06d\\n' \"$i\" 1>&2; i=$((i+1)); done",
-    );
+    let mut request = fixture_child("both-streams");
     request.stdout_limit = 1 << 20;
     request.stderr_limit = 1 << 20;
     let outcome = run(request, None).await;
@@ -81,14 +82,14 @@ async fn drains_both_streams_concurrently() {
 async fn keeps_nul_bytes_in_output() {
     // The status parser unframes NUL-terminated records. A runner that decoded or
     // normalised the stream would destroy the framing before the parser saw it.
-    let outcome = run(sh("printf 'a\\0b\\0c'"), None).await;
+    let outcome = run(fixture_child("nul-bytes"), None).await;
     assert!(outcome.succeeded());
     assert_eq!(outcome.stdout, b"a\0b\0c");
 }
 
 #[tokio::test]
 async fn truncates_at_the_limit_and_says_the_output_is_incomplete() {
-    let mut request = sh("i=0; while [ $i -lt 1000 ]; do printf '0123456789'; i=$((i+1)); done");
+    let mut request = fixture_child("large-output");
     request.stdout_limit = 1024;
     let outcome = run(request, None).await;
     assert_eq!(outcome.stdout.len(), 1024);
@@ -99,7 +100,9 @@ async fn truncates_at_the_limit_and_says_the_output_is_incomplete() {
 
 #[tokio::test]
 async fn reports_a_missing_program_as_not_started() {
-    let outcome = run(spec("/nonexistent/refyard-git", &["--version"]), None).await;
+    let temp = tempfile::tempdir().expect("missing program directory");
+    let missing_program = temp.path().join("nonexistent-refyard-git");
+    let outcome = run(spec(missing_program, &["--version"]), None).await;
     assert_eq!(outcome.state, ExecutionState::NotStarted);
     assert_eq!(outcome.exit_code, None);
     assert!(!outcome.succeeded());
@@ -107,7 +110,7 @@ async fn reports_a_missing_program_as_not_started() {
 
 #[tokio::test]
 async fn reports_the_exit_code_of_a_failing_command() {
-    let outcome = run(sh("printf 'boom' 1>&2; exit 3"), None).await;
+    let outcome = run(fixture_child("exit-3"), None).await;
     assert_eq!(outcome.state, ExecutionState::Completed);
     assert_eq!(outcome.exit_code, Some(3));
     assert!(!outcome.succeeded());
@@ -116,7 +119,7 @@ async fn reports_the_exit_code_of_a_failing_command() {
 
 #[tokio::test]
 async fn kills_a_process_that_exceeds_its_deadline() {
-    let mut request = spec("/bin/sleep", &["30"]);
+    let mut request = fixture_child("sleep");
     request.deadline = Duration::from_millis(300);
     let started = Instant::now();
     let outcome = run(request, None).await;
@@ -131,7 +134,7 @@ async fn kills_a_process_that_exceeds_its_deadline() {
 #[tokio::test]
 async fn stops_a_running_process_when_the_session_is_released() {
     let (handle, signal) = cancellation();
-    let mut request = spec("/bin/sleep", &["30"]);
+    let mut request = fixture_child("sleep");
     request.deadline = Duration::from_secs(30);
     let started = Instant::now();
     let runner = tokio::spawn(async move { run(request, Some(signal)).await });
@@ -147,12 +150,14 @@ async fn stops_a_running_process_when_the_session_is_released() {
 async fn leaves_no_child_running_after_a_timeout() {
     // The failure this prevents: the user closes the window, the operation reports a
     // timeout, and a `git` (or `ssh`) process keeps running against the repository.
-    let pid_file = tempfile::NamedTempFile::new().expect("temp file");
-    let pid_path = pid_file.path().to_string_lossy().to_string();
-    drop(pid_file);
-
-    let mut request = sh(&format!("echo $$ > '{pid_path}'; exec sleep 30"));
-    request.deadline = Duration::from_millis(400);
+    let temp = tempfile::tempdir().expect("pid fixture directory");
+    let pid_path = temp.path().join("child-pid");
+    let mut request = fixture_child("write-pid-and-sleep");
+    request.env.push((
+        "REFYARD_TEST_PID_PATH".to_string(),
+        pid_path.to_string_lossy().into_owned(),
+    ));
+    request.deadline = Duration::from_millis(800);
     let outcome = run(request, None).await;
     assert_eq!(outcome.state, ExecutionState::Interrupted);
 
@@ -162,17 +167,15 @@ async fn leaves_no_child_running_after_a_timeout() {
         .to_string();
     assert!(!pid.is_empty());
 
-    // `kill -0` succeeding means the process still exists. The child was replaced by
-    // `exec`, so the pid the runner killed is this one.
-    let status = std::process::Command::new("/bin/kill")
-        .args(["-0", &pid])
-        .status()
-        .expect("kill -0 should run");
+    // The runner must terminate and reap the child before returning.
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while process_fixture::process_is_running(&pid) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(25));
+    }
     assert!(
-        !status.success(),
+        !process_fixture::process_is_running(&pid),
         "pid {pid} is still alive after the run returned"
     );
-    let _ = std::fs::remove_file(&pid_path);
 }
 
 #[tokio::test]
@@ -181,8 +184,12 @@ async fn a_git_plan_runs_through_the_same_runner() {
     // a deadline class. This is the seam every Git command in the host goes through.
     let plan = GitPlan::new(vec!["--version".to_string()]);
     assert_eq!(plan.deadline_class, DeadlineClass::Read);
+    let git = LocalGit::discover()
+        .expect("git is installed on this machine")
+        .program()
+        .to_path_buf();
     let mut request = spec(
-        "/usr/bin/git",
+        git,
         &plan.argv.iter().map(String::as_str).collect::<Vec<_>>(),
     );
     request.deadline = Duration::from_secs(plan.deadline_class.seconds());
@@ -193,4 +200,64 @@ async fn a_git_plan_runs_through_the_same_runner() {
         String::from_utf8_lossy(&outcome.stderr)
     );
     assert!(String::from_utf8_lossy(&outcome.stdout).starts_with("git version"));
+}
+
+#[test]
+fn native_ssh_fixture_maps_posix_paths_and_preserves_quoted_words() {
+    // The Windows transport double must keep the service's remote path POSIX-shaped,
+    // then map it to this temporary repository only inside the test process.
+    let temp = tempfile::tempdir().expect("fixture directory");
+    let repository = temp.path().join("repo");
+    std::fs::create_dir_all(&repository).expect("repository directory");
+    let git = LocalGit::discover()
+        .expect("git is installed on this machine")
+        .program()
+        .to_path_buf();
+    let initialized = Command::new(&git)
+        .args(["init", "--quiet", "--initial-branch=main"])
+        .current_dir(&repository)
+        .output()
+        .expect("initialize the fixture repository");
+    assert!(
+        initialized.status.success(),
+        "git init failed: {}",
+        String::from_utf8_lossy(&initialized.stderr)
+    );
+    let repository = repository
+        .canonicalize()
+        .expect("canonical fixture repository path");
+
+    let helper = process_fixture::program();
+    let quoted_probe = Command::new(helper)
+        .args([
+            "-o",
+            "BatchMode=yes",
+            "scripted-host",
+            "printf %s 'refyard fixture: a'\"'\"'b c$d'",
+        ])
+        .output()
+        .expect("run the scripted transport double");
+    assert!(quoted_probe.status.success());
+    assert_eq!(quoted_probe.stdout, b"refyard fixture: a'b c$d");
+
+    let layout = Command::new(helper)
+        .args([
+            "-o",
+            "BatchMode=yes",
+            "scripted-host",
+            "git -C '/repo' '--no-optional-locks' 'rev-parse' '--path-format=absolute' '--show-toplevel'",
+        ])
+        .env(
+            "REFYARD_FIXTURE_REPO",
+            repository.to_string_lossy().as_ref(),
+        )
+        .env("REFYARD_FIXTURE_GIT", &git)
+        .output()
+        .expect("run the mapped remote Git command");
+    assert!(
+        layout.status.success(),
+        "transport fixture failed: {}",
+        String::from_utf8_lossy(&layout.stderr)
+    );
+    assert_eq!(layout.stdout, b"/repo\n");
 }

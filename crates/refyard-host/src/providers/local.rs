@@ -27,6 +27,8 @@ pub const STDERR_DIAGNOSTIC_MAX_BYTES: usize = 256 * 1024;
 pub struct LocalGit {
     program: PathBuf,
     env: Vec<(String, String)>,
+    stdout_limit: usize,
+    stderr_limit: usize,
 }
 
 impl LocalGit {
@@ -36,16 +38,19 @@ impl LocalGit {
     /// change to `PATH` (or a malicious directory earlier in it) cannot swap the
     /// program between two commands of one session.
     pub fn discover() -> Result<Self, String> {
-        let path = std::env::var("PATH").unwrap_or_default();
-        for directory in path.split(':') {
-            if directory.is_empty() {
+        let path = std::env::var_os("PATH").unwrap_or_default();
+        let executable = if cfg!(windows) { "git.exe" } else { "git" };
+        for directory in std::env::split_paths(&path) {
+            if directory.as_os_str().is_empty() {
                 continue;
             }
-            let candidate = Path::new(directory).join("git");
+            let candidate = directory.join(executable);
             if candidate.is_file() {
                 return Ok(Self {
                     program: candidate,
                     env: git_environment(),
+                    stdout_limit: STRUCTURED_STDOUT_MAX_BYTES,
+                    stderr_limit: STDERR_DIAGNOSTIC_MAX_BYTES,
                 });
             }
         }
@@ -57,7 +62,15 @@ impl LocalGit {
         Self {
             program: program.into(),
             env,
+            stdout_limit: STRUCTURED_STDOUT_MAX_BYTES,
+            stderr_limit: STDERR_DIAGNOSTIC_MAX_BYTES,
         }
+    }
+
+    pub fn with_output_limits(mut self, stdout_limit: usize, stderr_limit: usize) -> Self {
+        self.stdout_limit = stdout_limit;
+        self.stderr_limit = stderr_limit;
+        self
     }
 
     pub fn program(&self) -> &Path {
@@ -102,8 +115,10 @@ impl LocalGit {
             cwd: Some(directory.to_path_buf()),
             env: self.env.clone(),
             deadline: Duration::from_secs(plan.deadline_class.seconds()),
-            stdout_limit: stdout_limit.unwrap_or(STRUCTURED_STDOUT_MAX_BYTES),
-            stderr_limit: STDERR_DIAGNOSTIC_MAX_BYTES,
+            stdout_limit: stdout_limit.map_or(self.stdout_limit, |requested| {
+                requested.min(self.stdout_limit)
+            }),
+            stderr_limit: self.stderr_limit,
         };
         run(spec, cancel).await
     }
@@ -140,6 +155,29 @@ mod tests {
             String::from_utf8_lossy(&outcome.stderr)
         );
         assert!(String::from_utf8_lossy(&outcome.stdout).starts_with("git version"));
+    }
+
+    #[tokio::test]
+    async fn configured_output_caps_apply_even_when_a_call_requests_more() {
+        let helper = if cfg!(windows) { "cmd.exe" } else { "/bin/sh" };
+        let git = LocalGit::at(helper, Vec::new()).with_output_limits(8, 7);
+        let plan = if cfg!(windows) {
+            GitPlan::read(vec![
+                "/C".to_string(),
+                "@for /L %i in (1,1,30) do @<nul set /p =x & echo err 1>&2".to_string(),
+            ])
+        } else {
+            GitPlan::read(vec![
+                "-c".to_string(),
+                "printf 12345678901234567890; printf 12345678901234567890 >&2".to_string(),
+            ])
+        };
+        let outcome = git
+            .run_with_limits(&std::env::temp_dir(), &plan, None, Some(1024))
+            .await;
+        assert!(outcome.stdout.len() <= 8);
+        assert!(outcome.stderr.len() <= 7);
+        assert!(!outcome.output_complete);
     }
 
     #[tokio::test]

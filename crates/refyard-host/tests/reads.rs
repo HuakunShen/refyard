@@ -16,6 +16,7 @@ use std::process::Command;
 use refyard_contract::diff::{DiffKind, DiffQuery};
 use refyard_contract::history::{HistoryQuery, Topology};
 use refyard_contract::problem::ProblemCode;
+use refyard_core::parse::worktree::parse_worktree_list;
 use refyard_host::paths::PathRegistry;
 use refyard_host::providers::local::LocalGit;
 use refyard_host::providers::GitExecutor;
@@ -54,9 +55,13 @@ impl Fixture {
     }
 
     fn git(&self, args: &[&str]) -> Vec<u8> {
+        self.git_at(&self.repo, args)
+    }
+
+    fn git_at(&self, directory: &Path, args: &[&str]) -> Vec<u8> {
         let output = Command::new(git_program())
             .args(args)
-            .current_dir(&self.repo)
+            .current_dir(directory)
             .env_clear()
             .envs(
                 self.env
@@ -669,6 +674,57 @@ async fn a_paths_read_of_a_linked_worktree_uses_its_own_git_directory() {
     assert_eq!(snapshot.head.branch_name.as_deref(), Some("feature"));
     assert_eq!(snapshot.entries.len(), 1);
     assert_eq!(snapshot.entries[0].worktree_status, "M");
+}
+
+#[tokio::test]
+async fn git_worktree_porcelain_z_parses_primary_and_detached_linked_worktrees() {
+    let fixture = Fixture::new();
+    fixture.write("README.md", "seed\n");
+    fixture.commit_all("seed");
+
+    let linked = fixture.scratch.join("linked worktree");
+    fixture.git(&[
+        "worktree",
+        "add",
+        "--detach",
+        "--quiet",
+        linked.to_str().expect("UTF-8 fixture path"),
+        "HEAD",
+    ]);
+    let bytes = fixture.git(&["worktree", "list", "--porcelain", "-z"]);
+    let worktrees = parse_worktree_list(&bytes).expect("Git's actual porcelain output parses");
+    let primary_path = fixture.git(&["rev-parse", "--show-toplevel"]);
+    let primary_path = primary_path.strip_suffix(b"\n").expect("Git newline");
+    let linked_path = fixture.git_at(&linked, &["rev-parse", "--show-toplevel"]);
+    let linked_path = linked_path.strip_suffix(b"\n").expect("Git newline");
+
+    assert_eq!(worktrees.len(), 2);
+    assert!(
+        worktrees
+            .iter()
+            .any(|worktree| worktree.path_bytes == primary_path),
+        "expected primary path {:?}, got {:?}",
+        primary_path,
+        worktrees
+            .iter()
+            .map(|worktree| worktree.path_bytes.as_slice())
+            .collect::<Vec<_>>()
+    );
+    let primary = worktrees
+        .iter()
+        .find(|worktree| worktree.path_bytes == primary_path)
+        .expect("primary worktree is present");
+    assert_eq!(primary.branch_ref.as_deref(), Some("refs/heads/main"));
+    assert!(!primary.detached);
+    assert_eq!(primary.head_oid.as_deref(), Some(fixture.head().as_str()));
+
+    let linked = worktrees
+        .iter()
+        .find(|worktree| worktree.path_bytes == linked_path)
+        .expect("linked worktree is present despite the space in its path");
+    assert!(linked.detached);
+    assert_eq!(linked.branch_ref, None);
+    assert_eq!(linked.head_oid.as_deref(), Some(fixture.head().as_str()));
 }
 
 #[tokio::test]

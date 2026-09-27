@@ -11,6 +11,7 @@
   import * as Dialog from "./ui/dialog/index.js";
   import Check from "@lucide/svelte/icons/check";
   import CircleDashed from "@lucide/svelte/icons/circle-dashed";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   interface Props {
     open?: boolean;
@@ -32,6 +33,7 @@
     onConfirm,
     "data-testid": testId = undefined,
   }: Props = $props();
+  const { t } = useGitViewI18n();
 
   let mode = $state<"soft" | "mixed">("mixed");
 
@@ -42,13 +44,13 @@
   }[] = [
     {
       id: "mixed",
-      label: "Mixed — unstage changes",
-      note: "Moves the branch and resets the index to the commit. Staged work becomes unstaged; every file keeps its content.",
+      label: t("reset.mixedLabel"),
+      note: t("reset.mixedNote"),
     },
     {
       id: "soft",
-      label: "Soft — keep everything staged",
-      note: "Moves the branch and leaves the index exactly as it is, so the same changes stay staged on top of the new head.",
+      label: t("reset.softLabel"),
+      note: t("reset.softNote"),
     },
   ];
 
@@ -63,14 +65,13 @@
     <Dialog.Header>
       <Dialog.Title>
         {subject === null
-          ? "Reset branch to here"
+          ? t("reset.titleHere")
           : branchName === null
-            ? `Reset branch to "${subject}"?`
-            : `Reset ${branchName} to "${subject}"?`}
+            ? t("reset.titleSubject").replace("{subject}", () => subject)
+            : t("reset.titleNamed").replace("{branch}", () => branchName).replace("{subject}", () => subject)}
       </Dialog.Title>
       <Dialog.Description>
-        Moves the checked-out branch to this commit. The working tree is never
-        touched and no content is lost.
+        {t("reset.description")}
       </Dialog.Description>
     </Dialog.Header>
     <div
@@ -112,7 +113,7 @@
     </div>
     <Dialog.Footer>
       <Button variant="ghost" disabled={busy} onclick={() => (open = false)}>
-        Cancel
+        {t("action.cancel")}
       </Button>
       <Button
         variant="destructive"
@@ -120,7 +121,7 @@
         onclick={confirm}
         data-testid={testId === undefined ? undefined : `${testId}-confirm`}
       >
-        {busy ? "Working…" : "Reset branch"}
+        {busy ? t("action.working") : t("reset.confirm")}
       </Button>
     </Dialog.Footer>
   </Dialog.Content>

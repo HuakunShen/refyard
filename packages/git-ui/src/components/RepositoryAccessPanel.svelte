@@ -10,6 +10,7 @@
   import { Badge } from "./ui/badge/index.js";
   import { Button } from "./ui/button/index.js";
   import { cn } from "../lib/utils.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   export interface ManagedRepository {
     readonly repositoryId: string;
@@ -36,6 +37,7 @@
     onRevoke,
     class: className = "",
   }: Props = $props();
+  const { t } = useGitViewI18n();
 
   let path = $state("");
   const locked = $derived(disabled || busy);
@@ -56,19 +58,18 @@
 >
   <div class="flex items-center gap-2">
     <h3 class="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-      Managed repositories
+      {t("repository.access.title")}
     </h3>
-    <Badge tone="muted">approval required</Badge>
+    <Badge tone="muted">{t("repository.access.approval")}</Badge>
   </div>
   <p class="text-xs text-ink-faint">
-    Add one exact absolute path you chose. Refyard never scans this machine for
-    repositories.
+    {t("repository.access.description")}
   </p>
   <div class="flex gap-2">
     <input
       class="min-w-0 flex-1 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-      placeholder="/absolute/path/to/repository"
-      aria-label="repository path to approve"
+      placeholder={t("repository.access.pathPlaceholder")}
+      aria-label={t("repository.access.pathLabel")}
       bind:value={path}
       disabled={locked}
       data-testid="repository-register-path"
@@ -80,7 +81,7 @@
       onclick={submit}
       data-testid="repository-register"
     >
-      {busy ? "Working…" : "Approve"}
+      {busy ? t("action.working") : t("repository.access.approve")}
     </Button>
   </div>
 
@@ -107,7 +108,7 @@
             onclick={() => onRevoke(repository.repositoryId)}
             data-testid={`repository-revoke-${repository.repositoryId}`}
           >
-            Revoke
+            {t("repository.access.revoke")}
           </Button>
         </li>
       {/each}

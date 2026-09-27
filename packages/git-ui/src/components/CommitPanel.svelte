@@ -14,6 +14,7 @@
   import { Button } from "./ui/button/index.js";
   import ConfirmAction from "./ConfirmAction.svelte";
   import { cn } from "../lib/utils.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   interface Props {
     stagedCount: number;
@@ -43,6 +44,8 @@
     onAmend,
     class: className = "",
   }: Props = $props();
+  const i18n = useGitViewI18n();
+  const { t } = i18n;
 
   const trimmed = $derived(draft.trim());
   const commitReady = $derived(
@@ -74,14 +77,14 @@
       class="flex items-center gap-1.5 text-xs font-medium text-ink-muted"
       for="commit-message"
     >
-      <span>Commit message</span>
+      <span>{t("commit.composer.message")}</span>
       <kbd
         class="rounded border border-border/60 bg-muted/40 px-1 py-0.5 text-[10px] font-sans text-ink-faint"
         >⌘↵</kbd
       >
     </label>
     <span class="text-[11px] font-mono text-ink-faint">
-      {stagedCount} staged path{stagedCount === 1 ? "" : "s"}
+      {i18n.plural(stagedCount, "commit.composer.stagedOne", "commit.composer.stagedOther")}
     </span>
   </div>
 
@@ -89,7 +92,7 @@
     id="commit-message"
     data-testid="commit-message"
     class="min-h-16 w-full rounded-lg border border-input bg-transparent px-2.5 py-1.5 font-mono text-xs shadow-2xs outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50 transition-all placeholder:text-ink-faint"
-    placeholder="What changed, and why"
+    placeholder={t("commit.composer.placeholder")}
     value={draft}
     oninput={handleInput}
     onkeydown={handleKeydown}
@@ -104,13 +107,13 @@
       data-testid="commit-button"
     >
       <GitCommit class="size-3.5" />
-      Commit
+      {t("commit.composer.commit")}
     </Button>
 
     <ConfirmAction
-      label="Amend…"
-      confirmLabel="Rewrite the tip commit"
-      description="Amend rewrites the last commit. This version performs no follow-up push."
+      label={t("commit.composer.amend")}
+      confirmLabel={t("commit.composer.amendConfirm")}
+      description={t("commit.composer.amendDescription")}
       disabled={disabled || busy || !canAmend || trimmed.length === 0}
       {busy}
       onConfirm={() => onAmend(draft)}
@@ -118,8 +121,8 @@
     />
 
     <ConfirmAction
-      label="Amend, keep message"
-      confirmLabel="Rewrite the tip, same message"
+      label={t("commit.composer.amendKeep")}
+      confirmLabel={t("commit.composer.amendKeepConfirm")}
       disabled={disabled || busy || !canAmend}
       {busy}
       onConfirm={() => onAmend(null)}

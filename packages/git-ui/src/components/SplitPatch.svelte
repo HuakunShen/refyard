@@ -8,6 +8,7 @@
     type SplitPatchHunk,
   } from "../lib/split-patch.js";
   import { cn } from "../lib/utils.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   interface Props {
     hunks: readonly PatchHunk[];
@@ -15,6 +16,8 @@
   }
 
   let { hunks, class: className = "" }: Props = $props();
+  const i18n = useGitViewI18n();
+  const { t } = i18n;
 
   const splitHunks = $derived(buildSplitPatch(hunks));
 
@@ -66,7 +69,7 @@
   data-testid="split-patch"
 >
   {#if splitHunks.length === 0}
-    <p class="px-3 py-2 text-xs text-ink-muted">No line changes.</p>
+    <p class="px-3 py-2 text-xs text-ink-muted">{t("splitPatch.empty")}</p>
   {:else}
     {#each splitHunks as hunk, hunkIndex}
       {@const columns = gridTemplate(hunk)}
@@ -84,17 +87,17 @@
           <div
             class="min-w-[52rem] font-mono text-xs"
             role="table"
-            aria-label={`Side-by-side diff ${hunk.header}`}
+            aria-label={t("splitPatch.label").replace("{header}", () => hunk.header)}
           >
             <div
               class="grid border-b border-border/30 bg-muted/25 text-[10px] font-semibold tracking-wider text-ink-faint uppercase"
               style={`grid-template-columns: ${columns}`}
               role="row"
             >
-              <span class="px-2 py-1 text-right" role="columnheader">Old</span>
-              <span class="px-2 py-1" role="columnheader">Before</span>
-              <span class="px-2 py-1 text-right" role="columnheader">New</span>
-              <span class="px-2 py-1" role="columnheader">After</span>
+              <span class="px-2 py-1 text-right" role="columnheader">{t("splitPatch.old")}</span>
+              <span class="px-2 py-1" role="columnheader">{t("splitPatch.before")}</span>
+              <span class="px-2 py-1 text-right" role="columnheader">{t("splitPatch.new")}</span>
+              <span class="px-2 py-1" role="columnheader">{t("splitPatch.after")}</span>
             </div>
 
             {#each hunk.rows as row, rowIndex}
@@ -111,8 +114,8 @@
                   )}
                   role="cell"
                   aria-label={row.old.lineNumber === null
-                    ? "No old line"
-                    : `Old line ${row.old.lineNumber}`}
+                    ? t("splitPatch.noOldLine")
+                    : t("splitPatch.oldLine").replace("{number}", i18n.count(row.old.lineNumber))}
                 >
                   {row.old.lineNumber ?? ""}
                 </span>
@@ -129,7 +132,7 @@
                       >{marker(row.old.kind)}</span
                     >{row.old.text}{#if row.old.noNewline}<span
                         class="ml-2 text-[10px] italic text-ink-faint"
-                        >⏎ no newline</span
+                        >⏎ {t("splitPatch.noNewline")}</span
                       >{/if}
                   {/if}
                 </span>
@@ -140,8 +143,8 @@
                   )}
                   role="cell"
                   aria-label={row.new.lineNumber === null
-                    ? "No new line"
-                    : `New line ${row.new.lineNumber}`}
+                    ? t("splitPatch.noNewLine")
+                    : t("splitPatch.newLine").replace("{number}", i18n.count(row.new.lineNumber))}
                 >
                   {row.new.lineNumber ?? ""}
                 </span>
@@ -158,7 +161,7 @@
                       >{marker(row.new.kind)}</span
                     >{row.new.text}{#if row.new.noNewline}<span
                         class="ml-2 text-[10px] italic text-ink-faint"
-                        >⏎ no newline</span
+                        >⏎ {t("splitPatch.noNewline")}</span
                       >{/if}
                   {/if}
                 </span>

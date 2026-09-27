@@ -88,7 +88,7 @@ pub async fn run(options: ServeOptions) -> i32 {
     // The approved repositories are the grant: what was named on the command line is
     // what a paired session may reach. Repositories registered later through the API
     // extend the registering session's own grants, never everyone's.
-    let mut allowed_root_ids = Vec::new();
+    let mut allowed_root_ids: Vec<String> = Vec::new();
     let mut repository_ids = Vec::new();
     for path in &options.paths {
         // The service answers with the whole registry, and a person's spelling of the
@@ -111,9 +111,11 @@ pub async fn run(options: ServeOptions) -> i32 {
                         repository_ids.push(record.repository_id.clone());
                     }
                     if !before.contains(&record.repository_id)
-                        && !allowed_root_ids.contains(&record.allowed_root_id)
+                        && !allowed_root_ids
+                            .iter()
+                            .any(|id| id == record.allowed_root_id.as_str())
                     {
-                        allowed_root_ids.push(record.allowed_root_id.clone());
+                        allowed_root_ids.push(record.allowed_root_id.as_str().to_string());
                     }
                 }
             }

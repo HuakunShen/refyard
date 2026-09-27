@@ -20,8 +20,8 @@ pub mod recovery;
 
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 use refyard_contract::problem::{Problem, ProblemCode};
 use refyard_contract::reads::{
@@ -33,7 +33,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::clock::now_millis;
 use crate::events::EventSink;
-use crate::jobs::journal::{canonical_payload_digest, EffectOutcome, Journal, JournalRecord};
+use crate::jobs::journal::{
+    canonical_payload_digest, ClientRequestAdmission, EffectOutcome, Journal, JournalRecord,
+};
 use crate::jobs::queue::{EnqueueRefusal, Queue, QueueLimits, QueueMode, QueueTicket};
 use crate::jobs::recovery::{Recovery, WriteBlock};
 use crate::paths::base36;
@@ -1012,6 +1014,14 @@ pub struct SubmitResult {
     pub duplicate: bool,
 }
 
+/// A private-by-actor result for recovering a submit response that may have been lost.
+/// `Unknown` intentionally does not distinguish missing, pruned, or another actor's id.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ClientRequestLookup {
+    Found(Box<OperationRecord>),
+    Unknown,
+}
+
 /// The write path: journal, queue, effects and the rules that join them.
 pub struct MutationEngine {
     journal: Arc<Journal>,
@@ -1019,6 +1029,11 @@ pub struct MutationEngine {
     effects: Vec<Box<dyn MutationEffect>>,
     queue: Queue<MutationRequest>,
     next_operation: AtomicU64,
+    closed: AtomicBool,
+    /// Spawned tickets retain the engine (and journal) after their queue slot is released.
+    /// This lock orders task registration against shutdown closing the queue.
+    tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
+    shutdown_gate: tokio::sync::Mutex<()>,
     /// Where state changes are announced. `None` is an engine nobody subscribed to —
     /// tests, and a host that has not wired its event transport — and it changes nothing
     /// about what is journalled.
@@ -1048,13 +1063,28 @@ impl MutationEngine {
         effects: Vec<Box<dyn MutationEffect>>,
         events: Option<Arc<EventSink>>,
     ) -> Arc<Self> {
-        let next_operation = next_operation_seed(&journal.records());
+        Self::with_event_sink_and_limits(journal, recovery, effects, events, QueueLimits::default())
+    }
+
+    pub fn with_event_sink_and_limits(
+        journal: Arc<Journal>,
+        recovery: Arc<Recovery>,
+        effects: Vec<Box<dyn MutationEffect>>,
+        events: Option<Arc<EventSink>>,
+        queue_limits: QueueLimits,
+    ) -> Arc<Self> {
+        let next_operation = journal
+            .operation_id_high_water()
+            .max(next_operation_seed(&journal.records()));
         Arc::new(Self {
             journal,
             recovery,
             effects,
-            queue: Queue::new(QueueLimits::default()),
+            queue: Queue::new(queue_limits),
             next_operation: AtomicU64::new(next_operation),
+            closed: AtomicBool::new(false),
+            tasks: Mutex::new(Vec::new()),
+            shutdown_gate: tokio::sync::Mutex::new(()),
             events,
         })
     }
@@ -1098,6 +1128,35 @@ impl MutationEngine {
         &self.recovery
     }
 
+    /// Stops accepting new work, durably cancels queued tickets, and waits for running
+    /// effects to reach their own observed outcome. Running effects are never relabelled
+    /// cancelled: they may already have changed the repository.
+    pub async fn shutdown(&self) -> Result<(), Problem> {
+        let _shutdown = self.shutdown_gate.lock().await;
+        let (pending, tasks) = {
+            let mut tasks = self.tasks.lock().expect("mutation tasks lock");
+            self.closed.store(true, Ordering::SeqCst);
+            let pending = self.queue.close();
+            (pending, std::mem::take(&mut *tasks))
+        };
+        let mut cancellation_error = None;
+        for ticket in pending {
+            match self.journal.mark_cancelled(&ticket.id, now_millis()) {
+                Ok(record) => self.publish(&record),
+                Err(problem) => {
+                    cancellation_error.get_or_insert(problem);
+                }
+            }
+        }
+        for task in tasks {
+            // A panicked effect leaves its journal record for recovery; its queue slot
+            // is still released by QueueSlot. The join also waits for the task's Arc
+            // to drop, so close can release the journal lock before it returns.
+            let _ = task.await;
+        }
+        cancellation_error.map_or(Ok(()), Err)
+    }
+
     /// Submits one request, journalling it before it may run.
     ///
     /// The facts the write path cannot read on its own come from `source`, which the
@@ -1109,25 +1168,20 @@ impl MutationEngine {
         request: MutationRequest,
         source: &dyn PreconditionSource,
     ) -> Result<SubmitResult, Problem> {
+        if self.closed.load(Ordering::SeqCst) {
+            return Err(Problem::new(
+                ProblemCode::Unavailable,
+                "this host is closing and accepts no new mutations",
+            ));
+        }
         let digest = canonical_payload_digest(&request);
 
         // Idempotency: the same client request id and the same payload is the same
         // operation, and the answer is the record that already exists.
-        if let Some(existing) = self
-            .journal
-            .find_client_request(actor, &request.client_request_id)
+        if let Some(existing) =
+            self.existing_submission(actor, &request.client_request_id, &digest)?
         {
-            if existing.payload_digest != digest {
-                return Err(Problem::new(
-                    ProblemCode::IdempotencyConflict,
-                    "that client request id was already used with a different payload; use a new id for the changed request",
-                )
-                .for_operation(existing.operation_id));
-            }
-            return Ok(SubmitResult {
-                record: existing.to_operation_record(),
-                duplicate: true,
-            });
+            return Ok(existing);
         }
 
         let kind = request.operation.kind();
@@ -1140,15 +1194,42 @@ impl MutationEngine {
             ));
         }
 
-        let write_key = source.write_key(&request)?;
+        let write_key = match source.write_key(&request) {
+            Ok(write_key) => write_key,
+            Err(problem) => {
+                return self.existing_submission_or_problem(
+                    actor,
+                    &request.client_request_id,
+                    &digest,
+                    problem,
+                )
+            }
+        };
 
         // Freshness and the write block. The block is filled in here from the recovery —
         // never from the source — so an effect cannot be accepted for a repository that is
         // blocked because a source forgot to look.
         let block = self.recovery.block_for(&write_key);
-        let mut context = source.context(&request).await?;
+        let mut context = match source.context(&request).await {
+            Ok(context) => context,
+            Err(problem) => {
+                return self.existing_submission_or_problem(
+                    actor,
+                    &request.client_request_id,
+                    &digest,
+                    problem,
+                )
+            }
+        };
         context.restart_block = block.as_ref().map(restart_block_of);
-        check_preconditions(&context)?;
+        if let Err(problem) = check_preconditions(&context) {
+            return self.existing_submission_or_problem(
+                actor,
+                &request.client_request_id,
+                &digest,
+                problem,
+            );
+        }
 
         let operation_id = format!(
             "op_{}",
@@ -1167,7 +1248,7 @@ impl MutationEngine {
             accepted_at_ms: now_millis(),
             started_at_ms: None,
             finished_at_ms: None,
-            payload_digest: digest,
+            payload_digest: digest.clone(),
             write_key: write_key.clone(),
             result: None,
             problem: None,
@@ -1176,15 +1257,31 @@ impl MutationEngine {
         };
         // Persist `accepted` before the operation may run. A failure here means the
         // operation is refused, not accepted-and-forgotten.
-        if let Err(problem) = self.journal.append(accepted) {
-            return Err(Problem::new(
-                ProblemCode::ResourceBusy,
-                format!(
-                    "the operation journal could not record this request: {}",
-                    problem.message
-                ),
-            )
-            .retryable());
+        match self.journal.admit(accepted, now_millis()) {
+            Ok(ClientRequestAdmission::Appended(_)) => {}
+            Ok(ClientRequestAdmission::Existing(existing)) => {
+                if existing.payload_digest != digest {
+                    return Err(Problem::new(
+                        ProblemCode::IdempotencyConflict,
+                        "that client request id was already used with a different payload; use a new id for the changed request",
+                    )
+                    .for_operation(existing.operation_id));
+                }
+                return Ok(SubmitResult {
+                    record: existing.to_operation_record(),
+                    duplicate: true,
+                });
+            }
+            Err(problem) => {
+                return Err(Problem::new(
+                    ProblemCode::ResourceBusy,
+                    format!(
+                        "the operation journal could not record this request: {}",
+                        problem.message
+                    ),
+                )
+                .retryable());
+            }
         }
         if let Some(record) = self.journal.get(&operation_id) {
             self.publish(&record);
@@ -1197,6 +1294,15 @@ impl MutationEngine {
             QueueMode::Write,
             request,
         ) {
+            if refusal == EnqueueRefusal::Closed {
+                let cancelled = self.journal.mark_cancelled(&operation_id, now_millis())?;
+                self.publish(&cancelled);
+                return Err(Problem::new(
+                    ProblemCode::Cancelled,
+                    "the host closed before this operation started",
+                )
+                .for_operation(operation_id));
+            }
             let (code, message, retryable) = match refusal {
                 EnqueueRefusal::QueueFull => (
                     ProblemCode::ResourceBusy,
@@ -1208,6 +1314,7 @@ impl MutationEngine {
                     "that operation is already queued".to_string(),
                     false,
                 ),
+                EnqueueRefusal::Closed => unreachable!(),
             };
             let problem = Problem::new(code, message);
             let finished =
@@ -1234,6 +1341,41 @@ impl MutationEngine {
         })
     }
 
+    fn existing_submission(
+        &self,
+        actor: &str,
+        client_request_id: &str,
+        digest: &str,
+    ) -> Result<Option<SubmitResult>, Problem> {
+        let Some(existing) = self.journal.find_client_request(actor, client_request_id) else {
+            return Ok(None);
+        };
+        if existing.payload_digest != digest {
+            return Err(Problem::new(
+                ProblemCode::IdempotencyConflict,
+                "that client request id was already used with a different payload; use a new id for the changed request",
+            )
+            .for_operation(existing.operation_id));
+        }
+        Ok(Some(SubmitResult {
+            record: existing.to_operation_record(),
+            duplicate: true,
+        }))
+    }
+
+    fn existing_submission_or_problem(
+        &self,
+        actor: &str,
+        client_request_id: &str,
+        digest: &str,
+        problem: Problem,
+    ) -> Result<SubmitResult, Problem> {
+        match self.existing_submission(actor, client_request_id, digest)? {
+            Some(existing) => Ok(existing),
+            None => Err(problem),
+        }
+    }
+
     /// One operation, as its client may read it.
     pub fn get(&self, actor: &str, operation_id: &str) -> Result<OperationRecord, Problem> {
         let record = self.journal.get(operation_id).ok_or_else(|| {
@@ -1251,6 +1393,20 @@ impl MutationEngine {
             ));
         }
         Ok(record.to_operation_record())
+    }
+
+    /// Looks up a retained request id without revealing whether another actor used it.
+    pub fn get_by_client_request_id(
+        &self,
+        actor: &str,
+        client_request_id: &str,
+    ) -> Result<ClientRequestLookup, Problem> {
+        Ok(
+            match self.journal.find_client_request(actor, client_request_id) {
+                Some(record) => ClientRequestLookup::Found(Box::new(record.to_operation_record())),
+                None => ClientRequestLookup::Unknown,
+            },
+        )
     }
 
     /// This actor's recent operations, newest first.
@@ -1307,11 +1463,16 @@ impl MutationEngine {
 
     /// Starts every queued operation the limits allow.
     fn pump(self: &Arc<Self>) {
+        let mut tasks = self.tasks.lock().expect("mutation tasks lock");
+        if self.closed.load(Ordering::SeqCst) {
+            return;
+        }
+        tasks.retain(|task| !task.is_finished());
         for ticket in self.queue.take_startable() {
             let engine = Arc::clone(self);
-            tokio::spawn(async move {
+            tasks.push(tokio::spawn(async move {
                 engine.run_ticket(ticket).await;
-            });
+            }));
         }
     }
 

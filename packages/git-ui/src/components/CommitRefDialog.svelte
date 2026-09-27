@@ -3,6 +3,7 @@
   import { Button } from "./ui/button/index.js";
   import * as Dialog from "./ui/dialog/index.js";
   import { shortOid } from "../lib/format.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   interface Props {
     open?: boolean;
@@ -23,6 +24,7 @@
     disabled = false,
     onSubmit,
   }: Props = $props();
+  const { t } = useGitViewI18n();
 
   let name = $state("");
   let annotation = $state("");
@@ -54,17 +56,17 @@
   <Dialog.Content data-testid="commit-ref-dialog">
     <Dialog.Header>
       <Dialog.Title>
-        Create {kind} at {commit === null ? "commit" : shortOid(commit.oid)}
+        {t(kind === "branch" ? "commitRef.createBranchAt" : "commitRef.createTagAt").replace("{commit}", () => commit === null ? t("commitRef.commit") : shortOid(commit.oid))}
       </Dialog.Title>
       <Dialog.Description>
         {kind === "branch"
-          ? "Create a branch that points at this exact commit without switching HEAD."
-          : "Create a tag that points at this exact commit."}
+          ? t("commitRef.branchDescription")
+          : t("commitRef.tagDescription")}
       </Dialog.Description>
     </Dialog.Header>
 
     <label class="flex flex-col gap-1.5 text-xs text-ink-muted">
-      {kind === "branch" ? "Branch name" : "Tag name"}
+      {t(kind === "branch" ? "commitRef.branchName" : "commitRef.tagName")}
       <input
         class="rounded border border-input bg-transparent px-2.5 py-1.5 font-mono text-sm text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
         bind:value={name}
@@ -75,7 +77,7 @@
 
     {#if kind === "tag"}
       <label class="flex flex-col gap-1.5 text-xs text-ink-muted">
-        Annotation (optional)
+        {t("commitRef.annotation")}
         <textarea
           class="min-h-20 resize-y rounded border border-input bg-transparent px-2.5 py-1.5 text-sm text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
           bind:value={annotation}
@@ -85,13 +87,13 @@
     {/if}
 
     <Dialog.Footer>
-      <Button variant="ghost" onclick={() => (open = false)}>Cancel</Button>
+      <Button variant="ghost" onclick={() => (open = false)}>{t("action.cancel")}</Button>
       <Button
         disabled={disabled || name.trim().length === 0 || commit === null}
         onclick={submit}
         data-testid="commit-ref-submit"
       >
-        Create {kind}
+        {t(kind === "branch" ? "commitRef.createBranch" : "commitRef.createTag")}
       </Button>
     </Dialog.Footer>
   </Dialog.Content>

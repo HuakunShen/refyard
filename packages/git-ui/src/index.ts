@@ -109,6 +109,7 @@ export {
 } from "./components/ui/tooltip/index.js";
 
 export { default as ModeToggle } from "./components/ModeToggle.svelte";
+export { default as PageContinuation } from "./components/PageContinuation.svelte";
 export { default as RefyardLogo } from "./components/RefyardLogo.svelte";
 export { default as SectionCard } from "./components/SectionCard.svelte";
 export { default as SettingsDialog } from "./components/SettingsDialog.svelte";

@@ -29,7 +29,11 @@ dist
 # The desktop flavour of the same SPA, and the working directory that keeps the two
 # builds from sharing SvelteKit's intermediate output (see apps/web/svelte.config.js).
 build-desktop
+build-xross-local
+build-xross-hosted
 .svelte-kit-desktop
+.svelte-kit-xross-local
+.svelte-kit-xross-hosted
 # The embedded-plugin flavour: served under a path prefix by an embedding host, which is
 # also why it needs its own `paths.base` and its own intermediate directory.
 build-dsh
@@ -79,4 +83,3 @@ target/
 # Tauri's generated capability schemas: written by tauri-build from
 # capabilities/*.json on every build, so they are output rather than source.
 apps/desktop/src-tauri/gen/
-

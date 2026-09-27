@@ -694,6 +694,20 @@ mod tests {
 
     /// The smallest record the continuation rules need: an identity and a worktree.
     fn record() -> RepositoryRecord {
+        let layout = crate::registry::RepositoryLayout {
+            git_dir: "/repo/.git".to_string(),
+            top_level: Some("/repo".to_string()),
+            common_dir: "/repo/.git".to_string(),
+            is_bare: false,
+            object_format: "sha1".to_string(),
+            is_shallow: false,
+        };
+        let location = crate::registry::RepositoryLocation {
+            target_id: "tgt_local".to_string(),
+            target_generation: "gen_1".to_string(),
+            canonical_worktree: "/repo".to_string(),
+            canonical_common_dir: "/repo/.git".to_string(),
+        };
         RepositoryRecord {
             repository_id: "repo_1".to_string(),
             allowed_root_id: "root_1".to_string(),
@@ -702,20 +716,20 @@ mod tests {
             display_path: "/repo".to_string(),
             root_path: std::path::PathBuf::from("/"),
             relative_path: "repo".to_string(),
-            layout: crate::registry::RepositoryLayout {
-                git_dir: "/repo/.git".to_string(),
-                top_level: Some("/repo".to_string()),
-                common_dir: "/repo/.git".to_string(),
-                is_bare: false,
-                object_format: "sha1".to_string(),
-                is_shallow: false,
-            },
-            location: crate::registry::RepositoryLocation {
-                target_id: "tgt_local".to_string(),
-                target_generation: "gen_1".to_string(),
-                canonical_worktree: "/repo".to_string(),
-                canonical_common_dir: "/repo/.git".to_string(),
-            },
+            layout: layout.clone(),
+            location: location.clone(),
+            worktrees: vec![crate::registry::RegisteredWorktree {
+                worktree_id: "wt_1".to_string(),
+                display_name: "repo".to_string(),
+                display_path: "/repo".to_string(),
+                layout,
+                location,
+                root_bindings: vec![crate::registry::WorkspaceRootBinding {
+                    allowed_root_id: "root_1".to_string(),
+                    root_path: std::path::PathBuf::from("/"),
+                    relative_path: "repo".to_string(),
+                }],
+            }],
         }
     }
 

@@ -17,7 +17,7 @@
   import { Button } from "./ui/button/index.js";
   import ConfirmAction from "./ConfirmAction.svelte";
   import { cn } from "../lib/utils.js";
-  import { statusLetterLabel } from "../lib/format.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   interface Props {
     entries: readonly StatusEntry[];
@@ -41,6 +41,8 @@
     onDiscard,
     class: className = "",
   }: Props = $props();
+  const i18n = useGitViewI18n();
+  const { t } = i18n;
 
   let selected = $state<Set<string>>(new Set());
 
@@ -89,7 +91,7 @@
 <div class={cn("flex flex-col gap-2.5", className)} data-testid="staging-panel">
   {#if entries.length === 0}
     <p class="text-xs text-ink-faint italic py-1">
-      Nothing to stage — the working tree matches the index.
+      {t("staging.empty")}
     </p>
   {:else}
     <div class="flex items-center justify-between gap-2">
@@ -102,7 +104,7 @@
           onclick={selectAll}
           data-testid="select-all"
         >
-          {allSelected ? "All selected" : "Select all"}
+          {t(allSelected ? "staging.allSelected" : "staging.selectAll")}
         </Button>
         <Button
           size="sm"
@@ -111,11 +113,11 @@
           disabled={disabled || busy || effectiveSelection.length === 0}
           onclick={clearSelection}
         >
-          Clear
+          {t("staging.clear")}
         </Button>
       </div>
       <span class="text-[11px] text-ink-faint font-mono">
-        {effectiveSelection.length} of {entries.length} selected
+        {t("staging.selectedCount").replace("{selected}", i18n.count(effectiveSelection.length)).replace("{total}", i18n.count(entries.length))}
       </span>
     </div>
 
@@ -138,7 +140,7 @@
             class="size-3.5 accent-primary rounded shrink-0"
             checked={isChecked}
             disabled={disabled || busy}
-            aria-label={`select ${entry.displayPath}`}
+            aria-label={t("staging.selectPath").replace("{path}", () => entry.displayPath)}
             onchange={() => toggle(entry.pathId)}
           />
           <span
@@ -148,13 +150,13 @@
                 ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
                 : "bg-amber-500/15 text-amber-600 dark:text-amber-400",
             )}
-            title="index / worktree status"
+            title={t("staging.statusTitle")}
           >
             {entry.indexStatus}{entry.worktreeStatus}
           </span>
           <span
             class="truncate font-mono text-xs text-foreground flex-1 min-w-0"
-            title={statusLetterLabel(entry.indexStatus)}
+            title={i18n.statusLetter(entry.indexStatus)}
           >
             {entry.displayPath}
           </span>
@@ -163,7 +165,7 @@
               tone={entry.kind === "untracked" ? "warn" : "muted"}
               class="text-[10px] h-4.5 px-1.5 shrink-0"
             >
-              {entry.kind}
+              {i18n.statusKind(entry.kind)}
             </Badge>
           {/if}
         </li>
@@ -180,7 +182,7 @@
         onclick={() => onStage(effectiveSelection)}
         data-testid="stage-selected"
       >
-        Stage {effectiveSelection.length || ""}
+        {t("staging.stage").replace("{count}", effectiveSelection.length === 0 ? "" : i18n.count(effectiveSelection.length))}
       </Button>
       <Button
         size="sm"
@@ -190,13 +192,13 @@
         onclick={() => onUnstage(actionable)}
         data-testid="unstage-selected"
       >
-        Unstage {actionable.length || ""}
+        {t("staging.unstage").replace("{count}", actionable.length === 0 ? "" : i18n.count(actionable.length))}
       </Button>
       <span class="ml-auto">
         <ConfirmAction
-          label={`Discard ${actionable.length || ""}`}
-          confirmLabel={`Discard ${actionable.length} path${actionable.length === 1 ? "" : "s"} for good`}
-          description="Restores the selected files to the index. A backup is written first."
+          label={t("staging.discard").replace("{count}", actionable.length === 0 ? "" : i18n.count(actionable.length))}
+          confirmLabel={t("staging.discardConfirm").replace("{paths}", i18n.paths(actionable.length))}
+          description={t("staging.discardDescription")}
           disabled={disabled || busy || actionable.length === 0}
           {busy}
           onConfirm={() => onDiscard(actionable)}

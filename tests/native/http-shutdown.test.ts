@@ -129,7 +129,7 @@ describe("a process killed mid-write", () => {
       `/api/v1/status?repositoryId=${repositoryId}`,
     );
     const worktreeId = status.body.worktreeId;
-    repo.write("a.txt", "changed by the killed run\n");
+    await repo.write("a.txt", "changed by the killed run\n");
     const changed = await api(
       running,
       "GET",
@@ -290,7 +290,7 @@ describe("a process stopped gracefully", () => {
       "GET",
       `/api/v1/status?repositoryId=${repositoryId}`,
     );
-    repo.write("graceful.txt", "written before a graceful stop\n");
+    await repo.write("graceful.txt", "written before a graceful stop\n");
     const changed = await api(
       running,
       "GET",

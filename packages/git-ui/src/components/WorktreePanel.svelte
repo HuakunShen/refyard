@@ -16,6 +16,7 @@
   import ContextActionMenu from "./ContextActionMenu.svelte";
   import type { ContextAction } from "../lib/context-actions.js";
   import { cn } from "../lib/utils.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   interface WorktreeEntry {
     readonly worktreeId: string;
@@ -77,6 +78,7 @@
     onMergeBranch = undefined,
     class: className = "",
   }: Props = $props();
+  const { t } = useGitViewI18n();
 
   let relativeDestination = $state("");
   let referenceKind = $state<Reference["kind"]>("newBranch");
@@ -85,7 +87,7 @@
   let lockReason = $state("");
 
   const shortOid = (value: string | null): string =>
-    value === null ? "unborn" : value.slice(0, 12);
+    value === null ? t("worktree.unborn") : value.slice(0, 12);
 
   function submitCreate(): void {
     const destination = relativeDestination.trim();
@@ -150,7 +152,7 @@
             {
               kind: "action" as const,
               id: "open",
-              label: "Open this worktree",
+              label: t("worktree.open"),
               disabled: actionDisabled,
               onSelect: () => onOpenWorktree(worktree.worktreeId),
             },
@@ -161,7 +163,7 @@
             {
               kind: "action" as const,
               id: "open-new-tab",
-              label: "Open worktree in new tab",
+              label: t("worktree.openTab"),
               disabled: actionDisabled,
               onSelect: () => onOpenWorktreeInTab(worktree.worktreeId),
             },
@@ -182,26 +184,26 @@
     <span
       class="text-[11px] font-semibold tracking-wider text-ink-muted uppercase"
     >
-      Add linked worktree
+      {t("worktree.addTitle")}
     </span>
 
     <div class="flex items-center gap-2">
       <input
         class="min-w-0 flex-1 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-        placeholder="relative/path"
-        aria-label="worktree destination"
+        placeholder={t("worktree.relativePath")}
+        aria-label={t("worktree.destination")}
         bind:value={relativeDestination}
         disabled={disabled || busy}
       />
       <select
         class="w-32 rounded border border-input bg-panel px-2 py-1 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
-        aria-label="worktree reference kind"
+        aria-label={t("worktree.referenceKind")}
         bind:value={referenceKind}
         disabled={disabled || busy}
       >
-        <option value="newBranch">new branch</option>
-        <option value="existingBranch">existing branch</option>
-        <option value="detached">detached commit</option>
+        <option value="newBranch">{t("worktree.newBranch")}</option>
+        <option value="existingBranch">{t("worktree.existingBranch")}</option>
+        <option value="detached">{t("worktree.detachedCommit")}</option>
       </select>
     </div>
 
@@ -209,19 +211,19 @@
       {#if referenceKind === "detached"}
         <input
           class="min-w-0 flex-1 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          placeholder="commit object name"
-          aria-label="worktree commit"
+          placeholder={t("worktree.commitPlaceholder")}
+          aria-label={t("worktree.commit")}
           bind:value={oid}
           disabled={disabled || busy}
         />
       {:else if referenceKind === "existingBranch"}
         <select
           class="min-w-0 flex-1 rounded border border-input bg-panel px-2 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          aria-label="worktree branch"
+          aria-label={t("worktree.branch")}
           bind:value={branchName}
           disabled={disabled || busy}
         >
-          <option value="">choose a branch</option>
+          <option value="">{t("worktree.chooseBranch")}</option>
           {#each branches as branch (branch)}
             <option value={branch}>{branch}</option>
           {/each}
@@ -229,8 +231,8 @@
       {:else}
         <input
           class="min-w-0 flex-1 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          placeholder="new branch name"
-          aria-label="worktree new branch"
+          placeholder={t("worktree.newBranchPlaceholder")}
+          aria-label={t("worktree.newBranchLabel")}
           bind:value={branchName}
           disabled={disabled || busy}
         />
@@ -243,14 +245,14 @@
         onclick={submitCreate}
         data-testid="create-worktree"
       >
-        Add worktree
+        {t("worktree.add")}
       </Button>
     </div>
 
     <input
       class="w-full rounded border border-input bg-transparent px-2.5 py-1 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring placeholder:text-ink-faint"
-      placeholder="lock reason (optional)"
-      aria-label="worktree lock reason"
+      placeholder={t("worktree.lockReasonPlaceholder")}
+      aria-label={t("worktree.lockReasonLabel")}
       bind:value={lockReason}
       disabled={disabled || busy}
     />
@@ -258,7 +260,7 @@
 
   <!-- Worktree List -->
   {#if worktrees === null}
-    <p class="text-xs text-ink-faint">No worktrees loaded.</p>
+    <p class="text-xs text-ink-faint">{t("worktree.notLoaded")}</p>
   {:else}
     <ul
       class="flex max-h-60 flex-col gap-1.5 overflow-y-auto pr-0.5"
@@ -291,7 +293,7 @@
                 disabled={!openable || disabled}
                 aria-current={selected ? "true" : undefined}
                 aria-label={openable
-                  ? `Open worktree ${worktree.head.branchName ?? shortOid(worktree.head.oid)}`
+                  ? t("worktree.openNamed").replace("{name}", () => worktree.head.branchName ?? shortOid(worktree.head.oid))
                   : undefined}
                 title={worktree.displayPath}
                 onclick={() => onOpenWorktree?.(worktree.worktreeId)}
@@ -300,7 +302,7 @@
                   tone={worktree.isMain ? "muted" : "branch"}
                   class="shrink-0 text-[10px] h-4.5 px-1.5 font-mono"
                 >
-                  {worktree.isMain ? "primary" : "linked"}
+                  {t(worktree.isMain ? "worktree.primary" : "worktree.linked")}
                 </Badge>
                 {#if worktree.isLocked}
                   <Badge
@@ -308,7 +310,7 @@
                     class="shrink-0 text-[10px] h-4.5 px-1.5 flex items-center gap-1"
                   >
                     <Lock class="size-2.5" />
-                    locked
+                    {t("worktree.locked")}
                   </Badge>
                 {/if}
                 <span class="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -328,7 +330,7 @@
 
               {#if worktree.isLocked && worktree.lockReason !== null}
                 <div class="text-[11px] text-ink-faint italic px-0.5">
-                  Reason: {worktree.lockReason}
+                  {t("worktree.reason")} {worktree.lockReason}
                 </div>
               {/if}
 
@@ -344,7 +346,7 @@
                     onclick={() => onUnlock(worktree.worktreeId)}
                     data-testid={`unlock-worktree-${worktree.worktreeId}`}
                   >
-                    Unlock
+                    {t("worktree.unlock")}
                   </Button>
                 {:else}
                   <Button
@@ -361,16 +363,16 @@
                       )}
                     data-testid={`lock-worktree-${worktree.worktreeId}`}
                   >
-                    Lock
+                    {t("worktree.lock")}
                   </Button>
                 {/if}
 
                 {#if !worktree.isMain}
                   <span class="ml-auto">
                     <ConfirmAction
-                      label="Remove"
-                      confirmLabel={`Remove ${worktree.displayPath}`}
-                      description="Refused when the checkout has changes."
+                      label={t("worktree.remove")}
+                      confirmLabel={t("worktree.removeNamed").replace("{path}", () => worktree.displayPath)}
+                      description={t("worktree.removeDescription")}
                       disabled={disabled || busy}
                       {busy}
                       onConfirm={() => onRemove(worktree.worktreeId)}

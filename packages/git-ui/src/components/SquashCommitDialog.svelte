@@ -6,6 +6,7 @@
    */
   import { Button } from "./ui/button/index.js";
   import * as Dialog from "./ui/dialog/index.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   interface Props {
     open?: boolean;
@@ -27,6 +28,7 @@
     onConfirm,
     "data-testid": testId = undefined,
   }: Props = $props();
+  const { t } = useGitViewI18n();
 
   let message = $state("");
 
@@ -43,18 +45,18 @@
     <Dialog.Header>
       <Dialog.Title>
         {subject === null
-          ? "Squash into parent"
-          : `Squash "${subject}" into the commit below?`}
+          ? t("squash.titleParent")
+          : t("squash.titleSubject").replace("{subject}", () => subject)}
       </Dialog.Title>
       <Dialog.Description>
         {parentSubject === null
-          ? "The two commits become one, combining both changes. No content is lost."
-          : `The two commits become one, combining "${parentSubject}" and "${subject}". No content is lost.`}
+          ? t("squash.description")
+          : t("squash.descriptionNamed").replace("{parent}", () => parentSubject).replace("{subject}", () => subject ?? "")}
       </Dialog.Description>
     </Dialog.Header>
     <label class="flex flex-col gap-1.5 text-sm">
       <span class="text-muted-foreground">
-        Commit message — leave empty to keep "{parentSubject ?? "the parent"}"
+        {t("squash.messageHelp").replace("{parent}", () => parentSubject ?? t("squash.parent"))}
       </span>
       <!-- svelte-ignore a11y_autofocus -->
       <textarea
@@ -67,7 +69,7 @@
     </label>
     <Dialog.Footer>
       <Button variant="ghost" disabled={busy} onclick={() => (open = false)}>
-        Cancel
+        {t("action.cancel")}
       </Button>
       <Button
         variant="destructive"
@@ -75,7 +77,7 @@
         onclick={confirm}
         data-testid={testId === undefined ? undefined : `${testId}-confirm`}
       >
-        {busy ? "Working…" : "Squash"}
+        {busy ? t("action.working") : t("squash.confirm")}
       </Button>
     </Dialog.Footer>
   </Dialog.Content>

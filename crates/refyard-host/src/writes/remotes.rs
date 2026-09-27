@@ -133,7 +133,7 @@ async fn add_remote(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> Effec
         Ok(plan) => plan,
         Err(error) => return invalid_payload(operation_id, error.to_string()),
     };
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };
@@ -204,7 +204,7 @@ async fn update_remote(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> Ef
             "a remote update must rename the remote or change a URL".to_string(),
         );
     }
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };
@@ -279,7 +279,7 @@ async fn remove_remote(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> Ef
         Ok(plan) => plan,
         Err(error) => return invalid_payload(operation_id, error.to_string()),
     };
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };
@@ -469,7 +469,7 @@ async fn fetch(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> EffectOutc
         Ok(plan) => plan,
         Err(error) => return invalid_payload(operation_id, error.to_string()),
     };
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };
@@ -513,7 +513,7 @@ async fn pull(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> EffectOutco
     };
     // `ff-only` is the only mode this build offers; a divergence fails, never merges.
     let PullMode::FfOnly = mode;
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };
@@ -646,7 +646,7 @@ async fn push(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> EffectOutco
         Ok(plan) => plan,
         Err(error) => return invalid_payload(operation_id, error.to_string()),
     };
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };
@@ -684,7 +684,7 @@ async fn push_tag(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> EffectO
         Ok(plan) => plan,
         Err(error) => return invalid_payload(operation_id, error.to_string()),
     };
-    let target = match host.resolve(request.request) {
+    let target = match host.resolve(request.request).await {
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };

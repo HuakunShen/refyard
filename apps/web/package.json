@@ -7,6 +7,8 @@
     "dev": "vite dev",
     "build": "vite build",
     "build:desktop": "bun ../../scripts/build-desktop.ts --web-only",
+    "build:xross-local": "bun ../../scripts/build-xross.ts local",
+    "build:xross-hosted": "bun ../../scripts/build-xross.ts hosted",
     "preview": "vite preview",
     "deploy": "pnpm build && wrangler deploy",
     "deploy:dry-run": "pnpm build && wrangler deploy --dry-run",

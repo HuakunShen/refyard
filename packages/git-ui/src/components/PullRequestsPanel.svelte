@@ -15,6 +15,7 @@
   import { Button } from "./ui/button/index.js";
   import AuthorAvatar from "./AuthorAvatar.svelte";
   import { cn } from "../lib/utils.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
 
   interface DeviceConnectState {
     readonly state: "idle" | "awaiting-user" | "connected" | "denied" | "expired" | "failed";
@@ -54,6 +55,8 @@
     onDisconnect,
     onRefresh,
   }: Props = $props();
+  const i18n = useGitViewI18n();
+  const { t } = i18n;
 
   let showingTokenForm = $state(false);
 
@@ -61,28 +64,13 @@
   let tokenDraft = $state("");
   let age = $state("");
 
-  /** A ticked relative age so cached data never pretends to be fresh. */
-  function ageOf(cachedAtMs: number | null): string {
-    if (cachedAtMs === null) {
-      return "";
-    }
-    const seconds = Math.max(0, Math.round((Date.now() - cachedAtMs) / 1000));
-    if (seconds < 60) {
-      return `just now`;
-    }
-    if (seconds < 3600) {
-      return `${Math.round(seconds / 60)} min ago`;
-    }
-    return `${Math.round(seconds / 3600)} h ago`;
-  }
-
   $effect(() => {
     if (cachedAt === null || cachedAt === undefined) {
       age = "";
       return;
     }
     const update = (): void => {
-      age = ageOf(Date.parse(cachedAt));
+      age = i18n.relativeIso(cachedAt, Date.now());
     };
     update();
     const timer = setInterval(update, 30_000);
@@ -104,7 +92,7 @@
     {#if deviceState?.state === "awaiting-user" && deviceState.userCode !== undefined}
       <div class="flex flex-col gap-2" data-testid="provider-device-awaiting">
         <p class="text-xs text-ink-muted">
-          Enter this code at
+          {t("pr.enterCode")}
           <a
             class="underline"
             href={deviceState.verificationUri ?? "https://github.com/login/device"}
@@ -121,12 +109,11 @@
         >
           {deviceState.userCode}
         </p>
-        <p class="text-xs text-ink-faint">Waiting for authorization…</p>
+        <p class="text-xs text-ink-faint">{t("pr.waiting")}</p>
       </div>
     {:else}
       <p class="text-xs text-ink-muted">
-        Connect a GitHub account to see this repository's open pull requests.
-        The token stays on this machine's service.
+        {t("pr.connectDescription")}
       </p>
       <Button
         size="sm"
@@ -134,11 +121,11 @@
         onclick={onStartDeviceConnect}
         data-testid="provider-device-start"
       >
-        {busy ? "Connecting…" : "Connect GitHub"}
+        {t(busy ? "pr.connecting" : "pr.connectGitHub")}
       </Button>
       {#if deviceState?.state === "failed" || deviceState?.state === "denied"}
         <p class="text-xs text-warn" data-testid="provider-device-error">
-          {deviceState.message ?? "GitHub denied the request."}
+          {deviceState.message ?? t("pr.denied")}
         </p>
       {/if}
       {#if showingTokenForm}
@@ -153,13 +140,13 @@
             class="w-full rounded border bg-transparent px-2 py-1 font-mono text-xs"
             type="password"
             autocomplete="off"
-            placeholder="GitHub token (github_pat_… or ghp_…)"
-            aria-label="GitHub personal access token"
+            placeholder={t("pr.tokenPlaceholder")}
+            aria-label={t("pr.tokenLabel")}
             bind:value={tokenDraft}
             data-testid="provider-token-input"
           />
           <Button size="sm" disabled={busy || tokenDraft.trim().length === 0} onclick={submit} data-testid="provider-connect">
-            {busy ? "Connecting…" : "Connect with token"}
+            {t(busy ? "pr.connecting" : "pr.connectToken")}
           </Button>
         </form>
       {:else}
@@ -168,7 +155,7 @@
           onclick={() => (showingTokenForm = true)}
           data-testid="provider-token-toggle"
         >
-          use a personal access token instead
+          {t("pr.useToken")}
         </button>
       {/if}
     {/if}
@@ -182,7 +169,7 @@
         size="icon-sm"
         disabled={busy}
         onclick={onDisconnect}
-        title="Disconnect this account"
+        title={t("pr.disconnect")}
         data-testid="provider-disconnect"
       >
         <GitPullRequest class="size-3.5" />
@@ -192,7 +179,7 @@
         size="icon-sm"
         disabled={busy}
         onclick={onRefresh}
-        title="Refresh pull requests"
+        title={t("pr.refresh")}
         data-testid="provider-refresh"
       >
         <RefreshCw class={cn("size-3.5", busy && "animate-spin")} />
@@ -206,9 +193,9 @@
 
   {#if connected}
     {#if loading && pullRequests === undefined}
-      <p class="text-xs text-ink-muted">Reading pull requests…</p>
+      <p class="text-xs text-ink-muted">{t("pr.loading")}</p>
     {:else if pullRequests !== undefined && pullRequests.length === 0}
-      <p class="text-xs text-ink-muted">No open pull requests.</p>
+      <p class="text-xs text-ink-muted">{t("pr.empty")}</p>
     {:else if pullRequests !== undefined}
       <ul class="flex flex-col gap-1" data-testid="provider-pull-requests">
         {#each pullRequests as pull (pull.number)}
@@ -229,7 +216,7 @@
                 <span class="font-mono text-ink-faint">#{pull.number}</span>
                 {pull.title}
                 {#if pull.isDraft}
-                  <span class="ml-1 rounded bg-canvas-hover px-1 text-[10px] uppercase text-ink-faint">draft</span>
+                  <span class="ml-1 rounded bg-canvas-hover px-1 text-[10px] uppercase text-ink-faint">{t("pr.draft")}</span>
                 {/if}
               </span>
               <span class="shrink-0 font-mono text-[10px] text-ink-faint">
@@ -240,7 +227,7 @@
         {/each}
       </ul>
       <p class="text-[10px] text-ink-faint">
-        {source === "cache" && age.length > 0 ? `read ${age} (cached)` : "live from GitHub"}
+        {source === "cache" && age.length > 0 ? t("pr.cached").replace("{age}", () => age) : t("pr.live")}
       </p>
     {/if}
   {/if}

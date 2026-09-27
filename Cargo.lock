@@ -409,6 +409,7 @@ dependencies = [
 name = "refyard-host"
 version = "0.1.0"
 dependencies = [
+ "getrandom 0.3.4",
  "refyard-contract",
  "refyard-core",
  "serde",
@@ -417,6 +418,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "windows-sys",
 ]
 
 [[package]]

@@ -7,12 +7,11 @@
 //! executor, that an unknown target is refused rather than answered from this machine, and
 //! that a rebuilt target invalidates what was minted against the previous build.
 //!
-//! Some cases use a scripted transport double: a `sh` script that ignores `ssh`'s option
-//! vector and runs the one command string the provider built, here. It exercises the real
-//! `SshGit` command-string path without a remote machine, and it is not evidence that SSH
-//! works — the fixture cases in `ssh_exec.rs` are. A repository opened through it is a real
-//! repository on this machine carrying a remote target's identity, which is what the
-//! routing checks need.
+//! Some cases use a scripted transport double that ignores `ssh`'s option vector and runs
+//! the command string the provider built. On Windows its native helper maps the POSIX path
+//! `/repo` onto the local fixture; it exercises target routing without claiming to test
+//! SSH or a POSIX login shell. Those are measured by the real `sshd` fixtures in
+//! `ssh_exec.rs`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -21,6 +20,7 @@ use refyard_contract::diff::{DiffKind, DiffQuery};
 use refyard_contract::history::{HistoryQuery, Topology};
 use refyard_contract::host::{ExecutionTargetKind, ExecutionTargetState};
 use refyard_contract::problem::ProblemCode;
+use refyard_core::plan::status::{plan_status, StatusOptions};
 use refyard_host::providers::local::LocalGit;
 use refyard_host::providers::ssh::SshGit;
 use refyard_host::providers::GitExecutor;
@@ -35,6 +35,7 @@ use refyard_host::targets::{
 /// The command string the double must run is the last element of `ssh`'s argument vector;
 /// everything before it is the fixed option policy and the alias, which this double has no
 /// remote machine to apply.
+#[cfg(unix)]
 const TRANSPORT_DOUBLE: &str = r#"#!/bin/sh
 # A scripted transport double, not an SSH implementation: it ignores the option vector and
 # the alias, and runs the one command string the provider built.
@@ -47,10 +48,13 @@ const LOCAL_GENERATION: &str = "gen_1";
 const SCRIPTED_TARGET: &str = "tgt_ssh_scripted";
 const SCRIPTED_GENERATION: &str = "gen_ssh_scripted";
 
-/// A temporary directory with a real Git repository, a scratch home and a scripted
-/// transport inside it.
+#[path = "support/process_fixture.rs"]
+mod process_fixture;
+
+/// A temporary repository and scratch home, with a transport double for the SSH path.
 struct Fixture {
     _temp: tempfile::TempDir,
+    #[cfg(unix)]
     root: PathBuf,
     repo: PathBuf,
     home: PathBuf,
@@ -69,6 +73,7 @@ impl Fixture {
         let env = fixture_environment(&home);
         let fixture = Self {
             _temp: temp,
+            #[cfg(unix)]
             root,
             repo,
             home,
@@ -107,16 +112,51 @@ impl Fixture {
         self.repo.to_str().expect("a UTF-8 fixture path")
     }
 
+    fn target_repo_path(&self) -> &str {
+        #[cfg(windows)]
+        {
+            "/repo"
+        }
+        #[cfg(not(windows))]
+        {
+            self.repo_path()
+        }
+    }
+
     fn scripted_program(&self) -> PathBuf {
-        let path = self.root.join("scripted-transport");
-        std::fs::write(&path, TRANSPORT_DOUBLE).expect("write the transport double");
+        #[cfg(windows)]
+        {
+            process_fixture::program().to_path_buf()
+        }
         #[cfg(unix)]
         {
+            let path = self.root.join("scripted-transport");
+            std::fs::write(&path, TRANSPORT_DOUBLE).expect("write the transport double");
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
                 .expect("make the double executable");
+            path
         }
-        path
+    }
+
+    fn scripted_environment(&self) -> Vec<(String, String)> {
+        #[cfg(windows)]
+        {
+            let mut env = self.env.clone();
+            env.push((
+                "REFYARD_FIXTURE_REPO".to_string(),
+                self.repo.to_string_lossy().into_owned(),
+            ));
+            env.push((
+                "REFYARD_FIXTURE_GIT".to_string(),
+                git_program().to_string_lossy().into_owned(),
+            ));
+            env
+        }
+        #[cfg(not(windows))]
+        {
+            self.env.clone()
+        }
     }
 
     fn local_git(&self) -> LocalGit {
@@ -146,8 +186,12 @@ impl Fixture {
             remote_path_browse: false,
             generation: generation.to_string(),
             executor: Some(GitExecutor::Ssh(
-                SshGit::at(self.scripted_program(), self.env.clone(), "scripted-host")
-                    .expect("a host token"),
+                SshGit::at(
+                    self.scripted_program(),
+                    self.scripted_environment(),
+                    "scripted-host",
+                )
+                .expect("a host token"),
             )),
             unavailable: None,
             ssh: None,
@@ -172,6 +216,21 @@ impl Fixture {
         let service = ApplicationService::with_targets(self.config(), registry.clone());
         (service, registry)
     }
+
+    async fn scripted_status_diagnostic(&self) -> String {
+        let target = self.scripted_target(SCRIPTED_GENERATION);
+        let Some(GitExecutor::Ssh(executor)) = target.executor else {
+            unreachable!("the scripted target is an SSH executor")
+        };
+        let outcome = executor
+            .try_run(
+                self.target_repo_path(),
+                &plan_status(StatusOptions::default()),
+                None,
+            )
+            .await;
+        format!("scripted status probe: {outcome:?}")
+    }
 }
 
 fn git_program() -> PathBuf {
@@ -182,14 +241,14 @@ fn git_program() -> PathBuf {
 }
 
 fn fixture_environment(home: &Path) -> Vec<(String, String)> {
-    vec![
-        (
-            "PATH".to_string(),
-            std::env::var("PATH").unwrap_or_else(|_| "/usr/bin:/bin".to_string()),
-        ),
+    let mut environment = process_fixture::runtime_environment();
+    environment.extend([
         ("HOME".to_string(), home.display().to_string()),
         ("GIT_CONFIG_NOSYSTEM".to_string(), "1".to_string()),
-        ("GIT_CONFIG_GLOBAL".to_string(), "/dev/null".to_string()),
+        (
+            "GIT_CONFIG_GLOBAL".to_string(),
+            home.join(".gitconfig").display().to_string(),
+        ),
         ("GIT_TERMINAL_PROMPT".to_string(), "0".to_string()),
         // An identity for the fixture's commits, so the fixture does not depend on the
         // developer's global Git configuration.
@@ -206,7 +265,8 @@ fn fixture_environment(home: &Path) -> Vec<(String, String)> {
             "GIT_COMMITTER_EMAIL".to_string(),
             "fixture@refyard.invalid".to_string(),
         ),
-    ]
+    ]);
+    environment
 }
 
 /// A service with only the local target, pointed at a Git that is never run.
@@ -275,7 +335,7 @@ async fn an_unknown_target_is_refused_rather_than_answered_locally() {
     let fixture = Fixture::new();
     let (service, _) = fixture.service();
     let problem = service
-        .register_repository_on(fixture.repo_path(), Some("tgt_ssh_missing"))
+        .register_repository_on(fixture.target_repo_path(), Some("tgt_ssh_missing"))
         .await
         .expect_err("refused");
     assert_eq!(problem.code, ProblemCode::UnsupportedOperation);
@@ -306,7 +366,7 @@ async fn the_same_path_on_two_targets_is_two_repositories() {
     let fixture = Fixture::new();
     let (service, _) = fixture.service();
     let remote = service
-        .register_repository_on(fixture.repo_path(), Some(SCRIPTED_TARGET))
+        .register_repository_on(fixture.target_repo_path(), Some(SCRIPTED_TARGET))
         .await
         .expect("remote registration");
     let remote_id = remote.repositories[0].repository_id.clone();
@@ -329,10 +389,13 @@ async fn the_same_path_on_two_targets_is_two_repositories() {
     assert_ne!(remote_id, local_id, "the two targets are two repositories");
 
     // Both read the same repository bytes, each through its own target's executor.
-    let remote_status = service
-        .status(&StatusQuery::new(&remote_id))
-        .await
-        .expect("remote status");
+    let remote_status = match service.status(&StatusQuery::new(&remote_id)).await {
+        Ok(status) => status,
+        Err(problem) => panic!(
+            "remote status: {problem:?}; {}",
+            fixture.scripted_status_diagnostic().await
+        ),
+    };
     let local_status = service
         .status(&StatusQuery::new(&local_id))
         .await
@@ -347,7 +410,7 @@ async fn disconnecting_a_target_revokes_its_repositories_and_leaves_the_local_on
     let fixture = Fixture::new();
     let (service, _) = fixture.service();
     let remote = service
-        .register_repository_on(fixture.repo_path(), Some(SCRIPTED_TARGET))
+        .register_repository_on(fixture.target_repo_path(), Some(SCRIPTED_TARGET))
         .await
         .expect("remote registration");
     let remote_id = remote.repositories[0].repository_id.clone();
@@ -538,7 +601,7 @@ async fn an_untracked_diff_on_a_remote_target_is_refused_instead_of_read_locally
     let fixture = Fixture::new();
     let (service, _) = fixture.service();
     let registered = service
-        .register_repository_on(fixture.repo_path(), Some(SCRIPTED_TARGET))
+        .register_repository_on(fixture.target_repo_path(), Some(SCRIPTED_TARGET))
         .await
         .expect("registration");
     let repository_id = registered.repositories[0].repository_id.clone();
@@ -629,14 +692,16 @@ async fn a_repository_on_a_rebuilt_target_is_refused_until_it_is_opened_again() 
     let fixture = Fixture::new();
     let (service, registry) = fixture.service();
     let registered = service
-        .register_repository_on(fixture.repo_path(), Some(SCRIPTED_TARGET))
+        .register_repository_on(fixture.target_repo_path(), Some(SCRIPTED_TARGET))
         .await
         .expect("registration");
     let repository_id = registered.repositories[0].repository_id.clone();
-    service
-        .status(&StatusQuery::new(&repository_id))
-        .await
-        .expect("reads before the rebuild");
+    if let Err(problem) = service.status(&StatusQuery::new(&repository_id)).await {
+        panic!(
+            "reads before the rebuild: {problem:?}; {}",
+            fixture.scripted_status_diagnostic().await
+        );
+    }
 
     // The target is rebuilt: same id, new generation, a fresh executor.
     registry.insert(fixture.scripted_target("gen_ssh_rebuilt"));
@@ -653,7 +718,7 @@ async fn a_repository_on_a_rebuilt_target_is_refused_until_it_is_opened_again() 
 
     // Opening the path again on the rebuilt target mints a new identity that reads.
     let reopened = service
-        .register_repository_on(fixture.repo_path(), Some(SCRIPTED_TARGET))
+        .register_repository_on(fixture.target_repo_path(), Some(SCRIPTED_TARGET))
         .await
         .expect("re-opened");
     let new_id = reopened

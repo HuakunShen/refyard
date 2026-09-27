@@ -14,6 +14,8 @@
   import { Badge } from "./ui/badge/index.js";
   import { Button } from "./ui/button/index.js";
   import { cn } from "../lib/utils.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
+  import type { TranslationKey } from "../lib/i18n/types.js";
 
   interface SubmoduleEntry {
     readonly name: string;
@@ -53,6 +55,11 @@
     onSync,
     class: className = "",
   }: Props = $props();
+  const { t } = useGitViewI18n();
+  const stateKeys: Readonly<Record<SubmoduleEntry["state"], TranslationKey>> = {
+    uninitialized: "submodule.state.uninitialized", initialized: "submodule.state.initialized",
+    outOfSync: "submodule.state.outOfSync", dirty: "submodule.state.dirty", unknown: "submodule.state.unknown",
+  };
 
   let remoteUrl = $state("");
   let relativePath = $state("");
@@ -90,27 +97,27 @@
     <span
       class="text-[11px] font-semibold tracking-wider text-ink-muted uppercase"
     >
-      Add submodule
+      {t("submodule.addTitle")}
     </span>
     <input
       class="w-full rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-      placeholder="remote URL (cloned when added)"
-      aria-label="submodule url"
+      placeholder={t("submodule.urlPlaceholder")}
+      aria-label={t("submodule.url")}
       bind:value={remoteUrl}
       disabled={disabled || busy}
     />
     <div class="flex items-center gap-2">
       <input
         class="min-w-0 flex-1 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring"
-        placeholder="vendor/lib"
-        aria-label="submodule path"
+        placeholder={t("submodule.pathExample")}
+        aria-label={t("submodule.path")}
         bind:value={relativePath}
         disabled={disabled || busy}
       />
       <input
         class="w-28 rounded border border-input bg-transparent px-2.5 py-1 font-mono text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring shrink-0"
-        placeholder="branch (tracked)"
-        aria-label="submodule branch"
+        placeholder={t("submodule.branchPlaceholder")}
+        aria-label={t("submodule.branch")}
         bind:value={branchName}
         disabled={disabled || busy}
       />
@@ -134,7 +141,7 @@
         }}
         data-testid="add-submodule"
       >
-        Add
+        {t("submodule.add")}
       </Button>
     </div>
   </div>
@@ -149,11 +156,11 @@
       <input
         type="checkbox"
         class="size-3.5 accent-primary rounded"
-        aria-label="submodule recursive"
+        aria-label={t("submodule.recursive")}
         bind:checked={recursive}
         disabled={disabled || busy}
       />
-      recursive
+      {t("submodule.recursive")}
     </label>
     <div class="flex items-center gap-1.5">
       <Button
@@ -164,7 +171,7 @@
         onclick={() => onUpdate(targets, recursive)}
         data-testid="update-submodule"
       >
-        Update
+        {t("submodule.update")}
       </Button>
       <Button
         size="sm"
@@ -174,17 +181,17 @@
         onclick={() => onSync(targets, recursive)}
         data-testid="sync-submodule"
       >
-        Sync URL
+        {t("submodule.syncUrl")}
       </Button>
     </div>
   </div>
 
   <!-- Submodule list -->
   {#if submodules === null}
-    <p class="text-xs text-ink-faint">No submodules loaded.</p>
+    <p class="text-xs text-ink-faint">{t("submodule.notLoaded")}</p>
   {:else if submodules.length === 0}
     <p class="text-xs text-ink-faint italic py-1" data-testid="submodule-list">
-      None.
+      {t("submodule.empty")}
     </p>
   {:else}
     <ul
@@ -199,7 +206,7 @@
             <input
               type="checkbox"
               class="size-3.5 accent-primary rounded shrink-0"
-              aria-label={`select ${entry.displayPath}`}
+              aria-label={t("submodule.select").replace("{path}", () => entry.displayPath)}
               checked={selected.includes(entry.pathId)}
               onchange={() => toggle(entry.pathId)}
               disabled={disabled || busy}
@@ -212,7 +219,7 @@
                   : "danger"}
               class="text-[10px] h-4.5 px-1.5 shrink-0"
             >
-              {entry.state}
+              {t(stateKeys[entry.state])}
             </Badge>
             <span
               class="min-w-0 flex-1 truncate font-mono text-xs font-medium text-foreground"
@@ -225,7 +232,7 @@
           <div
             class="flex items-center justify-between text-[11px] text-ink-faint font-mono pl-5"
           >
-            <span title="HEAD / index / checkout">
+            <span title={t("submodule.oidTitle")}>
               {shortOid(entry.recordedOid)} · {shortOid(entry.indexOid)} · {shortOid(
                 entry.actualOid,
               )}

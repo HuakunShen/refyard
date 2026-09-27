@@ -242,7 +242,7 @@ async fn a_path_that_is_not_absolute_is_refused() {
     );
     assert_eq!(
         expand_user_path("  ~/x  ", Path::new("/home/u")),
-        "/home/u/x"
+        Path::new("/home/u").join("x").to_string_lossy()
     );
     assert_eq!(
         expand_user_path("~someone/x", Path::new("/home/u")),

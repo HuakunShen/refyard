@@ -7,6 +7,7 @@
   import DialogPortal from "./dialog-portal.svelte";
   import type { Snippet } from "svelte";
   import type { ComponentProps } from "svelte";
+  import { useGitViewI18n } from "../../../lib/i18n/context.svelte.js";
 
   let {
     ref = $bindable(null),
@@ -20,6 +21,7 @@
     children: Snippet;
     showCloseButton?: boolean;
   } = $props();
+  const { t } = useGitViewI18n();
 </script>
 
 <DialogPortal {...portalProps}>
@@ -44,7 +46,7 @@
             {...props}
           >
             <XIcon />
-            <span class="sr-only">Close</span>
+            <span class="sr-only">{t("dialog.close")}</span>
           </Button>
         {/snippet}
       </DialogPrimitive.Close>

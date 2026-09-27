@@ -13,7 +13,8 @@
   import Check from "@lucide/svelte/icons/check";
   import { Badge } from "./ui/badge/index.js";
   import AuthorAvatar from "./AuthorAvatar.svelte";
-  import { absoluteTime, shortOid } from "../lib/format.js";
+  import { shortOid } from "../lib/format.js";
+  import { useGitViewI18n } from "../lib/i18n/context.svelte.js";
   import { cn } from "../lib/utils.js";
 
   interface Props {
@@ -23,6 +24,8 @@
   }
 
   let { commit, detail, class: className = "" }: Props = $props();
+  const i18n = useGitViewI18n();
+  const { t } = i18n;
 
   let copiedOid = $state(false);
   let copyTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -43,7 +46,7 @@
 
 <div class={cn("flex flex-col gap-3 overflow-auto p-3", className)}>
   {#if commit === null}
-    <p class="text-sm text-ink-faint">Select a commit to read it.</p>
+    <p class="text-sm text-ink-faint">{t("commit.detail.select")}</p>
   {:else}
     <header class="flex flex-col gap-1">
       <h2 class="text-sm font-medium text-ink">{commit.subject}</h2>
@@ -53,7 +56,7 @@
           <button
             type="button"
             class="rounded p-0.5 hover:text-foreground text-muted-foreground transition-colors hover:bg-background/80"
-            title={copiedOid ? "Copied!" : "Copy full commit SHA"}
+            title={t(copiedOid ? "commit.copy.copied" : "commit.copy.fullSha")}
             onclick={() => copyCommitOid(commit.oid)}
           >
             {#if copiedOid}
@@ -64,13 +67,12 @@
           </button>
         </div>
         {#if commit.signed}
-          <Badge tone="muted">signed</Badge>
+          <Badge tone="muted">{t("commit.signature.signed")}</Badge>
         {/if}
         {#if commit.missingParents.length > 0}
           <Badge tone="warn">
-            {commit.missingParents.length} parent
-            {commit.missingParents.length === 1 ? "object" : "objects"} not present
-            locally
+            {i18n.plural(commit.missingParents.length, "commit.parent.one", "commit.parent.other")}
+            {t("commit.parent.notPresent")}
           </Badge>
         {/if}
         {#each commit.refNames as refName (refName)}
@@ -80,10 +82,10 @@
     </header>
 
     {#if detail === null}
-      <p class="text-xs text-ink-faint">Loading the full message…</p>
+      <p class="text-xs text-ink-faint">{t("commit.detail.loading")}</p>
     {:else}
       <dl class="grid grid-cols-[7rem_1fr] gap-x-3 gap-y-1 text-xs">
-        <dt class="text-ink-faint">author</dt>
+        <dt class="text-ink-faint">{t("commit.field.author")}</dt>
         <dd class="flex items-center gap-1.5 text-ink">
           <AuthorAvatar
             email={detail.authorEmail}
@@ -92,32 +94,32 @@
           />
           {detail.authorName} &lt;{detail.authorEmail}&gt;
         </dd>
-        <dt class="text-ink-faint">authored</dt>
+        <dt class="text-ink-faint">{t("commit.field.authored")}</dt>
         <dd class="text-ink">
           <time datetime={detail.authoredAt} title={detail.authoredAt}
-            >{absoluteTime(detail.authoredAt)}</time
+            >{i18n.absoluteIso(detail.authoredAt)}</time
           >
         </dd>
-        <dt class="text-ink-faint">committer</dt>
+        <dt class="text-ink-faint">{t("commit.field.committer")}</dt>
         <dd class="text-ink">
           {detail.committerName} &lt;{detail.committerEmail}&gt;
         </dd>
-        <dt class="text-ink-faint">committed</dt>
+        <dt class="text-ink-faint">{t("commit.field.committed")}</dt>
         <dd class="text-ink">
           <time datetime={detail.committedAt} title={detail.committedAt}
-            >{absoluteTime(detail.committedAt)}</time
+            >{i18n.absoluteIso(detail.committedAt)}</time
           >
         </dd>
-        <dt class="text-ink-faint">tree</dt>
+        <dt class="text-ink-faint">{t("commit.field.tree")}</dt>
         <dd class="font-mono text-ink">{shortOid(detail.treeOid)}</dd>
-        <dt class="text-ink-faint">parents</dt>
+        <dt class="text-ink-faint">{t("commit.field.parents")}</dt>
         <dd class="font-mono text-ink">
           {detail.parents.length === 0
-            ? "(root commit)"
+            ? t("commit.root.label")
             : detail.parents.map(shortOid).join(" ")}
         </dd>
         {#if detail.encoding !== null}
-          <dt class="text-ink-faint">encoding</dt>
+          <dt class="text-ink-faint">{t("commit.field.encoding")}</dt>
           <dd class="text-ink">{detail.encoding}</dd>
         {/if}
       </dl>
@@ -127,7 +129,7 @@
           class="rounded-md border border-border bg-panel p-2 text-xs whitespace-pre-wrap text-ink">{detail.body}</pre>
       {:else}
         <p class="text-xs text-ink-faint">
-          This commit has no message body beyond its subject.
+          {t("commit.body.empty")}
         </p>
       {/if}
     {/if}
