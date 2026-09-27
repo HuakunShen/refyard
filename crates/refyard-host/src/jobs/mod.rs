@@ -34,7 +34,8 @@ use serde::{Deserialize, Serialize};
 use crate::clock::now_millis;
 use crate::events::EventSink;
 use crate::jobs::journal::{
-    canonical_payload_digest, ClientRequestAdmission, EffectOutcome, Journal, JournalRecord,
+    canonical_payload_digest, AdmissionBinding, ClientRequestAdmission, EffectOutcome, Journal,
+    JournalRecord, OwnerSealResult,
 };
 use crate::jobs::queue::{EnqueueRefusal, Queue, QueueLimits, QueueMode, QueueTicket};
 use crate::jobs::recovery::{Recovery, WriteBlock};
@@ -1022,6 +1023,14 @@ pub enum ClientRequestLookup {
     Unknown,
 }
 
+/// An exclusive admission boundary held while the embedding owner validates a preview,
+/// source snapshot and policy, then consumed by Submit or owner Seal. The private identity
+/// prevents accidentally using a guard from another embedded Refyard instance.
+pub struct MutationAdmissionGuard {
+    engine_identity: Arc<()>,
+    _guard: tokio::sync::OwnedMutexGuard<()>,
+}
+
 /// The write path: journal, queue, effects and the rules that join them.
 pub struct MutationEngine {
     journal: Arc<Journal>,
@@ -1034,6 +1043,9 @@ pub struct MutationEngine {
     /// This lock orders task registration against shutdown closing the queue.
     tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
     shutdown_gate: tokio::sync::Mutex<()>,
+    /// Serializes target-side source validation through Accepted append with owner sealing.
+    admission_gate: Arc<tokio::sync::Mutex<()>>,
+    admission_identity: Arc<()>,
     /// Where state changes are announced. `None` is an engine nobody subscribed to —
     /// tests, and a host that has not wired its event transport — and it changes nothing
     /// about what is journalled.
@@ -1076,6 +1088,8 @@ impl MutationEngine {
         let next_operation = journal
             .operation_id_high_water()
             .max(next_operation_seed(&journal.records()));
+        let admission_gate = Arc::new(tokio::sync::Mutex::new(()));
+        let admission_identity = Arc::new(());
         Arc::new(Self {
             journal,
             recovery,
@@ -1085,8 +1099,42 @@ impl MutationEngine {
             closed: AtomicBool::new(false),
             tasks: Mutex::new(Vec::new()),
             shutdown_gate: tokio::sync::Mutex::new(()),
+            admission_gate,
+            admission_identity,
             events,
         })
+    }
+
+    /// Acquires the boundary external policy/source validation must share with Submit and
+    /// owner Seal. The returned guard stays held across caller awaits until consumed or
+    /// dropped.
+    pub async fn acquire_admission_guard(&self) -> MutationAdmissionGuard {
+        let guard = self.admission_gate.clone().lock_owned().await;
+        MutationAdmissionGuard {
+            engine_identity: self.admission_identity.clone(),
+            _guard: guard,
+        }
+    }
+
+    fn validate_admission_guard(&self, guard: &MutationAdmissionGuard) -> Result<(), Problem> {
+        if Arc::ptr_eq(&self.admission_identity, &guard.engine_identity) {
+            Ok(())
+        } else {
+            Err(Problem::new(
+                ProblemCode::InvalidRequest,
+                "the mutation admission guard belongs to a different Refyard host",
+            ))
+        }
+    }
+
+    /// Persists the owner seal while holding the same target admission boundary as Submit.
+    pub fn seal_submission_with_guard(
+        &self,
+        binding: AdmissionBinding,
+        guard: MutationAdmissionGuard,
+    ) -> Result<OwnerSealResult, Problem> {
+        self.validate_admission_guard(&guard)?;
+        self.journal.seal_submission(binding, now_millis())
     }
 
     /// Publishes one record's state as an operation event, and — for an outcome that
@@ -1168,6 +1216,25 @@ impl MutationEngine {
         request: MutationRequest,
         source: &dyn PreconditionSource,
     ) -> Result<SubmitResult, Problem> {
+        let guard = self.acquire_admission_guard().await;
+        self.submit_with_admission_guard(actor, request, None, guard, source)
+            .await
+    }
+
+    /// Submits a request while the embedding Xross owner retains the same admission
+    /// boundary it acquired before validating its target preview, policy and source state.
+    /// This makes external validation, owner sealing and the Accepted append one
+    /// linearizable operation at the target.
+    pub(crate) async fn submit_with_admission_guard(
+        self: &Arc<Self>,
+        actor: &str,
+        request: MutationRequest,
+        binding: Option<AdmissionBinding>,
+        guard: MutationAdmissionGuard,
+        source: &dyn PreconditionSource,
+    ) -> Result<SubmitResult, Problem> {
+        self.validate_admission_guard(&guard)?;
+        let _admission = guard;
         if self.closed.load(Ordering::SeqCst) {
             return Err(Problem::new(
                 ProblemCode::Unavailable,
@@ -1175,13 +1242,26 @@ impl MutationEngine {
             ));
         }
         let digest = canonical_payload_digest(&request);
+        let bound_submission = binding.is_some();
 
         // Idempotency: the same client request id and the same payload is the same
         // operation, and the answer is the record that already exists.
-        if let Some(existing) =
-            self.existing_submission(actor, &request.client_request_id, &digest)?
-        {
-            return Ok(existing);
+        if !bound_submission {
+            if let Some(existing) =
+                self.existing_submission(actor, &request.client_request_id, &digest)?
+            {
+                return Ok(existing);
+            }
+        } else if let Some(existing) = self.journal.find_bound_submission_for_retry(
+            actor,
+            &request.client_request_id,
+            &digest,
+            binding.as_ref().expect("bound submission has its binding"),
+        )? {
+            return Ok(SubmitResult {
+                record: existing.to_operation_record(),
+                duplicate: true,
+            });
         }
 
         let kind = request.operation.kind();
@@ -1197,6 +1277,9 @@ impl MutationEngine {
         let write_key = match source.write_key(&request) {
             Ok(write_key) => write_key,
             Err(problem) => {
+                if bound_submission {
+                    return Err(problem);
+                }
                 return self.existing_submission_or_problem(
                     actor,
                     &request.client_request_id,
@@ -1213,6 +1296,9 @@ impl MutationEngine {
         let mut context = match source.context(&request).await {
             Ok(context) => context,
             Err(problem) => {
+                if bound_submission {
+                    return Err(problem);
+                }
                 return self.existing_submission_or_problem(
                     actor,
                     &request.client_request_id,
@@ -1223,6 +1309,9 @@ impl MutationEngine {
         };
         context.restart_block = block.as_ref().map(restart_block_of);
         if let Err(problem) = check_preconditions(&context) {
+            if bound_submission {
+                return Err(problem);
+            }
             return self.existing_submission_or_problem(
                 actor,
                 &request.client_request_id,
@@ -1257,7 +1346,11 @@ impl MutationEngine {
         };
         // Persist `accepted` before the operation may run. A failure here means the
         // operation is refused, not accepted-and-forgotten.
-        match self.journal.admit(accepted, now_millis()) {
+        let admission = match binding {
+            Some(binding) => self.journal.admit_bound(accepted, binding, now_millis()),
+            None => self.journal.admit(accepted, now_millis()),
+        };
+        match admission {
             Ok(ClientRequestAdmission::Appended(_)) => {}
             Ok(ClientRequestAdmission::Existing(existing)) => {
                 if existing.payload_digest != digest {
@@ -1273,6 +1366,16 @@ impl MutationEngine {
                 });
             }
             Err(problem) => {
+                if bound_submission
+                    && matches!(
+                        problem.code,
+                        ProblemCode::IdempotencyConflict
+                            | ProblemCode::StalePreview
+                            | ProblemCode::InvalidRequest
+                    )
+                {
+                    return Err(problem);
+                }
                 return Err(Problem::new(
                     ProblemCode::ResourceBusy,
                     format!(
@@ -1347,7 +1450,10 @@ impl MutationEngine {
         client_request_id: &str,
         digest: &str,
     ) -> Result<Option<SubmitResult>, Problem> {
-        let Some(existing) = self.journal.find_client_request(actor, client_request_id) else {
+        let Some(existing) = self
+            .journal
+            .find_unbound_submission_for_retry(actor, client_request_id)?
+        else {
             return Ok(None);
         };
         if existing.payload_digest != digest {
@@ -1573,6 +1679,37 @@ fn repository_changed(record: &JournalRecord) -> Option<EventPayload> {
 mod tests {
     use super::*;
 
+    struct SourceMustNotRun;
+
+    impl PreconditionSource for SourceMustNotRun {
+        fn write_key(&self, _request: &MutationRequest) -> Result<String, Problem> {
+            panic!("a retained bound retry must resolve before source validation")
+        }
+
+        fn context<'a>(
+            &'a self,
+            _request: &'a MutationRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<PreconditionContext, Problem>> + Send + 'a>> {
+            panic!("a retained bound retry must resolve before source validation")
+        }
+    }
+
+    struct CountIfExecuted(Arc<std::sync::atomic::AtomicUsize>);
+
+    impl MutationEffect for CountIfExecuted {
+        fn kind(&self) -> MutationKind {
+            MutationKind::Commit
+        }
+
+        fn run<'a>(
+            &'a self,
+            _request: EffectRequest<'a>,
+        ) -> Pin<Box<dyn Future<Output = EffectOutcome> + Send + 'a>> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { panic!("an idempotent retry must not execute an effect") })
+        }
+    }
+
     #[test]
     fn a_mutation_request_refuses_a_field_or_a_kind_it_does_not_know() {
         let parsed: Result<MutationRequest, _> = serde_json::from_value(serde_json::json!({
@@ -1620,5 +1757,137 @@ mod tests {
         };
         assert_eq!(request.repository_id(), Some("repo_1"));
         assert_eq!(request.worktree_id(), Some("wt_1"));
+    }
+
+    #[tokio::test]
+    async fn admission_guard_blocks_a_second_submit_or_seal_boundary_until_released() {
+        let journal = Arc::new(Journal::open(None).expect("journal"));
+        let engine = MutationEngine::new(journal, Arc::new(Recovery::new()), vec![]);
+        let held = engine.acquire_admission_guard().await;
+
+        let waiting_engine = engine.clone();
+        let waiting = tokio::spawn(async move { waiting_engine.acquire_admission_guard().await });
+        tokio::task::yield_now().await;
+        assert!(!waiting.is_finished(), "the second caller must wait at the same gate");
+
+        drop(held);
+        let released = tokio::time::timeout(std::time::Duration::from_secs(1), waiting)
+            .await
+            .expect("gate release wakes waiter")
+            .expect("waiter task");
+        drop(released);
+    }
+
+    #[tokio::test]
+    async fn admission_guard_cannot_be_reused_across_embedded_hosts() {
+        let journal = Arc::new(Journal::open(None).expect("journal"));
+        let first = MutationEngine::new(
+            journal.clone(),
+            Arc::new(Recovery::new()),
+            vec![],
+        );
+        let second = MutationEngine::new(journal, Arc::new(Recovery::new()), vec![]);
+        let guard = first.acquire_admission_guard().await;
+        let binding = AdmissionBinding {
+            actor: "owner".to_string(),
+            client_request_id: "request-1".to_string(),
+            target_preview_id: "preview-1".to_string(),
+            resource_key: "repo_1".to_string(),
+            operation_fingerprint: "fingerprint".to_string(),
+            expires_at_ms: 1_000,
+        };
+
+        let error = second
+            .seal_submission_with_guard(binding, guard)
+            .expect_err("a different host must not accept this guard");
+        assert_eq!(error.code, ProblemCode::InvalidRequest);
+    }
+
+    #[tokio::test]
+    async fn bound_retry_resolves_before_source_validation_and_sealed_retry_is_refused() {
+        let journal = Arc::new(Journal::open(None).expect("journal"));
+        let request = MutationRequest {
+            client_request_id: "request-bound-retry".to_string(),
+            target: MutationTarget::Worktree {
+                repository_id: "repo_1".to_string(),
+                worktree_id: "wt_1".to_string(),
+                expected_snapshot_id: "stale-snapshot-is-irrelevant-to-an-exact-retry".to_string(),
+            },
+            operation: MutationOperation::Commit {
+                message: "already accepted".to_string(),
+            },
+        };
+        let fingerprint = canonical_payload_digest(&request);
+        let binding = AdmissionBinding {
+            actor: "owner".to_string(),
+            client_request_id: request.client_request_id.clone(),
+            target_preview_id: "preview-bound-retry".to_string(),
+            resource_key: "repo_1".to_string(),
+            operation_fingerprint: fingerprint.clone(),
+            expires_at_ms: now_millis().saturating_add(60_000),
+        };
+        journal
+            .admit_bound(
+                JournalRecord {
+                    operation_id: "op_1".to_string(),
+                    client_request_id: request.client_request_id.clone(),
+                    actor: "owner".to_string(),
+                    kind: MutationKind::Commit,
+                    target: request.target.clone(),
+                    status: OperationStatus::Accepted,
+                    sequence: 1,
+                    accepted_at_ms: now_millis(),
+                    started_at_ms: None,
+                    finished_at_ms: None,
+                    payload_digest: fingerprint,
+                    write_key: "repo_1".to_string(),
+                    result: None,
+                    problem: None,
+                    unknown_reason: None,
+                    acknowledged_at_ms: None,
+                },
+                binding.clone(),
+                now_millis(),
+            )
+            .expect("seed exact accepted operation");
+
+        let effect_runs = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let engine = MutationEngine::new(
+            journal,
+            Arc::new(Recovery::new()),
+            vec![Box::new(CountIfExecuted(effect_runs.clone()))],
+        );
+        let retry = engine
+            .submit_with_admission_guard(
+                "owner",
+                request.clone(),
+                Some(binding.clone()),
+                engine.acquire_admission_guard().await,
+                &SourceMustNotRun,
+            )
+            .await
+            .expect("exact retained retry returns before checking now-stale source facts");
+        assert!(retry.duplicate);
+        assert_eq!(retry.record.operation_id, "op_1");
+
+        let seal = engine
+            .seal_submission_with_guard(binding.clone(), engine.acquire_admission_guard().await)
+            .expect("seal the already accepted exact operation");
+        assert_eq!(seal.operation_id.as_deref(), Some("op_1"));
+        assert_eq!(
+            engine
+                .submit_with_admission_guard(
+                    "owner",
+                    request,
+                    Some(binding),
+                    engine.acquire_admission_guard().await,
+                    &SourceMustNotRun,
+                )
+                .await
+                .expect_err("a sealed key cannot be replayed")
+                .code,
+            ProblemCode::IdempotencyConflict
+        );
+        assert_eq!(effect_runs.load(Ordering::SeqCst), 0);
     }
 }

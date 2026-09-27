@@ -50,11 +50,12 @@ use crate::events::{EventSink, EventSubscription};
 use crate::files::preview::{PreviewClaim, PreviewStore};
 use crate::files::PREVIEW_MAX_BYTES;
 use crate::files::{self, FileRead};
-use crate::jobs::journal::Journal;
+use crate::jobs::journal::{AdmissionBinding, Journal, OwnerSealResult};
 use crate::jobs::queue::QueueLimits;
 use crate::jobs::recovery::Recovery;
 use crate::jobs::{
-    ClientRequestLookup, MutationEngine, MutationRequest, PreconditionSource, SubmitResult,
+    ClientRequestLookup, MutationAdmissionGuard, MutationEngine, MutationRequest,
+    PreconditionSource, SubmitResult,
 };
 use crate::paths::PathRegistry;
 use crate::providers::local::LocalGit;
@@ -1966,6 +1967,41 @@ impl ApplicationService {
             root_lease: Mutex::new(None),
         };
         self.engine.submit(actor, request, &source).await
+    }
+
+    /// Acquires the serialization boundary an embedding owner must hold while validating
+    /// its own preview/policy/source state before a bound Submit or owner Seal.
+    pub async fn acquire_mutation_admission(&self) -> MutationAdmissionGuard {
+        self.engine.acquire_admission_guard().await
+    }
+
+    /// Submits a mutation whose accepted journal record is bound to the embedding owner's
+    /// target preview and native request key. `guard` must have been acquired from this
+    /// service before external validation began.
+    pub async fn submit_mutation_with_admission_guard(
+        &self,
+        actor: &str,
+        request: MutationRequest,
+        binding: AdmissionBinding,
+        guard: MutationAdmissionGuard,
+    ) -> Result<SubmitResult, Problem> {
+        let source = ServiceFacts {
+            service: self,
+            root_lease: Mutex::new(None),
+        };
+        self.engine
+            .submit_with_admission_guard(actor, request, Some(binding), guard, &source)
+            .await
+    }
+
+    /// Persists an owner seal while retaining the same admission guard used for its
+    /// freshness and authorization checks.
+    pub fn seal_mutation_submission_with_admission_guard(
+        &self,
+        binding: AdmissionBinding,
+        guard: MutationAdmissionGuard,
+    ) -> Result<OwnerSealResult, Problem> {
+        self.engine.seal_submission_with_guard(binding, guard)
     }
 
     pub async fn engine_shutdown(&self) -> Result<(), Problem> {

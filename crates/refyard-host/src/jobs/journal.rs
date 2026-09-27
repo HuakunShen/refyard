@@ -20,6 +20,7 @@
 //! atomic rename:
 //!
 //! ```text
+//! <state root>/.refyard-journal-initialized  durable evidence that this root held a journal
 //! <state root>/journal/index.json              which operations exist, and the next sequence
 //! <state root>/journal/records/<op>.json       one operation's metadata
 //! ```
@@ -36,6 +37,7 @@ use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use refyard_contract::problem::{Problem, ProblemCode};
@@ -49,6 +51,10 @@ use crate::clock::{format_iso8601_millis, now_millis};
 
 const JOURNAL_MAX_BYTES: usize = 16 * 1024 * 1024;
 const TERMINAL_RETENTION_MS: i64 = 24 * 60 * 60 * 1_000;
+const JOURNAL_INITIALIZED_MARKER: &str = ".refyard-journal-initialized";
+const JOURNAL_INITIALIZED_CONTENT: &[u8] = b"refyard-journal-state-v1\n";
+const JOURNAL_INDEX_SCHEMA_VERSION: u32 = 1;
+static JOURNAL_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, Copy)]
 struct JournalRetentionPolicy {
@@ -150,11 +156,25 @@ impl JournalRecord {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct JournalIndex {
+    /// Prevents a previous Refyard binary from silently rewriting away admission tombstones.
+    /// Version zero is reserved for the unmarked legacy index shape.
+    #[serde(default)]
+    schema_version: u32,
     next_sequence: u64,
     /// Monotonic operation-id suffix high-water mark; unlike records this is never pruned.
     #[serde(default)]
     operation_id_high_water: u64,
     operations: Vec<IndexEntry>,
+    /// Preview/request bindings survive operation pruning so a consumed target preview can
+    /// never be reused after restart. The corresponding operation body remains subject to
+    /// normal terminal retention, so a pruned operation is still historically unknown.
+    #[serde(default)]
+    bound_requests: Vec<BoundRequestEntry>,
+    /// Durable negative admission authority. These entries are deliberately not pruned;
+    /// they are compacted only by a future versioned migration with an explicit safety
+    /// horizon.
+    #[serde(default)]
+    owner_seals: Vec<OwnerSealEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -164,11 +184,133 @@ struct IndexEntry {
     sequence: u64,
 }
 
+/// The exact Xross-minted preview and native request binding that Refyard accepted.
+///
+/// Refyard treats these fields as opaque identifiers and a fingerprint; it does not make
+/// policy or authorization decisions from them. Do not place paths, credentials or other
+/// sensitive payloads in this durable binding.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdmissionBinding {
+    pub actor: String,
+    pub client_request_id: String,
+    pub target_preview_id: String,
+    pub resource_key: String,
+    /// The Refyard host's canonical SHA-256 digest for the exact `MutationRequest`.
+    pub operation_fingerprint: String,
+    pub expires_at_ms: i64,
+}
+
+impl AdmissionBinding {
+    fn validate(&self) -> Result<(), Problem> {
+        for (label, value, max_bytes) in [
+            ("actor", self.actor.as_str(), 256),
+            ("client request id", self.client_request_id.as_str(), 256),
+            ("target preview id", self.target_preview_id.as_str(), 256),
+            ("resource key", self.resource_key.as_str(), 1_024),
+            ("operation fingerprint", self.operation_fingerprint.as_str(), 256),
+        ] {
+            if value.is_empty() || value.len() > max_bytes || value.chars().any(char::is_control) {
+                return Err(Problem::new(
+                    ProblemCode::InvalidRequest,
+                    format!("the {label} in an admission binding is empty or invalid"),
+                ));
+            }
+        }
+        if self.expires_at_ms <= 0 {
+            return Err(Problem::new(
+                ProblemCode::InvalidRequest,
+                "the target preview expiry must be a positive Unix timestamp in milliseconds",
+            ));
+        }
+        Ok(())
+    }
+
+    fn matches_record(&self, record: &JournalRecord) -> bool {
+        self.actor == record.actor
+            && self.client_request_id == record.client_request_id
+            && self.resource_key == record.write_key
+            && self.operation_fingerprint == record.payload_digest
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BoundRequestEntry {
+    operation_id: String,
+    binding: AdmissionBinding,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OwnerSealEntry {
+    binding: AdmissionBinding,
+    receipt_id: String,
+    operation_id: Option<String>,
+    sealed_at_ms: i64,
+}
+
+/// A stable result of the durable owner-seal transaction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwnerSealResult {
+    /// A stable, opaque 128-bit correlation id. It is not a bearer credential.
+    pub receipt_id: String,
+    /// Present only when the exact accepted binding is still retained. `None` means the
+    /// historical result remains unknown; it is never evidence that Submit was not accepted.
+    pub operation_id: Option<String>,
+    pub sealed_at_ms: i64,
+}
+
+impl OwnerSealEntry {
+    fn result(&self) -> OwnerSealResult {
+        OwnerSealResult {
+            receipt_id: self.receipt_id.clone(),
+            operation_id: self.operation_id.clone(),
+            sealed_at_ms: self.sealed_at_ms,
+        }
+    }
+}
+
+fn owner_seal_receipt(binding: &AdmissionBinding) -> String {
+    let mut digest = Sha256::new();
+    digest.update(b"refyard-owner-seal-v1\0");
+    for value in [
+        binding.actor.as_str(),
+        binding.client_request_id.as_str(),
+        binding.target_preview_id.as_str(),
+        binding.resource_key.as_str(),
+        binding.operation_fingerprint.as_str(),
+    ] {
+        digest.update((value.len() as u64).to_be_bytes());
+        digest.update(value.as_bytes());
+    }
+    digest.update(binding.expires_at_ms.to_be_bytes());
+    let digest = digest.finalize();
+    let mut receipt = String::with_capacity(5 + 16 * 2);
+    receipt.push_str("seal_");
+    for byte in &digest[..16] {
+        use std::fmt::Write as _;
+        let _ = write!(receipt, "{byte:02x}");
+    }
+    receipt
+}
+
+fn sealed_admission_problem() -> Problem {
+    Problem::new(
+        ProblemCode::IdempotencyConflict,
+        "the native request key or target preview has been durably sealed against admission",
+    )
+}
+
 /// The journal of one host, backed by a private state directory or by memory.
 #[derive(Debug)]
 pub struct Journal {
     inner: Mutex<JournalState>,
     root: Option<PathBuf>,
+    /// A failed durable write may have published its rename without proving the directory
+    /// entry reached stable storage. This host cannot safely admit or seal more work until
+    /// the journal is reopened and its on-disk authority is validated.
+    durability_failed: AtomicBool,
     /// Holds exclusive ownership of the state root for this Journal's full lifetime.
     _state_root_lock: Option<File>,
 }
@@ -192,6 +334,14 @@ struct JournalState {
     operation_id_high_water: u64,
     /// Rebuilt from validated durable records and updated in the same lock as admission.
     client_requests: HashMap<(String, String), String>,
+    /// Durable binding history, retained even after operation bodies are pruned.
+    bound_requests: BTreeMap<(String, String), BoundRequestEntry>,
+    /// One actor/preview can be consumed by only one request key, including after pruning.
+    bound_previews: HashMap<(String, String), (String, String)>,
+    /// Durable owner seals keyed by the actor/request namespace.
+    owner_seals: BTreeMap<(String, String), OwnerSealEntry>,
+    /// One actor/preview can be sealed by only one request key.
+    sealed_previews: HashMap<(String, String), (String, String)>,
 }
 
 /// The result of atomically checking an actor/request key and, if absent, accepting it.
@@ -219,6 +369,7 @@ impl Journal {
         let mut journal = Self {
             inner: Mutex::new(JournalState::default()),
             root,
+            durability_failed: AtomicBool::new(false),
             _state_root_lock: None,
         };
         journal.load(secure)?;
@@ -243,9 +394,17 @@ impl Journal {
         self.root.as_ref().map(|root| root.join("journal/records"))
     }
 
-    /// Every file this journal wrote: each record and the index.
+    /// Every authority file this journal wrote: the initialization marker, index and records.
     pub fn on_disk_files(&self) -> Vec<PathBuf> {
         let mut files = Vec::new();
+        if let Some(root) = &self.root {
+            let marker = root.join(JOURNAL_INITIALIZED_MARKER);
+            if std::fs::symlink_metadata(&marker)
+                .is_ok_and(|metadata| metadata.file_type().is_file() && !metadata.file_type().is_symlink())
+            {
+                files.push(marker);
+            }
+        }
         if let Some(index) = self.index_path() {
             if index.is_file() {
                 files.push(index);
@@ -296,18 +455,99 @@ impl Journal {
         self.admit_with_policy(record, now_ms, DEFAULT_RETENTION)
     }
 
+    /// Atomically accepts a request under one target-minted, single-use preview binding.
+    ///
+    /// The binding, request and Accepted record are published by the same index rename.
+    /// An exact retry joins a retained operation. A request or preview sealed by the owner,
+    /// or a binding whose accepted record has since been pruned, is never admitted again.
+    pub(crate) fn admit_bound(
+        &self,
+        record: JournalRecord,
+        binding: AdmissionBinding,
+        now_ms: i64,
+    ) -> Result<ClientRequestAdmission, Problem> {
+        self.admit_with_binding_policy(record, Some(binding), now_ms, DEFAULT_RETENTION)
+    }
+
     fn admit_with_policy(
         &self,
         record: JournalRecord,
         now_ms: i64,
         policy: JournalRetentionPolicy,
     ) -> Result<ClientRequestAdmission, Problem> {
+        self.admit_with_binding_policy(record, None, now_ms, policy)
+    }
+
+    fn admit_with_binding_policy(
+        &self,
+        record: JournalRecord,
+        binding: Option<AdmissionBinding>,
+        now_ms: i64,
+        policy: JournalRetentionPolicy,
+    ) -> Result<ClientRequestAdmission, Problem> {
+        if let Some(binding) = &binding {
+            binding.validate()?;
+            if !binding.matches_record(&record) {
+                return Err(Problem::new(
+                    ProblemCode::IdempotencyConflict,
+                    "the target preview binding does not match the accepted actor, request, resource and operation fingerprint",
+                ));
+            }
+        }
         let mut state = self.inner.lock().expect("journal lock");
+        self.ensure_durable()?;
         let request_key = (record.actor.clone(), record.client_request_id.clone());
+        if state.owner_seals.contains_key(&request_key) {
+            return Err(sealed_admission_problem());
+        }
+        if let Some(binding) = &binding {
+            let preview_key = (binding.actor.clone(), binding.target_preview_id.clone());
+            if state.sealed_previews.contains_key(&preview_key) {
+                return Err(sealed_admission_problem());
+            }
+            if let Some(previous) = state.bound_requests.get(&request_key) {
+                if previous.binding != *binding {
+                    return Err(Problem::new(
+                        ProblemCode::IdempotencyConflict,
+                        "that client request id is already bound to another target preview or operation",
+                    ));
+                }
+                if let Some(existing) = state.records.get(&previous.operation_id).cloned() {
+                    return Ok(ClientRequestAdmission::Existing(existing));
+                }
+                return Err(Problem::new(
+                    ProblemCode::IdempotencyConflict,
+                    "the exact operation is no longer retained; its outcome is unknown and the bound request cannot be replayed",
+                ));
+            }
+            if state.bound_previews.contains_key(&preview_key) {
+                return Err(Problem::new(
+                    ProblemCode::IdempotencyConflict,
+                    "that target preview was already consumed by another request key",
+                ));
+            }
+            if binding.expires_at_ms <= now_ms {
+                return Err(Problem::new(
+                    ProblemCode::StalePreview,
+                    "the target-minted mutation preview expired before admission",
+                ));
+            }
+        } else if state.bound_requests.contains_key(&request_key) {
+            return Err(Problem::new(
+                ProblemCode::IdempotencyConflict,
+                "this client request id requires its original target preview binding",
+            ));
+        }
         if let Some(operation_id) = state.client_requests.get(&request_key) {
             let existing = state.records.get(operation_id).cloned().ok_or_else(|| {
                 internal("the client-request index points to a missing operation".to_string())
             })?;
+            if binding.is_some() {
+                return Err(Problem::new(
+                    ProblemCode::IdempotencyConflict,
+                    "that client request id already belongs to an operation without this target preview binding",
+                ));
+            }
             return Ok(ClientRequestAdmission::Existing(existing));
         }
         if state.records.contains_key(&record.operation_id) {
@@ -330,6 +570,18 @@ impl Journal {
         next_state
             .client_requests
             .insert(request_key, record.operation_id.clone());
+        if let Some(binding) = binding {
+            let bound_request_key = (binding.actor.clone(), binding.client_request_id.clone());
+            let preview_key = (binding.actor.clone(), binding.target_preview_id.clone());
+            next_state.bound_requests.insert(
+                bound_request_key.clone(),
+                BoundRequestEntry {
+                    operation_id: record.operation_id.clone(),
+                    binding,
+                },
+            );
+            next_state.bound_previews.insert(preview_key, bound_request_key);
+        }
         next_state
             .records
             .insert(record.operation_id.clone(), record.clone());
@@ -356,6 +608,93 @@ impl Journal {
         // be removed, it is now an unindexed orphan and is never exposed as a journal record.
         self.remove_pruned_record_files(&pruned_records);
         Ok(ClientRequestAdmission::Appended(record))
+    }
+
+    /// Durably closes one actor/request-key and target-preview pair against later Submit.
+    ///
+    /// A retained operation is returned only if its complete binding is exact. Otherwise
+    /// this records a stable seal receipt with no operation id, which means the historical
+    /// outcome remains unknown; it does not claim the request was never accepted.
+    pub(crate) fn seal_submission(
+        &self,
+        binding: AdmissionBinding,
+        sealed_at_ms: i64,
+    ) -> Result<OwnerSealResult, Problem> {
+        binding.validate()?;
+        if sealed_at_ms <= 0 {
+            return Err(Problem::new(
+                ProblemCode::InvalidRequest,
+                "the owner seal timestamp must be a positive Unix timestamp in milliseconds",
+            ));
+        }
+
+        let mut state = self.inner.lock().expect("journal lock");
+        self.ensure_durable()?;
+        let request_key = (binding.actor.clone(), binding.client_request_id.clone());
+        let preview_key = (binding.actor.clone(), binding.target_preview_id.clone());
+        if let Some(existing) = state.owner_seals.get(&request_key) {
+            if existing.binding != binding {
+                return Err(Problem::new(
+                    ProblemCode::IdempotencyConflict,
+                    "that actor/request key already has a different durable owner seal",
+                ));
+            }
+            return Ok(existing.result());
+        }
+        if let Some(previous_request_key) = state.sealed_previews.get(&preview_key) {
+            if previous_request_key != &request_key {
+                return Err(Problem::new(
+                    ProblemCode::IdempotencyConflict,
+                    "that target preview is already sealed under another request key",
+                ));
+            }
+        }
+        if let Some(previous_request_key) = state.bound_previews.get(&preview_key) {
+            if previous_request_key != &request_key {
+                return Err(Problem::new(
+                    ProblemCode::IdempotencyConflict,
+                    "that target preview was already consumed by another request key",
+                ));
+            }
+        }
+        if let Some(previous) = state.bound_requests.get(&request_key) {
+            if previous.binding != binding {
+                return Err(Problem::new(
+                    ProblemCode::IdempotencyConflict,
+                    "that client request id is durably bound to a different target preview or operation",
+                ));
+            }
+        }
+
+        let operation_id = state
+            .bound_requests
+            .get(&request_key)
+            .filter(|entry| entry.binding == binding)
+            .and_then(|entry| state.records.get(&entry.operation_id))
+            .filter(|record| binding.matches_record(record))
+            .map(|record| record.operation_id.clone());
+        let entry = OwnerSealEntry {
+            receipt_id: owner_seal_receipt(&binding),
+            binding,
+            operation_id,
+            sealed_at_ms,
+        };
+        let mut next_state = state.clone();
+        next_state
+            .owner_seals
+            .insert(request_key.clone(), entry.clone());
+        next_state
+            .sealed_previews
+            .insert(preview_key, request_key);
+        if journal_bytes(&next_state)? > JOURNAL_MAX_BYTES {
+            return Err(Problem::new(
+                ProblemCode::ResourceBusy,
+                "the operation journal is full; the owner seal was not persisted",
+            ));
+        }
+        self.write_index(&next_state)?;
+        *state = next_state;
+        Ok(entry.result())
     }
 
     fn remove_pruned_record_files(&self, records: &[JournalRecord]) {
@@ -633,6 +972,96 @@ impl Journal {
         state.records.get(operation_id).cloned()
     }
 
+    /// Resolves a retry from the legacy, preview-unbound Submit path without allowing it to
+    /// bypass an Xross target-preview binding or a durable owner seal.
+    pub(crate) fn find_unbound_submission_for_retry(
+        &self,
+        actor: &str,
+        client_request_id: &str,
+    ) -> Result<Option<JournalRecord>, Problem> {
+        let state = self.inner.lock().expect("journal lock");
+        self.ensure_durable()?;
+        let request_key = (actor.to_string(), client_request_id.to_string());
+        if state.owner_seals.contains_key(&request_key) {
+            return Err(sealed_admission_problem());
+        }
+        if state.bound_requests.contains_key(&request_key) {
+            return Err(Problem::new(
+                ProblemCode::IdempotencyConflict,
+                "this client request id requires its original target preview binding",
+            ));
+        }
+        let Some(operation_id) = state.client_requests.get(&request_key) else {
+            return Ok(None);
+        };
+        state.records.get(operation_id).cloned().map(Some).ok_or_else(|| {
+            internal("the client-request index points to a missing operation".to_string())
+        })
+    }
+
+    /// Resolves an idempotent retry on the preview-bound path before source validation.
+    /// This preserves the exact accepted result even if the repository has since changed,
+    /// while refusing sealed, mismatched, legacy-unbound or pruned history.
+    pub(crate) fn find_bound_submission_for_retry(
+        &self,
+        actor: &str,
+        client_request_id: &str,
+        operation_fingerprint: &str,
+        binding: &AdmissionBinding,
+    ) -> Result<Option<JournalRecord>, Problem> {
+        binding.validate()?;
+        if binding.actor != actor
+            || binding.client_request_id != client_request_id
+            || binding.operation_fingerprint != operation_fingerprint
+        {
+            return Err(Problem::new(
+                ProblemCode::IdempotencyConflict,
+                "the retry does not match its actor, native request key and operation fingerprint binding",
+            ));
+        }
+        let state = self.inner.lock().expect("journal lock");
+        self.ensure_durable()?;
+        let request_key = (actor.to_string(), client_request_id.to_string());
+        let preview_key = (actor.to_string(), binding.target_preview_id.clone());
+        if state.owner_seals.contains_key(&request_key)
+            || state.sealed_previews.contains_key(&preview_key)
+        {
+            return Err(sealed_admission_problem());
+        }
+        if let Some(previous) = state.bound_requests.get(&request_key) {
+            if previous.binding != *binding {
+                return Err(Problem::new(
+                    ProblemCode::IdempotencyConflict,
+                    "that client request id is already bound to another target preview or resource",
+                ));
+            }
+            return state
+                .records
+                .get(&previous.operation_id)
+                .cloned()
+                .map(Some)
+                .ok_or_else(|| {
+                    Problem::new(
+                        ProblemCode::IdempotencyConflict,
+                        "the exact operation is no longer retained; its outcome is unknown and the bound request cannot be replayed",
+                    )
+                });
+        }
+        if state.bound_previews.contains_key(&preview_key) {
+            return Err(Problem::new(
+                ProblemCode::IdempotencyConflict,
+                "that target preview was already consumed by another request key",
+            ));
+        }
+        if state.client_requests.contains_key(&request_key) {
+            return Err(Problem::new(
+                ProblemCode::IdempotencyConflict,
+                "that client request id already belongs to an operation without this target preview binding",
+            ));
+        }
+        Ok(None)
+    }
+
     /// Every record, in creation order.
     pub fn records(&self) -> Vec<JournalRecord> {
         let state = self.inner.lock().expect("journal lock");
@@ -663,7 +1092,47 @@ impl Journal {
         };
         let directory = root.join("journal");
         let records = directory.join("records");
-        for path in [root, &directory, &records] {
+        create_dir_all_durably(root).map_err(|error| {
+            internal(format!(
+                "the journal directory {} could not be created: {error}",
+                root.display()
+            ))
+        })?;
+        secure(root)?;
+        self._state_root_lock = Some(acquire_state_root_lock(root)?);
+
+        let marker_path = root.join(JOURNAL_INITIALIZED_MARKER);
+        let marker_exists = match std::fs::symlink_metadata(&marker_path) {
+            Ok(metadata) => {
+                if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+                    return Err(internal(format!(
+                        "the journal initialization marker {} is not a regular file",
+                        marker_path.display()
+                    )));
+                }
+                let bytes = std::fs::read(&marker_path).map_err(|error| {
+                    internal(format!(
+                        "the journal initialization marker {} could not be read: {error}",
+                        marker_path.display()
+                    ))
+                })?;
+                if bytes != JOURNAL_INITIALIZED_CONTENT {
+                    return Err(internal(format!(
+                        "the journal initialization marker {} is corrupt",
+                        marker_path.display()
+                    )));
+                }
+                true
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+            Err(error) => {
+                return Err(internal(format!(
+                    "the journal initialization marker {} could not be inspected: {error}",
+                    marker_path.display()
+                )))
+            }
+        };
+        for path in [&directory, &records] {
             std::fs::create_dir_all(path).map_err(|error| {
                 internal(format!(
                     "the journal directory {} could not be created: {error}",
@@ -672,25 +1141,71 @@ impl Journal {
             })?;
             secure(path)?;
         }
-        self._state_root_lock = Some(acquire_state_root_lock(root)?);
         let index_path = directory.join("index.json");
-        let index: JournalIndex = match std::fs::read(&index_path) {
-            Ok(bytes) => serde_json::from_slice(&bytes).map_err(|error| {
-                internal(format!(
-                    "the journal index {} is not readable as an index: {error}",
-                    index_path.display()
-                ))
-            })?,
-            // No index and no published records is a new journal. Once a record file has
-            // been published, absence of the index is ambiguous and must fail closed.
+        let (index, index_missing): (JournalIndex, bool) = match std::fs::read(&index_path) {
+            Ok(bytes) => {
+                let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|error| {
+                    internal(format!(
+                        "the journal index {} is not readable as an index: {error}",
+                        index_path.display()
+                    ))
+                })?;
+                let object = value.as_object().ok_or_else(|| {
+                    internal(format!(
+                        "the journal index {} is not a JSON object",
+                        index_path.display()
+                    ))
+                })?;
+                let schema_version = match object.get("schemaVersion") {
+                    None => 0,
+                    Some(serde_json::Value::Number(number)) => number
+                        .as_u64()
+                        .and_then(|number| u32::try_from(number).ok())
+                        .ok_or_else(|| {
+                            internal(format!(
+                                "the journal index {} has an invalid schema version",
+                                index_path.display()
+                            ))
+                        })?,
+                    Some(_) => {
+                        return Err(internal(format!(
+                            "the journal index {} has an invalid schema version",
+                            index_path.display()
+                        )))
+                    }
+                };
+                if schema_version == JOURNAL_INDEX_SCHEMA_VERSION {
+                    for field in ["boundRequests", "ownerSeals"] {
+                        if !object.contains_key(field) {
+                            return Err(internal(format!(
+                                "the schema-v{} journal index {} is missing required authority field {field}",
+                                JOURNAL_INDEX_SCHEMA_VERSION,
+                                index_path.display()
+                            )));
+                        }
+                    }
+                }
+                let index = serde_json::from_value(value).map_err(|error| {
+                    internal(format!(
+                        "the journal index {} is not readable as an index: {error}",
+                        index_path.display()
+                    ))
+                })?;
+                (index, false)
+            }
+            // A prior Refyard release created `journal/records` on open, even when the
+            // installation had never mutated anything. An unmarked legacy directory with
+            // no published records is therefore safe to initialize. A seal-only journal
+            // has no record files, so the root marker—not the presence of `records/`—is
+            // what prevents silently forgetting its negative admission authority.
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                if journal_record_files_exist(&records)? {
+                if marker_exists || journal_record_files_exist(&records)? {
                     return Err(internal(format!(
-                        "the journal index {} is missing while operation records remain; refusing to guess which requests were accepted",
+                        "the journal index {} is missing from an initialized state root; refusing to guess which requests were accepted or sealed",
                         index_path.display()
                     )));
                 }
-                JournalIndex::default()
+                (JournalIndex::default(), true)
             }
             Err(error) => {
                 return Err(internal(format!(
@@ -699,6 +1214,22 @@ impl Journal {
                 )))
             }
         };
+        if index.schema_version > JOURNAL_INDEX_SCHEMA_VERSION {
+            return Err(internal(format!(
+                "the journal index {} uses unsupported schema version {}; this host supports through version {}",
+                index_path.display(),
+                index.schema_version,
+                JOURNAL_INDEX_SCHEMA_VERSION
+            )));
+        }
+        if marker_exists && index.schema_version != JOURNAL_INDEX_SCHEMA_VERSION {
+            return Err(internal(format!(
+                "the initialized journal index {} has schema version {}; refusing to treat missing admission authority as empty",
+                index_path.display(),
+                index.schema_version
+            )));
+        }
+        let index_needs_upgrade = index.schema_version < JOURNAL_INDEX_SCHEMA_VERSION;
         let mut state = self.inner.lock().expect("journal lock");
         let mut seen_operations = std::collections::HashSet::new();
         let mut repair_index = false;
@@ -759,6 +1290,122 @@ impl Journal {
             state.order.push(record.operation_id.clone());
             state.records.insert(record.operation_id.clone(), record);
         }
+        let mut seen_bound_operations = std::collections::HashSet::new();
+        for entry in &index.bound_requests {
+            entry.binding.validate().map_err(|problem| {
+                internal(format!("the durable admission binding is invalid: {}", problem.message))
+            })?;
+            if !is_operation_id(&entry.operation_id) {
+                return Err(internal(format!(
+                    "the admission binding names an operation this host would not mint: {:?}",
+                    entry.operation_id
+                )));
+            }
+            let request_key = (
+                entry.binding.actor.clone(),
+                entry.binding.client_request_id.clone(),
+            );
+            let preview_key = (
+                entry.binding.actor.clone(),
+                entry.binding.target_preview_id.clone(),
+            );
+            if state.bound_requests.contains_key(&request_key) {
+                return Err(internal(
+                    "the journal contains duplicate durable actor/request bindings".to_string(),
+                ));
+            }
+            if let Some(previous) = state.bound_previews.insert(preview_key, request_key.clone()) {
+                return Err(internal(format!(
+                    "the journal binds one target preview to multiple request keys: {} and {}",
+                    previous.1, request_key.1
+                )));
+            }
+            if !seen_bound_operations.insert(entry.operation_id.clone()) {
+                return Err(internal(format!(
+                    "the journal binds operation {} more than once",
+                    entry.operation_id
+                )));
+            }
+            if let Some(record) = state.records.get(&entry.operation_id) {
+                if !entry.binding.matches_record(record) {
+                    return Err(internal(format!(
+                        "the durable admission binding does not match operation {}",
+                        entry.operation_id
+                    )));
+                }
+            }
+            state
+                .bound_requests
+                .insert(request_key, entry.clone());
+        }
+
+        for entry in &index.owner_seals {
+            entry.binding.validate().map_err(|problem| {
+                internal(format!("the durable owner seal binding is invalid: {}", problem.message))
+            })?;
+            if entry.sealed_at_ms <= 0 || entry.receipt_id != owner_seal_receipt(&entry.binding) {
+                return Err(internal(
+                    "the durable owner seal has an invalid timestamp or receipt".to_string(),
+                ));
+            }
+            let request_key = (
+                entry.binding.actor.clone(),
+                entry.binding.client_request_id.clone(),
+            );
+            let preview_key = (
+                entry.binding.actor.clone(),
+                entry.binding.target_preview_id.clone(),
+            );
+            if state.owner_seals.contains_key(&request_key) {
+                return Err(internal(
+                    "the journal contains duplicate durable owner seals for one request key"
+                        .to_string(),
+                ));
+            }
+            if let Some(previous) = state.bound_previews.get(&preview_key) {
+                if previous != &request_key {
+                    return Err(internal(
+                        "the durable owner seal conflicts with a previously consumed target preview"
+                            .to_string(),
+                    ));
+                }
+            }
+            if let Some(bound_request) = state.bound_requests.get(&request_key) {
+                if bound_request.binding != entry.binding
+                    || entry
+                        .operation_id
+                        .as_ref()
+                        .is_some_and(|operation_id| operation_id != &bound_request.operation_id)
+                {
+                    return Err(internal(
+                        "the durable owner seal does not match its accepted request binding"
+                            .to_string(),
+                    ));
+                }
+            } else if entry.operation_id.is_some() {
+                return Err(internal(
+                    "the durable owner seal claims an operation without its admission binding"
+                        .to_string(),
+                ));
+            }
+            if let Some(operation_id) = &entry.operation_id {
+                if !is_operation_id(operation_id) {
+                    return Err(internal(
+                        "the durable owner seal names an invalid operation id".to_string(),
+                    ));
+                }
+                if let Some(record) = state.records.get(operation_id) {
+                    if !entry.binding.matches_record(record) {
+                        return Err(internal(
+                            "the durable owner seal does not match its retained operation"
+                                .to_string(),
+                        ));
+                    }
+                }
+            }
+            state.sealed_previews.insert(preview_key, request_key.clone());
+            state.owner_seals.insert(request_key, entry.clone());
+        }
         state.next_sequence = index.next_sequence.max(
             state
                 .records
@@ -782,6 +1429,23 @@ impl Journal {
         if repair_index {
             self.write_index(&state)?;
         }
+        if index_missing || index_needs_upgrade {
+            // Publish the current schema before returning a usable host. A legacy unmarked
+            // index is safe to migrate because it predates bound requests and owner seals;
+            // once the marker exists, older binaries that rewrite this file are detected.
+            self.write_index(&state)?;
+        }
+        if !marker_exists {
+            // Existing journals from before the marker use their validated index as the
+            // migration proof. This marker must reach the root before the host is usable so
+            // a later missing index (including seal-only state) cannot look like first use.
+            write_atomic(&marker_path, JOURNAL_INITIALIZED_CONTENT)?;
+        }
+        sync_directory_chain(&records).map_err(|error| {
+            internal(format!(
+                "the journal authority directories could not be synced before startup: {error}"
+            ))
+        })?;
         Ok(())
     }
 
@@ -864,7 +1528,7 @@ impl Journal {
                 "the journal record could not be serialized: {error}"
             ))
         })?;
-        write_atomic(
+        self.write_atomic_latched(
             &records.join(format!("{}.json", record.operation_id)),
             &bytes,
         )
@@ -880,12 +1544,41 @@ impl Journal {
                 "the journal index could not be serialized: {error}"
             ))
         })?;
-        write_atomic(&path, &bytes)
+        self.write_atomic_latched(&path, &bytes)
+    }
+
+    fn ensure_durable(&self) -> Result<(), Problem> {
+        if self.durability_failed.load(Ordering::Acquire) {
+            return Err(Problem::new(
+                ProblemCode::Unavailable,
+                "journal durability is uncertain; this host must reopen the state root before accepting or sealing mutations",
+            ));
+        }
+        Ok(())
+    }
+
+    fn write_atomic_latched(&self, path: &Path, bytes: &[u8]) -> Result<(), Problem> {
+        self.write_atomic_latched_with(path, bytes, write_atomic)
+    }
+
+    fn write_atomic_latched_with(
+        &self,
+        path: &Path,
+        bytes: &[u8],
+        writer: impl FnOnce(&Path, &[u8]) -> Result<(), Problem>,
+    ) -> Result<(), Problem> {
+        self.ensure_durable()?;
+        if let Err(problem) = writer(path, bytes) {
+            self.durability_failed.store(true, Ordering::Release);
+            return Err(problem);
+        }
+        Ok(())
     }
 }
 
 fn journal_index(state: &JournalState) -> JournalIndex {
     JournalIndex {
+        schema_version: JOURNAL_INDEX_SCHEMA_VERSION,
         next_sequence: state.next_sequence,
         operation_id_high_water: state.operation_id_high_water,
         operations: state
@@ -897,6 +1590,8 @@ fn journal_index(state: &JournalState) -> JournalIndex {
                 sequence: record.sequence,
             })
             .collect(),
+        bound_requests: state.bound_requests.values().cloned().collect(),
+        owner_seals: state.owner_seals.values().cloned().collect(),
     }
 }
 
@@ -1055,6 +1750,14 @@ pub fn is_operation_id(value: &str) -> bool {
 /// whole sequence: skipping any of them means a power loss can publish a file whose
 /// contents are still in the page cache.
 fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), Problem> {
+    write_atomic_with(path, bytes, sync_parent)
+}
+
+fn write_atomic_with(
+    path: &Path,
+    bytes: &[u8],
+    sync_parent: impl FnOnce(&Path) -> std::io::Result<()>,
+) -> Result<(), Problem> {
     let directory = path
         .parent()
         .ok_or_else(|| internal(format!("{} has no parent directory", path.display())))?;
@@ -1062,18 +1765,40 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), Problem> {
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| "record".to_string());
-    let temporary = directory.join(format!(".{name}.tmp"));
-    let mut file = OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .write(true)
-        .open(&temporary)
-        .map_err(|error| {
-            internal(format!(
-                "the journal file {} could not be written: {error}",
-                temporary.display()
-            ))
-        })?;
+    let mut temporary = None;
+    let mut file = None;
+    for _ in 0..64 {
+        let serial = JOURNAL_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let candidate = directory.join(format!(".{name}.tmp.{}.{}", std::process::id(), serial));
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        match options.open(&candidate) {
+            Ok(opened) => {
+                temporary = Some(candidate);
+                file = Some(opened);
+                break;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => {
+                return Err(internal(format!(
+                    "the journal file {} could not be written: {error}",
+                    candidate.display()
+                )))
+            }
+        }
+    }
+    let temporary = temporary.ok_or_else(|| {
+        internal(format!(
+            "no unique temporary file name is available for {}",
+            path.display()
+        ))
+    })?;
+    let mut file = file.expect("the temporary file path is set when the file is open");
     file.write_all(bytes).map_err(|error| {
         internal(format!(
             "the journal file {} could not be written: {error}",
@@ -1087,18 +1812,128 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), Problem> {
         ))
     })?;
     drop(file);
-    std::fs::rename(&temporary, path).map_err(|error| {
+    atomic_replace(&temporary, path).map_err(|error| {
         internal(format!(
             "the journal record {} could not be published: {error}",
             path.display()
         ))
     })?;
-    // The rename is durable only once the directory itself is synced. A platform that
-    // cannot open a directory for reading is not one this build claims, and the failure is
-    // not fatal: the record is still published, only not yet guaranteed to survive a power
-    // loss.
-    if let Ok(directory) = File::open(directory) {
-        let _ = directory.sync_all();
+    // The rename is not a successful durable write unless the platform's supported
+    // directory-entry durability primitive reports success.
+    sync_parent(directory).map_err(|error| {
+        internal(format!(
+            "the journal directory {} could not be synced after publishing {}: {error}",
+            directory.display(),
+            path.display()
+        ))
+    })?;
+    Ok(())
+}
+
+#[cfg(unix)]
+fn atomic_replace(temporary: &Path, destination: &Path) -> std::io::Result<()> {
+    std::fs::rename(temporary, destination)
+}
+
+#[cfg(windows)]
+fn atomic_replace(temporary: &Path, destination: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+    let source: Vec<u16> = temporary.as_os_str().encode_wide().chain(Some(0)).collect();
+    let target: Vec<u16> = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect();
+    let result = unsafe {
+        MoveFileExW(
+            source.as_ptr(),
+            target.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if result == 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn atomic_replace(_: &Path, _: &Path) -> std::io::Result<()> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "atomic journal replacement is unavailable on this platform",
+    ))
+}
+
+#[cfg(unix)]
+fn sync_parent(parent: &Path) -> std::io::Result<()> {
+    File::open(parent)?.sync_all()
+}
+
+#[cfg(windows)]
+fn sync_parent(_: &Path) -> std::io::Result<()> {
+    // `MoveFileExW(..., MOVEFILE_WRITE_THROUGH)` above is the platform durability primitive
+    // used by Refyard's workspace-root ledger; Windows has no POSIX directory-fsync API.
+    Ok(())
+}
+
+#[cfg(not(any(unix, windows)))]
+fn sync_parent(_: &Path) -> std::io::Result<()> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "journal directory-entry durability is unavailable on this platform",
+    ))
+}
+
+/// Creates a state-root path and durably publishes its containing directory chain on Unix.
+/// The chain is synced on every open, not only when this call observes missing components:
+/// an earlier attempt may have created the directories and then failed partway through the
+/// syncs. Retrying must re-establish durability before the journal can become usable.
+fn create_dir_all_durably(path: &Path) -> std::io::Result<()> {
+    create_dir_all_durably_with(
+        path,
+        |path| std::fs::create_dir_all(path),
+        sync_parent,
+    )
+}
+
+fn create_dir_all_durably_with(
+    path: &Path,
+    create_all: impl FnOnce(&Path) -> std::io::Result<()>,
+    sync_directory: impl FnMut(&Path) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    let absolute_path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+    create_all(&absolute_path)?;
+    sync_directory_chain_with(&absolute_path, sync_directory)
+}
+
+fn sync_directory_chain(path: &Path) -> std::io::Result<()> {
+    sync_directory_chain_with(path, sync_parent)
+}
+
+fn sync_directory_chain_with(
+    path: &Path,
+    mut sync_directory: impl FnMut(&Path) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    let absolute_path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+    let mut directory = Some(absolute_path.as_path());
+    while let Some(current) = directory {
+        if !current.as_os_str().is_empty() {
+            sync_directory(current)?;
+        }
+        directory = current.parent();
     }
     Ok(())
 }
@@ -1310,6 +2145,17 @@ mod tests {
         }
     }
 
+    fn binding(client_request_id: &str, preview_id: &str) -> AdmissionBinding {
+        AdmissionBinding {
+            actor: "owner".to_string(),
+            client_request_id: client_request_id.to_string(),
+            target_preview_id: preview_id.to_string(),
+            resource_key: "repo_1".to_string(),
+            operation_fingerprint: "digest".to_string(),
+            expires_at_ms: 1_000,
+        }
+    }
+
     #[test]
     fn canonical_json_sorts_keys_so_field_order_is_not_part_of_a_request() {
         let left = serde_json::json!({"b": 1, "a": {"d": 4, "c": [1, 2, {"z": 1, "y": 2}]}});
@@ -1365,6 +2211,413 @@ mod tests {
         drop(journal);
         let reopened = Journal::open(Some(temp.path().join("nested/state"))).expect("reopen");
         assert_eq!(reopened.records().len(), 1);
+    }
+
+    #[test]
+    fn state_root_creation_sync_failure_is_retried_for_the_existing_parent_chain() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let root = temp.path().join("nested/state");
+        let first_open = create_dir_all_durably_with(
+            &root,
+            |path| std::fs::create_dir_all(path),
+            |_| Err(std::io::Error::other("injected parent sync failure")),
+        );
+        assert!(first_open.is_err());
+        assert!(root.is_dir());
+
+        let mut synced = Vec::new();
+        create_dir_all_durably_with(
+            &root,
+            |path| std::fs::create_dir_all(path),
+            |directory| {
+                synced.push(directory.to_path_buf());
+                Ok(())
+            },
+        )
+        .expect("retry must sync the already-created parent chain");
+
+        let mut expected = Vec::new();
+        let mut directory = Some(root.as_path());
+        while let Some(current) = directory {
+            expected.push(current.to_path_buf());
+            directory = current.parent();
+        }
+        assert_eq!(synced, expected);
+    }
+
+    #[test]
+    fn a_legacy_empty_journal_directory_is_initialized_on_upgrade() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let root = temp.path().join("state");
+        std::fs::create_dir_all(root.join("journal/records")).expect("legacy empty journal dirs");
+
+        let journal = Journal::open(Some(root.clone()))
+            .expect("an empty pre-marker journal from the old release is safe to initialize");
+        assert!(root.join("journal/index.json").is_file());
+        assert!(root.join(JOURNAL_INITIALIZED_MARKER).is_file());
+        assert!(journal.records().is_empty());
+        drop(journal);
+
+        assert!(Journal::open(Some(root)).is_ok());
+    }
+
+    #[test]
+    fn an_unmarked_legacy_index_is_versioned_before_the_initialization_marker() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let root = temp.path().join("state");
+        let journal_directory = root.join("journal");
+        std::fs::create_dir_all(journal_directory.join("records")).expect("legacy dirs");
+        std::fs::write(
+            journal_directory.join("index.json"),
+            br#"{"nextSequence":1,"operationIdHighWater":0,"operations":[]}"#,
+        )
+        .expect("write legacy index shape");
+
+        let journal = Journal::open(Some(root.clone())).expect("migrate unmarked legacy index");
+        let migrated: JournalIndex = serde_json::from_slice(
+            &std::fs::read(journal_directory.join("index.json")).expect("read migrated index"),
+        )
+        .expect("parse migrated index");
+        assert_eq!(migrated.schema_version, JOURNAL_INDEX_SCHEMA_VERSION);
+        assert!(root.join(JOURNAL_INITIALIZED_MARKER).is_file());
+        assert!(journal.records().is_empty());
+    }
+
+    #[test]
+    fn a_marked_legacy_index_schema_fails_closed_after_rollback_rewrite() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let root = temp.path().join("state");
+        let journal = Journal::open(Some(root.clone())).expect("open current journal");
+        journal
+            .seal_submission(binding("sealed-before-rollback", "preview-rollback"), 10)
+            .expect("persist current owner seal");
+        drop(journal);
+
+        // A previous binary ignores the new fields and rewrites only its legacy index shape.
+        std::fs::write(
+            root.join("journal/index.json"),
+            br#"{"nextSequence":1,"operationIdHighWater":0,"operations":[]}"#,
+        )
+        .expect("simulate rollback binary rewriting the index");
+
+        let error = Journal::open(Some(root.clone()))
+            .expect_err("rollback must not erase an owner-seal tombstone silently");
+        assert_eq!(error.code, ProblemCode::InternalError);
+        assert!(error.message.contains("schema version 0"));
+        assert!(root.join(JOURNAL_INITIALIZED_MARKER).is_file());
+    }
+
+    #[test]
+    fn a_current_schema_index_missing_an_authority_array_fails_closed() {
+        for missing_field in ["boundRequests", "ownerSeals"] {
+            let temp = tempfile::tempdir().expect("temp dir");
+            let root = temp.path().join("state");
+            let journal = Journal::open(Some(root.clone())).expect("open current journal");
+            drop(journal);
+
+            let index_path = root.join("journal/index.json");
+            let mut index: serde_json::Value = serde_json::from_slice(
+                &std::fs::read(&index_path).expect("read current index"),
+            )
+            .expect("parse current index");
+            assert!(index
+                .as_object_mut()
+                .expect("index object")
+                .remove(missing_field)
+                .is_some());
+            std::fs::write(
+                &index_path,
+                serde_json::to_vec(&index).expect("serialize incomplete current index"),
+            )
+            .expect("write incomplete current index");
+
+            let error = Journal::open(Some(root))
+                .expect_err("current schema must not default away missing authority");
+            assert!(error.message.contains(missing_field));
+        }
+    }
+
+    #[test]
+    fn owner_seal_tombstones_a_late_submission_across_restart() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let root = temp.path().join("state");
+        let binding = binding("request-1", "preview-1");
+        let journal = Journal::open(Some(root.clone())).expect("open");
+
+        let sealed = journal
+            .seal_submission(binding.clone(), 10)
+            .expect("persist seal");
+        assert!(sealed.operation_id.is_none());
+        drop(journal);
+
+        let reopened = Journal::open(Some(root)).expect("reopen");
+        assert_eq!(
+            reopened
+                .seal_submission(binding.clone(), 11)
+                .expect("idempotent seal retry"),
+            sealed,
+            "an idempotent retry returns the same durable receipt"
+        );
+
+        let mut late = record("op_1", 1);
+        late.client_request_id = binding.client_request_id.clone();
+        let error = reopened
+            .admit_bound(late, binding, 12)
+            .expect_err("sealed request must never be accepted");
+        assert_eq!(error.code, ProblemCode::IdempotencyConflict);
+        assert!(reopened.records().is_empty(), "no Accepted record was written");
+    }
+
+    #[test]
+    fn a_missing_index_fails_closed_for_a_seal_only_journal() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let root = temp.path().join("state");
+        let binding = binding("request-seal-only", "preview-seal-only");
+        let journal = Journal::open(Some(root.clone())).expect("open");
+        journal
+            .seal_submission(binding, 10)
+            .expect("persist seal without an operation record");
+        drop(journal);
+
+        std::fs::remove_file(root.join("journal/index.json")).expect("remove index fixture");
+        let error = Journal::open(Some(root.clone())).expect_err("missing seal authority fails closed");
+        assert_eq!(error.code, ProblemCode::InternalError);
+        assert!(root.join(JOURNAL_INITIALIZED_MARKER).is_file());
+    }
+
+    #[test]
+    fn a_missing_journal_directory_fails_closed_after_the_root_was_initialized() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let root = temp.path().join("state");
+        let journal = Journal::open(Some(root.clone())).expect("open");
+        journal
+            .seal_submission(binding("request-directory", "preview-directory"), 10)
+            .expect("persist seal");
+        drop(journal);
+
+        std::fs::remove_dir_all(root.join("journal")).expect("remove journal fixture");
+        let error = Journal::open(Some(root)).expect_err("the root marker outlives the journal directory");
+        assert_eq!(error.code, ProblemCode::InternalError);
+        assert!(error.message.contains("is missing from an initialized state root"));
+    }
+
+    #[test]
+    fn post_rename_directory_sync_failure_is_reported_and_latches_admission() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let root = temp.path().join("state");
+        let journal = Journal::open(Some(root)).expect("open");
+        let index_path = journal.index_path().expect("index path");
+
+        let write_error = journal
+            .write_atomic_latched_with(&index_path, b"uncertain index", |path, bytes| {
+                write_atomic_with(path, bytes, |_| {
+                    Err(std::io::Error::other("injected directory sync failure"))
+                })
+            })
+            .expect_err("directory-sync failure cannot report a durable write");
+        assert_eq!(write_error.code, ProblemCode::InternalError);
+        assert_eq!(
+            std::fs::read(&index_path).expect("rename has already published the candidate"),
+            b"uncertain index"
+        );
+
+        let binding = binding("request-after-sync-failure", "preview-after-sync-failure");
+        let mut late = record("op_1", 1);
+        late.client_request_id = binding.client_request_id.clone();
+        assert_eq!(
+            journal
+                .admit_bound(late, binding.clone(), 12)
+                .expect_err("uncertain journal cannot admit further work")
+                .code,
+            ProblemCode::Unavailable
+        );
+        assert_eq!(
+            journal
+                .seal_submission(binding, 13)
+                .expect_err("uncertain journal cannot issue a seal receipt")
+                .code,
+            ProblemCode::Unavailable
+        );
+    }
+
+    #[test]
+    fn a_failed_parent_sync_is_reported_even_after_the_new_file_was_renamed() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let path = temp.path().join("state.json");
+        let error = write_atomic_with(&path, b"published candidate", |_| {
+            Err(std::io::Error::other("injected directory sync failure"))
+        })
+        .expect_err("publication without parent sync is not durable success");
+
+        assert!(error.message.contains("could not be synced after publishing"));
+        assert_eq!(
+            std::fs::read(path).expect("rename completed before parent sync"),
+            b"published candidate"
+        );
+    }
+
+    #[test]
+    fn an_expired_target_preview_is_refused_before_journal_admission() {
+        let journal = Journal::open(None).expect("in-memory journal");
+        let binding = binding("request-expired", "preview-expired");
+        let mut late = record("op_1", 1);
+        late.client_request_id = binding.client_request_id.clone();
+
+        assert_eq!(
+            journal
+                .admit_bound(late, binding, 1_001)
+                .expect_err("expired previews cannot admit new work")
+                .code,
+            ProblemCode::StalePreview
+        );
+        assert!(journal.records().is_empty());
+    }
+
+    #[test]
+    fn owner_seal_correlates_only_the_exact_retained_bound_operation() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let root = temp.path().join("state");
+        let journal = Journal::open(Some(root.clone())).expect("journal");
+        let binding = binding("request-1", "preview-1");
+        let mut accepted = record("op_1", 1);
+        accepted.client_request_id = binding.client_request_id.clone();
+        journal
+            .admit_bound(accepted, binding.clone(), 10)
+            .expect("bound acceptance");
+        assert_eq!(
+            journal
+                .find_bound_submission_for_retry(
+                    "owner",
+                    "request-1",
+                    "digest",
+                    &binding,
+                )
+                .expect("exact retry is readable before freshness work")
+                .expect("retained operation")
+                .operation_id,
+            "op_1"
+        );
+        assert_eq!(
+            journal
+                .find_unbound_submission_for_retry("owner", "request-1")
+                .expect_err("legacy retry cannot bypass the preview binding")
+                .code,
+            ProblemCode::IdempotencyConflict
+        );
+
+        let sealed = journal
+            .seal_submission(binding.clone(), 11)
+            .expect("seal accepted operation");
+        assert_eq!(sealed.operation_id.as_deref(), Some("op_1"));
+        drop(journal);
+
+        let reopened = Journal::open(Some(root)).expect("reopen");
+        assert_eq!(
+            reopened
+                .seal_submission(binding.clone(), 12)
+                .expect("same seal after restart"),
+            sealed
+        );
+        assert_eq!(
+            reopened
+                .find_unbound_submission_for_retry("owner", "request-1")
+                .expect_err("legacy retry cannot bypass a durable seal")
+                .code,
+            ProblemCode::IdempotencyConflict
+        );
+        assert_eq!(
+            reopened
+                .find_bound_submission_for_retry(
+                    "owner",
+                    "request-1",
+                    "digest",
+                    &binding,
+                )
+                .expect_err("sealed requests cannot be replayed")
+                .code,
+            ProblemCode::IdempotencyConflict
+        );
+        assert_eq!(
+            reopened
+                .find_client_request("owner", "request-1")
+                .expect("read path can still inspect the accepted operation")
+                .operation_id,
+            "op_1"
+        );
+
+        let mut late = record("op_2", 2);
+        late.client_request_id = binding.client_request_id.clone();
+        assert_eq!(
+            reopened
+                .admit_bound(late, binding, 12)
+                .expect_err("sealed request is closed")
+                .code,
+            ProblemCode::IdempotencyConflict
+        );
+        assert_eq!(reopened.records().len(), 1);
+    }
+
+    #[test]
+    fn owner_seal_prevents_rebinding_a_preview_to_another_request_key() {
+        let journal = Journal::open(None).expect("in-memory journal");
+        let first = binding("request-1", "preview-1");
+        journal
+            .seal_submission(first, 10)
+            .expect("seal first binding");
+
+        let second = binding("request-2", "preview-1");
+        assert_eq!(
+            journal
+                .seal_submission(second, 11)
+                .expect_err("a preview has one consuming request key")
+                .code,
+            ProblemCode::IdempotencyConflict
+        );
+    }
+
+    #[test]
+    fn a_pruned_bound_operation_seals_as_unknown_and_cannot_be_replayed() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let root = temp.path().join("state");
+        let binding = binding("request-pruned", "preview-pruned");
+        let journal = Journal::open(Some(root.clone())).expect("journal");
+        let mut accepted = record("op_1", 1);
+        accepted.client_request_id = binding.client_request_id.clone();
+        accepted.status = OperationStatus::Succeeded;
+        accepted.finished_at_ms = Some(2);
+        journal
+            .admit_bound(accepted, binding.clone(), 10)
+            .expect("accepted operation");
+
+        let mut state = journal.inner.lock().expect("journal lock");
+        let (pruned_state, pruned_records) = prune_expired(&state, 100, 10);
+        assert_eq!(pruned_records.len(), 1);
+        journal
+            .write_index(&pruned_state)
+            .expect("commit pruning while retaining the single-use binding");
+        *state = pruned_state;
+        journal.remove_pruned_record_files(&pruned_records);
+        drop(state);
+        drop(journal);
+
+        let reopened = Journal::open(Some(root)).expect("reopen pruned journal");
+        let sealed = reopened
+            .seal_submission(binding.clone(), 101)
+            .expect("seal pruned historical operation");
+        assert!(
+            sealed.operation_id.is_none(),
+            "a pruned record is never correlated from its fingerprint alone"
+        );
+        let mut late = record("op_2", 102);
+        late.client_request_id = binding.client_request_id.clone();
+        assert_eq!(
+            reopened
+                .admit_bound(late, binding, 102)
+                .expect_err("pruned history stays non-replayable")
+                .code,
+            ProblemCode::IdempotencyConflict
+        );
+        assert!(reopened.records().is_empty());
     }
 
     #[test]
@@ -1680,6 +2933,7 @@ mod tests {
                     sequence: second.sequence,
                 },
             ],
+            ..JournalIndex::default()
         };
         std::fs::write(
             root.join("journal/index.json"),

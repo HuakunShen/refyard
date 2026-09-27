@@ -16,7 +16,10 @@ use refyard_contract::refs::RefsSnapshot;
 
 use crate::events::EventSubscription;
 use crate::jobs::queue::QueueLimits;
-use crate::jobs::{ClientRequestLookup, MutationRequest, SubmitResult};
+use crate::jobs::journal::{AdmissionBinding, OwnerSealResult};
+use crate::jobs::{
+    ClientRequestLookup, MutationAdmissionGuard, MutationRequest, SubmitResult,
+};
 use crate::providers::local::LocalGit;
 use crate::service::{ApplicationService, ApplicationServiceConfig, StatusQuery};
 
@@ -63,12 +66,6 @@ impl EmbeddedRefyard {
                 "embedded Refyard requires an explicit non-empty state_root",
             ));
         }
-        std::fs::create_dir_all(&config.state_root).map_err(|error| {
-            Problem::new(
-                ProblemCode::Unavailable,
-                format!("cannot create embedded state root: {error}"),
-            )
-        })?;
         let limits = config.limits;
         let service = ApplicationService::new(ApplicationServiceConfig {
             git: config.git.with_output_limits(
@@ -229,6 +226,30 @@ impl EmbeddedRefyard {
         request: MutationRequest,
     ) -> Result<SubmitResult, Problem> {
         self.service.submit_mutation(actor, request).await
+    }
+    /// Acquire before Xross validates its preview, authorization policy and source snapshot.
+    /// Keep the returned guard alive until passing it to bound Submit or owner Seal.
+    pub async fn acquire_mutation_admission(&self) -> MutationAdmissionGuard {
+        self.service.acquire_mutation_admission().await
+    }
+    pub async fn submit_mutation_with_admission_guard(
+        &self,
+        actor: &str,
+        request: MutationRequest,
+        binding: AdmissionBinding,
+        guard: MutationAdmissionGuard,
+    ) -> Result<SubmitResult, Problem> {
+        self.service
+            .submit_mutation_with_admission_guard(actor, request, binding, guard)
+            .await
+    }
+    pub fn seal_mutation_submission_with_admission_guard(
+        &self,
+        binding: AdmissionBinding,
+        guard: MutationAdmissionGuard,
+    ) -> Result<OwnerSealResult, Problem> {
+        self.service
+            .seal_mutation_submission_with_admission_guard(binding, guard)
     }
     pub fn operation_for(
         &self,
