@@ -19,7 +19,7 @@
     "test:integration": "vitest run tests/node tests/integration tests/security tests/native",
     "test:pack": "vitest run tests/pack",
     "test:portable": "bun scripts/check-portable.ts && vitest run tests/portable",
-    "test:e2e": "pnpm build && bun scripts/bundle-cli.ts && playwright test",
+    "test:e2e": "pnpm build && pnpm --dir apps/web build:xross-local && bun scripts/bundle-cli.ts && playwright test",
     "test:compat": "pnpm build && bun scripts/bundle-cli.ts && playwright test --config tests/compat/playwright.config.ts",
     "bench:runtime": "bun scripts/bench-runtime.ts",
     "build:web": "pnpm --dir apps/web build",
