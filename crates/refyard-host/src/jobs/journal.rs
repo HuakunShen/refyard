@@ -32,7 +32,9 @@
 //! interpreting it anyway would mean guessing which records are real.
 
 use std::collections::{BTreeMap, HashMap};
-use std::fs::{File, OpenOptions};
+use std::fs::File;
+#[cfg(not(windows))]
+use std::fs::OpenOptions;
 use std::io::{Read, Write};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -1776,14 +1778,20 @@ fn write_atomic_with(
     for _ in 0..64 {
         let serial = JOURNAL_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         let candidate = directory.join(format!(".{name}.tmp.{}.{}", std::process::id(), serial));
-        let mut options = OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        match options.open(&candidate) {
+        #[cfg(windows)]
+        let opened = super::windows_acl::create_private_temporary_file(&candidate);
+        #[cfg(not(windows))]
+        let opened = {
+            let mut options = OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            options.open(&candidate)
+        };
+        match opened {
             Ok(opened) => {
                 temporary = Some(candidate);
                 file = Some(opened);
@@ -1817,8 +1825,6 @@ fn write_atomic_with(
             temporary.display()
         ))
     })?;
-    #[cfg(windows)]
-    super::windows_acl::secure_private_file(&temporary)?;
     drop(file);
     atomic_replace(&temporary, path).map_err(|error| {
         internal(format!(

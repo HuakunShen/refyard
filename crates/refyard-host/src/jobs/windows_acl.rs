@@ -8,7 +8,7 @@ use std::{fs::File, io};
 
 use refyard_contract::problem::{Problem, ProblemCode};
 use windows_sys::Win32::Foundation::{CloseHandle, LocalFree, HANDLE, INVALID_HANDLE_VALUE};
-use windows_sys::Win32::Foundation::{GENERIC_READ, GENERIC_WRITE};
+use windows_sys::Win32::Foundation::{ERROR_FILE_EXISTS, GENERIC_READ, GENERIC_WRITE};
 use windows_sys::Win32::Security::Authorization::{
     GetSecurityInfo, SetEntriesInAclW, SetSecurityInfo, EXPLICIT_ACCESS_W, NO_MULTIPLE_TRUSTEE,
     SET_ACCESS, SE_FILE_OBJECT, TRUSTEE_IS_SID, TRUSTEE_IS_USER, TRUSTEE_IS_WELL_KNOWN_GROUP,
@@ -16,16 +16,18 @@ use windows_sys::Win32::Security::Authorization::{
 };
 use windows_sys::Win32::Security::{
     CreateWellKnownSid, EqualSid, GetAce, GetSecurityDescriptorControl, GetTokenInformation,
-    IsValidAcl, IsValidSid, TokenUser, WinLocalSystemSid, ACCESS_ALLOWED_ACE, ACL,
-    CONTAINER_INHERIT_ACE, DACL_SECURITY_INFORMATION, OBJECT_INHERIT_ACE,
-    OWNER_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION, PSID, SE_DACL_PRESENT,
-    SE_DACL_PROTECTED, TOKEN_QUERY, TOKEN_USER,
+    InitializeSecurityDescriptor, IsValidAcl, IsValidSid, SetSecurityDescriptorControl,
+    SetSecurityDescriptorDacl, SetSecurityDescriptorOwner, TokenUser, WinLocalSystemSid,
+    ACCESS_ALLOWED_ACE, ACL, CONTAINER_INHERIT_ACE, DACL_SECURITY_INFORMATION, OBJECT_INHERIT_ACE,
+    OWNER_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION, PSID, SECURITY_ATTRIBUTES,
+    SECURITY_DESCRIPTOR, SE_DACL_PRESENT, SE_DACL_PROTECTED, TOKEN_QUERY, TOKEN_USER,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    CreateFileW, FileAttributeTagInfo, GetFileInformationByHandleEx, ReOpenFile, FILE_ALL_ACCESS,
-    FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO,
-    FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_DELETE, FILE_SHARE_READ,
-    FILE_SHARE_WRITE, OPEN_ALWAYS, OPEN_EXISTING, READ_CONTROL, WRITE_DAC, WRITE_OWNER,
+    CreateFileW, FileAttributeTagInfo, GetFileInformationByHandleEx, ReOpenFile, CREATE_NEW,
+    FILE_ALL_ACCESS, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_REPARSE_POINT,
+    FILE_ATTRIBUTE_TAG_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+    FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING, READ_CONTROL, WRITE_DAC,
+    WRITE_OWNER,
 };
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
@@ -201,12 +203,7 @@ fn entry(sid: PSID, kind: i32) -> EXPLICIT_ACCESS_W {
     }
 }
 
-fn apply(
-    handle: &Handle,
-    identity: &Identity,
-    path: &Path,
-    set_owner: bool,
-) -> Result<(), Problem> {
+fn build_acl(identity: &Identity, path: &Path) -> Result<LocalOwned<ACL>, Problem> {
     let entries = [
         entry(identity.user_sid(), TRUSTEE_IS_USER),
         entry(identity.system_sid(), TRUSTEE_IS_WELL_KNOWN_GROUP),
@@ -223,6 +220,16 @@ fn apply(
     if raw_acl.is_null() {
         return Err(unavailable(path, "ACL builder returned no DACL"));
     }
+    Ok(acl)
+}
+
+fn apply(
+    handle: &Handle,
+    identity: &Identity,
+    path: &Path,
+    set_owner: bool,
+) -> Result<(), Problem> {
+    let acl = build_acl(identity, path)?;
     let mut information = DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION;
     if set_owner {
         information |= OWNER_SECURITY_INFORMATION;
@@ -250,6 +257,49 @@ fn apply(
         ));
     }
     Ok(())
+}
+
+fn problem_to_io(problem: Problem) -> io::Error {
+    io::Error::new(io::ErrorKind::PermissionDenied, problem.to_string())
+}
+
+fn create_private_file_handle(path: &Path, identity: &Identity) -> io::Result<Handle> {
+    // Supply the owner and protected DACL to CREATE_NEW itself. An elevated process's
+    // default owner can be a group SID, which would implicitly retain WRITE_DAC if we
+    // created the file first and repaired it afterwards.
+    let acl = build_acl(identity, path).map_err(problem_to_io)?;
+    let mut descriptor = SECURITY_DESCRIPTOR::default();
+    let descriptor_ptr = (&mut descriptor as *mut SECURITY_DESCRIPTOR).cast();
+    if unsafe { InitializeSecurityDescriptor(descriptor_ptr, 1) } == 0
+        || unsafe { SetSecurityDescriptorOwner(descriptor_ptr, identity.user_sid(), 0) } == 0
+        || unsafe { SetSecurityDescriptorDacl(descriptor_ptr, 1, acl.0, 0) } == 0
+        || unsafe {
+            SetSecurityDescriptorControl(descriptor_ptr, SE_DACL_PROTECTED, SE_DACL_PROTECTED)
+        } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    let attributes = SECURITY_ATTRIBUTES {
+        nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
+        lpSecurityDescriptor: descriptor_ptr,
+        bInheritHandle: 0,
+    };
+    let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    let raw = unsafe {
+        CreateFileW(
+            wide.as_ptr(),
+            READ_CONTROL | WRITE_DAC | GENERIC_READ | GENERIC_WRITE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            &attributes,
+            CREATE_NEW,
+            FILE_ATTRIBUTE_NORMAL,
+            null_mut(),
+        )
+    };
+    if raw == INVALID_HANDLE_VALUE {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(Handle(raw))
 }
 
 fn verify(handle: &Handle, identity: &Identity, path: &Path) -> Result<(), Problem> {
@@ -281,12 +331,10 @@ fn verify(handle: &Handle, identity: &Identity, path: &Path) -> Result<(), Probl
             "readback returned no security descriptor",
         ));
     }
-    if owner.is_null()
-        || dacl.is_null()
-        || unsafe { IsValidSid(owner) } == 0
-        || unsafe { EqualSid(owner, identity.user_sid()) } == 0
-        || unsafe { IsValidAcl(dacl) } == 0
-    {
+    let owner_matches = !owner.is_null()
+        && unsafe { IsValidSid(owner) } != 0
+        && unsafe { EqualSid(owner, identity.user_sid()) } != 0;
+    if !owner_matches || dacl.is_null() || unsafe { IsValidAcl(dacl) } == 0 {
         return Err(unavailable(path, "readback owner or DACL mismatch"));
     }
     let mut control = 0u16;
@@ -361,12 +409,12 @@ pub(super) fn secure_private_directory(path: &Path) -> Result<(), Problem> {
     verify(&handle, &identity, path)
 }
 
-fn open_state_file_io(path: &Path, disposition: u32) -> io::Result<Handle> {
+fn open_state_file_io(path: &Path, disposition: u32, access: u32) -> io::Result<Handle> {
     let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
     let raw = unsafe {
         CreateFileW(
             wide.as_ptr(),
-            READ_CONTROL | WRITE_DAC,
+            access,
             FILE_SHARE_READ | FILE_SHARE_WRITE,
             null(),
             disposition,
@@ -378,11 +426,6 @@ fn open_state_file_io(path: &Path, disposition: u32) -> io::Result<Handle> {
         return Err(io::Error::last_os_error());
     }
     Ok(Handle(raw))
-}
-
-fn open_state_file(path: &Path, disposition: u32) -> Result<Handle, Problem> {
-    open_state_file_io(path, disposition)
-        .map_err(|error| unavailable(path, format!("open state file: {error}")))
 }
 
 fn ensure_regular_file(handle: &Handle, path: &Path) -> Result<(), Problem> {
@@ -477,17 +520,19 @@ fn into_file(handle: Handle) -> File {
 
 fn secure_file_handle(handle: &Handle, identity: &Identity, path: &Path) -> Result<(), Problem> {
     ensure_regular_file(handle, path)?;
-    // A file with unexpected ownership is not ours to take over. Repair only the DACL;
-    // unlike the directory bootstrap, never rewrite a file's owner.
+    // Existing authority files must already belong to the current user. Repair only their
+    // DACL; never take ownership of an existing file.
     verify_owner(handle, identity, path)?;
     apply(handle, identity, path, false)?;
     verify(handle, identity, path)
 }
 
-pub(crate) fn secure_private_file(path: &Path) -> Result<(), Problem> {
-    let identity = Identity::acquire(path)?;
-    let handle = open_state_file(path, OPEN_EXISTING)?;
-    secure_file_handle(&handle, &identity, path)
+pub(crate) fn create_private_temporary_file(path: &Path) -> io::Result<File> {
+    let identity = Identity::acquire(path).map_err(problem_to_io)?;
+    let handle = create_private_file_handle(path, &identity)?;
+    ensure_regular_file(&handle, path).map_err(problem_to_io)?;
+    verify(&handle, &identity, path).map_err(problem_to_io)?;
+    Ok(into_file(handle))
 }
 
 pub(crate) fn open_private_file_for_read(path: &Path) -> io::Result<File> {
@@ -495,7 +540,7 @@ pub(crate) fn open_private_file_for_read(path: &Path) -> io::Result<File> {
         .map_err(|problem| io::Error::new(io::ErrorKind::PermissionDenied, problem.to_string()))?;
     // Preserve NotFound so the journal can distinguish an absent legacy index from an
     // unreadable authority file.
-    let handle = open_state_file_io(path, OPEN_EXISTING)?;
+    let handle = open_state_file_io(path, OPEN_EXISTING, READ_CONTROL | WRITE_DAC)?;
     secure_file_handle(&handle, &identity, path)
         .map_err(|problem| io::Error::new(io::ErrorKind::PermissionDenied, problem.to_string()))?;
     let reader = reopen_file(&handle, GENERIC_READ, path)
@@ -507,7 +552,16 @@ pub(crate) fn open_private_file_for_read(path: &Path) -> io::Result<File> {
 
 pub(crate) fn open_private_lock_file(path: &Path) -> Result<File, Problem> {
     let identity = Identity::acquire(path)?;
-    let handle = open_state_file(path, OPEN_ALWAYS)?;
+    let handle = match create_private_file_handle(path, &identity) {
+        Ok(handle) => handle,
+        Err(error) if error.raw_os_error() == Some(ERROR_FILE_EXISTS as i32) => {
+            open_state_file_io(path, OPEN_EXISTING, READ_CONTROL | WRITE_DAC)
+                .map_err(|error| unavailable(path, format!("open state lock: {error}")))?
+        }
+        Err(error) => {
+            return Err(unavailable(path, format!("create state lock: {error}")));
+        }
+    };
     secure_file_handle(&handle, &identity, path)?;
     let lock = reopen_file(&handle, GENERIC_READ | GENERIC_WRITE, path)?;
     ensure_regular_file(&lock, path)?;

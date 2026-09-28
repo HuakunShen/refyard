@@ -1206,6 +1206,19 @@ fn a_state_root_has_only_one_live_embedded_host() {
 
 #[cfg(windows)]
 #[test]
+fn windows_state_files_are_created_for_the_current_user() {
+    let root = tempfile::tempdir().expect("Windows private root");
+    let journal = Journal::open(Some(root.path().to_path_buf()))
+        .expect("state files created by this process are accepted");
+    windows_acl::assert_private_file(&root.path().join(".refyard-state.lock"));
+    drop(journal);
+    let reopened =
+        Journal::open(Some(root.path().to_path_buf())).expect("user-owned state reopens");
+    drop(reopened);
+}
+
+#[cfg(windows)]
+#[test]
 fn windows_private_state_survives_without_shell_and_repairs_acl_drift() {
     if std::env::var_os("REFYARD_WINDOWS_ACL_CHILD").is_some() {
         let root = tempfile::tempdir().expect("Windows private root");

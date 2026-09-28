@@ -4,9 +4,11 @@
 //! use one; this registry only keeps target-local identities stable and never reissues an id.
 
 use std::collections::HashSet;
+use std::fs;
 #[cfg(unix)]
 use std::fs::File;
-use std::fs::{self, OpenOptions};
+#[cfg(not(windows))]
+use std::fs::OpenOptions;
 #[cfg(windows)]
 use std::io::Read;
 use std::io::{self, Write};
@@ -543,14 +545,20 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     for _ in 0..64 {
         let serial = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
         let candidate = parent.join(format!(".{name}.tmp.{}.{}", std::process::id(), serial));
-        let mut options = OpenOptions::new();
-        options.write(true).create_new(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        match options.open(&candidate) {
+        #[cfg(windows)]
+        let opened = crate::jobs::windows_acl::create_private_temporary_file(&candidate);
+        #[cfg(not(windows))]
+        let opened = {
+            let mut options = OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            options.open(&candidate)
+        };
+        match opened {
             Ok(opened) => {
                 temporary = Some(candidate);
                 file = Some(opened);
@@ -570,10 +578,6 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
         let mut file = file.expect("temporary file created with its path");
         file.write_all(bytes)?;
         file.sync_all()?;
-        #[cfg(windows)]
-        crate::jobs::windows_acl::secure_private_file(&temporary).map_err(|problem| {
-            io::Error::new(io::ErrorKind::PermissionDenied, problem.to_string())
-        })?;
         drop(file);
         atomic_replace(&temporary, path)?;
         sync_parent(parent)
