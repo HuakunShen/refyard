@@ -188,6 +188,13 @@ impl EmbeddedRefyard {
     pub async fn history(&self, query: &HistoryQuery) -> Result<HistoryPage, Problem> {
         self.service.history(query).await
     }
+    pub async fn history_for_root(
+        &self,
+        query: &HistoryQuery,
+        allowed_root_id: &WorkspaceRootId,
+    ) -> Result<HistoryPage, Problem> {
+        self.service.history_for_root(query, allowed_root_id).await
+    }
     pub async fn refs(&self, repository_id: &str) -> Result<RefsSnapshot, Problem> {
         self.service.refs(repository_id).await
     }

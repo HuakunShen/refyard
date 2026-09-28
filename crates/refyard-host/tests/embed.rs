@@ -464,6 +464,45 @@ async fn root_scoped_embedded_reads_follow_the_selected_worktree_and_refuse_a_re
         .expect("status through the selected root/worktree binding");
     assert_eq!(linked_status.worktree_id, linked_worktree_id);
 
+    assert_eq!(
+        host.history_for_root(&history_query(&repository_id), &linked_root)
+            .await
+            .expect_err("linked-root history must not guess its worktree id")
+            .code,
+        ProblemCode::NotFound
+    );
+    let mut linked_history_query = history_query(&repository_id);
+    linked_history_query.worktree_id = Some(linked_worktree_id.clone());
+    assert_eq!(
+        host.history_for_root(&linked_history_query, &primary_root)
+            .await
+            .expect_err("the primary root must not authorize a linked-worktree history read")
+            .code,
+        ProblemCode::NotFound
+    );
+    let linked_history = host
+        .history_for_root(&linked_history_query, &linked_root)
+        .await
+        .expect("history through the selected linked-root/worktree binding");
+    assert_eq!(linked_history.repository_id, repository_id);
+    assert!(!linked_history.commits.is_empty());
+
+    let primary_history = host
+        .history_for_root(&history_query(&repository_id), &primary_root)
+        .await
+        .expect("primary history keeps its exact root binding");
+    assert_eq!(primary_history.repository_id, repository_id);
+    assert!(!primary_history.commits.is_empty());
+
+    assert_eq!(
+        host.history(&history_query(&repository_id))
+            .await
+            .expect("legacy unscoped history keeps its existing behavior")
+            .commits
+            .len(),
+        1
+    );
+
     host.remove_workspace_root(&linked_root)
         .await
         .expect("retire selected root while primary root remains");
@@ -473,6 +512,13 @@ async fn root_scoped_embedded_reads_follow_the_selected_worktree_and_refuse_a_re
         host.status_for_root(&StatusQuery::new(&repository_id), &linked_root)
             .await
             .expect_err("a retired root must not fall through to the live primary root")
+            .code,
+        ProblemCode::NotFound
+    );
+    assert_eq!(
+        host.history_for_root(&linked_history_query, &linked_root)
+            .await
+            .expect_err("retired linked-root history must not fall through to the primary root")
             .code,
         ProblemCode::NotFound
     );
@@ -533,14 +579,37 @@ async fn root_scoped_embedded_reads_do_not_probe_unrelated_registered_repositori
         .register_repository(unrelated_repo.to_str().expect("unrelated repo path"))
         .await
         .expect("register unrelated repo");
-    assert!(registered
+    let unrelated = registered
         .repositories
         .iter()
-        .any(|repository| repository.repository_id != requested.repository_id));
-    std::fs::write(&cwd_log, "").expect("clear registration probes");
+        .find(|repository| repository.repository_id != requested.repository_id)
+        .expect("registered unrelated repository");
+    let unrelated_root = WorkspaceRootId::try_from(unrelated.allowed_root_id.as_str())
+        .expect("unrelated root id");
 
     let root =
         WorkspaceRootId::try_from(requested.allowed_root_id.as_str()).expect("requested root id");
+    std::fs::write(&cwd_log, "").expect("clear registration probes");
+    assert_eq!(
+        host.history_for_root(&history_query(&requested.repository_id), &unrelated_root)
+            .await
+            .expect_err("another repository's root must not authorize history")
+            .code,
+        ProblemCode::NotFound
+    );
+    assert!(
+        std::fs::read_to_string(&cwd_log)
+            .expect("read wrong-root Git probe log")
+            .is_empty(),
+        "a mismatched root must be refused before any Git process starts"
+    );
+    let history = host
+        .history_for_root(&history_query(&requested.repository_id), &root)
+        .await
+        .expect("history exact repository/root pair");
+    assert_eq!(history.repository_id, requested.repository_id);
+    assert_eq!(history.commits.len(), 1);
+
     let mut query = StatusQuery::new(&requested.repository_id);
     query.worktree_id = Some(requested.primary_worktree_id.clone());
     host.status_for_root(&query, &root)

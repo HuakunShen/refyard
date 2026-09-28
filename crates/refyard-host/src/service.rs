@@ -1622,6 +1622,37 @@ impl ApplicationService {
         .map_err(|error| error.to_problem())
     }
 
+    /// One page of history through one exact approved root/worktree binding.
+    ///
+    /// Resolve the root before acquiring its lease and before any Git command so an
+    /// unrelated live root cannot keep a retired or mismatched binding usable. When
+    /// `query.worktree_id` is omitted, history retains its primary-worktree default;
+    /// callers scoped to a linked-worktree root must provide that worktree's id.
+    pub async fn history_for_root(
+        &self,
+        query: &HistoryQuery,
+        allowed_root_id: &WorkspaceRootId,
+    ) -> Result<HistoryPage, Problem> {
+        let aggregate = self.require_record(&query.repository_id)?;
+        let worktree_id = reads::require_worktree(&aggregate, query.worktree_id.as_deref())
+            .map_err(|error| error.to_problem())?;
+        let record = aggregate
+            .selected_worktree(Some(&worktree_id), Some(allowed_root_id.as_str()))
+            .ok_or_else(|| unknown_worktree(&aggregate, &worktree_id))?;
+        let _root_lease = self.writes_host.lease_root_for_record(&record).await?;
+        let target = self.target_for(&record)?;
+        reads::history::read_history(
+            target.executor()?,
+            &record,
+            &self.snapshots,
+            query,
+            &target.generation,
+            &now_iso8601(),
+        )
+        .await
+        .map_err(|error| error.to_problem())
+    }
+
     /// One page of the commit graph.
     pub async fn history(&self, query: &HistoryQuery) -> Result<HistoryPage, Problem> {
         let aggregate = self.require_record(&query.repository_id)?;
