@@ -1285,7 +1285,7 @@ impl MutationEngine {
                     &request.client_request_id,
                     &digest,
                     problem,
-                )
+                );
             }
         };
 
@@ -1304,7 +1304,7 @@ impl MutationEngine {
                     &request.client_request_id,
                     &digest,
                     problem,
-                )
+                );
             }
         };
         context.restart_block = block.as_ref().map(restart_block_of);
@@ -1689,7 +1689,8 @@ mod tests {
         fn context<'a>(
             &'a self,
             _request: &'a MutationRequest,
-        ) -> Pin<Box<dyn Future<Output = Result<PreconditionContext, Problem>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<PreconditionContext, Problem>> + Send + 'a>>
+        {
             panic!("a retained bound retry must resolve before source validation")
         }
     }
@@ -1768,7 +1769,10 @@ mod tests {
         let waiting_engine = engine.clone();
         let waiting = tokio::spawn(async move { waiting_engine.acquire_admission_guard().await });
         tokio::task::yield_now().await;
-        assert!(!waiting.is_finished(), "the second caller must wait at the same gate");
+        assert!(
+            !waiting.is_finished(),
+            "the second caller must wait at the same gate"
+        );
 
         drop(held);
         let released = tokio::time::timeout(std::time::Duration::from_secs(1), waiting)
@@ -1781,11 +1785,7 @@ mod tests {
     #[tokio::test]
     async fn admission_guard_cannot_be_reused_across_embedded_hosts() {
         let journal = Arc::new(Journal::open(None).expect("journal"));
-        let first = MutationEngine::new(
-            journal.clone(),
-            Arc::new(Recovery::new()),
-            vec![],
-        );
+        let first = MutationEngine::new(journal.clone(), Arc::new(Recovery::new()), vec![]);
         let second = MutationEngine::new(journal, Arc::new(Recovery::new()), vec![]);
         let guard = first.acquire_admission_guard().await;
         let binding = AdmissionBinding {

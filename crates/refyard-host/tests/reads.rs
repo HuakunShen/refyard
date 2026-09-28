@@ -540,7 +540,11 @@ async fn a_path_id_filter_resolves_only_the_status_binding_for_its_worktree() {
         .expect("path-scoped history");
 
     assert_eq!(page.topology, Topology::Sparse);
-    let subjects: Vec<&str> = page.commits.iter().map(|commit| commit.subject.as_str()).collect();
+    let subjects: Vec<&str> = page
+        .commits
+        .iter()
+        .map(|commit| commit.subject.as_str())
+        .collect();
     assert_eq!(subjects, vec!["change a", "base"]);
 }
 

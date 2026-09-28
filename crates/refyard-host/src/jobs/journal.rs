@@ -208,7 +208,11 @@ impl AdmissionBinding {
             ("client request id", self.client_request_id.as_str(), 256),
             ("target preview id", self.target_preview_id.as_str(), 256),
             ("resource key", self.resource_key.as_str(), 1_024),
-            ("operation fingerprint", self.operation_fingerprint.as_str(), 256),
+            (
+                "operation fingerprint",
+                self.operation_fingerprint.as_str(),
+                256,
+            ),
         ] {
             if value.is_empty() || value.len() > max_bytes || value.chars().any(char::is_control) {
                 return Err(Problem::new(
@@ -399,9 +403,9 @@ impl Journal {
         let mut files = Vec::new();
         if let Some(root) = &self.root {
             let marker = root.join(JOURNAL_INITIALIZED_MARKER);
-            if std::fs::symlink_metadata(&marker)
-                .is_ok_and(|metadata| metadata.file_type().is_file() && !metadata.file_type().is_symlink())
-            {
+            if std::fs::symlink_metadata(&marker).is_ok_and(|metadata| {
+                metadata.file_type().is_file() && !metadata.file_type().is_symlink()
+            }) {
                 files.push(marker);
             }
         }
@@ -580,7 +584,9 @@ impl Journal {
                     binding,
                 },
             );
-            next_state.bound_previews.insert(preview_key, bound_request_key);
+            next_state
+                .bound_previews
+                .insert(preview_key, bound_request_key);
         }
         next_state
             .records
@@ -683,9 +689,7 @@ impl Journal {
         next_state
             .owner_seals
             .insert(request_key.clone(), entry.clone());
-        next_state
-            .sealed_previews
-            .insert(preview_key, request_key);
+        next_state.sealed_previews.insert(preview_key, request_key);
         if journal_bytes(&next_state)? > JOURNAL_MAX_BYTES {
             return Err(Problem::new(
                 ProblemCode::ResourceBusy,
@@ -994,9 +998,14 @@ impl Journal {
         let Some(operation_id) = state.client_requests.get(&request_key) else {
             return Ok(None);
         };
-        state.records.get(operation_id).cloned().map(Some).ok_or_else(|| {
-            internal("the client-request index points to a missing operation".to_string())
-        })
+        state
+            .records
+            .get(operation_id)
+            .cloned()
+            .map(Some)
+            .ok_or_else(|| {
+                internal("the client-request index points to a missing operation".to_string())
+            })
     }
 
     /// Resolves an idempotent retry on the preview-bound path before source validation.
@@ -1293,7 +1302,10 @@ impl Journal {
         let mut seen_bound_operations = std::collections::HashSet::new();
         for entry in &index.bound_requests {
             entry.binding.validate().map_err(|problem| {
-                internal(format!("the durable admission binding is invalid: {}", problem.message))
+                internal(format!(
+                    "the durable admission binding is invalid: {}",
+                    problem.message
+                ))
             })?;
             if !is_operation_id(&entry.operation_id) {
                 return Err(internal(format!(
@@ -1314,7 +1326,10 @@ impl Journal {
                     "the journal contains duplicate durable actor/request bindings".to_string(),
                 ));
             }
-            if let Some(previous) = state.bound_previews.insert(preview_key, request_key.clone()) {
+            if let Some(previous) = state
+                .bound_previews
+                .insert(preview_key, request_key.clone())
+            {
                 return Err(internal(format!(
                     "the journal binds one target preview to multiple request keys: {} and {}",
                     previous.1, request_key.1
@@ -1334,14 +1349,15 @@ impl Journal {
                     )));
                 }
             }
-            state
-                .bound_requests
-                .insert(request_key, entry.clone());
+            state.bound_requests.insert(request_key, entry.clone());
         }
 
         for entry in &index.owner_seals {
             entry.binding.validate().map_err(|problem| {
-                internal(format!("the durable owner seal binding is invalid: {}", problem.message))
+                internal(format!(
+                    "the durable owner seal binding is invalid: {}",
+                    problem.message
+                ))
             })?;
             if entry.sealed_at_ms <= 0 || entry.receipt_id != owner_seal_receipt(&entry.binding) {
                 return Err(internal(
@@ -1403,7 +1419,9 @@ impl Journal {
                     }
                 }
             }
-            state.sealed_previews.insert(preview_key, request_key.clone());
+            state
+                .sealed_previews
+                .insert(preview_key, request_key.clone());
             state.owner_seals.insert(request_key, entry.clone());
         }
         state.next_sequence = index.next_sequence.max(
@@ -1894,11 +1912,7 @@ fn sync_parent(_: &Path) -> std::io::Result<()> {
 /// an earlier attempt may have created the directories and then failed partway through the
 /// syncs. Retrying must re-establish durability before the journal can become usable.
 fn create_dir_all_durably(path: &Path) -> std::io::Result<()> {
-    create_dir_all_durably_with(
-        path,
-        |path| std::fs::create_dir_all(path),
-        sync_parent,
-    )
+    create_dir_all_durably_with(path, |path| std::fs::create_dir_all(path), sync_parent)
 }
 
 fn create_dir_all_durably_with(
@@ -2316,10 +2330,9 @@ mod tests {
             drop(journal);
 
             let index_path = root.join("journal/index.json");
-            let mut index: serde_json::Value = serde_json::from_slice(
-                &std::fs::read(&index_path).expect("read current index"),
-            )
-            .expect("parse current index");
+            let mut index: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&index_path).expect("read current index"))
+                    .expect("parse current index");
             assert!(index
                 .as_object_mut()
                 .expect("index object")
@@ -2365,7 +2378,10 @@ mod tests {
             .admit_bound(late, binding, 12)
             .expect_err("sealed request must never be accepted");
         assert_eq!(error.code, ProblemCode::IdempotencyConflict);
-        assert!(reopened.records().is_empty(), "no Accepted record was written");
+        assert!(
+            reopened.records().is_empty(),
+            "no Accepted record was written"
+        );
     }
 
     #[test]
@@ -2380,7 +2396,8 @@ mod tests {
         drop(journal);
 
         std::fs::remove_file(root.join("journal/index.json")).expect("remove index fixture");
-        let error = Journal::open(Some(root.clone())).expect_err("missing seal authority fails closed");
+        let error =
+            Journal::open(Some(root.clone())).expect_err("missing seal authority fails closed");
         assert_eq!(error.code, ProblemCode::InternalError);
         assert!(root.join(JOURNAL_INITIALIZED_MARKER).is_file());
     }
@@ -2396,9 +2413,12 @@ mod tests {
         drop(journal);
 
         std::fs::remove_dir_all(root.join("journal")).expect("remove journal fixture");
-        let error = Journal::open(Some(root)).expect_err("the root marker outlives the journal directory");
+        let error =
+            Journal::open(Some(root)).expect_err("the root marker outlives the journal directory");
         assert_eq!(error.code, ProblemCode::InternalError);
-        assert!(error.message.contains("is missing from an initialized state root"));
+        assert!(error
+            .message
+            .contains("is missing from an initialized state root"));
     }
 
     #[test]
@@ -2449,7 +2469,9 @@ mod tests {
         })
         .expect_err("publication without parent sync is not durable success");
 
-        assert!(error.message.contains("could not be synced after publishing"));
+        assert!(error
+            .message
+            .contains("could not be synced after publishing"));
         assert_eq!(
             std::fs::read(path).expect("rename completed before parent sync"),
             b"published candidate"
@@ -2486,12 +2508,7 @@ mod tests {
             .expect("bound acceptance");
         assert_eq!(
             journal
-                .find_bound_submission_for_retry(
-                    "owner",
-                    "request-1",
-                    "digest",
-                    &binding,
-                )
+                .find_bound_submission_for_retry("owner", "request-1", "digest", &binding,)
                 .expect("exact retry is readable before freshness work")
                 .expect("retained operation")
                 .operation_id,
@@ -2527,12 +2544,7 @@ mod tests {
         );
         assert_eq!(
             reopened
-                .find_bound_submission_for_retry(
-                    "owner",
-                    "request-1",
-                    "digest",
-                    &binding,
-                )
+                .find_bound_submission_for_retry("owner", "request-1", "digest", &binding,)
                 .expect_err("sealed requests cannot be replayed")
                 .code,
             ProblemCode::IdempotencyConflict

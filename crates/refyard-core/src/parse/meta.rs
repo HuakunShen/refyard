@@ -285,7 +285,11 @@ pub fn parse_commit_candidates(
     if lines.len() != requested.len() {
         return Err(CoreError::output_incomplete(
             OBJECT_TYPES_FORMAT,
-            format!("expected {} object type rows, got {}", requested.len(), lines.len()),
+            format!(
+                "expected {} object type rows, got {}",
+                requested.len(),
+                lines.len()
+            ),
         ));
     }
     let mut commits = Vec::new();
@@ -331,7 +335,9 @@ mod tests {
         assert!(parse_disambiguated_oids(format!("{sha1}\n{sha1}\n").as_bytes(), 2).is_err());
         assert!(parse_disambiguated_oids(sha1.as_bytes(), 2).is_err());
         assert!(parse_disambiguated_oids(b"not-an-oid\n", 2).is_err());
-        assert!(parse_disambiguated_oids(b"", 2).expect("no candidates").is_empty());
+        assert!(parse_disambiguated_oids(b"", 2)
+            .expect("no candidates")
+            .is_empty());
     }
 
     #[test]
@@ -350,7 +356,11 @@ mod tests {
             &requested
         )
         .is_err());
-        assert!(parse_commit_candidates(format!("{sha1} missing\n{sha256} tree\n").as_bytes(), &requested).is_err());
+        assert!(parse_commit_candidates(
+            format!("{sha1} missing\n{sha256} tree\n").as_bytes(),
+            &requested
+        )
+        .is_err());
     }
 
     /// The committed capture `revListTopology`, produced by a real walk.

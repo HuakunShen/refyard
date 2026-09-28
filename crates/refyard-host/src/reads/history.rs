@@ -119,8 +119,8 @@ pub async fn read_history(
             let facts = read_ref_facts(runs, record).await?;
             let head = read_head_state(runs, record).await?;
             let default_tips = collect_tips(&head, &facts.refs);
-            let tips = resolve_history_tips(runs, record, &facts.refs, default_tips, &mut intent)
-                .await?;
+            let tips =
+                resolve_history_tips(runs, record, &facts.refs, default_tips, &mut intent).await?;
             let snapshot = snapshots.mint(SnapshotRequest {
                 kind: SnapshotKind::History,
                 repository_id: &record.repository_id,
@@ -255,9 +255,8 @@ fn normalize_new_query(query: &HistoryQuery) -> Result<HistoryIntent, ReadError>
             "committedAfter must be no later than committedBefore",
         ));
     }
-    let committed_after_seconds = after_millis.map(|millis| {
-        millis.div_euclid(1000) + i64::from(millis.rem_euclid(1000) != 0)
-    });
+    let committed_after_seconds = after_millis
+        .map(|millis| millis.div_euclid(1000) + i64::from(millis.rem_euclid(1000) != 0));
     let committed_before_seconds = before_millis.map(|millis| millis.div_euclid(1000));
     let sparse = message.is_some()
         || author.is_some()
@@ -302,9 +301,11 @@ fn is_valid_full_ref_name(name: &str) -> bool {
         || body.contains("..")
         || body.contains("@{")
         || body.contains("//")
-        || body
-            .bytes()
-            .any(|byte| byte <= 0x20 || byte == 0x7f || matches!(byte, b'~' | b'^' | b':' | b'?' | b'*' | b'[' | b'\\'))
+        || body.bytes().any(|byte| {
+            byte <= 0x20
+                || byte == 0x7f
+                || matches!(byte, b'~' | b'^' | b':' | b'?' | b'*' | b'[' | b'\\')
+        })
     {
         return false;
     }
@@ -926,15 +927,9 @@ async fn resolve_history_tips(
         if let Some(ref_oid) = intent.resolved_ref_oid.as_deref() {
             let plan = plan_is_commit_ancestor(&oid, ref_oid)
                 .map_err(|error| parse_error(ANCESTRY_COMMAND, error))?;
-            let reachable = run_meaningful_exit(
-                runs,
-                directory,
-                &plan,
-                ANCESTRY_COMMAND,
-                &[1],
-            )
-            .await?
-            .is_some();
+            let reachable = run_meaningful_exit(runs, directory, &plan, ANCESTRY_COMMAND, &[1])
+                .await?
+                .is_some();
             if !reachable {
                 return Ok(Vec::new());
             }

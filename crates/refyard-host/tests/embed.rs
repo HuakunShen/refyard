@@ -584,8 +584,8 @@ async fn root_scoped_embedded_reads_do_not_probe_unrelated_registered_repositori
         .iter()
         .find(|repository| repository.repository_id != requested.repository_id)
         .expect("registered unrelated repository");
-    let unrelated_root = WorkspaceRootId::try_from(unrelated.allowed_root_id.as_str())
-        .expect("unrelated root id");
+    let unrelated_root =
+        WorkspaceRootId::try_from(unrelated.allowed_root_id.as_str()).expect("unrelated root id");
 
     let root =
         WorkspaceRootId::try_from(requested.allowed_root_id.as_str()).expect("requested root id");

@@ -51,8 +51,7 @@ pub fn parse_iso8601_utc_millis(value: &str) -> Option<i64> {
         || bytes.get(13) != Some(&b':')
         || bytes.get(16) != Some(&b':')
         || (bytes.len() == 20 && bytes.get(19) != Some(&b'Z'))
-        || (bytes.len() == 24
-            && (bytes.get(19) != Some(&b'.') || bytes.get(23) != Some(&b'Z')))
+        || (bytes.len() == 24 && (bytes.get(19) != Some(&b'.') || bytes.get(23) != Some(&b'Z')))
     {
         return None;
     }
@@ -67,12 +66,7 @@ pub fn parse_iso8601_utc_millis(value: &str) -> Option<i64> {
     } else {
         0
     };
-    if !(1..=12).contains(&month)
-        || hour > 23
-        || minute > 59
-        || second > 59
-        || millisecond > 999
-    {
+    if !(1..=12).contains(&month) || hour > 23 || minute > 59 || second > 59 || millisecond > 999 {
         return None;
     }
     let days_in_month = match month {
@@ -86,13 +80,7 @@ pub fn parse_iso8601_utc_millis(value: &str) -> Option<i64> {
     }
 
     let days = days_from_civil(year, month, day);
-    Some(
-        days * 86_400_000
-            + hour * 3_600_000
-            + minute * 60_000
-            + second * 1_000
-            + millisecond,
-    )
+    Some(days * 86_400_000 + hour * 3_600_000 + minute * 60_000 + second * 1_000 + millisecond)
 }
 
 fn decimal_component(bytes: &[u8], start: usize, end: usize) -> Option<i64> {

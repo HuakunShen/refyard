@@ -21,10 +21,10 @@ use refyard_contract::history::{HistoryQuery, Topology};
 use refyard_contract::host::{ExecutionTargetKind, ExecutionTargetState};
 use refyard_contract::problem::ProblemCode;
 use refyard_core::plan::status::{plan_status, StatusOptions};
+use refyard_host::paths::PathRegistry;
 use refyard_host::providers::local::LocalGit;
 use refyard_host::providers::ssh::SshGit;
 use refyard_host::providers::GitExecutor;
-use refyard_host::paths::PathRegistry;
 use refyard_host::reads::history::read_history;
 use refyard_host::registry::{build_record, parse_repository_layout, RepositoryRecord};
 use refyard_host::service::{ApplicationService, ApplicationServiceConfig, StatusQuery};
@@ -674,9 +674,17 @@ async fn a_cursor_minted_before_the_target_was_rebuilt_is_refused() {
 
     // Before the rebuild the cursor is resolved and the read proceeds — it then fails
     // because this executor cannot run Git, and that failure is not a cursor refusal.
-    let error = read_history(&executor, &record, &PathRegistry::new(), &store, &query, "gen_1", "now")
-        .await
-        .expect_err("the executor cannot run");
+    let error = read_history(
+        &executor,
+        &record,
+        &PathRegistry::new(),
+        &store,
+        &query,
+        "gen_1",
+        "now",
+    )
+    .await
+    .expect_err("the executor cannot run");
     assert_ne!(
         error.to_problem().code,
         ProblemCode::StaleSnapshot,
@@ -684,9 +692,17 @@ async fn a_cursor_minted_before_the_target_was_rebuilt_is_refused() {
     );
 
     // After the rebuild the same cursor is refused rather than walked.
-    let error = read_history(&executor, &record, &PathRegistry::new(), &store, &query, "gen_2", "now")
-        .await
-        .expect_err("refused");
+    let error = read_history(
+        &executor,
+        &record,
+        &PathRegistry::new(),
+        &store,
+        &query,
+        "gen_2",
+        "now",
+    )
+    .await
+    .expect_err("refused");
     assert_eq!(error.to_problem().code, ProblemCode::StaleSnapshot);
     assert!(
         error.to_problem().message.contains("earlier build"),

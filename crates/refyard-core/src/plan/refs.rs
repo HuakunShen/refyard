@@ -111,10 +111,7 @@ pub fn plan_cat_file_object_types(object_names: &[&str]) -> Result<GitPlan, Core
 
 /// Whether one commit is an ancestor of another. Exit 1 means "no", which is an
 /// answer rather than a failure.
-pub fn plan_is_commit_ancestor(
-    ancestor: &str,
-    descendant: &str,
-) -> Result<GitPlan, CoreError> {
+pub fn plan_is_commit_ancestor(ancestor: &str, descendant: &str) -> Result<GitPlan, CoreError> {
     if !is_object_name(ancestor.as_bytes()) || !is_object_name(descendant.as_bytes()) {
         return Err(CoreError::invalid_input(
             "plan_is_commit_ancestor requires full lowercase object names",
