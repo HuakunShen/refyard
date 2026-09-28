@@ -16,7 +16,7 @@ test.use({ channel: process.env.CI ? undefined : "chrome" });
 test.skip(({ browserName }) => browserName !== "chromium", "The local-pack smoke entry is covered by Chromium");
 
 test.beforeAll(async () => {
-  server = createServer(async (request, response) => {
+  const activeServer = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     const pathname = url.pathname.endsWith("/") ? `${url.pathname}index.html` : url.pathname;
     const file = resolve(join(root, decodeURIComponent(pathname)));
@@ -31,8 +31,9 @@ test.beforeAll(async () => {
       response.writeHead(200, { "content-type": mime }).end(bytes);
     } catch { response.writeHead(404).end(); }
   });
-  await new Promise<void>((resolveReady) => server.listen(0, "127.0.0.1", resolveReady));
-  const address = server.address();
+  server = activeServer;
+  await new Promise<void>((resolveReady) => activeServer.listen(0, "127.0.0.1", resolveReady));
+  const address = activeServer.address();
   if (address === null || typeof address === "string") throw new Error("missing local server address");
   origin = `http://127.0.0.1:${address.port}`;
 });
