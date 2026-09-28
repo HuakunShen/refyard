@@ -167,9 +167,7 @@ test.describe("history search", () => {
     const visibleRows = page.locator('[data-testid^="commit-row-"]');
     await expect(visibleRows.first()).toBeVisible();
     expect(await visibleRows.count()).toBeLessThan(100);
-    const scrollList = page
-      .getByTestId("history-panel")
-      .locator("div.overflow-auto");
+    const scrollList = page.getByTestId("history-scroll");
     const continuation = page.waitForRequest(
       (request) =>
         new URL(request.url()).pathname.endsWith("/history") &&

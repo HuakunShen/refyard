@@ -183,6 +183,11 @@ test.describe("recent repositories", () => {
     await page.reload();
     await expect(page.getByTestId("build-badge")).toBeVisible();
     await expect(page.getByTestId("repository-tabs")).toBeVisible();
+    expect(await readRecentStore(page)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ displayPath: unapprovedPath }),
+      ]),
+    );
     await page.getByTestId("new-repository-tab").click();
     await expect(
       page.getByTestId("repository-launcher").getByText(unapprovedPath),
