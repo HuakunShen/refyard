@@ -53,6 +53,33 @@ fn config_with_generation(state_root: &Path, target_generation: &str) -> EmbedCo
     }
 }
 
+fn isolated_git(root: &Path) -> std::process::Command {
+    let home = root.join("git-test-home");
+    std::fs::create_dir_all(&home).expect("isolated Git home");
+    let global_config = home.join("config");
+    if !global_config.exists() {
+        std::fs::write(&global_config, "").expect("isolated global Git config");
+    }
+
+    let git = LocalGit::discover().expect("git is installed");
+    let mut command = std::process::Command::new(git.program());
+    command
+        .env_clear()
+        .env("HOME", &home)
+        .env("USERPROFILE", &home)
+        .env("GIT_CONFIG_GLOBAL", &global_config)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_TERMINAL_PROMPT", "0");
+    if let Some(path) = std::env::var_os("PATH") {
+        command.env("PATH", path);
+    }
+    #[cfg(windows)]
+    if let Some(system_root) = std::env::var_os("SystemRoot") {
+        command.env("SystemRoot", system_root);
+    }
+    command
+}
+
 fn history_query(repository_id: &str) -> HistoryQuery {
     HistoryQuery {
         repository_id: repository_id.to_string(),
@@ -74,7 +101,7 @@ fn init_repository(root: &Path, name: &str) -> std::path::PathBuf {
     let repo = root.join(name);
     std::fs::create_dir_all(&repo).expect("repo");
     let git = |args: &[&str]| {
-        let output = std::process::Command::new("git")
+        let output = isolated_git(root)
             .args(args)
             .current_dir(&repo)
             .output()
@@ -92,6 +119,25 @@ fn init_repository(root: &Path, name: &str) -> std::path::PathBuf {
     git(&["add", "file.txt"]);
     git(&["commit", "-q", "-m", "initial"]);
     repo
+}
+
+#[test]
+fn git_fixture_commands_do_not_read_user_or_system_config() {
+    let root = tempfile::tempdir().expect("Git fixture root");
+    let output = isolated_git(root.path())
+        .args(["config", "--global", "--show-origin", "--list"])
+        .output()
+        .expect("query isolated global Git config");
+    assert!(
+        output.status.success(),
+        "git config failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        output.stdout.is_empty(),
+        "fixture unexpectedly read global Git config: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
 }
 
 async fn submit_commit_and_wait(
@@ -346,7 +392,7 @@ async fn root_scoped_embedded_reads_follow_the_selected_worktree_and_refuse_a_re
     let repositories_root = tempfile::tempdir().expect("repositories root");
     let primary = init_repository(repositories_root.path(), "primary");
     let linked = repositories_root.path().join("linked");
-    let output = std::process::Command::new("git")
+    let output = isolated_git(repositories_root.path())
         .arg("-C")
         .arg(&primary)
         .args(["worktree", "add", "-q", "-b", "secondary"])
