@@ -563,6 +563,20 @@
   /* ---------------------------------------------------------- context menus */
 
   const commitMenu = $state(createContextMenuState());
+  let commitMenuActionBuilder = $state<(() => readonly ContextAction[]) | null>(
+    null,
+  );
+  const activeCommitMenuActions = $derived.by(() => {
+    const buildActions = commitMenuActionBuilder;
+    return commitMenu.open && buildActions !== null
+      ? buildActions()
+      : commitMenu.actions;
+  });
+
+  function closeCommitMenu(): void {
+    commitMenuActionBuilder = null;
+    closeContextMenu(commitMenu);
+  }
 
   function commitActionsFor(commit: CommitSummary): readonly ContextAction[] {
     return [
@@ -739,12 +753,15 @@
   }
 
   function openCommitMenu(event: MouseEvent, commit: CommitSummary): void {
-    const actions = commitActionsFor(commit);
+    const buildActions = (): readonly ContextAction[] =>
+      commitActionsFor(commit);
+    const actions = buildActions();
     if (actions.length === 0) {
       return;
     }
     event.preventDefault();
     clearRightPressSelection();
+    commitMenuActionBuilder = buildActions;
     openContextMenu(
       commitMenu,
       actions,
@@ -981,34 +998,42 @@
     if (primary === undefined) {
       return;
     }
-    let actions: readonly ContextAction[] = refActionsFor(primary.ref, commit);
-    for (const entry of group.refs) {
-      if (
-        entry.refName === group.primaryRefName ||
-        entry.ref.kind !== "remote"
-      ) {
-        continue;
+    const buildActions = (): readonly ContextAction[] => {
+      let actions: readonly ContextAction[] = refActionsFor(
+        primary.ref,
+        commit,
+      );
+      for (const entry of group.refs) {
+        if (
+          entry.refName === group.primaryRefName ||
+          entry.ref.kind !== "remote"
+        ) {
+          continue;
+        }
+        actions = [
+          ...actions,
+          { kind: "separator" as const, id: `sep-${entry.refName}` },
+          ...(onCopyText === undefined
+            ? []
+            : [
+                {
+                  kind: "action" as const,
+                  id: `copy-${entry.refName}`,
+                  label: inject("history.action.copyRef", {
+                    ref: commitRefDisplayName(entry.ref),
+                  }),
+                  onSelect: () => onCopyText(commitRefDisplayName(entry.ref)),
+                },
+              ]),
+        ];
       }
-      actions = [
-        ...actions,
-        { kind: "separator" as const, id: `sep-${entry.refName}` },
-        ...(onCopyText === undefined
-          ? []
-          : [
-              {
-                kind: "action" as const,
-                id: `copy-${entry.refName}`,
-                label: inject("history.action.copyRef", {
-                  ref: commitRefDisplayName(entry.ref),
-                }),
-                onSelect: () => onCopyText(commitRefDisplayName(entry.ref)),
-              },
-            ]),
-      ];
-    }
+      return actions;
+    };
+    const actions = buildActions();
     if (actions.length === 0) {
       return;
     }
+    commitMenuActionBuilder = buildActions;
     openContextMenu(
       commitMenu,
       actions,
@@ -1626,9 +1651,9 @@
   open={commitMenu.open}
   x={commitMenu.x}
   y={commitMenu.y}
-  actions={commitMenu.actions}
+  actions={activeCommitMenuActions}
   testId={commitMenu.testId}
-  onClose={() => closeContextMenu(commitMenu)}
+  onClose={closeCommitMenu}
 />
 <ContextMenuLayer
   open={settingsMenu.open}

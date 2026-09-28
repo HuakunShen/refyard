@@ -24,54 +24,100 @@ test.describe("Git context menus", () => {
     await repo.dispose();
   });
 
-  test("creates refs from a commit context menu", async ({ page }) => {
-    await page.goto(service.pairingUrl);
-    const row = page.getByTestId(`commit-row-${historicalOid}`);
-    await expect(row).toBeVisible();
+  test.describe("with deterministic API request gating", () => {
+    test.use({ serviceWorkers: "block" });
 
-    await row.click({ button: "right" });
-    const menu = page.getByTestId(`commit-context-${historicalOid}`);
-    await expect(menu).toBeVisible();
-    await expect(
-      page.getByTestId(`commit-context-${historicalOid}-create-branch`),
-    ).toHaveText("Create Branch Here…");    await expect(
-      page.getByTestId(`commit-context-${historicalOid}-create-tag`),
-    ).toHaveText("Create Tag Here…");
-    await expect(
-      page.getByTestId(`commit-context-${historicalOid}-copy-sha`),
-    ).toHaveText("Copy SHA");
+    test("creates refs from a commit context menu", async ({ page }) => {
+      let holdStatusReads = false;
+      let blockedStatusReads = 0;
+      let releaseStatusReads: () => void = () => {};
+      const statusReadGate = new Promise<void>((resolve) => {
+        releaseStatusReads = resolve;
+      });
 
-    await page
-      .getByTestId(`commit-context-${historicalOid}-create-branch`)
-      .click();
-    await page.getByTestId("commit-ref-name").fill("from-historical");
-    await page.getByTestId("commit-ref-submit").click();
-    await expect(page.getByTestId("branch-message")).toContainText(
-      /created branch from-historical/,
-    );
-    expect(
-      new TextDecoder()
-        .decode(await repo.git(["rev-parse", "refs/heads/from-historical"]))
-        .trim(),
-    ).toBe(historicalOid);
+      await page.goto(service.pairingUrl);
+      const row = page.getByTestId(`commit-row-${historicalOid}`);
+      await expect(row).toBeVisible();
 
-    await row.click({ button: "right" });
-    await page
-      .getByTestId(`commit-context-${historicalOid}-create-tag`)
-      .click();
-    await page.getByTestId("commit-ref-name").fill("historical-tag");
-    await page
-      .getByTestId("commit-ref-annotation")
-      .fill("created from the commit menu");
-    await page.getByTestId("commit-ref-submit").click();
-    await expect(page.getByTestId("tag-message-result")).toContainText(
-      /created (annotated )?tag historical-tag/,
-    );
-    expect(
-      new TextDecoder()
-        .decode(await repo.git(["rev-parse", "refs/tags/historical-tag^{}"]))
-        .trim(),
-    ).toBe(historicalOid);
+      await row.click({ button: "right" });
+      const menu = page.getByTestId(`commit-context-${historicalOid}`);
+      await expect(menu).toBeVisible();
+      await expect(
+        page.getByTestId(`commit-context-${historicalOid}-create-branch`),
+      ).toHaveText("Create Branch Here…");
+      await expect(
+        page.getByTestId(`commit-context-${historicalOid}-create-tag`),
+      ).toHaveText("Create Tag Here…");
+      await expect(
+        page.getByTestId(`commit-context-${historicalOid}-copy-sha`),
+      ).toHaveText("Copy SHA");
+
+      await page
+        .getByTestId(`commit-context-${historicalOid}-create-branch`)
+        .click();
+      await page.getByTestId("commit-ref-name").fill("from-historical");
+
+      await page.route("**/api/v1/status**", async (route) => {
+        if (!holdStatusReads) {
+          await route.continue();
+          return;
+        }
+        blockedStatusReads += 1;
+        await statusReadGate;
+        await route.continue();
+      });
+      await page.route("**/api/v1/operations**", async (route) => {
+        if (route.request().method() === "POST") {
+          holdStatusReads = true;
+        }
+        await route.continue();
+      });
+
+      try {
+        await page.getByTestId("commit-ref-submit").click();
+        await expect(page.getByTestId("branch-message")).toContainText(
+          /created branch from-historical/,
+        );
+        expect(
+          new TextDecoder()
+            .decode(await repo.git(["rev-parse", "refs/heads/from-historical"]))
+            .trim(),
+        ).toBe(historicalOid);
+
+        await row.click({ button: "right" });
+        const createTag = page.getByTestId(
+          `commit-context-${historicalOid}-create-tag`,
+        );
+        // Keep the real Status read used by repository invalidation pending so the
+        // menu opens while the branch operation still disables writes.
+        await expect.poll(() => blockedStatusReads).toBeGreaterThan(0);
+        await expect(createTag).toBeDisabled();
+
+        releaseStatusReads();
+        holdStatusReads = false;
+        // The already-open menu must reflect the busy transition without a reopen.
+        await expect(createTag).toBeEnabled();
+        await createTag.click();
+        await page.getByTestId("commit-ref-name").fill("historical-tag");
+        await page
+          .getByTestId("commit-ref-annotation")
+          .fill("created from the commit menu");
+        await page.getByTestId("commit-ref-submit").click();
+        await expect(page.getByTestId("tag-message-result")).toContainText(
+          /created (annotated )?tag historical-tag/,
+        );
+        expect(
+          new TextDecoder()
+            .decode(
+              await repo.git(["rev-parse", "refs/tags/historical-tag^{}"]),
+            )
+            .trim(),
+        ).toBe(historicalOid);
+      } finally {
+        holdStatusReads = false;
+        releaseStatusReads();
+      }
+    });
   });
 
   test("creates a worktree with a new branch from a commit context menu", async ({
