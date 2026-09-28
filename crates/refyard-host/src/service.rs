@@ -1644,6 +1644,7 @@ impl ApplicationService {
         reads::history::read_history(
             target.executor()?,
             &record,
+            self.paths.as_ref(),
             &self.snapshots,
             query,
             &target.generation,
@@ -1666,6 +1667,7 @@ impl ApplicationService {
         reads::history::read_history(
             target.executor()?,
             &record,
+            self.paths.as_ref(),
             &self.snapshots,
             query,
             &target.generation,

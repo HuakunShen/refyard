@@ -55,6 +55,26 @@ impl SnapshotKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HistoryIntent {
     pub first_parent_only: bool,
+    /// Normalized literal message search owned by every continuation of this walk.
+    pub message: Option<String>,
+    /// Normalized literal author search owned by every continuation of this walk.
+    pub author: Option<String>,
+    /// Inclusive lower bound, rounded up to Git's second resolution.
+    pub committed_after_seconds: Option<i64>,
+    /// Inclusive upper bound, rounded down to Git's second resolution.
+    pub committed_before_seconds: Option<i64>,
+    /// Normalized lowercase prefix supplied by the query.
+    pub oid_prefix: Option<String>,
+    /// The uniquely resolved commit, when the prefix found one.
+    pub only_oid: Option<String>,
+    /// Exact observed ref name, if this walk was scoped to one ref.
+    pub ref_full_name: Option<String>,
+    /// Commit OID captured for the exact ref name.
+    pub resolved_ref_oid: Option<String>,
+    /// Path id whose registry binding was resolved for this snapshot.
+    pub path_id: Option<String>,
+    /// UTF-8 execution path pinned from the path registry for this snapshot.
+    pub path_text: Option<String>,
     pub topology: Topology,
 }
 

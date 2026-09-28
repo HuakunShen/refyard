@@ -14,12 +14,14 @@
 //! The reference module also holds the `config -z` and `ls-tree -z` parsers; those are
 //! not ported yet because no read in this slice needs them.
 
-use crate::bytes::decode_ascii;
+use crate::bytes::{decode_ascii, is_object_name};
 use crate::problem::CoreError;
 
 const TOPOLOGY_FORMAT: &str = "rev-list --topo-order --parents";
 const REMOTE_FORMAT: &str = "remote -v";
 const PRESENCE_FORMAT: &str = "cat-file --batch-check";
+const DISAMBIGUATED_OIDS_FORMAT: &str = "rev-parse --disambiguate";
+const OBJECT_TYPES_FORMAT: &str = "cat-file --batch-check object types";
 
 /* -------------------------------------------------------------------- remotes */
 
@@ -227,9 +229,129 @@ fn latin1(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| char::from(*byte)).collect()
 }
 
+/// Parses the bounded full-object-name list from `rev-parse --disambiguate`.
+pub fn parse_disambiguated_oids(
+    bytes: &[u8],
+    max_entries: usize,
+) -> Result<Vec<String>, CoreError> {
+    if bytes.is_empty() {
+        return Ok(Vec::new());
+    }
+    if !bytes.ends_with(b"\n") {
+        return Err(CoreError::output_incomplete(
+            DISAMBIGUATED_OIDS_FORMAT,
+            "the final object name was not newline-terminated",
+        ));
+    }
+    let lines = split_lines(bytes);
+    if lines.len() > max_entries {
+        return Err(CoreError::output_unparsable(
+            DISAMBIGUATED_OIDS_FORMAT,
+            format!("object enumeration exceeded its {max_entries}-entry bound"),
+        ));
+    }
+    let mut seen = std::collections::HashSet::with_capacity(lines.len());
+    let mut oids = Vec::with_capacity(lines.len());
+    for line in lines {
+        let oid = decode_ascii(line, DISAMBIGUATED_OIDS_FORMAT)?;
+        if !is_object_name(oid.as_bytes()) || !seen.insert(oid.clone()) {
+            return Err(CoreError::output_unparsable(
+                DISAMBIGUATED_OIDS_FORMAT,
+                "an object name was malformed or duplicated",
+            ));
+        }
+        oids.push(oid);
+    }
+    Ok(oids)
+}
+
+/// Parses one ordered object-type answer per requested object and keeps commits only.
+pub fn parse_commit_candidates(
+    bytes: &[u8],
+    requested: &[String],
+) -> Result<Vec<String>, CoreError> {
+    if requested.is_empty() {
+        return Err(CoreError::invalid_input(
+            "parse_commit_candidates requires at least one object name",
+        ));
+    }
+    if !bytes.ends_with(b"\n") {
+        return Err(CoreError::output_incomplete(
+            OBJECT_TYPES_FORMAT,
+            "the final object type was not newline-terminated",
+        ));
+    }
+    let lines = split_lines(bytes);
+    if lines.len() != requested.len() {
+        return Err(CoreError::output_incomplete(
+            OBJECT_TYPES_FORMAT,
+            format!("expected {} object type rows, got {}", requested.len(), lines.len()),
+        ));
+    }
+    let mut commits = Vec::new();
+    for (index, line) in lines.into_iter().enumerate() {
+        let text = decode_ascii(line, OBJECT_TYPES_FORMAT)?;
+        let Some((oid, object_type)) = text.split_once(' ') else {
+            return Err(CoreError::output_unparsable(
+                OBJECT_TYPES_FORMAT,
+                "expected <objectname> <objecttype>",
+            ));
+        };
+        if oid != requested[index]
+            || !is_object_name(oid.as_bytes())
+            || object_type.contains(' ')
+            || !matches!(object_type, "commit" | "tree" | "blob" | "tag")
+        {
+            return Err(CoreError::output_unparsable(
+                OBJECT_TYPES_FORMAT,
+                "object type rows were malformed or out of order",
+            ));
+        }
+        if object_type == "commit" {
+            commits.push(oid.to_string());
+        }
+    }
+    Ok(commits)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn disambiguated_oid_lists_are_strict_and_bounded() {
+        let sha1 = "0123456789abcdef0123456789abcdef01234567";
+        let sha256 = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
+        let bytes = format!("{sha1}\n{sha256}\n");
+        assert_eq!(
+            parse_disambiguated_oids(bytes.as_bytes(), 2).expect("bounded OIDs"),
+            vec![sha1, sha256]
+        );
+        assert!(parse_disambiguated_oids(bytes.as_bytes(), 1).is_err());
+        assert!(parse_disambiguated_oids(format!("{sha1}\n{sha1}\n").as_bytes(), 2).is_err());
+        assert!(parse_disambiguated_oids(sha1.as_bytes(), 2).is_err());
+        assert!(parse_disambiguated_oids(b"not-an-oid\n", 2).is_err());
+        assert!(parse_disambiguated_oids(b"", 2).expect("no candidates").is_empty());
+    }
+
+    #[test]
+    fn commit_candidate_responses_must_match_the_requested_order() {
+        let sha1 = "0123456789abcdef0123456789abcdef01234567";
+        let sha256 = "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
+        let requested = vec![sha1.to_string(), sha256.to_string()];
+        let response = format!("{sha1} commit\n{sha256} tree\n");
+        assert_eq!(
+            parse_commit_candidates(response.as_bytes(), &requested).expect("types"),
+            vec![sha1]
+        );
+        assert!(parse_commit_candidates(b"", &requested).is_err());
+        assert!(parse_commit_candidates(
+            format!("{sha256} tree\n{sha1} commit\n").as_bytes(),
+            &requested
+        )
+        .is_err());
+        assert!(parse_commit_candidates(format!("{sha1} missing\n{sha256} tree\n").as_bytes(), &requested).is_err());
+    }
 
     /// The committed capture `revListTopology`, produced by a real walk.
     const REV_LIST_TOPOLOGY: &[u8] = b"fef12e3705ae5eb4037d164d06a78a9dda8392c2 d21595332413c62dbd2bc0b53bd88575d5a61a1b\nd21595332413c62dbd2bc0b53bd88575d5a61a1b 9315856cb6d1f7e13d2ba8266384fab3e81e9297\n9315856cb6d1f7e13d2ba8266384fab3e81e9297 7192fcddf81d3e09d3ba4af8ee7536929215302c\n";

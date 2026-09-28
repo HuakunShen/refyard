@@ -69,15 +69,63 @@ pub fn plan_rev_parse_commit(revision: &str) -> GitPlan {
     ])
 }
 
+/// Enumerates every object whose name starts with a validated lowercase hex prefix.
+pub fn plan_disambiguate_commit_prefix(prefix: &str) -> Result<GitPlan, CoreError> {
+    if !(4..=64).contains(&prefix.len())
+        || !prefix
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(CoreError::invalid_input(
+            "a commit prefix must contain 4–64 lowercase hexadecimal characters",
+        ));
+    }
+    Ok(GitPlan::read(vec![
+        "rev-parse".to_string(),
+        format!("--disambiguate={prefix}"),
+    ]))
+}
+
+/// Classifies a bounded list of already enumerated objects without reading their bodies.
+pub fn plan_cat_file_object_types(object_names: &[&str]) -> Result<GitPlan, CoreError> {
+    if object_names.is_empty() {
+        return Err(CoreError::invalid_input(
+            "plan_cat_file_object_types requires at least one object name",
+        ));
+    }
+    if object_names
+        .iter()
+        .any(|name| !is_object_name(name.as_bytes()))
+    {
+        return Err(CoreError::invalid_input(
+            "plan_cat_file_object_types requires full lowercase object names",
+        ));
+    }
+    let mut plan = GitPlan::read(vec![
+        "cat-file".to_string(),
+        "--batch-check=%(objectname) %(objecttype)".to_string(),
+    ]);
+    plan.stdin = names_stdin(object_names);
+    Ok(plan)
+}
+
 /// Whether one commit is an ancestor of another. Exit 1 means "no", which is an
 /// answer rather than a failure.
-pub fn plan_is_commit_ancestor(ancestor: &str, descendant: &str) -> GitPlan {
-    GitPlan::read(vec![
+pub fn plan_is_commit_ancestor(
+    ancestor: &str,
+    descendant: &str,
+) -> Result<GitPlan, CoreError> {
+    if !is_object_name(ancestor.as_bytes()) || !is_object_name(descendant.as_bytes()) {
+        return Err(CoreError::invalid_input(
+            "plan_is_commit_ancestor requires full lowercase object names",
+        ));
+    }
+    Ok(GitPlan::read(vec![
         "merge-base".to_string(),
         "--is-ancestor".to_string(),
         ancestor.to_string(),
         descendant.to_string(),
-    ])
+    ]))
 }
 
 /// The configured remotes, with fetch and push URLs.
@@ -123,8 +171,41 @@ mod tests {
 
     #[test]
     fn ancestry_is_asked_as_a_question_not_a_failure() {
-        let plan = plan_is_commit_ancestor("a", "b");
-        assert_eq!(plan.argv, vec!["merge-base", "--is-ancestor", "a", "b"]);
+        let ancestor = "0123456789abcdef0123456789abcdef01234567";
+        let descendant = "fedcba9876543210fedcba9876543210fedcba98";
+        let plan = plan_is_commit_ancestor(ancestor, descendant).expect("full object names");
+        assert_eq!(
+            plan.argv,
+            vec!["merge-base", "--is-ancestor", ancestor, descendant]
+        );
+    }
+
+    #[test]
+    fn commit_prefix_plans_are_hex_only_and_bounded() {
+        let plan = plan_disambiguate_commit_prefix("a1b2").expect("valid prefix");
+        assert_eq!(plan.argv, vec!["rev-parse", "--disambiguate=a1b2"]);
+        assert_eq!(plan.deadline_class, DeadlineClass::Read);
+        assert!(plan_disambiguate_commit_prefix("-e123").is_err());
+        assert!(plan_disambiguate_commit_prefix("ABCDEF").is_err());
+        assert!(plan_disambiguate_commit_prefix("abc").is_err());
+    }
+
+    #[test]
+    fn object_type_plans_require_full_names_and_use_stdin() {
+        let oid = "0123456789abcdef0123456789abcdef01234567";
+        let plan = plan_cat_file_object_types(&[oid]).expect("one full object name");
+        assert_eq!(
+            plan.argv,
+            vec!["cat-file", "--batch-check=%(objectname) %(objecttype)"]
+        );
+        assert_eq!(plan.stdin, format!("{oid}\n").as_bytes());
+        assert!(plan_cat_file_object_types(&[]).is_err());
+        assert!(plan_cat_file_object_types(&["not-an-oid"]).is_err());
+    }
+
+    #[test]
+    fn ancestry_plans_require_full_object_names() {
+        assert!(plan_is_commit_ancestor("a", "b").is_err());
     }
 
     #[test]

@@ -311,6 +311,240 @@ async fn a_page_continues_from_its_cursors_snapshot_and_not_from_a_moved_branch(
 }
 
 #[tokio::test]
+async fn a_message_filter_is_normalized_once_and_owned_by_its_history_cursor() {
+    // Filtering must happen in the target's Git walk, and page two must continue the
+    // normalized query without requiring the caller to re-send a filter.
+    let fixture = Fixture::new();
+    fixture.write("a.txt", "seed\n");
+    fixture.commit_all("seed");
+    fixture.write("a.txt", "first\n");
+    fixture.commit_all("Needle first");
+    let first_match = fixture.head();
+    fixture.write("a.txt", "unrelated\n");
+    fixture.commit_all("unrelated change");
+    fixture.write("a.txt", "second\n");
+    fixture.commit_all("NEEDLE second");
+    let second_match = fixture.head();
+
+    let (service, repository_id) = fixture.service().await;
+    let first = service
+        .history(&HistoryQuery {
+            repository_id: repository_id.clone(),
+            worktree_id: None,
+            cursor: None,
+            limit: Some(1),
+            detail_oid: None,
+            first_parent_only: None,
+            message: Some("  needle  ".to_string()),
+            author: None,
+            oid_prefix: None,
+            ref_full_name: None,
+            committed_after: None,
+            committed_before: None,
+            path_id: None,
+        })
+        .await
+        .expect("filtered first page");
+
+    assert_eq!(first.topology, Topology::Sparse);
+    assert_eq!(first.commits.len(), 1);
+    assert_eq!(first.commits[0].oid, second_match);
+    let cursor = first.next_cursor.expect("another matching commit");
+
+    let second = service
+        .history(&HistoryQuery {
+            repository_id,
+            worktree_id: None,
+            cursor: Some(cursor),
+            limit: None,
+            detail_oid: None,
+            first_parent_only: None,
+            message: None,
+            author: None,
+            oid_prefix: None,
+            ref_full_name: None,
+            committed_after: None,
+            committed_before: None,
+            path_id: None,
+        })
+        .await
+        .expect("filtered continuation");
+
+    assert_eq!(second.commits.len(), 1);
+    assert_eq!(second.commits[0].oid, first_match);
+    assert_eq!(second.next_cursor, None);
+}
+
+#[tokio::test]
+async fn a_date_filter_returns_a_sparse_empty_page_when_no_commit_is_recent_enough() {
+    let fixture = Fixture::new();
+    fixture.write("a.txt", "seed\n");
+    fixture.commit_all("seed");
+    let (service, repository_id) = fixture.service().await;
+
+    let page = service
+        .history(&HistoryQuery {
+            repository_id,
+            worktree_id: None,
+            cursor: None,
+            limit: None,
+            detail_oid: None,
+            first_parent_only: None,
+            message: None,
+            author: None,
+            oid_prefix: None,
+            ref_full_name: None,
+            committed_after: Some("9999-12-31T23:59:59.999Z".to_string()),
+            committed_before: None,
+            path_id: None,
+        })
+        .await
+        .expect("date-filtered history");
+
+    assert!(page.commits.is_empty());
+    assert_eq!(page.topology, Topology::Sparse);
+    assert_eq!(page.next_cursor, None);
+}
+
+#[tokio::test]
+async fn an_oid_prefix_locates_one_commit_without_walking_its_parents() {
+    let fixture = Fixture::new();
+    fixture.write("a.txt", "base\n");
+    fixture.commit_all("base");
+    fixture.write("a.txt", "older target\n");
+    fixture.commit_all("target commit");
+    let target_oid = fixture.head();
+    fixture.write("a.txt", "latest\n");
+    fixture.commit_all("latest commit");
+
+    let (service, repository_id) = fixture.service().await;
+    let page = service
+        .history(&HistoryQuery {
+            repository_id,
+            worktree_id: None,
+            cursor: None,
+            limit: None,
+            detail_oid: None,
+            first_parent_only: None,
+            message: None,
+            author: None,
+            oid_prefix: Some(target_oid[..12].to_string()),
+            ref_full_name: None,
+            committed_after: None,
+            committed_before: None,
+            path_id: None,
+        })
+        .await
+        .expect("located commit");
+
+    assert_eq!(page.topology, Topology::Sparse);
+    assert_eq!(page.commits.len(), 1);
+    assert_eq!(page.commits[0].oid, target_oid);
+    assert!(!page.commits[0].parents.is_empty());
+}
+
+#[tokio::test]
+async fn an_exact_ref_filter_uses_that_observed_ref_as_the_walk_tip() {
+    let fixture = Fixture::new();
+    fixture.write("a.txt", "base\n");
+    fixture.commit_all("base");
+    fixture.git(&["branch", "topic"]);
+    fixture.write("a.txt", "main\n");
+    fixture.commit_all("main only");
+
+    let (service, repository_id) = fixture.service().await;
+    let page = service
+        .history(&HistoryQuery {
+            repository_id: repository_id.clone(),
+            worktree_id: None,
+            cursor: None,
+            limit: None,
+            detail_oid: None,
+            first_parent_only: None,
+            message: None,
+            author: None,
+            oid_prefix: None,
+            ref_full_name: Some("refs/heads/topic".to_string()),
+            committed_after: None,
+            committed_before: None,
+            path_id: None,
+        })
+        .await
+        .expect("observed ref");
+
+    assert_eq!(page.topology, Topology::Continuous);
+    assert_eq!(page.commits.len(), 1);
+    assert_eq!(page.commits[0].subject, "base");
+
+    let missing = service
+        .history(&HistoryQuery {
+            repository_id,
+            worktree_id: None,
+            cursor: None,
+            limit: None,
+            detail_oid: None,
+            first_parent_only: None,
+            message: None,
+            author: None,
+            oid_prefix: None,
+            ref_full_name: Some("refs/heads/not-present".to_string()),
+            committed_after: None,
+            committed_before: None,
+            path_id: None,
+        })
+        .await
+        .expect_err("unobserved ref is not a query result");
+    assert_eq!(missing.code, ProblemCode::NotFound);
+}
+
+#[tokio::test]
+async fn a_path_id_filter_resolves_only_the_status_binding_for_its_worktree() {
+    let fixture = Fixture::new();
+    fixture.write("a.txt", "base\n");
+    fixture.commit_all("base");
+    fixture.write("a.txt", "changed\n");
+    fixture.commit_all("change a");
+    fixture.write("b.txt", "unrelated\n");
+    fixture.commit_all("change b");
+    fixture.write("a.txt", "uncommitted\n");
+    let (service, repository_id) = fixture.service().await;
+
+    let status = service
+        .status(&StatusQuery::new(repository_id.clone()))
+        .await
+        .expect("path binding");
+    let path_id = status
+        .entries
+        .iter()
+        .find(|entry| entry.display_path == "a.txt")
+        .expect("the modified path is listed")
+        .path_id
+        .clone();
+    let page = service
+        .history(&HistoryQuery {
+            repository_id,
+            worktree_id: None,
+            cursor: None,
+            limit: None,
+            detail_oid: None,
+            first_parent_only: None,
+            message: None,
+            author: None,
+            oid_prefix: None,
+            ref_full_name: None,
+            committed_after: None,
+            committed_before: None,
+            path_id: Some(path_id),
+        })
+        .await
+        .expect("path-scoped history");
+
+    assert_eq!(page.topology, Topology::Sparse);
+    let subjects: Vec<&str> = page.commits.iter().map(|commit| commit.subject.as_str()).collect();
+    assert_eq!(subjects, vec!["change a", "base"]);
+}
+
+#[tokio::test]
 async fn a_shallow_clone_marks_its_oldest_row_as_a_boundary_with_its_missing_parent() {
     // A shallow clone must not be drawn as a complete history: the row whose parent is
     // absent locally is a boundary, and its missing parents are named.
@@ -347,6 +581,7 @@ async fn a_shallow_clone_marks_its_oldest_row_as_a_boundary_with_its_missing_par
     let page = read_history(
         &provider,
         &record,
+        &PathRegistry::new(),
         &snapshots,
         &HistoryQuery {
             repository_id: record.repository_id.clone(),

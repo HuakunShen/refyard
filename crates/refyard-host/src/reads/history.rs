@@ -19,11 +19,9 @@
 //!   `git log --decorate`, so a ref that moved between the two reads cannot decorate an
 //!   unrelated commit.
 //!
-//! The filters this build does not implement (`message`, `author`, `oidPrefix`,
-//! `refFullName`, `committedAfter`, `committedBefore`, `pathId`) are **refused**, not
-//! ignored: a page that silently dropped a filter would show the user a history they did
-//! not ask for. `firstParentOnly`, `limit`, `cursor` and `detailOid` are the supported
-//! surface of this slice, and they are the only reason `validate_new_query` exists.
+//! Filters are normalized once and stored with the history snapshot, so a continuation
+//! cannot silently turn into a different walk. Message and author searches are supported
+//! here; filters not yet implemented by this host are **refused**, not ignored.
 //!
 //! One deliberate divergence from the Node reference is recorded here. The reference
 //! keys a page's commit bodies by the *index* of the row it asked for, so a body Git
@@ -37,22 +35,30 @@ use std::collections::{HashMap, HashSet};
 
 use refyard_contract::history::{CommitDetail, CommitSummary, HistoryPage, HistoryQuery, Topology};
 use refyard_contract::problem::{DetailValue, Problem, ProblemCode};
-use refyard_contract::reads::HeadState;
+use refyard_contract::reads::{HeadState, ObjectFormat};
 use refyard_core::parse::cat_file::{
     first_line_bytes, parse_commit_object, CatFileDecoder, CatFileEntry, CatFileObjectType,
     CommitObject,
 };
-use refyard_core::parse::meta::{parse_object_presence, parse_rev_list_topology, TopologyEntry};
+use refyard_core::parse::meta::{
+    parse_commit_candidates, parse_disambiguated_oids, parse_object_presence,
+    parse_rev_list_topology, TopologyEntry,
+};
 use refyard_core::parse::numstat::REF_LIST_MAX_ENTRIES;
 use refyard_core::parse::refs::RefRecord;
 use refyard_core::plan::history::{plan_cat_file_batch, plan_rev_list, RevListOptions};
-use refyard_core::plan::refs::plan_cat_file_exists;
+use refyard_core::plan::refs::{
+    plan_cat_file_exists, plan_cat_file_object_types, plan_disambiguate_commit_prefix,
+    plan_is_commit_ancestor,
+};
 
-use crate::clock::format_iso8601_millis;
-use crate::paths::decode_text;
+use crate::clock::{format_iso8601_millis, parse_iso8601_utc_millis};
+use crate::paths::{decode_text, PathRegistry};
 use crate::providers::GitExecutor;
 use crate::reads::refs::{object_format_of, read_ref_facts};
-use crate::reads::{parse_error, read_head_state, require_worktree, run_required, ReadError};
+use crate::reads::{
+    parse_error, read_head_state, require_worktree, run_meaningful_exit, run_required, ReadError,
+};
 use crate::registry::RepositoryRecord;
 use crate::snapshots::{
     CursorResult, HistoryIntent, SnapshotKind, SnapshotRecord, SnapshotRequest, SnapshotStore,
@@ -61,6 +67,9 @@ use crate::snapshots::{
 const REV_LIST_COMMAND: &str = "rev-list topology";
 const CAT_FILE_COMMAND: &str = "cat-file --batch";
 const CAT_FILE_CHECK_COMMAND: &str = "cat-file --batch-check";
+const DISAMBIGUATE_COMMAND: &str = "rev-parse --disambiguate";
+const OBJECT_TYPES_COMMAND: &str = "cat-file --batch-check object types";
+const ANCESTRY_COMMAND: &str = "merge-base --is-ancestor";
 
 /// `LIMITS.historyDefaultPageSize`, repeated here so a change to the published limit is
 /// a visible edit on both sides.
@@ -85,6 +94,7 @@ const HISTORY_FILTERS: [&str; 7] = [
 pub async fn read_history(
     runs: &GitExecutor,
     record: &RepositoryRecord,
+    paths: &PathRegistry,
     snapshots: &SnapshotStore,
     query: &HistoryQuery,
     // The build of the target this call runs against. A cursor minted for another build
@@ -103,10 +113,14 @@ pub async fn read_history(
             target_generation,
         )?,
         None => {
-            validate_new_query(query)?;
+            let mut intent = normalize_new_query(query)?;
+            validate_oid_prefix_for_repository(&intent, record)?;
+            resolve_path_intent(paths, &mut intent, &worktree_id, target_generation)?;
             let facts = read_ref_facts(runs, record).await?;
             let head = read_head_state(runs, record).await?;
-            let tips = collect_tips(&head, &facts.refs);
+            let default_tips = collect_tips(&head, &facts.refs);
+            let tips = resolve_history_tips(runs, record, &facts.refs, default_tips, &mut intent)
+                .await?;
             let snapshot = snapshots.mint(SnapshotRequest {
                 kind: SnapshotKind::History,
                 repository_id: &record.repository_id,
@@ -116,12 +130,7 @@ pub async fn read_history(
                 head_oid: head.oid.clone(),
                 observed_refs_fingerprint: Some(observed_refs_fingerprint(&head, &facts.refs)),
                 index_key: None,
-                history_intent: Some(HistoryIntent {
-                    first_parent_only: query.first_parent_only == Some(true),
-                    // Every filter this slice supports narrows the walk itself, so a page
-                    // this service serves is always a continuous walk.
-                    topology: Topology::Continuous,
-                }),
+                history_intent: Some(intent),
             });
             let limit = query
                 .limit
@@ -161,7 +170,7 @@ pub async fn read_history(
             &snapshot.tips,
             limit + 1,
             skip,
-            intent.first_parent_only,
+            &intent,
             &decoration,
         )
         .await?
@@ -192,7 +201,7 @@ pub async fn read_history(
 }
 
 /// Validates a request that starts a page rather than continuing one.
-fn validate_new_query(query: &HistoryQuery) -> Result<(), ReadError> {
+fn normalize_new_query(query: &HistoryQuery) -> Result<HistoryIntent, ReadError> {
     if let Some(limit) = query.limit {
         if limit == 0 || limit > HISTORY_MAX_PAGE_SIZE as u64 {
             return Err(ReadError::problem(
@@ -204,24 +213,203 @@ fn validate_new_query(query: &HistoryQuery) -> Result<(), ReadError> {
             ));
         }
     }
-    let requested: Vec<&str> = HISTORY_FILTERS
-        .iter()
-        .copied()
-        .filter(|filter| filter_requested(query, filter))
-        .collect();
-    if !requested.is_empty() {
-        return Err(ReadError::problem(
-            Problem::new(
-                ProblemCode::UnsupportedOperation,
-                format!(
-                    "this build does not implement the {} history filter(s) yet; remove them rather than receiving an unfiltered page",
-                    requested.join(", ")
-                ),
-            )
-            .with_detail("filters", DetailValue::Text(requested.join(","))),
+    let message = normalize_text_filter("message", query.message.as_deref())?;
+    let author = normalize_text_filter("author", query.author.as_deref())?;
+    let oid_prefix = query.oid_prefix.clone();
+    if oid_prefix.as_deref().is_some_and(|prefix| {
+        !(4..=64).contains(&prefix.len())
+            || !prefix
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    }) {
+        return Err(invalid_history_filter(
+            "oidPrefix",
+            "must contain 4–64 lowercase hexadecimal characters",
+        ));
+    }
+    let ref_full_name = query.ref_full_name.clone();
+    if ref_full_name
+        .as_deref()
+        .is_some_and(|name| !is_valid_full_ref_name(name))
+    {
+        return Err(invalid_history_filter(
+            "refFullName",
+            "must be a valid fully qualified ref name under refs/",
+        ));
+    }
+    if oid_prefix.is_some() && query.path_id.is_some() {
+        return Err(invalid_history_filter(
+            "pathId",
+            "pathId cannot be combined with oidPrefix",
+        ));
+    }
+    let after_millis = normalize_date_filter("committedAfter", query.committed_after.as_deref())?;
+    let before_millis =
+        normalize_date_filter("committedBefore", query.committed_before.as_deref())?;
+    if after_millis
+        .zip(before_millis)
+        .is_some_and(|(after, before)| after > before)
+    {
+        return Err(invalid_history_filter(
+            "committedAfter",
+            "committedAfter must be no later than committedBefore",
+        ));
+    }
+    let committed_after_seconds = after_millis.map(|millis| {
+        millis.div_euclid(1000) + i64::from(millis.rem_euclid(1000) != 0)
+    });
+    let committed_before_seconds = before_millis.map(|millis| millis.div_euclid(1000));
+    let sparse = message.is_some()
+        || author.is_some()
+        || committed_after_seconds.is_some()
+        || committed_before_seconds.is_some()
+        || oid_prefix.is_some()
+        || query.path_id.is_some();
+    Ok(HistoryIntent {
+        first_parent_only: query.first_parent_only == Some(true),
+        message,
+        author,
+        committed_after_seconds,
+        committed_before_seconds,
+        oid_prefix,
+        only_oid: None,
+        ref_full_name,
+        resolved_ref_oid: None,
+        path_id: query.path_id.clone(),
+        path_text: None,
+        topology: if sparse {
+            Topology::Sparse
+        } else {
+            Topology::Continuous
+        },
+    })
+}
+
+/// Mirrors the contract's full-ref grammar and semantic component checks.
+fn is_valid_full_ref_name(name: &str) -> bool {
+    let units = name.encode_utf16().count();
+    let Some(body) = name.strip_prefix("refs/") else {
+        return false;
+    };
+    if !(6..=1024).contains(&units)
+        || body.is_empty()
+        || body == "@"
+        || body.starts_with('-')
+        || body.starts_with('/')
+        || body.ends_with('/')
+        || body.ends_with('.')
+        || body.to_ascii_lowercase().ends_with(".lock")
+        || body.contains("..")
+        || body.contains("@{")
+        || body.contains("//")
+        || body
+            .bytes()
+            .any(|byte| byte <= 0x20 || byte == 0x7f || matches!(byte, b'~' | b'^' | b':' | b'?' | b'*' | b'[' | b'\\'))
+    {
+        return false;
+    }
+    !body
+        .split('/')
+        .any(|component| component.is_empty() || component.starts_with('.'))
+}
+
+fn validate_oid_prefix_for_repository(
+    intent: &HistoryIntent,
+    record: &RepositoryRecord,
+) -> Result<(), ReadError> {
+    let Some(prefix) = intent.oid_prefix.as_deref() else {
+        return Ok(());
+    };
+    let width = match object_format_of(record) {
+        ObjectFormat::Sha1 => 40,
+        ObjectFormat::Sha256 => 64,
+    };
+    if prefix.len() > width {
+        return Err(invalid_history_filter(
+            "oidPrefix",
+            "object-id prefix exceeds this repository's object-name width",
         ));
     }
     Ok(())
+}
+
+/// Resolves an opaque path ID in the selected worktree and pins its execution bytes.
+fn resolve_path_intent(
+    paths: &PathRegistry,
+    intent: &mut HistoryIntent,
+    worktree_id: &str,
+    target_generation: &str,
+) -> Result<(), ReadError> {
+    let Some(path_id) = intent.path_id.as_deref() else {
+        return Ok(());
+    };
+    let bytes = paths
+        .resolve_in(worktree_id, target_generation, path_id)
+        .ok_or_else(|| {
+            ReadError::problem(
+                Problem::new(
+                    ProblemCode::NotFound,
+                    "that path is unknown in this worktree; reload the paths and retry",
+                )
+                .with_detail("pathId", DetailValue::Text(path_id.to_string())),
+            )
+        })?;
+    let path = String::from_utf8(bytes).map_err(|_| {
+        ReadError::problem(
+            Problem::new(
+                ProblemCode::UnsupportedPathEncoding,
+                "that path cannot be represented as a Git pathspec on this target",
+            )
+            .with_detail("pathId", DetailValue::Text(path_id.to_string())),
+        )
+    })?;
+    if path.contains('\0') {
+        return Err(ReadError::problem(
+            Problem::new(
+                ProblemCode::UnsupportedPathEncoding,
+                "that path cannot be represented as a Git pathspec on this target",
+            )
+            .with_detail("pathId", DetailValue::Text(path_id.to_string())),
+        ));
+    }
+    intent.path_text = Some(path);
+    Ok(())
+}
+
+/// Trims and validates one literal text filter before persisting it in the snapshot.
+fn normalize_text_filter(name: &str, value: Option<&str>) -> Result<Option<String>, ReadError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let normalized = value.trim();
+    let length = normalized.chars().count();
+    if value.contains(['\0', '\r', '\n']) || length == 0 || length > 512 {
+        return Err(ReadError::problem(
+            Problem::new(
+                ProblemCode::InvalidRequest,
+                format!("{name} history search must be a single line of 1–512 characters"),
+            )
+            .with_detail("filter", DetailValue::Text(name.to_string())),
+        ));
+    }
+    Ok(Some(normalized.to_string()))
+}
+
+/// Validates a contract timestamp and returns its exact instant for bound comparison.
+fn normalize_date_filter(name: &str, value: Option<&str>) -> Result<Option<i64>, ReadError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    parse_iso8601_utc_millis(value)
+        .map(Some)
+        .ok_or_else(|| invalid_history_filter(name, "must be a real UTC calendar instant"))
+}
+
+fn invalid_history_filter(name: &str, message: &str) -> ReadError {
+    ReadError::problem(
+        Problem::new(ProblemCode::InvalidRequest, message)
+            .with_detail("filter", DetailValue::Text(name.to_string())),
+    )
 }
 
 /// Whether one named filter is present in the request.
@@ -429,13 +617,19 @@ async fn read_page(
     tips: &[String],
     max_count: usize,
     skip: usize,
-    first_parent_only: bool,
+    intent: &HistoryIntent,
     decoration: &HashMap<String, Vec<String>>,
 ) -> Result<(Vec<CommitSummary>, Vec<String>, usize), ReadError> {
     let directory = record.location.canonical_worktree.as_str();
     let tip_refs: Vec<&str> = tips.iter().map(String::as_str).collect();
     let options = RevListOptions {
-        first_parent_only,
+        first_parent_only: intent.first_parent_only,
+        only_oid: intent.only_oid.as_deref(),
+        message: intent.message.as_deref(),
+        author: intent.author.as_deref(),
+        committed_after_seconds: intent.committed_after_seconds,
+        committed_before_seconds: intent.committed_before_seconds,
+        path_text: intent.path_text.as_deref(),
         ..RevListOptions::new(&tip_refs, max_count as i64, skip as i64)
     };
     let plan = plan_rev_list(options).map_err(|error| parse_error(REV_LIST_COMMAND, error))?;
@@ -643,6 +837,118 @@ fn iso_seconds(seconds: i64) -> String {
     format_iso8601_millis(seconds.saturating_mul(1000))
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CommitPrefixResolution {
+    None,
+    One(String),
+    Ambiguous,
+}
+
+/// Resolves a prefix across all objects but counts only commit objects as matches.
+async fn resolve_commit_prefix(
+    runs: &GitExecutor,
+    record: &RepositoryRecord,
+    prefix: &str,
+) -> Result<CommitPrefixResolution, ReadError> {
+    let directory = record.location.canonical_worktree.as_str();
+    let enumerate = plan_disambiguate_commit_prefix(prefix)
+        .map_err(|error| parse_error(DISAMBIGUATE_COMMAND, error))?;
+    let bytes = run_required(runs, directory, &enumerate, DISAMBIGUATE_COMMAND).await?;
+    let candidates = parse_disambiguated_oids(&bytes, REF_LIST_MAX_ENTRIES)
+        .map_err(|error| parse_error(DISAMBIGUATE_COMMAND, error))?;
+    if candidates.is_empty() {
+        return Ok(CommitPrefixResolution::None);
+    }
+    let candidate_refs: Vec<&str> = candidates.iter().map(String::as_str).collect();
+    let check = plan_cat_file_object_types(&candidate_refs)
+        .map_err(|error| parse_error(OBJECT_TYPES_COMMAND, error))?;
+    let bytes = run_required(runs, directory, &check, OBJECT_TYPES_COMMAND).await?;
+    let commits = parse_commit_candidates(&bytes, &candidates)
+        .map_err(|error| parse_error(OBJECT_TYPES_COMMAND, error))?;
+    Ok(match commits.as_slice() {
+        [] => CommitPrefixResolution::None,
+        [oid] => CommitPrefixResolution::One(oid.clone()),
+        _ => CommitPrefixResolution::Ambiguous,
+    })
+}
+
+/// Captures the selected scope and resolves every movable name before minting a cursor.
+async fn resolve_history_tips(
+    runs: &GitExecutor,
+    record: &RepositoryRecord,
+    refs: &[RefRecord],
+    default_tips: Vec<String>,
+    intent: &mut HistoryIntent,
+) -> Result<Vec<String>, ReadError> {
+    let directory = record.location.canonical_worktree.as_str();
+    if let Some(ref_name) = intent.ref_full_name.as_deref() {
+        let observed = refs
+            .iter()
+            .find(|item| item.ref_name == ref_name)
+            .ok_or_else(|| {
+                ReadError::problem(
+                    Problem::new(
+                        ProblemCode::NotFound,
+                        "that ref was not observed in this repository",
+                    )
+                    .with_detail("refFullName", DetailValue::Text(ref_name.to_string())),
+                )
+            })?;
+        let oid = observed
+            .peeled_oid
+            .as_deref()
+            .unwrap_or(observed.oid.as_str());
+        intent.resolved_ref_oid = match resolve_commit_prefix(runs, record, oid).await? {
+            CommitPrefixResolution::One(oid) => Some(oid),
+            CommitPrefixResolution::None | CommitPrefixResolution::Ambiguous => {
+                return Err(ReadError::problem(
+                    Problem::new(
+                        ProblemCode::NotFound,
+                        "that observed ref does not point at a commit",
+                    )
+                    .with_detail("refFullName", DetailValue::Text(ref_name.to_string())),
+                ));
+            }
+        };
+    }
+
+    if let Some(prefix) = intent.oid_prefix.as_deref() {
+        let oid = match resolve_commit_prefix(runs, record, prefix).await? {
+            CommitPrefixResolution::None => return Ok(Vec::new()),
+            CommitPrefixResolution::Ambiguous => {
+                return Err(invalid_history_filter(
+                    "oidPrefix",
+                    "that prefix matches multiple commits; supply more hexadecimal digits",
+                ));
+            }
+            CommitPrefixResolution::One(oid) => oid,
+        };
+        if let Some(ref_oid) = intent.resolved_ref_oid.as_deref() {
+            let plan = plan_is_commit_ancestor(&oid, ref_oid)
+                .map_err(|error| parse_error(ANCESTRY_COMMAND, error))?;
+            let reachable = run_meaningful_exit(
+                runs,
+                directory,
+                &plan,
+                ANCESTRY_COMMAND,
+                &[1],
+            )
+            .await?
+            .is_some();
+            if !reachable {
+                return Ok(Vec::new());
+            }
+        }
+        intent.only_oid = Some(oid.clone());
+        return Ok(vec![oid]);
+    }
+
+    if let Some(ref_oid) = intent.resolved_ref_oid.as_ref() {
+        return Ok(vec![ref_oid.clone()]);
+    }
+    Ok(default_tips)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -749,6 +1055,16 @@ mod tests {
             index_key: None,
             history_intent: Some(HistoryIntent {
                 first_parent_only,
+                message: None,
+                author: None,
+                committed_after_seconds: None,
+                committed_before_seconds: None,
+                oid_prefix: None,
+                only_oid: None,
+                ref_full_name: None,
+                resolved_ref_oid: None,
+                path_id: None,
+                path_text: None,
                 topology: Topology::Continuous,
             }),
         })
@@ -833,15 +1149,81 @@ mod tests {
     }
 
     #[test]
-    fn an_unsupported_filter_is_refused_rather_than_silently_ignored() {
-        // Accepting `message` and returning the whole graph would show a history the
-        // caller asked to be narrowed.
+    fn an_malformed_oid_prefix_is_refused_before_git_runs() {
         let mut request = query();
-        request.message = Some("fix".to_string());
-        let error = validate_new_query(&request).expect_err("refused");
+        request.oid_prefix = Some("abc".to_string());
+        let error = normalize_new_query(&request).expect_err("invalid prefix");
         let problem = error.to_problem();
-        assert_eq!(problem.code, ProblemCode::UnsupportedOperation);
-        assert!(problem.message.contains("message"));
+        assert_eq!(problem.code, ProblemCode::InvalidRequest);
+        assert!(problem.message.contains("4–64"));
+    }
+
+    #[test]
+    fn an_oid_prefix_cannot_exceed_the_repository_object_width() {
+        let mut request = query();
+        request.oid_prefix = Some("a".repeat(41));
+        let intent = normalize_new_query(&request).expect("valid hexadecimal shape");
+        assert_eq!(
+            validate_oid_prefix_for_repository(&intent, &record())
+                .expect_err("too wide")
+                .to_problem()
+                .code,
+            ProblemCode::InvalidRequest
+        );
+    }
+
+    #[test]
+    fn message_and_author_filters_are_trimmed_owned_and_sparse() {
+        let mut request = query();
+        request.message = Some("  change me  ".to_string());
+        request.author = Some("  Alice  ".to_string());
+        let intent = normalize_new_query(&request).expect("normalized filters");
+        assert_eq!(intent.message.as_deref(), Some("change me"));
+        assert_eq!(intent.author.as_deref(), Some("Alice"));
+        assert_eq!(intent.topology, Topology::Sparse);
+    }
+
+    #[test]
+    fn text_filters_refuse_line_breaks_empty_values_and_more_than_512_scalars() {
+        for invalid in [
+            String::new(),
+            "  \t  ".to_string(),
+            "a\nb".to_string(),
+            "a\rb".to_string(),
+            "a\0b".to_string(),
+            "😀".repeat(513),
+        ] {
+            let mut request = query();
+            request.message = Some(invalid);
+            assert_eq!(
+                normalize_new_query(&request)
+                    .expect_err("invalid text filter")
+                    .to_problem()
+                    .code,
+                ProblemCode::InvalidRequest
+            );
+        }
+    }
+
+    #[test]
+    fn date_filters_use_inclusive_git_second_rounding_and_validate_order() {
+        let mut request = query();
+        request.committed_after = Some("1969-12-31T23:59:59.999Z".to_string());
+        request.committed_before = Some("1970-01-01T00:00:00.001Z".to_string());
+        let intent = normalize_new_query(&request).expect("valid interval");
+        assert_eq!(intent.committed_after_seconds, Some(0));
+        assert_eq!(intent.committed_before_seconds, Some(0));
+        assert_eq!(intent.topology, Topology::Sparse);
+
+        request.committed_after = Some("2026-01-02T00:00:00Z".to_string());
+        request.committed_before = Some("2026-01-01T00:00:00Z".to_string());
+        assert_eq!(
+            normalize_new_query(&request)
+                .expect_err("inverted interval")
+                .to_problem()
+                .code,
+            ProblemCode::InvalidRequest
+        );
     }
 
     #[test]
@@ -849,7 +1231,7 @@ mod tests {
         let mut request = query();
         request.limit = Some(HISTORY_MAX_PAGE_SIZE as u64 + 1);
         assert_eq!(
-            validate_new_query(&request)
+            normalize_new_query(&request)
                 .expect_err("refused")
                 .to_problem()
                 .code,
@@ -857,14 +1239,14 @@ mod tests {
         );
         request.limit = Some(0);
         assert_eq!(
-            validate_new_query(&request)
+            normalize_new_query(&request)
                 .expect_err("refused")
                 .to_problem()
                 .code,
             ProblemCode::InvalidRequest
         );
         request.limit = Some(HISTORY_MAX_PAGE_SIZE as u64);
-        assert!(validate_new_query(&request).is_ok());
+        assert!(normalize_new_query(&request).is_ok());
     }
 
     #[test]

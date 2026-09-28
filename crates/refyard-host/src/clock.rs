@@ -37,6 +37,87 @@ pub fn format_iso8601_millis(millis: i64) -> String {
     format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{remainder:03}Z")
 }
 
+/// Parses the contract's UTC timestamp shape into Unix milliseconds.
+///
+/// Calendar fields are validated before conversion; accepting something that looks
+/// ISO-shaped but normalizes into another date would make inclusive history filters
+/// disagree with the workbench.
+pub fn parse_iso8601_utc_millis(value: &str) -> Option<i64> {
+    let bytes = value.as_bytes();
+    if !matches!(bytes.len(), 20 | 24)
+        || bytes.get(4) != Some(&b'-')
+        || bytes.get(7) != Some(&b'-')
+        || bytes.get(10) != Some(&b'T')
+        || bytes.get(13) != Some(&b':')
+        || bytes.get(16) != Some(&b':')
+        || (bytes.len() == 20 && bytes.get(19) != Some(&b'Z'))
+        || (bytes.len() == 24
+            && (bytes.get(19) != Some(&b'.') || bytes.get(23) != Some(&b'Z')))
+    {
+        return None;
+    }
+    let year = decimal_component(bytes, 0, 4)?;
+    let month = decimal_component(bytes, 5, 7)?;
+    let day = decimal_component(bytes, 8, 10)?;
+    let hour = decimal_component(bytes, 11, 13)?;
+    let minute = decimal_component(bytes, 14, 16)?;
+    let second = decimal_component(bytes, 17, 19)?;
+    let millisecond = if bytes.len() == 24 {
+        decimal_component(bytes, 20, 23)?
+    } else {
+        0
+    };
+    if !(1..=12).contains(&month)
+        || hour > 23
+        || minute > 59
+        || second > 59
+        || millisecond > 999
+    {
+        return None;
+    }
+    let days_in_month = match month {
+        2 if is_leap_year(year) => 29,
+        2 => 28,
+        4 | 6 | 9 | 11 => 30,
+        _ => 31,
+    };
+    if day == 0 || day > days_in_month {
+        return None;
+    }
+
+    let days = days_from_civil(year, month, day);
+    Some(
+        days * 86_400_000
+            + hour * 3_600_000
+            + minute * 60_000
+            + second * 1_000
+            + millisecond,
+    )
+}
+
+fn decimal_component(bytes: &[u8], start: usize, end: usize) -> Option<i64> {
+    let digits = bytes.get(start..end)?;
+    if !digits.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    std::str::from_utf8(digits).ok()?.parse().ok()
+}
+
+fn is_leap_year(year: i64) -> bool {
+    year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
+}
+
+/// Days since 1970-01-01 to a validated Gregorian civil date.
+fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
+    let year = if month <= 2 { year - 1 } else { year };
+    let era = (if year >= 0 { year } else { year - 399 }) / 400;
+    let year_of_era = year - era * 400;
+    let shifted_month = month + if month > 2 { -3 } else { 9 };
+    let day_of_year = (153 * shifted_month + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    era * 146_097 + day_of_era - 719_468
+}
+
 /// Days since 1970-01-01 to a civil date, by Howard Hinnant's `civil_from_days`.
 ///
 /// The epoch-relative shift makes the leap-year arithmetic expressible as integer
@@ -96,6 +177,36 @@ mod tests {
             format_iso8601_millis(1_709_208_000_000),
             "2024-02-29T12:00:00.000Z"
         );
+    }
+
+    #[test]
+    fn parses_utc_history_bounds_at_millisecond_precision() {
+        assert_eq!(
+            parse_iso8601_utc_millis("2026-01-01T00:00:00.001Z"),
+            Some(1_767_225_600_001)
+        );
+        assert_eq!(
+            parse_iso8601_utc_millis("1969-12-31T23:59:59.999Z"),
+            Some(-1)
+        );
+        assert_eq!(
+            parse_iso8601_utc_millis("2026-01-01T00:00:00Z"),
+            Some(1_767_225_600_000)
+        );
+    }
+
+    #[test]
+    fn refuses_normalized_or_non_utc_calendar_timestamps() {
+        for invalid in [
+            "2023-02-29T00:00:00.000Z",
+            "2026-04-31T00:00:00.000Z",
+            "2026-01-01T24:00:00.000Z",
+            "2026-01-01T00:00:60.000Z",
+            "2026-01-01T00:00:00+00:00",
+            "2026-01-01T00:00:00.00Z",
+        ] {
+            assert_eq!(parse_iso8601_utc_millis(invalid), None, "{invalid}");
+        }
     }
 
     #[test]
