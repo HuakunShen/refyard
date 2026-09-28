@@ -94,6 +94,34 @@ fn init_repository(root: &Path, name: &str) -> std::path::PathBuf {
     repo
 }
 
+#[tokio::test]
+async fn local_workspace_root_path_is_exact_and_rejects_retired_roots() {
+    let state_root = tempfile::tempdir().expect("state root");
+    let repo = init_repository(state_root.path(), "repo");
+    let host = EmbeddedRefyard::open(config(&state_root.path().join("state"))).expect("host");
+    let registered = host
+        .register_repository(repo.to_str().expect("repository path"))
+        .await
+        .expect("register repository");
+    let root_id = WorkspaceRootId::try_from(registered.repositories[0].allowed_root_id.as_str())
+        .expect("root id");
+
+    assert_eq!(
+        host.local_workspace_root_path(&root_id)
+            .await
+            .expect("active local root"),
+        std::fs::canonicalize(&repo).expect("canonical repository path")
+    );
+
+    host.remove_workspace_root(&root_id)
+        .await
+        .expect("retire root");
+    assert!(
+        host.local_workspace_root_path(&root_id).await.is_err(),
+        "retired root ids must not recover a former local path"
+    );
+}
+
 async fn submit_commit_and_wait(
     host: &EmbeddedRefyard,
     actor: &str,

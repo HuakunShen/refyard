@@ -15,13 +15,13 @@ use refyard_contract::reads::{
 use refyard_contract::refs::RefsSnapshot;
 
 use crate::events::EventSubscription;
-use crate::jobs::queue::QueueLimits;
 use crate::jobs::journal::{AdmissionBinding, OwnerSealResult};
-use crate::jobs::{
-    ClientRequestLookup, MutationAdmissionGuard, MutationRequest, SubmitResult,
-};
+use crate::jobs::queue::QueueLimits;
+use crate::jobs::{ClientRequestLookup, MutationAdmissionGuard, MutationRequest, SubmitResult};
 use crate::providers::local::LocalGit;
-use crate::service::{ApplicationService, ApplicationServiceConfig, StatusQuery};
+use crate::service::{
+    ApplicationService, ApplicationServiceConfig, LocalWorktreePath, StatusQuery,
+};
 
 #[derive(Debug, Clone)]
 pub struct EmbedLimits {
@@ -119,6 +119,41 @@ impl EmbeddedRefyard {
                 )
             })?
         })
+    }
+
+    /// Returns the exact active target-local path recorded for one workspace root.
+    ///
+    /// This is a host-only lookup for an embedding adapter; it is not part of the wire
+    /// contract and must never be projected to a peer.
+    pub async fn local_workspace_root_path(
+        &self,
+        allowed_root_id: &WorkspaceRootId,
+    ) -> Result<PathBuf, Problem> {
+        self.service
+            .local_workspace_root_path(allowed_root_id)
+            .await
+    }
+
+    /// Resolves the root-scoped Status working directory without running Git.
+    pub async fn local_status_worktree_path_for_root(
+        &self,
+        query: &StatusQuery,
+        allowed_root_id: &WorkspaceRootId,
+    ) -> Result<LocalWorktreePath, Problem> {
+        self.service
+            .local_status_worktree_path_for_root(query, allowed_root_id)
+            .await
+    }
+
+    /// Resolves the root-scoped worktree-inventory working directory without running Git.
+    pub async fn local_worktrees_base_path_for_root(
+        &self,
+        repository_id: &str,
+        allowed_root_id: &WorkspaceRootId,
+    ) -> Result<LocalWorktreePath, Problem> {
+        self.service
+            .local_worktrees_base_path_for_root(repository_id, allowed_root_id)
+            .await
     }
 
     pub async fn repositories(&self) -> RepositoriesResponse {

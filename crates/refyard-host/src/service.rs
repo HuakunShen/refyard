@@ -195,6 +195,16 @@ pub struct StatusQuery {
     pub include_ignored: bool,
 }
 
+/// The local Git worktree selected by a root-scoped embedded operation.
+///
+/// This host-only value is exposed to embedding adapters for preflight checks. Its path
+/// must not be serialized or returned through a peer-facing contract.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalWorktreePath {
+    pub worktree_id: String,
+    pub canonical_path: PathBuf,
+}
+
 impl StatusQuery {
     pub fn new(repository_id: impl Into<String>) -> Self {
         Self {
@@ -908,7 +918,7 @@ impl ApplicationService {
                     None,
                     Some(problem),
                     None,
-                ))
+                ));
             }
         };
         let (git_version, unavailable) = match provider.probe_host().await {
@@ -1079,6 +1089,107 @@ impl ApplicationService {
             ReadKind::Submodules,
             ReadKind::Stashes,
         ]
+    }
+
+    /// Returns the exact active local path recorded for one workspace root.
+    ///
+    /// The owned root read lease prevents retirement while this lookup reads the registry.
+    /// This local-only metadata API is for trusted embedding adapters, not peer contracts.
+    pub async fn local_workspace_root_path(
+        &self,
+        allowed_root_id: &WorkspaceRootId,
+    ) -> Result<PathBuf, Problem> {
+        let _root_lease = Arc::clone(&self.root_operations).read_owned().await;
+        let roots = self.roots.lock().expect("root lock");
+        match roots
+            .roots()
+            .iter()
+            .find(|(root_id, _)| root_id == allowed_root_id)
+        {
+            Some((
+                _,
+                RootKey::Local {
+                    target_id,
+                    canonical_path,
+                },
+            )) if target_id == &self.target_id => Ok(canonical_path.clone()),
+            _ => Err(Problem::new(
+                ProblemCode::NotFound,
+                "active local workspace root not found",
+            )),
+        }
+    }
+
+    /// Resolves the same worktree that `status_for_root` will read, without running Git.
+    ///
+    /// The exact root binding and local target are checked before returning the registered
+    /// worktree's canonical Git working directory, allowing an embedding adapter to prove
+    /// its own resource containment before the subsequent read.
+    pub async fn local_status_worktree_path_for_root(
+        &self,
+        query: &StatusQuery,
+        allowed_root_id: &WorkspaceRootId,
+    ) -> Result<LocalWorktreePath, Problem> {
+        let aggregate = self.require_record(&query.repository_id)?;
+        let worktree_id = reads::require_worktree(&aggregate, query.worktree_id.as_deref())
+            .map_err(|error| error.to_problem())?;
+        let record = aggregate
+            .selected_worktree(Some(&worktree_id), Some(allowed_root_id.as_str()))
+            .ok_or_else(|| unknown_worktree(&aggregate, &worktree_id))?;
+        let _root_lease = self.writes_host.lease_root_for_record(&record).await?;
+        self.local_worktree_path(&record)
+    }
+
+    /// Resolves the same local worktree `worktrees_with_root_bindings_for_root` uses as
+    /// its Git command's working directory, without running Git.
+    pub async fn local_worktrees_base_path_for_root(
+        &self,
+        repository_id: &str,
+        allowed_root_id: &WorkspaceRootId,
+    ) -> Result<LocalWorktreePath, Problem> {
+        let aggregate = self.require_record(repository_id)?;
+        let worktree_id = aggregate
+            .worktrees
+            .iter()
+            .find(|worktree| {
+                worktree
+                    .root_bindings
+                    .iter()
+                    .any(|binding| binding.allowed_root_id == allowed_root_id.as_str())
+            })
+            .map(|worktree| worktree.worktree_id.as_str())
+            .ok_or_else(|| {
+                Problem::new(
+                    ProblemCode::NotFound,
+                    format!(
+                        "repository {repository_id} has no worktree registered under workspace root {}",
+                        allowed_root_id.as_str()
+                    ),
+                )
+            })?;
+        let record = aggregate
+            .selected_worktree(Some(worktree_id), Some(allowed_root_id.as_str()))
+            .ok_or_else(|| unknown_worktree(&aggregate, worktree_id))?;
+        let _root_lease = self.writes_host.lease_root_for_record(&record).await?;
+        self.local_worktree_path(&record)
+    }
+
+    fn local_worktree_path(&self, record: &RepositoryRecord) -> Result<LocalWorktreePath, Problem> {
+        let target = self.target_for(record)?;
+        if target.kind != ExecutionTargetKind::Local
+            || target.target_id != self.target_id
+            || target.generation != self.target_generation
+        {
+            return Err(Problem::new(
+                ProblemCode::NotFound,
+                "embedded path lookup requires the active local Git target",
+            ));
+        }
+        target.executor()?;
+        Ok(LocalWorktreePath {
+            worktree_id: record.worktree_id.clone(),
+            canonical_path: PathBuf::from(&record.location.canonical_worktree),
+        })
     }
 
     /// The registered repositories and the roots they were approved under.
@@ -1274,7 +1385,7 @@ impl ApplicationService {
                 return Err(Problem::new(
                     ProblemCode::InternalError,
                     "a local target holds an SSH executor, which is a construction bug rather than a request failure",
-                ))
+                ));
             }
         };
         let allowed_root_id = self.approve_root(&canonical, &target.target_id)?;
@@ -1345,7 +1456,7 @@ impl ApplicationService {
                 return Err(Problem::new(
                     ProblemCode::InternalError,
                     "an SSH target holds a local executor, which is a construction bug rather than a request failure",
-                ))
+                ));
             }
         };
         let allowed_root_id = self.approve_remote_root(directory, &target.target_id)?;
