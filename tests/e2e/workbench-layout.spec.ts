@@ -114,10 +114,9 @@ test.describe("Workbench layout", () => {
   test("fits every region in a narrow column instead of scrolling the panel", async ({
     page,
   }) => {
-    // Prevents: the stacked workbench behaving like a long page — three regions each with a
-    // fixed 44rem height inside a scrolling column, so the working copy and the commit box
-    // sat below the fold of a panel the reader cannot scroll usefully. Each region scrolls
-    // itself; the column itself does not.
+    // Prevents: fixed-height stacked regions pushing the working copy below the viewport.
+    // History takes the height left after navigation and working copy; each pane scrolls
+    // internally, while the narrow workbench column itself stays within the viewport.
     await page.setViewportSize({ width: 640, height: 900 });
     await page.goto(service.pairingUrl);
     await expect(page.getByTestId("history-panel")).toBeVisible();

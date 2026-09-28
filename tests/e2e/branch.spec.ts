@@ -194,7 +194,7 @@ test.describe("branch workbench", () => {
 
     await page
       .getByTestId("remote-panel")
-      .getByLabel("remote name")
+      .getByLabel("Name", { exact: true })
       .fill("origin");
     await page
       .getByTestId("remote-panel")
