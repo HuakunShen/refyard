@@ -17,6 +17,8 @@
 pub mod journal;
 pub mod queue;
 pub mod recovery;
+#[cfg(windows)]
+pub(crate) mod windows_acl;
 
 use std::future::Future;
 use std::pin::Pin;

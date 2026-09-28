@@ -7,6 +7,8 @@ use std::collections::HashSet;
 #[cfg(unix)]
 use std::fs::File;
 use std::fs::{self, OpenOptions};
+#[cfg(windows)]
+use std::io::Read;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -476,24 +478,47 @@ fn validate_path_length(length: usize) -> Result<(), Problem> {
 }
 
 fn read_regular_file(path: &Path, limit: u64) -> io::Result<Vec<u8>> {
-    let metadata = fs::symlink_metadata(path)?;
-    if !metadata.file_type().is_file()
-        || metadata.file_type().is_symlink()
-        || metadata.len() > limit
+    #[cfg(windows)]
     {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "not a bounded regular file",
-        ));
+        let file = crate::jobs::windows_acl::open_private_file_for_read(path)?;
+        let metadata = file.metadata()?;
+        if !metadata.is_file() || metadata.len() > limit {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "not a bounded regular file",
+            ));
+        }
+        let mut bytes = Vec::with_capacity(metadata.len() as usize);
+        file.take(limit.saturating_add(1)).read_to_end(&mut bytes)?;
+        if bytes.len() as u64 > limit {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "file grew beyond its read limit",
+            ));
+        }
+        Ok(bytes)
     }
-    let bytes = fs::read(path)?;
-    if bytes.len() as u64 > limit {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "file grew beyond its read limit",
-        ));
+    #[cfg(not(windows))]
+    {
+        let metadata = fs::symlink_metadata(path)?;
+        if !metadata.file_type().is_file()
+            || metadata.file_type().is_symlink()
+            || metadata.len() > limit
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "not a bounded regular file",
+            ));
+        }
+        let bytes = fs::read(path)?;
+        if bytes.len() as u64 > limit {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "file grew beyond its read limit",
+            ));
+        }
+        Ok(bytes)
     }
-    Ok(bytes)
 }
 
 fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
@@ -545,6 +570,10 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
         let mut file = file.expect("temporary file created with its path");
         file.write_all(bytes)?;
         file.sync_all()?;
+        #[cfg(windows)]
+        crate::jobs::windows_acl::secure_private_file(&temporary).map_err(|problem| {
+            io::Error::new(io::ErrorKind::PermissionDenied, problem.to_string())
+        })?;
         drop(file);
         atomic_replace(&temporary, path)?;
         sync_parent(parent)

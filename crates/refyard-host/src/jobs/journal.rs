@@ -33,7 +33,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::fs::{File, OpenOptions};
-use std::io::Write;
+use std::io::{Read, Write};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -1111,20 +1111,8 @@ impl Journal {
         self._state_root_lock = Some(acquire_state_root_lock(root)?);
 
         let marker_path = root.join(JOURNAL_INITIALIZED_MARKER);
-        let marker_exists = match std::fs::symlink_metadata(&marker_path) {
-            Ok(metadata) => {
-                if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
-                    return Err(internal(format!(
-                        "the journal initialization marker {} is not a regular file",
-                        marker_path.display()
-                    )));
-                }
-                let bytes = std::fs::read(&marker_path).map_err(|error| {
-                    internal(format!(
-                        "the journal initialization marker {} could not be read: {error}",
-                        marker_path.display()
-                    ))
-                })?;
+        let marker_exists = match read_private_file(&marker_path) {
+            Ok(bytes) => {
                 if bytes != JOURNAL_INITIALIZED_CONTENT {
                     return Err(internal(format!(
                         "the journal initialization marker {} is corrupt",
@@ -1136,7 +1124,7 @@ impl Journal {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
             Err(error) => {
                 return Err(internal(format!(
-                    "the journal initialization marker {} could not be inspected: {error}",
+                    "the journal initialization marker {} could not be read: {error}",
                     marker_path.display()
                 )))
             }
@@ -1151,7 +1139,7 @@ impl Journal {
             secure(path)?;
         }
         let index_path = directory.join("index.json");
-        let (index, index_missing): (JournalIndex, bool) = match std::fs::read(&index_path) {
+        let (index, index_missing): (JournalIndex, bool) = match read_private_file(&index_path) {
             Ok(bytes) => {
                 let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|error| {
                     internal(format!(
@@ -1251,7 +1239,7 @@ impl Journal {
                 )));
             }
             let path = records.join(format!("{}.json", entry.operation_id));
-            let bytes = std::fs::read(&path).map_err(|error| {
+            let bytes = read_private_file(&path).map_err(|error| {
                 internal(format!(
                     "the journal index names {} but its record could not be read: {error}",
                     path.display()
@@ -1829,6 +1817,8 @@ fn write_atomic_with(
             temporary.display()
         ))
     })?;
+    #[cfg(windows)]
+    super::windows_acl::secure_private_file(&temporary)?;
     drop(file);
     atomic_replace(&temporary, path).map_err(|error| {
         internal(format!(
@@ -1957,6 +1947,7 @@ fn sync_directory_chain_with(
 /// recover the journal or mint root identities concurrently.
 fn acquire_state_root_lock(root: &Path) -> Result<File, Problem> {
     let path = root.join(".refyard-state.lock");
+    #[cfg(not(windows))]
     match std::fs::symlink_metadata(&path) {
         Ok(metadata) if !metadata.file_type().is_file() || metadata.file_type().is_symlink() => {
             return Err(Problem::new(
@@ -1973,19 +1964,24 @@ fn acquire_state_root_lock(root: &Path) -> Result<File, Problem> {
             ));
         }
     }
-    let mut options = OpenOptions::new();
-    options.read(true).write(true).create(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let file = options.open(&path).map_err(|error| {
-        Problem::new(
-            ProblemCode::Unavailable,
-            format!("cannot open embedded state-root lock: {error}"),
-        )
-    })?;
+    #[cfg(windows)]
+    let file = super::windows_acl::open_private_lock_file(&path)?;
+    #[cfg(not(windows))]
+    let file = {
+        let mut options = OpenOptions::new();
+        options.read(true).write(true).create(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        options.open(&path).map_err(|error| {
+            Problem::new(
+                ProblemCode::Unavailable,
+                format!("cannot open embedded state-root lock: {error}"),
+            )
+        })?
+    };
     let metadata = file.metadata().map_err(|error| {
         Problem::new(
             ProblemCode::Unavailable,
@@ -2025,12 +2021,27 @@ fn set_private_directory(path: &Path) -> Result<(), Problem> {
 }
 
 #[cfg(windows)]
-#[path = "windows_acl.rs"]
-mod windows_acl;
-
-#[cfg(windows)]
 fn set_private_directory(path: &Path) -> Result<(), Problem> {
-    windows_acl::secure_private_directory(path)
+    super::windows_acl::secure_private_directory(path)
+}
+
+fn read_private_file(path: &Path) -> std::io::Result<Vec<u8>> {
+    #[cfg(windows)]
+    let mut file = super::windows_acl::open_private_file_for_read(path)?;
+    #[cfg(not(windows))]
+    let mut file = {
+        let metadata = std::fs::symlink_metadata(path)?;
+        if !metadata.file_type().is_file() || metadata.file_type().is_symlink() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "not an ordinary state file",
+            ));
+        }
+        File::open(path)?
+    };
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    Ok(bytes)
 }
 
 #[cfg(not(any(unix, windows)))]

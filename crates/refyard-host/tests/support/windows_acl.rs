@@ -39,7 +39,7 @@ impl Drop for Descriptor {
     }
 }
 
-fn directory(path: &Path) -> Handle {
+fn security_object(path: &Path) -> Handle {
     let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
     let handle = unsafe {
         CreateFileW(
@@ -96,7 +96,21 @@ fn identity() -> (Handle, Vec<usize>, Vec<usize>) {
 }
 
 pub fn assert_private(path: &Path) {
-    let directory = directory(path);
+    assert_private_acl(path);
+}
+
+pub fn assert_private_file(path: &Path) {
+    let metadata = std::fs::symlink_metadata(path).expect("file metadata");
+    assert!(
+        metadata.file_type().is_file() && !metadata.file_type().is_symlink(),
+        "not an ordinary file: {}",
+        path.display()
+    );
+    assert_private_acl(path);
+}
+
+fn assert_private_acl(path: &Path) {
+    let object = security_object(path);
     let (_token, user, system) = identity();
     let user_sid = unsafe { (*(user.as_ptr().cast::<TOKEN_USER>())).User.Sid };
     let system_sid = system.as_ptr() as PSID;
@@ -105,7 +119,7 @@ pub fn assert_private(path: &Path) {
     let mut descriptor = null_mut();
     let result = unsafe {
         GetSecurityInfo(
-            directory.0,
+            object.0,
             SE_FILE_OBJECT,
             OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
             &mut owner,
@@ -179,11 +193,32 @@ pub fn assert_private(path: &Path) {
     assert!(seen_user && seen_system, "user/SYSTEM ACEs required");
 }
 
+pub fn assert_null_dacl(path: &Path) {
+    let object = security_object(path);
+    let mut dacl: *mut ACL = null_mut();
+    let mut descriptor = null_mut();
+    let result = unsafe {
+        GetSecurityInfo(
+            object.0,
+            SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION,
+            null_mut(),
+            null_mut(),
+            &mut dacl,
+            null_mut(),
+            &mut descriptor,
+        )
+    };
+    assert_eq!(result, 0, "read DACL {}: {result}", path.display());
+    let _descriptor = Descriptor(descriptor);
+    assert!(dacl.is_null(), "expected NULL DACL: {}", path.display());
+}
+
 pub fn loosen_dacl(path: &Path) {
-    let directory = directory(path);
+    let object = security_object(path);
     let result = unsafe {
         SetSecurityInfo(
-            directory.0,
+            object.0,
             SE_FILE_OBJECT,
             DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
             null_mut(),

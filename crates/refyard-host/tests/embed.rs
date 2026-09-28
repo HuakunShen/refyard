@@ -19,6 +19,8 @@ use refyard_contract::reads::{
 use refyard_host::embed::{EmbedConfig, EmbedLimits, EmbeddedRefyard};
 use refyard_host::events::SubscriberEvent;
 use refyard_host::jobs::journal::Journal;
+#[cfg(windows)]
+use refyard_host::jobs::journal::JournalRecord;
 use refyard_host::jobs::queue::QueueLimits;
 use refyard_host::jobs::{ClientRequestLookup, MutationOperation, MutationRequest};
 use refyard_host::providers::local::LocalGit;
@@ -1207,6 +1209,31 @@ fn a_state_root_has_only_one_live_embedded_host() {
 fn windows_private_state_survives_without_shell_and_repairs_acl_drift() {
     if std::env::var_os("REFYARD_WINDOWS_ACL_CHILD").is_some() {
         let root = tempfile::tempdir().expect("Windows private root");
+        let seed = Journal::open(Some(root.path().to_path_buf())).expect("seed journal");
+        seed.append(JournalRecord {
+            operation_id: "op_1".to_string(),
+            client_request_id: "acl-repair-request".to_string(),
+            actor: "owner".to_string(),
+            kind: MutationKind::Commit,
+            target: MutationTarget::Worktree {
+                repository_id: "repo_1".to_string(),
+                worktree_id: "wt_1".to_string(),
+                expected_snapshot_id: "snap_1".to_string(),
+            },
+            status: OperationStatus::Accepted,
+            sequence: 1,
+            accepted_at_ms: 1,
+            started_at_ms: None,
+            finished_at_ms: None,
+            payload_digest: "seed-digest".to_string(),
+            write_key: "repo_1".to_string(),
+            result: None,
+            problem: None,
+            unknown_reason: None,
+            acknowledged_at_ms: None,
+        })
+        .expect("seed durable record");
+        drop(seed);
         let cfg = config(root.path());
         let again = cfg.clone();
         // An embedded host must enforce privacy even when no shell is resolvable.
@@ -1219,7 +1246,22 @@ fn windows_private_state_survives_without_shell_and_repairs_acl_drift() {
         ] {
             windows_acl::assert_private(path);
         }
+        let authority_files = [
+            root.path().join(".refyard-journal-initialized"),
+            root.path().join("journal/index.json"),
+            root.path().join("journal/records/op_1.json"),
+            root.path().join(".refyard-state.lock"),
+            root.path().join("workspace-roots.v1.json"),
+            root.path().join(".workspace-roots.initialized"),
+        ];
+        for path in &authority_files {
+            windows_acl::assert_private_file(path);
+        }
         drop(host);
+        for path in &authority_files {
+            windows_acl::loosen_dacl(path);
+            windows_acl::assert_null_dacl(path);
+        }
         windows_acl::loosen_dacl(&root.path().join("journal"));
         let reopened = EmbeddedRefyard::open(again).expect("repair drift on reopen");
         for path in [
@@ -1228,6 +1270,9 @@ fn windows_private_state_survives_without_shell_and_repairs_acl_drift() {
             &root.path().join("journal/records"),
         ] {
             windows_acl::assert_private(path);
+        }
+        for path in &authority_files {
+            windows_acl::assert_private_file(path);
         }
         drop(reopened);
         return;
