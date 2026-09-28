@@ -1,14 +1,14 @@
 /** Browser proof for the self-contained, facade-only Xross local entry. */
 import { createServer, type Server } from "node:http";
 import { readFile } from "node:fs/promises";
-import { extname, join, resolve } from "node:path";
+import { extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 import vectors from "../../integrations/xross/contracts/view-v1/vectors/method-responses.json" with { type: "json" };
 
 const root = resolve(fileURLToPath(new URL("../../apps/web/build-xross-local", import.meta.url)));
 const capabilitiesFixture = vectors.responses.refyard.capabilities.value;
-let server: Server;
+let server: Server | undefined;
 let origin: string;
 
 // CI uses managed Chromium; this workstation uses its installed Chrome.
@@ -20,7 +20,11 @@ test.beforeAll(async () => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     const pathname = url.pathname.endsWith("/") ? `${url.pathname}index.html` : url.pathname;
     const file = resolve(join(root, decodeURIComponent(pathname)));
-    if (!file.startsWith(`${root}/`)) { response.writeHead(403).end(); return; }
+    const relativeToRoot = relative(root, file);
+    if (relativeToRoot === ".." || relativeToRoot.startsWith(`..${sep}`) || isAbsolute(relativeToRoot)) {
+      response.writeHead(403).end();
+      return;
+    }
     try {
       const bytes = await readFile(file);
       const mime = extname(file) === ".js" ? "text/javascript" : extname(file) === ".css" ? "text/css" : extname(file) === ".svg" ? "image/svg+xml" : "text/html";
@@ -34,7 +38,9 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  await new Promise<void>((resolveClosed) => server.close(() => resolveClosed()));
+  const activeServer = server;
+  if (activeServer === undefined) return;
+  await new Promise<void>((resolveClosed) => activeServer.close(() => resolveClosed()));
 });
 
 test("Xross local entry renders only facade data and makes no API or external request", async ({ page }) => {
