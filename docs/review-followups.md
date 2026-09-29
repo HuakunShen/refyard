@@ -10,6 +10,7 @@ recorded for one focused UI repair pass, not silently promoted to completion.
 | P2 | Language settings | Changing language increments `localeEpoch` around the entire page, remounting the open Settings dialog and losing keyboard focus. | Update locale in place or scope remount narrowly; keyboard-test the language selector and focus retention. |
 | P2 | Narrow history search | At 390 × 844, expanded advanced filters consume the stacked History pane and leave the virtual commit list with no visible rows until the user closes Filters. | Design a compact filter sheet or responsive auto-collapse after Apply; verify keyboard/focus behavior and virtualized scrolling at narrow sizes. |
 | P2 | Windows private-state errors | `windows_acl::unavailable` includes the absolute local state path. Trace whether these errors can cross a peer boundary; if so, redact the path or map to a stable problem before returning it remotely, and test that the path is not disclosed. |
+| P2 | Windows ACL test oracle | `assert_private` checks directory-policy ACE flags but does not independently verify that the path is an ordinary directory. | Assert the path is a non-symlink directory before reading its ACL; run the focused Windows privacy test. |
 
 The same review found two P1 issues. The unauthenticated DeepSeek Harness
 repository-approval/pairing route was excluded from the Xross vendor integration

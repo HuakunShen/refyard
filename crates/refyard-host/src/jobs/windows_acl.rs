@@ -194,19 +194,46 @@ fn trustee(sid: PSID, kind: i32) -> TRUSTEE_W {
     }
 }
 
-fn entry(sid: PSID, kind: i32) -> EXPLICIT_ACCESS_W {
-    EXPLICIT_ACCESS_W {
-        grfAccessPermissions: FILE_ALL_ACCESS,
-        grfAccessMode: SET_ACCESS,
-        grfInheritance: OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE,
-        Trustee: trustee(sid, kind),
+#[derive(Clone, Copy)]
+enum PrivateObjectKind {
+    File,
+    Directory,
+}
+
+impl PrivateObjectKind {
+    const fn inheritance_flags(self) -> u32 {
+        match self {
+            Self::File => 0,
+            Self::Directory => OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE,
+        }
+    }
+
+    const fn readback_flags(self) -> u8 {
+        self.inheritance_flags() as u8
     }
 }
 
-fn build_acl(identity: &Identity, path: &Path) -> Result<LocalOwned<ACL>, Problem> {
+fn entry(sid: PSID, trustee_kind: i32, object_kind: PrivateObjectKind) -> EXPLICIT_ACCESS_W {
+    EXPLICIT_ACCESS_W {
+        grfAccessPermissions: FILE_ALL_ACCESS,
+        grfAccessMode: SET_ACCESS,
+        grfInheritance: object_kind.inheritance_flags(),
+        Trustee: trustee(sid, trustee_kind),
+    }
+}
+
+fn build_acl(
+    identity: &Identity,
+    path: &Path,
+    object_kind: PrivateObjectKind,
+) -> Result<LocalOwned<ACL>, Problem> {
     let entries = [
-        entry(identity.user_sid(), TRUSTEE_IS_USER),
-        entry(identity.system_sid(), TRUSTEE_IS_WELL_KNOWN_GROUP),
+        entry(identity.user_sid(), TRUSTEE_IS_USER, object_kind),
+        entry(
+            identity.system_sid(),
+            TRUSTEE_IS_WELL_KNOWN_GROUP,
+            object_kind,
+        ),
     ];
     let mut raw_acl: *mut ACL = null_mut();
     let result = unsafe { SetEntriesInAclW(2, entries.as_ptr(), null(), &mut raw_acl) };
@@ -259,8 +286,9 @@ fn apply(
     identity: &Identity,
     path: &Path,
     set_owner: bool,
+    object_kind: PrivateObjectKind,
 ) -> Result<String, Problem> {
-    let acl = build_acl(identity, path)?;
+    let acl = build_acl(identity, path, object_kind)?;
     let requested_aces = describe_acl(acl.0);
     let mut information = DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION;
     if set_owner {
@@ -299,7 +327,7 @@ fn create_private_file_handle(path: &Path, identity: &Identity) -> io::Result<Ha
     // Supply the owner and protected DACL to CREATE_NEW itself. An elevated process's
     // default owner can be a group SID, which would implicitly retain WRITE_DAC if we
     // created the file first and repaired it afterwards.
-    let acl = build_acl(identity, path).map_err(problem_to_io)?;
+    let acl = build_acl(identity, path, PrivateObjectKind::File).map_err(problem_to_io)?;
     let mut descriptor = SECURITY_DESCRIPTOR::default();
     let descriptor_ptr = (&mut descriptor as *mut SECURITY_DESCRIPTOR).cast();
     if unsafe { InitializeSecurityDescriptor(descriptor_ptr, 1) } == 0
@@ -340,6 +368,7 @@ fn create_private_file_handle(path: &Path, identity: &Identity) -> io::Result<Ha
         path,
         "after CreateFileW(CREATE_NEW)",
         Some(&requested_aces),
+        PrivateObjectKind::File,
     )
     .map_err(problem_to_io)?;
     Ok(handle)
@@ -351,6 +380,7 @@ fn verify(
     path: &Path,
     stage: &str,
     requested_aces: Option<&str>,
+    object_kind: PrivateObjectKind,
 ) -> Result<(), Problem> {
     let mut owner: PSID = null_mut();
     let mut dacl: *mut ACL = null_mut();
@@ -418,7 +448,7 @@ fn verify(
         let ace = raw_ace as *const ACCESS_ALLOWED_ACE;
         let header = unsafe { &(*ace).Header };
         if header.AceType != 0
-            || header.AceFlags != (OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE) as u8
+            || header.AceFlags != object_kind.readback_flags()
             || usize::from(header.AceSize) < size_of::<ACCESS_ALLOWED_ACE>()
             || unsafe { (*ace).Mask } != FILE_ALL_ACCESS
         {
@@ -458,13 +488,20 @@ fn verify(
 pub(super) fn secure_private_directory(path: &Path) -> Result<(), Problem> {
     let identity = Identity::acquire(path)?;
     let handle = open_directory(path)?;
-    let requested_aces = apply(&handle, &identity, path, true)?;
+    let requested_aces = apply(
+        &handle,
+        &identity,
+        path,
+        true,
+        PrivateObjectKind::Directory,
+    )?;
     verify(
         &handle,
         &identity,
         path,
         "after SetSecurityInfo(directory)",
         Some(&requested_aces),
+        PrivateObjectKind::Directory,
     )
 }
 
@@ -582,13 +619,14 @@ fn secure_file_handle(handle: &Handle, identity: &Identity, path: &Path) -> Resu
     // Existing authority files must already belong to the current user. Repair only their
     // DACL; never take ownership of an existing file.
     verify_owner(handle, identity, path)?;
-    let requested_aces = apply(handle, identity, path, false)?;
+    let requested_aces = apply(handle, identity, path, false, PrivateObjectKind::File)?;
     verify(
         handle,
         identity,
         path,
         "after SetSecurityInfo(file)",
         Some(&requested_aces),
+        PrivateObjectKind::File,
     )
 }
 
@@ -602,6 +640,7 @@ pub(crate) fn create_private_temporary_file(path: &Path) -> io::Result<File> {
         path,
         "after private temporary-file creation",
         None,
+        PrivateObjectKind::File,
     )
     .map_err(problem_to_io)?;
     Ok(into_file(handle))
