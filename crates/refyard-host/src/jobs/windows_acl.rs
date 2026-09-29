@@ -223,13 +223,45 @@ fn build_acl(identity: &Identity, path: &Path) -> Result<LocalOwned<ACL>, Proble
     Ok(acl)
 }
 
+fn describe_acl(acl: *const ACL) -> String {
+    if acl.is_null() || unsafe { IsValidAcl(acl) } == 0 {
+        return "<invalid ACL>".to_owned();
+    }
+
+    let count = unsafe { (*acl).AceCount };
+    let mut entries = Vec::with_capacity(usize::from(count));
+    for index in 0..count {
+        let mut raw_ace = null_mut();
+        if unsafe { GetAce(acl, u32::from(index), &mut raw_ace) } == 0 || raw_ace.is_null() {
+            entries.push(format!("#{index}: <unreadable ACE>"));
+            continue;
+        }
+
+        let ace = raw_ace as *const ACCESS_ALLOWED_ACE;
+        let header = unsafe { &(*ace).Header };
+        let mask = if header.AceType == 0
+            && usize::from(header.AceSize) >= size_of::<ACCESS_ALLOWED_ACE>()
+        {
+            format!("0x{:08X}", unsafe { (*ace).Mask })
+        } else {
+            "<unavailable>".to_owned()
+        };
+        entries.push(format!(
+            "#{index}: type=0x{:02X} flags=0x{:02X} size={} mask={mask}",
+            header.AceType, header.AceFlags, header.AceSize
+        ));
+    }
+    format!("[{}]", entries.join(", "))
+}
+
 fn apply(
     handle: &Handle,
     identity: &Identity,
     path: &Path,
     set_owner: bool,
-) -> Result<(), Problem> {
+) -> Result<String, Problem> {
     let acl = build_acl(identity, path)?;
+    let requested_aces = describe_acl(acl.0);
     let mut information = DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION;
     if set_owner {
         information |= OWNER_SECURITY_INFORMATION;
@@ -256,7 +288,7 @@ fn apply(
             format!("apply ACL: Win32 error {result}"),
         ));
     }
-    Ok(())
+    Ok(requested_aces)
 }
 
 fn problem_to_io(problem: Problem) -> io::Error {
@@ -299,10 +331,27 @@ fn create_private_file_handle(path: &Path, identity: &Identity) -> io::Result<Ha
     if raw == INVALID_HANDLE_VALUE {
         return Err(io::Error::last_os_error());
     }
-    Ok(Handle(raw))
+    let handle = Handle(raw);
+    ensure_regular_file(&handle, path).map_err(problem_to_io)?;
+    let requested_aces = describe_acl(acl.0);
+    verify(
+        &handle,
+        identity,
+        path,
+        "after CreateFileW(CREATE_NEW)",
+        Some(&requested_aces),
+    )
+    .map_err(problem_to_io)?;
+    Ok(handle)
 }
 
-fn verify(handle: &Handle, identity: &Identity, path: &Path) -> Result<(), Problem> {
+fn verify(
+    handle: &Handle,
+    identity: &Identity,
+    path: &Path,
+    stage: &str,
+    requested_aces: Option<&str>,
+) -> Result<(), Problem> {
     let mut owner: PSID = null_mut();
     let mut dacl: *mut ACL = null_mut();
     let mut raw_descriptor = null_mut();
@@ -375,7 +424,11 @@ fn verify(handle: &Handle, identity: &Identity, path: &Path) -> Result<(), Probl
         {
             return Err(unavailable(
                 path,
-                "readback ACE type, flags, or rights mismatch",
+                format!(
+                    "readback ACE {index} mismatch {stage}: requested={}, readback={}",
+                    requested_aces.unwrap_or("<not captured>"),
+                    describe_acl(dacl)
+                ),
             ));
         }
         let sid = unsafe { std::ptr::addr_of!((*ace).SidStart) as PSID };
@@ -405,8 +458,14 @@ fn verify(handle: &Handle, identity: &Identity, path: &Path) -> Result<(), Probl
 pub(super) fn secure_private_directory(path: &Path) -> Result<(), Problem> {
     let identity = Identity::acquire(path)?;
     let handle = open_directory(path)?;
-    apply(&handle, &identity, path, true)?;
-    verify(&handle, &identity, path)
+    let requested_aces = apply(&handle, &identity, path, true)?;
+    verify(
+        &handle,
+        &identity,
+        path,
+        "after SetSecurityInfo(directory)",
+        Some(&requested_aces),
+    )
 }
 
 fn open_state_file_io(path: &Path, disposition: u32, access: u32) -> io::Result<Handle> {
@@ -523,15 +582,28 @@ fn secure_file_handle(handle: &Handle, identity: &Identity, path: &Path) -> Resu
     // Existing authority files must already belong to the current user. Repair only their
     // DACL; never take ownership of an existing file.
     verify_owner(handle, identity, path)?;
-    apply(handle, identity, path, false)?;
-    verify(handle, identity, path)
+    let requested_aces = apply(handle, identity, path, false)?;
+    verify(
+        handle,
+        identity,
+        path,
+        "after SetSecurityInfo(file)",
+        Some(&requested_aces),
+    )
 }
 
 pub(crate) fn create_private_temporary_file(path: &Path) -> io::Result<File> {
     let identity = Identity::acquire(path).map_err(problem_to_io)?;
     let handle = create_private_file_handle(path, &identity)?;
     ensure_regular_file(&handle, path).map_err(problem_to_io)?;
-    verify(&handle, &identity, path).map_err(problem_to_io)?;
+    verify(
+        &handle,
+        &identity,
+        path,
+        "after private temporary-file creation",
+        None,
+    )
+    .map_err(problem_to_io)?;
     Ok(into_file(handle))
 }
 
