@@ -128,6 +128,12 @@ export function createWorkbenchRuntime(
     form.pairMessage = undefined;
     try {
       const connected = await registry().connect(connectOptions);
+      if (form.hadTicketOnLoad && form.ticket.length > 0) {
+        // A successful connection may have spent this ticket or reused a live bearer.
+        // Remove the credential before onSession makes the workbench visible; the pairing
+        // state machine still scrubs failed attempts and retains its in-memory retry value.
+        options.replaceHref(stripTicket(options.currentHref()));
+      }
       adopt(connected);
       form.pairPhase = "idle";
       form.pairMessage = undefined;

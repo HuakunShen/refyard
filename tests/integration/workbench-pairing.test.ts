@@ -47,6 +47,7 @@ function tab(input: {
   readonly form: ReturnType<typeof createWorkbenchSessionState>;
   readonly memory: Memory;
   readonly replaced: string[];
+  readonly sessionHrefAtAdoption: string[];
   readonly runtime: ReturnType<typeof createWorkbenchRuntime>;
 } {
   const active = harness;
@@ -60,6 +61,8 @@ function tab(input: {
     cleared: 0,
   };
   const replaced: string[] = [];
+  const sessionHrefAtAdoption: string[] = [];
+  let href = input.href;
   const form = createWorkbenchSessionState({
     href: input.href,
     storedBaseUrl: input.baseUrl,
@@ -85,15 +88,18 @@ function tab(input: {
         memory.cleared += 1;
       },
     },
-    currentHref: () => input.href,
-    replaceHref: (href) => {
-      replaced.push(href);
+    currentHref: () => href,
+    replaceHref: (replacement) => {
+      href = replacement;
+      replaced.push(replacement);
     },
-    onSession: () => undefined,
+    onSession: (session) => {
+      if (session !== null) sessionHrefAtAdoption.push(href);
+    },
     onConnectionState: () => undefined,
     runtime: null,
   });
-  return { form, memory, replaced, runtime };
+  return { form, memory, replaced, sessionHrefAtAdoption, runtime };
 }
 
 /** A fresh, unspent ticket for the running service, as the CLI's `p` keystroke would mint. */
@@ -111,6 +117,25 @@ function freshTicket(): string {
 }
 
 describe("pairing from the URL the page was opened with", () => {
+  it("scrubs the spent ticket before publishing the paired session", async () => {
+    // Prevents: a visible workbench whose address bar still contains a spent credential,
+    // even briefly, because session adoption ran before URL cleanup.
+    harness = await createAdapterHarness();
+    const ticket = freshTicket();
+    const { sessionHrefAtAdoption, runtime } = tab({
+      href: `${harness.baseUrl}/?pair=${ticket}`,
+      storedToken: null,
+      storedInstance: null,
+      baseUrl: harness.baseUrl,
+    });
+
+    await runtime.start();
+
+    expect(sessionHrefAtAdoption).toHaveLength(1);
+    expect(sessionHrefAtAdoption[0]).not.toContain("pair=");
+    await runtime.dispose();
+  });
+
   it("spends the ticket when the remembered session belongs to a restarted service", async () => {
     // Prevents: a panel that exists to show the workbench instead asking for a pairing URL,
     // because the browser still holds a bearer the restarted service has never heard of.
@@ -138,7 +163,7 @@ describe("pairing from the URL the page was opened with", () => {
     // tickets are single use, and the service records one session per exchange.
     harness = await createAdapterHarness();
     const ticket = freshTicket();
-    const { form, replaced, runtime } = tab({
+    const { form, replaced, sessionHrefAtAdoption, runtime } = tab({
       href: `${harness.baseUrl}/?pair=${ticket}`,
       storedToken: harness.secretToken,
       storedInstance: harness.instanceId,
@@ -150,6 +175,8 @@ describe("pairing from the URL the page was opened with", () => {
     expect(runtime.session()).not.toBeNull();
     expect(form.pairPhase).toBe("idle");
     expect(form.ticket).toBe("");
+    expect(sessionHrefAtAdoption).toHaveLength(1);
+    expect(sessionHrefAtAdoption[0]).not.toContain("pair=");
     expect(replaced[replaced.length - 1] ?? "").not.toContain("pair=");
     await runtime.dispose();
 
