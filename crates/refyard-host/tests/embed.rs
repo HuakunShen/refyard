@@ -1246,6 +1246,8 @@ fn windows_private_state_survives_without_shell_and_repairs_acl_drift() {
             acknowledged_at_ms: None,
         })
         .expect("seed durable record");
+        seed.mark_cancelled("op_1", 2)
+            .expect("seed a terminal record that recovery will preserve");
         drop(seed);
         let record_path = root.path().join("journal/records/op_1.json");
         let record_contents = std::fs::read(&record_path).expect("read seeded journal record");
