@@ -26,8 +26,8 @@ use windows_sys::Win32::Storage::FileSystem::{
     CreateFileW, FileAttributeTagInfo, GetFileInformationByHandleEx, ReOpenFile, CREATE_NEW,
     FILE_ALL_ACCESS, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_REPARSE_POINT,
     FILE_ATTRIBUTE_TAG_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
-    FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING, READ_CONTROL, WRITE_DAC,
-    WRITE_OWNER,
+    FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+    READ_CONTROL, WRITE_DAC, WRITE_OWNER,
 };
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
@@ -140,7 +140,7 @@ fn open_directory(path: &Path) -> Result<Handle, Problem> {
     let raw = unsafe {
         CreateFileW(
             wide.as_ptr(),
-            READ_CONTROL | WRITE_DAC | WRITE_OWNER,
+            READ_CONTROL | WRITE_DAC | WRITE_OWNER | FILE_READ_ATTRIBUTES,
             FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
             null(),
             OPEN_EXISTING,
@@ -612,7 +612,11 @@ pub(crate) fn open_private_file_for_read(path: &Path) -> io::Result<File> {
         .map_err(|problem| io::Error::new(io::ErrorKind::PermissionDenied, problem.to_string()))?;
     // Preserve NotFound so the journal can distinguish an absent legacy index from an
     // unreadable authority file.
-    let handle = open_state_file_io(path, OPEN_EXISTING, READ_CONTROL | WRITE_DAC)?;
+    let handle = open_state_file_io(
+        path,
+        OPEN_EXISTING,
+        READ_CONTROL | WRITE_DAC | FILE_READ_ATTRIBUTES,
+    )?;
     secure_file_handle(&handle, &identity, path)
         .map_err(|problem| io::Error::new(io::ErrorKind::PermissionDenied, problem.to_string()))?;
     let reader = reopen_file(&handle, GENERIC_READ, path)
@@ -626,10 +630,12 @@ pub(crate) fn open_private_lock_file(path: &Path) -> Result<File, Problem> {
     let identity = Identity::acquire(path)?;
     let handle = match create_private_file_handle(path, &identity) {
         Ok(handle) => handle,
-        Err(error) if error.raw_os_error() == Some(ERROR_FILE_EXISTS as i32) => {
-            open_state_file_io(path, OPEN_EXISTING, READ_CONTROL | WRITE_DAC)
-                .map_err(|error| unavailable(path, format!("open state lock: {error}")))?
-        }
+        Err(error) if error.raw_os_error() == Some(ERROR_FILE_EXISTS as i32) => open_state_file_io(
+            path,
+            OPEN_EXISTING,
+            READ_CONTROL | WRITE_DAC | FILE_READ_ATTRIBUTES,
+        )
+        .map_err(|error| unavailable(path, format!("open state lock: {error}")))?,
         Err(error) => {
             return Err(unavailable(path, format!("create state lock: {error}")));
         }
