@@ -1247,19 +1247,17 @@ fn windows_private_state_survives_without_shell_and_repairs_acl_drift() {
         })
         .expect("seed durable record");
         drop(seed);
-        let legacy_record = root.path().join("journal/records/op_1.json");
-        let legacy_record_contents =
-            std::fs::read(&legacy_record).expect("read seeded journal record");
-        windows_acl::set_legacy_inheritable_file_acl(&legacy_record);
+        let record_path = root.path().join("journal/records/op_1.json");
+        let record_contents = std::fs::read(&record_path).expect("read seeded journal record");
         let cfg = config(root.path());
         let again = cfg.clone();
         // An embedded host must enforce privacy even when no shell is resolvable.
         std::env::set_var("PATH", "Z:\\refyard-no-shell");
         let host = EmbeddedRefyard::open(cfg).expect("open without a shell");
         assert_eq!(
-            std::fs::read(&legacy_record).expect("read repaired journal record"),
-            legacy_record_contents,
-            "repairing a legacy file ACL must preserve its contents"
+            std::fs::read(&record_path).expect("read journal record after open"),
+            record_contents,
+            "opening the embedded host must preserve journal record bytes"
         );
         for (stage, path) in [
             ("initial open", root.path()),

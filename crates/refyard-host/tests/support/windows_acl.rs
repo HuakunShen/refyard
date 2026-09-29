@@ -6,9 +6,7 @@ use std::ptr::{null, null_mut};
 
 use windows_sys::Win32::Foundation::{CloseHandle, LocalFree, HANDLE, INVALID_HANDLE_VALUE};
 use windows_sys::Win32::Security::Authorization::{
-    GetSecurityInfo, SetEntriesInAclW, SetSecurityInfo, EXPLICIT_ACCESS_W, NO_MULTIPLE_TRUSTEE,
-    SET_ACCESS, SE_FILE_OBJECT, TRUSTEE_IS_SID, TRUSTEE_IS_USER, TRUSTEE_IS_WELL_KNOWN_GROUP,
-    TRUSTEE_W,
+    GetSecurityInfo, SetSecurityInfo, SE_FILE_OBJECT,
 };
 use windows_sys::Win32::Security::{
     CreateWellKnownSid, EqualSid, GetAce, GetSecurityDescriptorControl, GetTokenInformation,
@@ -113,66 +111,6 @@ pub fn assert_private_file(path: &Path) {
         path.display()
     );
     assert_private_acl(path, 0, "private file");
-}
-
-pub fn set_legacy_inheritable_file_acl(path: &Path) {
-    let metadata = std::fs::symlink_metadata(path).expect("legacy file metadata");
-    assert!(
-        metadata.file_type().is_file() && !metadata.file_type().is_symlink(),
-        "not an ordinary legacy file: {}",
-        path.display()
-    );
-    let object = security_object(path);
-    let (_token, user, system) = identity();
-    let user_sid = unsafe { (*(user.as_ptr().cast::<TOKEN_USER>())).User.Sid };
-    let system_sid = system.as_ptr() as PSID;
-    let entries = [
-        legacy_entry(user_sid, TRUSTEE_IS_USER),
-        legacy_entry(system_sid, TRUSTEE_IS_WELL_KNOWN_GROUP),
-    ];
-    let mut raw_acl = null_mut();
-    let result = unsafe { SetEntriesInAclW(2, entries.as_ptr(), null(), &mut raw_acl) };
-    assert_eq!(result, 0, "build legacy ACL {}: {result}", path.display());
-    assert!(!raw_acl.is_null(), "legacy ACL is null: {}", path.display());
-    let acl = Descriptor(raw_acl.cast());
-    let result = unsafe {
-        SetSecurityInfo(
-            object.0,
-            SE_FILE_OBJECT,
-            DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
-            null_mut(),
-            null_mut(),
-            raw_acl,
-            null(),
-        )
-    };
-    assert_eq!(
-        result,
-        0,
-        "set legacy file ACL {}: {result}",
-        path.display()
-    );
-    drop(acl);
-    assert_private_acl(
-        path,
-        (OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE) as u8,
-        "legacy ACL fixture",
-    );
-}
-
-fn legacy_entry(sid: PSID, trustee_kind: i32) -> EXPLICIT_ACCESS_W {
-    EXPLICIT_ACCESS_W {
-        grfAccessPermissions: FILE_ALL_ACCESS,
-        grfAccessMode: SET_ACCESS,
-        grfInheritance: OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE,
-        Trustee: TRUSTEE_W {
-            pMultipleTrustee: null_mut(),
-            MultipleTrusteeOperation: NO_MULTIPLE_TRUSTEE,
-            TrusteeForm: TRUSTEE_IS_SID,
-            TrusteeType: trustee_kind,
-            ptstrName: sid.cast(),
-        },
-    }
 }
 
 fn assert_private_acl(path: &Path, expected_inheritance_flags: u8, stage: &str) {

@@ -2297,7 +2297,14 @@ mod tests {
         let temp = tempfile::tempdir().expect("temp dir");
         let root = temp.path().join("state");
         let journal_directory = root.join("journal");
-        std::fs::create_dir_all(journal_directory.join("records")).expect("legacy dirs");
+
+        // Start from private files created by Journal itself. A raw
+        // `std::fs::write` fixture can inherit a non-current-user Windows
+        // owner and is correctly refused before migration can run.
+        let current = Journal::open(Some(root.clone())).expect("create current private journal");
+        drop(current);
+        std::fs::remove_file(root.join(JOURNAL_INITIALIZED_MARKER))
+            .expect("remove marker to simulate a legacy journal");
         std::fs::write(
             journal_directory.join("index.json"),
             br#"{"nextSequence":1,"operationIdHighWater":0,"operations":[]}"#,
@@ -2930,19 +2937,33 @@ mod tests {
     fn opening_a_journal_with_ambiguous_actor_request_ids_fails_closed() {
         let temp = tempfile::tempdir().expect("temp dir");
         let root = temp.path().join("state");
-        let records = root.join("journal/records");
-        std::fs::create_dir_all(&records).expect("records dir");
+        let journal = Journal::open(Some(root.clone())).expect("create private journal");
         let first = JournalRecord {
-            client_request_id: "duplicate".to_string(),
+            client_request_id: "first-request".to_string(),
             ..record("op_1", 1)
         };
         let second = JournalRecord {
             operation_id: "op_2".to_string(),
             sequence: 2,
-            client_request_id: "duplicate".to_string(),
+            client_request_id: "second-request".to_string(),
             ..record("op_2", 2)
         };
-        for record in [&first, &second] {
+        journal
+            .append(first.clone())
+            .expect("create private first record");
+        journal
+            .append(second.clone())
+            .expect("create private second record");
+        drop(journal);
+        std::fs::remove_file(root.join(JOURNAL_INITIALIZED_MARKER))
+            .expect("remove marker to simulate a legacy journal");
+
+        let records = root.join("journal/records");
+        let mut ambiguous_first = first.clone();
+        ambiguous_first.client_request_id = "duplicate".to_string();
+        let mut ambiguous_second = second.clone();
+        ambiguous_second.client_request_id = "duplicate".to_string();
+        for record in [&ambiguous_first, &ambiguous_second] {
             std::fs::write(
                 records.join(format!("{}.json", record.operation_id)),
                 serde_json::to_vec(record).expect("serialize record"),
@@ -2972,7 +2993,11 @@ mod tests {
 
         let error = Journal::open(Some(root)).expect_err("ambiguous lookup must fail closed");
         assert_eq!(error.code, ProblemCode::InternalError);
-        assert!(error.message.contains("client request ids"));
+        assert!(
+            error.message.contains("client request ids"),
+            "expected duplicate request-id refusal, got: {}",
+            error.message
+        );
     }
 
     #[test]
