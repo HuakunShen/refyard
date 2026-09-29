@@ -7,7 +7,7 @@ use std::ptr::{null, null_mut};
 use windows_sys::Win32::Foundation::{CloseHandle, LocalFree, HANDLE, INVALID_HANDLE_VALUE};
 use windows_sys::Win32::Security::Authorization::{
     GetSecurityInfo, SetEntriesInAclW, SetSecurityInfo, EXPLICIT_ACCESS_W, NO_MULTIPLE_TRUSTEE,
-    SE_FILE_OBJECT, SET_ACCESS, TRUSTEE_IS_SID, TRUSTEE_IS_USER, TRUSTEE_IS_WELL_KNOWN_GROUP,
+    SET_ACCESS, SE_FILE_OBJECT, TRUSTEE_IS_SID, TRUSTEE_IS_USER, TRUSTEE_IS_WELL_KNOWN_GROUP,
     TRUSTEE_W,
 };
 use windows_sys::Win32::Security::{
@@ -97,8 +97,12 @@ fn identity() -> (Handle, Vec<usize>, Vec<usize>) {
     (token, user, system)
 }
 
-pub fn assert_private(path: &Path) {
-    assert_private_acl(path, (OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE) as u8);
+pub fn assert_private(path: &Path, stage: &str) {
+    assert_private_acl(
+        path,
+        (OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE) as u8,
+        stage,
+    );
 }
 
 pub fn assert_private_file(path: &Path) {
@@ -108,7 +112,7 @@ pub fn assert_private_file(path: &Path) {
         "not an ordinary file: {}",
         path.display()
     );
-    assert_private_acl(path, 0);
+    assert_private_acl(path, 0, "private file");
 }
 
 pub fn set_legacy_inheritable_file_acl(path: &Path) {
@@ -142,9 +146,18 @@ pub fn set_legacy_inheritable_file_acl(path: &Path) {
             null(),
         )
     };
-    assert_eq!(result, 0, "set legacy file ACL {}: {result}", path.display());
+    assert_eq!(
+        result,
+        0,
+        "set legacy file ACL {}: {result}",
+        path.display()
+    );
     drop(acl);
-    assert_private_acl(path, (OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE) as u8);
+    assert_private_acl(
+        path,
+        (OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE) as u8,
+        "legacy ACL fixture",
+    );
 }
 
 fn legacy_entry(sid: PSID, trustee_kind: i32) -> EXPLICIT_ACCESS_W {
@@ -162,7 +175,7 @@ fn legacy_entry(sid: PSID, trustee_kind: i32) -> EXPLICIT_ACCESS_W {
     }
 }
 
-fn assert_private_acl(path: &Path, expected_inheritance_flags: u8) {
+fn assert_private_acl(path: &Path, expected_inheritance_flags: u8, stage: &str) {
     let object = security_object(path);
     let (_token, user, system) = identity();
     let user_sid = unsafe { (*(user.as_ptr().cast::<TOKEN_USER>())).User.Sid };
@@ -225,7 +238,8 @@ fn assert_private_acl(path: &Path, expected_inheritance_flags: u8) {
         assert_eq!(
             unsafe { (*ace).Header.AceFlags },
             expected_inheritance_flags,
-            "ACE inheritance flags must match the object type"
+            "ACE inheritance flags must match the object type: stage={stage}, path={}, ACE index={index}",
+            path.display()
         );
         assert_eq!(
             unsafe { (*ace).Mask },

@@ -488,13 +488,7 @@ fn verify(
 pub(super) fn secure_private_directory(path: &Path) -> Result<(), Problem> {
     let identity = Identity::acquire(path)?;
     let handle = open_directory(path)?;
-    let requested_aces = apply(
-        &handle,
-        &identity,
-        path,
-        true,
-        PrivateObjectKind::Directory,
-    )?;
+    let requested_aces = apply(&handle, &identity, path, true, PrivateObjectKind::Directory)?;
     verify(
         &handle,
         &identity,

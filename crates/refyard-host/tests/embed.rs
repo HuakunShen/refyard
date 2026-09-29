@@ -1261,12 +1261,12 @@ fn windows_private_state_survives_without_shell_and_repairs_acl_drift() {
             legacy_record_contents,
             "repairing a legacy file ACL must preserve its contents"
         );
-        for path in [
-            root.path(),
-            &root.path().join("journal"),
-            &root.path().join("journal/records"),
+        for (stage, path) in [
+            ("initial open", root.path()),
+            ("initial open", &root.path().join("journal")),
+            ("initial open", &root.path().join("journal/records")),
         ] {
-            windows_acl::assert_private(path);
+            windows_acl::assert_private(path, stage);
         }
         let authority_files = [
             root.path().join(".refyard-journal-initialized"),
@@ -1286,12 +1286,12 @@ fn windows_private_state_survives_without_shell_and_repairs_acl_drift() {
         }
         windows_acl::loosen_dacl(&root.path().join("journal"));
         let reopened = EmbeddedRefyard::open(again).expect("repair drift on reopen");
-        for path in [
-            root.path(),
-            &root.path().join("journal"),
-            &root.path().join("journal/records"),
+        for (stage, path) in [
+            ("repair reopen", root.path()),
+            ("repair reopen", &root.path().join("journal")),
+            ("repair reopen", &root.path().join("journal/records")),
         ] {
-            windows_acl::assert_private(path);
+            windows_acl::assert_private(path, stage);
         }
         for path in &authority_files {
             windows_acl::assert_private_file(path);
