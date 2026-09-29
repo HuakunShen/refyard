@@ -28,7 +28,10 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    # The macOS matrix needs over 45 minutes for the full three-browser E2E
+    # suite plus post-job cache upload; run 36562228272 reached the old limit
+    # only after every verification step had succeeded.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
