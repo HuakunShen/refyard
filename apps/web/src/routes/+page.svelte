@@ -1701,7 +1701,7 @@
         <section
           class={mainDiffOpen
             ? "hidden"
-            : "flex min-h-[28rem] min-w-0 flex-1 flex-col gap-2 overflow-hidden p-3 @5xl:h-auto @5xl:min-h-0 @5xl:flex-1"}
+            : "flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-hidden p-3 @5xl:h-auto @5xl:flex-1"}
           data-testid="history-panel"
         >
           <div class="shrink-0 flex items-center gap-2">
