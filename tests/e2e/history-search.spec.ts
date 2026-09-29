@@ -164,10 +164,13 @@ test.describe("history search", () => {
     // inspect the result list while retaining the applied filter.
     await search.getByRole("button", { name: "Filters", exact: true }).click();
     // Prevents a stacked narrow pane expanding to all rows and defeating virtualization.
+    const scrollList = page.getByTestId("history-scroll");
+    await expect
+      .poll(() => scrollList.evaluate((element) => element.clientHeight))
+      .toBeGreaterThan(48);
     const visibleRows = page.locator('[data-testid^="commit-row-"]');
     await expect(visibleRows.first()).toBeVisible();
     expect(await visibleRows.count()).toBeLessThan(100);
-    const scrollList = page.getByTestId("history-scroll");
     const continuation = page.waitForRequest(
       (request) =>
         new URL(request.url()).pathname.endsWith("/history") &&
@@ -264,5 +267,33 @@ test.describe("history search", () => {
       path: testInfo.outputPath("narrow-expanded.png"),
       contentType: "image/png",
     });
+  });
+
+  test("keeps virtualized history readable in a narrow embedded column", async ({
+    page,
+  }) => {
+    // Prevents viewport media queries missing a stacked workbench inside wide host chrome.
+    await page.setViewportSize({ width: 1280, height: 844 });
+    await page.goto(service.pairingUrl);
+    const workbench = page.locator('[class~="@container"]').first();
+    await workbench.evaluate((element) => {
+      element.setAttribute("style", "width: 390px; max-width: 390px");
+    });
+    await expect(workbench).toHaveCSS("width", "390px");
+    const search = page.getByRole("form", { name: "History search" });
+    await page.getByLabel("Search commit messages").fill("Release");
+    await search.getByRole("button", { name: "Filters", exact: true }).click();
+    await search.getByRole("button", { name: "Apply", exact: true }).click();
+    await expect(
+      page.getByText("Filtered history · graph hidden"),
+    ).toBeVisible();
+    await search.getByRole("button", { name: "Filters", exact: true }).click();
+    const scrollList = page.getByTestId("history-scroll");
+    await expect
+      .poll(() => scrollList.evaluate((element) => element.clientHeight))
+      .toBeGreaterThan(48);
+    await expect(
+      page.locator('[data-testid^="commit-row-"]').first(),
+    ).toBeVisible();
   });
 });
