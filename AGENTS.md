@@ -57,6 +57,31 @@ directory", "unknown is a result", preview-fingerprint preconditions, or the rul
 trusted code turns intentions into argv. Where the Rust implementation lags the Node one,
 `capabilities` reports the gap; it never reports unimplemented work as supported.
 
+## 0b. Scope revision — 2026-10-01: GPUI desktop front-end
+
+On 2026-10-01 the user directed this repository to also ship a **GPUI-native desktop front-end**
+(the way `~/ExtDev/space-lens/apps/gpui` is built). Governing documents:
+
+- `docs/superpowers/specs/2026-10-01-gpui-desktop-design.md`
+- `docs/superpowers/plans/2026-10-01-gpui-desktop.md`
+- `docs/acceptance/2026-10-01-gpui-desktop.md`
+
+What this revision changes, exactly — and nothing more:
+
+- The Tauri desktop app stays shipped and must not regress. GPUI is an **additional** native
+  form, not a replacement and not a re-opening of the 2026-09-18 framework comparison.
+- The GPUI shell (`apps/desktop-gpui`, binary `refyard-gpui`) is its own cargo workspace, links
+  `gpui-kit 0.7` (whose GPUI is the `gpui-pre =0.3.7` snapshot), and never mixes in the Zed
+  crates.io `gpui` 0.2.x crate. It drives `ApplicationService` **in-process** (tokio runtime
+  owned by the app, results bridged to the UI over channels) — no IPC, no HTTP listener, no
+  sidecar, no JS runtime in the product.
+- The commit-graph lane layout is ported to the headless crate `crates/refyard-graph` (no gpui,
+  no host APIs), pinned by the same test properties and the `xross-e8e312.json` fixture as
+  `packages/git-graph`; the TypeScript package stays the web renderer's source.
+- All §0/§2 rules bind the GPUI shell exactly as they bind the Tauri shell: capability honesty
+  (render only what `capabilities()` advertises), `confirmed: true` dialog flows for destructive
+  operations, previews/snapshot binding, and no argv construction outside the host.
+
 ## 1. Architecture — non-negotiable
 
 ```
@@ -202,6 +227,8 @@ crates/refyard-core/       pure bytes/parsers/planners — no host APIs
 crates/refyard-host/       Local/SSH execution providers, registry, jobs, journal, GitService
 crates/refyard-http/       optional Axum adapter; never a dependency of the desktop crate
 crates/refyard-cli/        native `refyard-native` doctor/open/serve
+crates/refyard-graph/      commit-graph lane layout + geometry ported from packages/git-graph
+                           (headless Rust: no gpui, no host APIs) — GPUI workstream, §0b
 ```
 
 ## 5. Toolchain
@@ -259,7 +286,10 @@ crates/refyard-cli/        native `refyard-native` doctor/open/serve
 
 ## 7. Current execution scope
 
-The active workstream is the native desktop and agentless SSH plan
+Two active workstreams. The first is the GPUI desktop front-end
+(`docs/superpowers/plans/2026-10-01-gpui-desktop.md`, tasks G01…G10, acceptance matrix
+`docs/acceptance/2026-10-01-gpui-desktop.md`). The second is the native desktop and agentless
+SSH plan
 (`docs/superpowers/plans/2026-09-18-native-desktop-ssh.md`), executed task by task — D00…D14 for
 the first four deliverables (local App, SSH reads, stage/unstage/commit, native CLI + acceptance),
 then P01…P05 for full parity. Its acceptance matrix is
