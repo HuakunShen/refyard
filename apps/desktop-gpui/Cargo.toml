@@ -1,0 +1,35 @@
+# The GPUI desktop shell: a native window around the Rust application service.
+#
+# This crate is its own workspace, like apps/desktop/src-tauri: a shell that links the
+# Metal/winit GUI stack must never sit in the headless crates' dependency graph, and the
+# root release profile (opt-level "s", thin LTO) is not this binary's profile. Build and
+# test from this directory.
+#
+# gpui-kit is the one GUI dependency: a meta crate that pins GPUI itself as the
+# crates.io `gpui-pre =0.3.7` snapshot of zed-industries/zed. The Zed-published `gpui`
+# crate (0.2.x) is an older, incompatible type universe and must never join this graph.
+[package]
+name = "refyard-desktop-gpui"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.98"
+license = "AGPL-3.0-only"
+
+[workspace]
+
+[[bin]]
+name = "refyard-gpui"
+path = "src/main.rs"
+
+[dependencies]
+gpui-kit = "0.7"
+refyard-contract = { path = "../../crates/refyard-contract" }
+refyard-graph = { path = "../../crates/refyard-graph" }
+refyard-host = { path = "../../crates/refyard-host" }
+# The service is tokio-native (tokio::process, tokio::sync::broadcast); the app owns one
+# multi-thread runtime and bridges results to the GPUI executor over smol channels.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
+smol = "2"
+rfd = "0.15"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
