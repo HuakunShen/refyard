@@ -1,0 +1,16 @@
+# Host-free commit-graph layout: lane allocation, page continuation and pixel geometry.
+# Pure Rust with no host APIs and no GUI dependency, so the root workspace can build and
+# test it headlessly while the GPUI shell (apps/desktop-gpui, its own workspace) consumes
+# it as a path dependency.
+[package]
+name = "refyard-graph"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
