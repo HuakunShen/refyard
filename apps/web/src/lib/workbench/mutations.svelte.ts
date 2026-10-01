@@ -103,11 +103,23 @@ interface MutationContext {
 interface ScopedMessage {
   readonly context: MutationContext;
   readonly message: string;
+  readonly scope?: "worktree" | "repository";
+}
+
+function scopedMessage(
+  message: string | null,
+  context: MutationContext | null,
+  scope: "worktree" | "repository",
+): ScopedMessage | null {
+  return message === null || context === null
+    ? null
+    : { context, message, scope };
 }
 
 type MutationReport = (
   message: string | null,
   context: MutationContext | null,
+  scope: "worktree" | "repository",
 ) => void;
 
 function sameMutationContext(
@@ -174,13 +186,13 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
   let lastCreatedTarget = $state<ExecutionTargetSummary | null>(null);
   let stagingMessage = $state<ScopedMessage | null>(null);
   let commitResult = $state<ScopedMessage | null>(null);
-  let branchMessage = $state<string | null>(null);
-  let remoteMessage = $state<string | null>(null);
-  let worktreeMessage = $state<string | null>(null);
-  let submoduleMessage = $state<string | null>(null);
-  let mergeMessage = $state<string | null>(null);
-  let stashResult = $state<string | null>(null);
-  let tagResult = $state<string | null>(null);
+  let branchMessage = $state<ScopedMessage | null>(null);
+  let remoteMessage = $state<ScopedMessage | null>(null);
+  let worktreeMessage = $state<ScopedMessage | null>(null);
+  let submoduleMessage = $state<ScopedMessage | null>(null);
+  let mergeMessage = $state<ScopedMessage | null>(null);
+  let stashResult = $state<ScopedMessage | null>(null);
+  let tagResult = $state<ScopedMessage | null>(null);
   /**
    * The write block an uncertain operation left on one repository: the service refuses
    * every new write there until a person confirms the state. Scoped to the repository,
@@ -220,12 +232,38 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
   function visibleMessage(message: ScopedMessage | null): string | null {
     const repositoryId = input.selection.repositoryId;
     const worktreeId = input.queries.activeWorktreeId;
-    if (repositoryId === null || worktreeId === null || message === null) {
+    if (
+      repositoryId === null ||
+      message === null ||
+      message.context.repositoryId !== repositoryId
+    ) {
+      return null;
+    }
+    if (message.scope === "repository") {
+      return message.message;
+    }
+    if (worktreeId === null) {
       return null;
     }
     return sameMutationContext(message.context, { repositoryId, worktreeId })
       ? message.message
       : null;
+  }
+
+  /** A synchronous refusal still belongs to the selected repository/worktree. */
+  function selectedMessage(
+    message: string,
+    scope: "worktree" | "repository",
+  ): ScopedMessage | null {
+    const repositoryId = input.selection.repositoryId;
+    const worktreeId = input.queries.activeWorktreeId;
+    return scopedMessage(
+      message,
+      repositoryId === null || worktreeId === null
+        ? null
+        : { repositoryId, worktreeId },
+      scope,
+    );
   }
 
   /**
@@ -351,7 +389,7 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
         : { repositoryId, worktreeId };
     const reportForContext = (message: string | null): void => {
       if (context === null) {
-        report(message, null);
+        report(message, null, targetKind);
         return;
       }
       const current: MutationContext | null =
@@ -360,7 +398,7 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
           ? context
           : null;
       if (current !== null && sameMutationContext(context, current)) {
-        report(message, current);
+        report(message, current, targetKind);
       }
     };
     reportForContext(null);
@@ -857,8 +895,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     void performWrite(
       "create-branch",
       () => branchCreateOperation(branchName, startOid),
-      (result) => {
-        branchMessage = result;
+      (result, context, scope) => {
+        branchMessage = scopedMessage(result, context, scope);
       },
       "repository",
     );
@@ -873,8 +911,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     void performWrite(
       "remote-branch-checkout",
       () => branchCreateOperation(branchName, startOid, true),
-      (result) => {
-        branchMessage = result;
+      (result, context, scope) => {
+        branchMessage = scopedMessage(result, context, scope);
       },
       "repository",
     );
@@ -884,8 +922,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     void performWrite(
       "switch-branch",
       () => ({ kind: "switchBranch", branchName }),
-      (result) => {
-        branchMessage = result;
+      (result, context, scope) => {
+        branchMessage = scopedMessage(result, context, scope);
       },
       "worktree",
     );
@@ -895,8 +933,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     void performWrite(
       "rename-branch",
       () => ({ kind: "renameBranch", branchName, newName }),
-      (result) => {
-        branchMessage = result;
+      (result, context, scope) => {
+        branchMessage = scopedMessage(result, context, scope);
       },
       "repository",
     );
@@ -906,8 +944,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     void performWrite(
       "delete-branch",
       () => ({ kind: "deleteBranch", branchName, confirmed: true }),
-      (result) => {
-        branchMessage = result;
+      (result, context, scope) => {
+        branchMessage = scopedMessage(result, context, scope);
       },
       "repository",
     );
@@ -923,8 +961,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     void performWrite(
       "set-branch-upstream",
       () => ({ kind: "setBranchUpstream", branchName, upstream }),
-      (result) => {
-        branchMessage = result;
+      (result, context, scope) => {
+        branchMessage = scopedMessage(result, context, scope);
       },
       "repository",
     );
@@ -935,7 +973,10 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
       (entry) => entry.name === branchName,
     );
     if (branch === undefined) {
-      mergeMessage = `no branch named ${branchName} is on screen; refresh and retry`;
+      mergeMessage = selectedMessage(
+        `no branch named ${branchName} is on screen; refresh and retry`,
+        "worktree",
+      );
       return;
     }
     void performWrite(
@@ -946,8 +987,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
         mode: noFf ? ("no-ff" as const) : ("default" as const),
         message: null,
       }),
-      (result) => {
-        mergeMessage = result;
+      (result, context, scope) => {
+        mergeMessage = scopedMessage(result, context, scope);
       },
       "worktree",
     );
@@ -974,8 +1015,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     void performWrite(
       "continue-cherry-pick",
       () => ({ kind: "continueCherryPick" }),
-      (result) => {
-        mergeMessage = result;
+      (result, context, scope) => {
+        mergeMessage = scopedMessage(result, context, scope);
       },
       "worktree",
     );
@@ -985,8 +1026,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     void performWrite(
       "abort-cherry-pick",
       () => ({ kind: "abortCherryPick", confirmed: true }),
-      (result) => {
-        mergeMessage = result;
+      (result, context, scope) => {
+        mergeMessage = scopedMessage(result, context, scope);
       },
       "worktree",
     );
@@ -1013,8 +1054,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     void performWrite(
       "continue-rebase",
       () => ({ kind: "continueRebase" }),
-      (result) => {
-        mergeMessage = result;
+      (result, context, scope) => {
+        mergeMessage = scopedMessage(result, context, scope);
       },
       "worktree",
     );
@@ -1024,8 +1065,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     void performWrite(
       "abort-rebase",
       () => ({ kind: "abortRebase", confirmed: true }),
-      (result) => {
-        mergeMessage = result;
+      (result, context, scope) => {
+        mergeMessage = scopedMessage(result, context, scope);
       },
       "worktree",
     );
@@ -1069,8 +1110,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     void performWrite(
       "continue-merge",
       () => ({ kind: "continueMerge", message: null }),
-      (result) => {
-        mergeMessage = result;
+      (result, context, scope) => {
+        mergeMessage = scopedMessage(result, context, scope);
       },
       "worktree",
     );
@@ -1080,8 +1121,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     void performWrite(
       "abort-merge",
       () => ({ kind: "abortMerge", confirmed: true }),
-      (result) => {
-        mergeMessage = result;
+      (result, context, scope) => {
+        mergeMessage = scopedMessage(result, context, scope);
       },
       "worktree",
     );
@@ -1091,8 +1132,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     void performWrite(
       "add-remote",
       () => ({ kind: "addRemote", remoteName, fetchUrl, pushUrl: null }),
-      (result) => {
-        remoteMessage = result;
+      (result, context, scope) => {
+        remoteMessage = scopedMessage(result, context, scope);
       },
       "repository",
     );
@@ -1109,8 +1150,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     void performWrite(
       "update-remote",
       () => ({ kind: "updateRemote", remoteName, ...changes }),
-      (result) => {
-        remoteMessage = result;
+      (result, context, scope) => {
+        remoteMessage = scopedMessage(result, context, scope);
       },
       "repository",
     );
@@ -1120,8 +1161,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     void performWrite(
       "remove-remote",
       () => ({ kind: "removeRemote", remoteName, confirmed: true }),
-      (result) => {
-        remoteMessage = result;
+      (result, context, scope) => {
+        remoteMessage = scopedMessage(result, context, scope);
       },
       "repository",
     );
@@ -1131,8 +1172,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     void performWrite(
       "fetch",
       () => ({ kind: "fetch", remoteName, prune: false, tags: "none" }),
-      (result) => {
-        remoteMessage = result;
+      (result, context, scope) => {
+        remoteMessage = scopedMessage(result, context, scope);
       },
       "repository",
     );
@@ -1148,8 +1189,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
         destinationRef: `refs/heads/${branchName}`,
         setUpstream: false,
       }),
-      (result) => {
-        remoteMessage = result;
+      (result, context, scope) => {
+        remoteMessage = scopedMessage(result, context, scope);
       },
       "repository",
     );
@@ -1159,8 +1200,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     void performWrite(
       "pull",
       () => ({ kind: "pull", remoteName, mode: "ff-only" }),
-      (result) => {
-        remoteMessage = result;
+      (result, context, scope) => {
+        remoteMessage = scopedMessage(result, context, scope);
       },
       "worktree",
     );
@@ -1178,8 +1219,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
         includeUntracked,
         keepIndex: false,
       }),
-      (result) => {
-        stashResult = result;
+      (result, context, scope) => {
+        stashResult = scopedMessage(result, context, scope);
       },
       "worktree",
     );
@@ -1193,8 +1234,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
         stash: { oid: stash.oid, locator: stash.locator },
         restoreIndex: false,
       }),
-      (result) => {
-        stashResult = result;
+      (result, context, scope) => {
+        stashResult = scopedMessage(result, context, scope);
       },
       "worktree",
     );
@@ -1209,8 +1250,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
         restoreIndex: false,
         confirmed: true,
       }),
-      (result) => {
-        stashResult = result;
+      (result, context, scope) => {
+        stashResult = scopedMessage(result, context, scope);
       },
       "worktree",
     );
@@ -1224,8 +1265,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
         stash: { oid: stash.oid, locator: stash.locator },
         confirmed: true,
       }),
-      (result) => {
-        stashResult = result;
+      (result, context, scope) => {
+        stashResult = scopedMessage(result, context, scope);
       },
       "repository",
     );
@@ -1239,8 +1280,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     void performWrite(
       "tag-create",
       () => tagCreateOperation(tagName, annotation, targetOid),
-      (result) => {
-        tagResult = result;
+      (result, context, scope) => {
+        tagResult = scopedMessage(result, context, scope);
       },
       "repository",
     );
@@ -1283,8 +1324,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     void performWrite(
       "tag-delete",
       () => ({ kind: "deleteTag", tagName, confirmed: true }),
-      (result) => {
-        tagResult = result;
+      (result, context, scope) => {
+        tagResult = scopedMessage(result, context, scope);
       },
       "repository",
     );
@@ -1293,14 +1334,14 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
   function onTagPush(tagName: string): void {
     const remote = input.queries.refs.data?.remotes[0]?.name ?? null;
     if (remote === null) {
-      tagResult = "no remote to push to";
+      tagResult = selectedMessage("no remote to push to", "repository");
       return;
     }
     void performWrite(
       "tag-push",
       () => ({ kind: "pushTag", remoteName: remote, tagName }),
-      (result) => {
-        tagResult = result;
+      (result, context, scope) => {
+        tagResult = scopedMessage(result, context, scope);
       },
       "repository",
     );
@@ -1363,8 +1404,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
         relativeDestination,
         reference: await worktreeReference(reference, repositoryId, worktreeId),
       }),
-      (result) => {
-        worktreeMessage = result;
+      (result, context, scope) => {
+        worktreeMessage = scopedMessage(result, context, scope);
       },
       "repository",
     );
@@ -1374,8 +1415,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     void performWrite(
       "remove-worktree",
       () => ({ kind: "removeWorktree", worktreeId, confirmed: true }),
-      (result) => {
-        worktreeMessage = result;
+      (result, context, scope) => {
+        worktreeMessage = scopedMessage(result, context, scope);
       },
       "repository",
     );
@@ -1385,8 +1426,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     void performWrite(
       "lock-worktree",
       () => ({ kind: "lockWorktree", worktreeId, reason }),
-      (result) => {
-        worktreeMessage = result;
+      (result, context, scope) => {
+        worktreeMessage = scopedMessage(result, context, scope);
       },
       "repository",
     );
@@ -1396,8 +1437,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     void performWrite(
       "unlock-worktree",
       () => ({ kind: "unlockWorktree", worktreeId }),
-      (result) => {
-        worktreeMessage = result;
+      (result, context, scope) => {
+        worktreeMessage = scopedMessage(result, context, scope);
       },
       "repository",
     );
@@ -1417,8 +1458,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
         branchName: submodule.branchName,
         initialize: true,
       }),
-      (result) => {
-        submoduleMessage = result;
+      (result, context, scope) => {
+        submoduleMessage = scopedMessage(result, context, scope);
       },
       "worktree",
     );
@@ -1436,8 +1477,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
         initialize: true,
         recursive,
       }),
-      (result) => {
-        submoduleMessage = result;
+      (result, context, scope) => {
+        submoduleMessage = scopedMessage(result, context, scope);
       },
       "worktree",
     );
@@ -1454,8 +1495,8 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
         pathIds: [...pathIds],
         recursive,
       }),
-      (result) => {
-        submoduleMessage = result;
+      (result, context, scope) => {
+        submoduleMessage = scopedMessage(result, context, scope);
       },
       "worktree",
     );
@@ -1472,9 +1513,12 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
       for (const prefix of input.queries.providerCachePrefixes()) {
         await input.queryClient.invalidateQueries({ queryKey: [...prefix] });
       }
-      input.queryClient.setQueryData([...input.queries.providerDeviceStatusKey()], {
-        state: "idle",
-      });
+      input.queryClient.setQueryData(
+        [...input.queries.providerDeviceStatusKey()],
+        {
+          state: "idle",
+        },
+      );
     })();
   });
 
@@ -1519,25 +1563,25 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
       return visibleMessage(commitResult);
     },
     get branchMessage() {
-      return branchMessage;
+      return visibleMessage(branchMessage);
     },
     get remoteMessage() {
-      return remoteMessage;
+      return visibleMessage(remoteMessage);
     },
     get worktreeMessage() {
-      return worktreeMessage;
+      return visibleMessage(worktreeMessage);
     },
     get submoduleMessage() {
-      return submoduleMessage;
+      return visibleMessage(submoduleMessage);
     },
     get mergeMessage() {
-      return mergeMessage;
+      return visibleMessage(mergeMessage);
     },
     get stashResult() {
-      return stashResult;
+      return visibleMessage(stashResult);
     },
     get tagResult() {
-      return tagResult;
+      return visibleMessage(tagResult);
     },
     /**
      * The uncertain-outcome block for the *selected* repository, or null: a panel for

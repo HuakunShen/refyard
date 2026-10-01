@@ -33,6 +33,7 @@
     WorktreePanel,
     type WorkbenchNavItem,
   } from "@refyard/git-ui";
+  import { conflictRecoveryFor } from "$lib/workbench/mutation-model.js";
   import type { WorkbenchQueries } from "$lib/workbench/queries.svelte.js";
   import type { WorkbenchMutations } from "$lib/workbench/mutations.svelte.js";
   import { type WorkbenchSelectionState } from "$lib/workbench/selection.js";
@@ -151,15 +152,33 @@
   const onMergeAbort = $derived(mutations.onMergeAbort);
   const onCherryPickContinue = $derived(mutations.onCherryPickContinue);
   const onCherryPickAbort = $derived(mutations.onCherryPickAbort);
+  const onRebaseContinue = $derived(mutations.onRebaseContinue);
+  const onRebaseAbort = $derived(mutations.onRebaseAbort);
   // The conflict panel finishes whichever sequencer operation this build has
   // open; the dispatch is on what Git reports, not on what this session ran.
+  const conflictRecovery = $derived(
+    conflictRecoveryFor(
+      operationInProgress,
+      queries.capabilities.data?.operations,
+    ),
+  );
   const onConflictContinue = $derived(
-    operationInProgress === "cherry-pick"
-      ? onCherryPickContinue
-      : onMergeContinue,
+    !conflictRecovery.canContinue
+      ? undefined
+      : operationInProgress === "cherry-pick"
+        ? onCherryPickContinue
+        : operationInProgress === "rebase"
+          ? onRebaseContinue
+          : onMergeContinue,
   );
   const onConflictAbort = $derived(
-    operationInProgress === "cherry-pick" ? onCherryPickAbort : onMergeAbort,
+    !conflictRecovery.canAbort
+      ? undefined
+      : operationInProgress === "cherry-pick"
+        ? onCherryPickAbort
+        : operationInProgress === "rebase"
+          ? onRebaseAbort
+          : onMergeAbort,
   );
   const onRemoteAdd = $derived(mutations.onRemoteAdd);
   const onRemoteUpdate = $derived(mutations.onRemoteUpdate);
@@ -366,7 +385,9 @@
           the right.
         </div>
       {/if}
-      {#if mergeAvailable && (operationInProgress !== null || mergeMessage !== null)}
+      {#if operationInProgress !== null || mergeMessage !== null}
+        <!-- Recovery confirmation belongs to this repository and worktree. -->
+        {#key `${repository.repositoryId}:${queries.activeWorktreeId}`}
         <ConflictPanel
           class={activeView !== "working-copy" ? "hidden" : ""}
           {operationInProgress}
@@ -377,6 +398,7 @@
           onContinue={onConflictContinue}
           onAbort={onConflictAbort}
         />
+        {/key}
       {/if}
 
       {#if branchAvailable}

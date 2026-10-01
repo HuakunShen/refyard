@@ -1,5 +1,5 @@
 /**
- * T12 end to end: a merge that stops, and the two ways out of it.
+ * End-to-end merge and rebase conflicts, with both ways out of each operation.
  *
  * The cases are the ones where a merge is not a single button: a divergent merge
  * leaves the workbench in a state the user must be able to see and act on. The
@@ -16,7 +16,7 @@ interface RunningService {
   stop(): Promise<void>;
 }
 
-test.describe("merge workbench", () => {
+test.describe("conflict workbench", () => {
   let repo: GitFixtureRepo;
   let service: RunningService;
 
@@ -110,6 +110,155 @@ test.describe("merge workbench", () => {
     await expect(page.getByTestId("conflicted-paths")).toHaveCount(0);
     expect((await repo.headOid()).trim()).toEqual(before);
     expect(await repo.readText("a.txt")).toEqual("main\n");
+  });
+  test("continues a conflicted rebase after staging the resolution", async ({
+    page,
+  }) => {
+    // Prevents the rebase continue button from submitting continueMerge and stranding the replay.
+    await diverge();
+    const upstream = new TextDecoder()
+      .decode(await repo.git(["rev-parse", "other"]))
+      .trim();
+    await page.goto(service.pairingUrl);
+    await page
+      .getByTestId("commit-ref-refs/heads/other")
+      .click({ button: "right" });
+    await page
+      .getByTestId("commit-ref-context-refs/heads/other-rebase-onto")
+      .click();
+    await expect(page.getByTestId("conflict-panel")).toContainText(
+      "rebase in progress",
+    );
+    const continueButton = page.getByTestId("continue-merge");
+    await expect(continueButton).toHaveText("Continue rebase");
+    await expect(continueButton).toBeDisabled();
+
+    await repo.write("a.txt", "resolved rebase\n");
+    await page
+      .getByRole("button", { name: "Stage a.txt", exact: true })
+      .click();
+    await expect(continueButton).toBeEnabled();
+    await continueButton.click();
+    await expect(page.getByTestId("conflict-message-result")).toContainText(
+      "continued the rebase",
+    );
+    await expect(continueButton).toHaveCount(0);
+    expect(await repo.readText("a.txt")).toBe("resolved rebase\n");
+    expect(
+      new TextDecoder().decode(await repo.git(["rev-parse", "HEAD^"])).trim(),
+    ).toBe(upstream);
+    expect(
+      new TextDecoder()
+        .decode(await repo.git(["log", "-1", "--format=%s"]))
+        .trim(),
+    ).toBe("main");
+    expect(
+      new TextDecoder()
+        .decode(await repo.git(["branch", "--show-current"]))
+        .trim(),
+    ).toBe("main");
+  });
+
+  test("aborts a conflicted rebase after confirmation and restores the original branch", async ({
+    page,
+  }) => {
+    // Prevents the rebase abort button from submitting abortMerge and leaving a detached conflicted HEAD.
+    await diverge();
+    const originalHead = await repo.headOid();
+    await page.goto(service.pairingUrl);
+    await page
+      .getByTestId("commit-ref-refs/heads/other")
+      .click({ button: "right" });
+    await page
+      .getByTestId("commit-ref-context-refs/heads/other-rebase-onto")
+      .click();
+    await expect(page.getByTestId("conflict-panel")).toContainText(
+      "rebase in progress",
+    );
+    await page.getByTestId("abort-merge").click();
+    await expect(page.getByTestId("conflicted-paths")).toContainText("a.txt");
+    await expect(page.getByTestId("conflict-panel")).toContainText(
+      "rebase in progress",
+    );
+    await page.getByTestId("abort-merge-confirm").click();
+    await expect(page.getByTestId("conflict-message-result")).toContainText(
+      "aborted the rebase",
+    );
+    await expect(page.getByTestId("abort-merge")).toHaveCount(0);
+    await expect(page.getByTestId("conflicted-paths")).toHaveCount(0);
+    expect(await repo.headOid()).toBe(originalHead);
+    expect(await repo.readText("a.txt")).toBe("main\n");
+    expect(
+      new TextDecoder()
+        .decode(await repo.git(["branch", "--show-current"]))
+        .trim(),
+    ).toBe("main");
+  });
+  for (const operation of ["merge", "cherry-pick", "rebase"]) {
+    test(`localizes ${operation} conflict controls and abort confirmation in Chinese`, async ({
+      page,
+    }) => {
+      // Prevents a Chinese UI from leaving conflict recovery controls and destructive confirmation in English.
+      await diverge();
+      const originalHead = await repo.headOid();
+      const started = await repo.gitResult([operation, "other"]);
+      expect(started.code).toBe(1);
+      await page.goto(service.pairingUrl);
+      await page.getByTestId("settings-open").click();
+      await page.getByTestId("settings-language-zh").click();
+      const operationName =
+        operation === "merge"
+          ? "合并"
+          : operation === "rebase"
+            ? "变基"
+            : "摘取";
+      const panel = page.getByTestId("conflict-panel");
+      await expect(panel).toContainText(`${operationName}进行中`);
+      await expect(panel).toContainText("1 个冲突文件");
+      await expect(panel).toContainText("阶段 1/2/3");
+      await expect(panel).toContainText("在 Refyard 外解决这些文件的冲突");
+      await expect(page.getByTestId("continue-merge")).toHaveText(
+        `继续${operationName}`,
+      );
+      await expect(page.getByTestId("continue-merge")).toBeDisabled();
+      await expect(page.getByTestId("abort-merge")).toHaveText(
+        `中止${operationName}`,
+      );
+      await page.getByTestId("abort-merge").click();
+      await expect(panel).toContainText("恢复操作开始时的提交和暂存区。");
+      await expect(page.getByTestId("abort-merge-confirm")).toHaveText(
+        "中止并恢复到开始时的状态",
+      );
+      await page.getByTestId("abort-merge-confirm").click();
+      await expect(page.getByTestId("abort-merge")).toHaveCount(0);
+      expect(await repo.headOid()).toBe(originalHead);
+      expect(await repo.readText("a.txt")).toBe("main\n");
+    });
+  }
+  test("requires a new abort confirmation when the sequencer operation changes", async ({
+    page,
+  }) => {
+    // Prevents confirmation for one operation from silently aborting a different externally started operation.
+    await diverge();
+    expect((await repo.gitResult(["rebase", "other"])).code).toBe(1);
+    await page.goto(service.pairingUrl);
+    await expect(page.getByTestId("conflict-panel")).toContainText(
+      "rebase in progress",
+    );
+    await page.getByTestId("abort-merge").click();
+    await expect(page.getByTestId("abort-merge-confirm")).toBeVisible();
+    await repo.git(["rebase", "--abort"]);
+    expect((await repo.gitResult(["merge", "other"])).code).toBe(1);
+    await expect(page.getByTestId("conflict-panel")).toContainText(
+      "merge in progress",
+    );
+    await expect(page.getByTestId("abort-merge-confirm")).toHaveCount(0);
+    await expect(page.getByTestId("abort-merge")).toHaveText("Abort merge");
+    await page.getByTestId("abort-merge").click();
+    await page.getByTestId("abort-merge-confirm").click();
+    await expect(page.getByTestId("conflict-message-result")).toContainText(
+      "aborted the merge",
+    );
   });
 });
 

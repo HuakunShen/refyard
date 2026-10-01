@@ -39,6 +39,33 @@ export function mutationAvailabilityFor(
   };
 }
 
+/** Recovery is advertised separately from starting an operation and from its sibling action. */
+export function conflictRecoveryFor(
+  operationInProgress: string | null,
+  operations: readonly { readonly kind: string }[] | undefined,
+): { readonly canContinue: boolean; readonly canAbort: boolean } {
+  const kinds = new Set((operations ?? []).map((entry) => entry.kind));
+  switch (operationInProgress) {
+    case "merge":
+      return {
+        canContinue: kinds.has("continueMerge"),
+        canAbort: kinds.has("abortMerge"),
+      };
+    case "cherry-pick":
+      return {
+        canContinue: kinds.has("continueCherryPick"),
+        canAbort: kinds.has("abortCherryPick"),
+      };
+    case "rebase":
+      return {
+        canContinue: kinds.has("continueRebase"),
+        canAbort: kinds.has("abortRebase"),
+      };
+    default:
+      return { canContinue: false, canAbort: false };
+  }
+}
+
 export function writeRefusalMessage(input: {
   readonly browserOnline: boolean;
   /**

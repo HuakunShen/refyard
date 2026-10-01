@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   branchCreateOperation,
+  conflictRecoveryFor,
   mutationAvailabilityFor,
   tagCreateOperation,
   operationIdFromSubmission,
@@ -42,6 +43,66 @@ describe("workbench mutation model", () => {
       merge: true,
       repositoryCreation: { init: true, clone: false },
     });
+  });
+
+  it("derives each recovery action from its own capability without requiring the start operation", () => {
+    // Prevents recovery-only hosts from hiding controls, or assuming one action implies its sibling.
+    for (const pair of [
+      {
+        state: "merge",
+        continueKind: "continueMerge",
+        abortKind: "abortMerge",
+      },
+      {
+        state: "cherry-pick",
+        continueKind: "continueCherryPick",
+        abortKind: "abortCherryPick",
+      },
+      {
+        state: "rebase",
+        continueKind: "continueRebase",
+        abortKind: "abortRebase",
+      },
+    ]) {
+      expect(
+        conflictRecoveryFor(pair.state, [{ kind: pair.continueKind }]),
+      ).toEqual({ canContinue: true, canAbort: false });
+      expect(
+        conflictRecoveryFor(pair.state, [{ kind: pair.abortKind }]),
+      ).toEqual({ canContinue: false, canAbort: true });
+      expect(
+        conflictRecoveryFor(pair.state, [
+          { kind: pair.continueKind },
+          { kind: pair.abortKind },
+        ]),
+      ).toEqual({ canContinue: true, canAbort: true });
+      expect(conflictRecoveryFor(pair.state, [{ kind: pair.state }])).toEqual({
+        canContinue: false,
+        canAbort: false,
+      });
+    }
+  });
+
+  it("fails closed for pending capabilities and unrelated sequencer states", () => {
+    // Prevents a revert/bisect or stale capability response from being routed to merge recovery.
+    expect(conflictRecoveryFor("rebase", undefined)).toEqual({
+      canContinue: false,
+      canAbort: false,
+    });
+    const operations = [{ kind: "continueMerge" }, { kind: "abortMerge" }];
+    for (const state of [
+      null,
+      "revert",
+      "bisect",
+      "apply-mailbox",
+      "unknown",
+      "rebase",
+    ]) {
+      expect(conflictRecoveryFor(state, operations)).toEqual({
+        canContinue: false,
+        canAbort: false,
+      });
+    }
   });
 
   it("keeps repository creation unknown until capabilities arrive", () => {
