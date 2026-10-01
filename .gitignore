@@ -80,3 +80,4 @@ target/
 # capabilities/*.json on every build, so they are output rather than source.
 apps/desktop/src-tauri/gen/
 
+.zcode
