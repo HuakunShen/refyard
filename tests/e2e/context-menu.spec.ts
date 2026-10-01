@@ -47,7 +47,7 @@ test.describe("Git context menus", () => {
       ["cherry-pick-commit", "摘取提交…"],
       ["drop-commit", "丢弃提交…"],
       ["reset-branch", "把分支重置到这里…"],
-    ]) {
+    ] as const satisfies readonly (readonly [string, string])[]) {
       await expect(
         menu.getByTestId(`commit-context-${targetOid}-${id}`),
       ).toHaveText(label);
@@ -112,7 +112,7 @@ test.describe("Git context menus", () => {
       ["drop-commit", "commit-drop-dialog", "丢弃", "改写历史"],
       ["reset-branch", "commit-reset-dialog", "将 main 重置", "工作区"],
       ["squash-commit", "commit-squash-dialog", "并入", "两个提交合为一个"],
-    ]) {
+    ] as const satisfies readonly (readonly [string, string, string, string])[]) {
       const oid =
         action === "squash-commit" || action === "drop-commit"
           ? headOid
@@ -138,7 +138,7 @@ test.describe("Git context menus", () => {
     for (const [ref, title, note] of [
       ["refs/heads/dialog-ref", "删除 dialog-ref？", "未合并的工作"],
       ["refs/tags/dialog-tag", "删除标签 dialog-tag？", "远端副本"],
-    ]) {
+    ] as const satisfies readonly (readonly [string, string, string])[]) {
       await page.getByTestId(`commit-ref-${ref}`).click({ button: "right" });
       await page.getByTestId(`commit-ref-context-${ref}-delete`).click();
       const dialog = page.getByTestId("commit-ref-delete-dialog");
