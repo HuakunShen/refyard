@@ -1,9 +1,14 @@
+/** Describes shared context-menu actions and removes redundant separators. */
 export type ContextAction =
   | {
       readonly kind: "action";
       readonly id: string;
       readonly label: string;
       readonly disabled?: boolean;
+      /** Re-evaluated while the menu is open for temporary host/UI activity. */
+      readonly disabledWhile?: () => boolean;
+      /** Visible explanation when a known precondition disables this action. */
+      readonly disabledReason?: string;
       readonly destructive?: boolean;
       /**
        * Menu items that reflect a boolean setting render a check instead of a
@@ -16,6 +21,13 @@ export type ContextAction =
       readonly kind: "separator";
       readonly id: string;
     };
+
+/** Checks both fixed eligibility and the current activity state before activation. */
+export function contextActionDisabled(
+  action: Extract<ContextAction, { kind: "action" }>,
+): boolean {
+  return action.disabled === true || action.disabledWhile?.() === true;
+}
 
 /** Keep action order while removing separators that would render as visual noise. */
 export function compactContextActions(

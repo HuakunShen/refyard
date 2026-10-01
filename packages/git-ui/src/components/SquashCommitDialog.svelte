@@ -45,17 +45,22 @@
       <Dialog.Title>
         {subject === null
           ? m.squash_into()
-          : `Squash "${subject}" into the commit below?`}
+          : m.dialog_squash_title({ subject })}
       </Dialog.Title>
       <Dialog.Description>
         {parentSubject === null
-          ? "The two commits become one, combining both changes. No content is lost."
-          : `The two commits become one, combining "${parentSubject}" and "${subject}". No content is lost.`}
+          ? m.dialog_squash_note()
+          : m.dialog_squash_named_note({
+              parent: parentSubject,
+              subject: subject ?? m.dialog_commit(),
+            })}
       </Dialog.Description>
     </Dialog.Header>
     <label class="flex flex-col gap-1.5 text-sm">
       <span class="text-muted-foreground">
-        Commit message — leave empty to keep "{parentSubject ?? "the parent"}"
+        {m.dialog_squash_message({
+          parent: parentSubject ?? m.dialog_parent(),
+        })}
       </span>
       <!-- svelte-ignore a11y_autofocus -->
       <textarea
@@ -76,7 +81,7 @@
         onclick={confirm}
         data-testid={testId === undefined ? undefined : `${testId}-confirm`}
       >
-        {busy ? m.working() : "Squash"}
+        {busy ? m.working() : m.dialog_squash_confirm()}
       </Button>
     </Dialog.Footer>
   </Dialog.Content>

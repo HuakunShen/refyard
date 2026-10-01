@@ -1,8 +1,10 @@
 <script lang="ts">
+  /** Renders shared context actions on a single trigger with disabled explanations. */
   import type { Snippet } from "svelte";
   import * as ContextMenu from "./ui/context-menu/index.js";
   import {
     compactContextActions,
+    contextActionDisabled,
     type ContextAction,
   } from "../lib/context-actions.js";
 
@@ -37,14 +39,24 @@
         <ContextMenu.Separator />
       {:else}
         <ContextMenu.Item
-          disabled={action.disabled}
+          disabled={contextActionDisabled(action)}
           variant={action.destructive ? "destructive" : "default"}
-          onclick={action.onSelect}
+          onclick={() => {
+            if (!contextActionDisabled(action)) action.onSelect();
+          }}
           data-testid={testId === undefined
             ? undefined
             : `${testId}-${action.id}`}
         >
-          {action.label}
+          <span class="min-w-0">
+            <span class="block">{action.label}</span>
+            {#if contextActionDisabled(action) && action.disabledReason !== undefined}
+              <span
+                class="block whitespace-normal text-xs text-muted-foreground"
+                >{action.disabledReason}</span
+              >
+            {/if}
+          </span>
         </ContextMenu.Item>
       {/if}
     {/each}

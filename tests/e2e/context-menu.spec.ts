@@ -1,3 +1,4 @@
+/** Exercises graph and workbench context menus against isolated Git repositories. */
 import { expect, test } from "@playwright/test";
 import {
   createBareRemote,
@@ -24,6 +25,377 @@ test.describe("Git context menus", () => {
     await repo.dispose();
   });
 
+  test("translates graph commit and ref menus when switching languages", async ({
+    page,
+  }) => {
+    // Prevents graph actions retaining English after the user selects Chinese.
+    await repo.git(["branch", "graph-ref", historicalOid]);
+    await repo.git(["tag", "graph-tag", historicalOid]);
+    const targetOid = await repo.headOid();
+    await page.goto(service.pairingUrl);
+    await page.getByTestId("settings-open").click();
+    await page.getByTestId("settings-language-zh").click();
+    await page
+      .getByTestId(`commit-row-${targetOid}`)
+      .click({ button: "right" });
+    const menu = page.getByTestId(`commit-context-${targetOid}`);
+    for (const [id, label] of [
+      ["create-branch", "在此创建分支…"],
+      ["create-tag", "在此创建标签…"],
+      ["create-worktree", "从这里创建工作树…"],
+      ["revert-commit", "还原提交…"],
+      ["cherry-pick-commit", "摘取提交…"],
+      ["drop-commit", "丢弃提交…"],
+      ["reset-branch", "把分支重置到这里…"],
+    ]) {
+      await expect(
+        menu.getByTestId(`commit-context-${targetOid}-${id}`),
+      ).toHaveText(label);
+    }
+    await page.keyboard.press("Escape");
+    await page
+      .getByTestId("commit-ref-refs/heads/graph-ref")
+      .click({ button: "right" });
+    const prefix = "commit-ref-context-refs/heads/graph-ref";
+    await expect(page.getByTestId(`${prefix}-checkout`)).toHaveText("切换分支");
+    await expect(page.getByTestId(`${prefix}-merge`)).toHaveText(
+      "将 graph-ref 合并到 main",
+    );
+    await expect(page.getByTestId(`${prefix}-rebase-onto`)).toHaveText(
+      "将 main 变基到 graph-ref",
+    );
+    await expect(page.getByTestId(`${prefix}-delete`)).toHaveText("删除…");
+    await page.keyboard.press("Escape");
+    await page
+      .getByTestId("commit-ref-refs/tags/graph-tag")
+      .click({ button: "right" });
+    await expect(
+      page.getByTestId("commit-ref-context-refs/tags/graph-tag-delete"),
+    ).toHaveText("删除…");
+    await page.keyboard.press("Escape");
+    await page.getByTestId("settings-open").click();
+    await page.getByTestId("settings-language-en").click();
+    await page
+      .getByTestId(`commit-row-${targetOid}`)
+      .click({ button: "right" });
+    await expect(
+      menu.getByTestId(`commit-context-${targetOid}-create-branch`),
+    ).toHaveText("Create Branch Here…");
+  });
+
+  test("translates graph action dialogs and reset mode explanations", async ({
+    page,
+  }) => {
+    // Prevents Chinese menus leading into untranslated mutation confirmations.
+    await repo.git(["branch", "dialog-ref", historicalOid]);
+    await repo.git(["tag", "dialog-tag", historicalOid]);
+    const headOid = await repo.headOid();
+    await page.goto(service.pairingUrl);
+    await page.getByTestId("settings-open").click();
+    await page.getByTestId("settings-language-zh").click();
+    for (const [action, dialogId, title, explanation] of [
+      ["create-branch", "commit-ref-dialog", "创建分支", "不切换 HEAD"],
+      ["create-tag", "commit-ref-dialog", "创建标签", "指向此提交"],
+      [
+        "create-worktree",
+        "commit-worktree-dialog",
+        "创建工作树",
+        "批准的根目录",
+      ],
+      ["revert-commit", "commit-revert-dialog", "还原", "新提交"],
+      [
+        "cherry-pick-commit",
+        "commit-cherry-pick-dialog",
+        "摘取",
+        "原始提交说明和作者",
+      ],
+      ["drop-commit", "commit-drop-dialog", "丢弃", "改写历史"],
+      ["reset-branch", "commit-reset-dialog", "将 main 重置", "工作区"],
+      ["squash-commit", "commit-squash-dialog", "并入", "两个提交合为一个"],
+    ]) {
+      const oid =
+        action === "squash-commit" || action === "drop-commit"
+          ? headOid
+          : historicalOid;
+      await page.getByTestId(`commit-row-${oid}`).click({ button: "right" });
+      await page.getByTestId(`commit-context-${oid}-${action}`).click();
+      const dialog = page.getByTestId(dialogId);
+      await expect(dialog.getByRole("heading")).toContainText(title);
+      await expect(dialog).toContainText(explanation);
+      if (action === "reset-branch") {
+        await expect(
+          page.getByTestId("commit-reset-dialog-mode-mixed"),
+        ).toContainText("已暂存的改动变为未暂存");
+        await expect(
+          page.getByTestId("commit-reset-dialog-mode-soft"),
+        ).toContainText("保持暂存区原样");
+        await expect(
+          page.getByTestId("commit-reset-dialog-confirm"),
+        ).toHaveText("重置分支");
+      }
+      await dialog.getByRole("button", { name: "取消", exact: true }).click();
+    }
+    for (const [ref, title, note] of [
+      ["refs/heads/dialog-ref", "删除 dialog-ref？", "未合并的工作"],
+      ["refs/tags/dialog-tag", "删除标签 dialog-tag？", "远端副本"],
+    ]) {
+      await page.getByTestId(`commit-ref-${ref}`).click({ button: "right" });
+      await page.getByTestId(`commit-ref-context-${ref}-delete`).click();
+      const dialog = page.getByTestId("commit-ref-delete-dialog");
+      await expect(dialog.getByRole("heading")).toHaveText(title);
+      await expect(dialog).toContainText(note);
+      await dialog.getByRole("button", { name: "取消", exact: true }).click();
+    }
+    await page.getByTestId("settings-open").click();
+    await page.getByTestId("settings-language-en").click();
+    await page
+      .getByTestId(`commit-row-${historicalOid}`)
+      .click({ button: "right" });
+    await page
+      .getByTestId(`commit-context-${historicalOid}-reset-branch`)
+      .click();
+    await expect(
+      page.getByTestId("commit-reset-dialog-mode-mixed"),
+    ).toContainText("Staged work becomes unstaged");
+    await expect(
+      page.getByTestId("commit-reset-dialog-mode-soft"),
+    ).toContainText("leaves the index exactly as it is");
+  });
+
+  test("explains commit-shape refusals before opening mutation dialogs", async ({
+    page,
+  }) => {
+    // Prevents offering unsupported root drops or merge replay as confirmable operations.
+    await repo.git(["branch", "menu-side", historicalOid]);
+    const linearOid = await repo.headOid();
+    await repo.git(["switch", "menu-side"]);
+    await repo.write("side.txt", "side change\n");
+    await repo.commitAll("side change");
+    await repo.git(["switch", "main"]);
+    await repo.git(["merge", "--no-ff", "menu-side", "-m", "merge for menu"]);
+    const mergeOid = await repo.headOid();
+    await page.goto(service.pairingUrl);
+    await page
+      .getByTestId(`commit-row-${historicalOid}`)
+      .click({ button: "right" });
+    const rootDrop = page.getByTestId(
+      `commit-context-${historicalOid}-drop-commit`,
+    );
+    await expect(rootDrop).toBeDisabled();
+    await expect(rootDrop).toContainText("The first commit cannot be dropped");
+    await rootDrop.click({ force: true });
+    await expect(page.getByTestId("commit-drop-dialog")).toHaveCount(0);
+    await expect(
+      page.getByTestId(`commit-context-${historicalOid}-revert-commit`),
+    ).toBeEnabled();
+    await expect(
+      page.getByTestId(`commit-context-${historicalOid}-cherry-pick-commit`),
+    ).toBeEnabled();
+    await page.keyboard.press("Escape");
+    await page.getByTestId(`commit-row-${mergeOid}`).click({ button: "right" });
+    for (const id of ["revert-commit", "cherry-pick-commit", "drop-commit"]) {
+      const item = page.getByTestId(`commit-context-${mergeOid}-${id}`);
+      await expect(item).toBeDisabled();
+      await expect(item).toContainText(
+        "This operation does not support merge commits",
+      );
+    }
+    await expect(
+      page.getByTestId(`commit-context-${mergeOid}-create-branch`),
+    ).toBeEnabled();
+    await expect(
+      page.getByTestId(`commit-context-${mergeOid}-reset-branch`),
+    ).toBeEnabled();
+    await expect(
+      page.getByTestId(`commit-context-${mergeOid}-copy-sha`),
+    ).toBeEnabled();
+    await page.keyboard.press("Escape");
+    await page
+      .getByTestId(`commit-row-${linearOid}`)
+      .click({ button: "right" });
+    for (const id of ["revert-commit", "cherry-pick-commit", "drop-commit"]) {
+      await expect(
+        page.getByTestId(`commit-context-${linearOid}-${id}`),
+      ).toBeEnabled();
+    }
+    await page.keyboard.press("Escape");
+    await page.getByTestId("settings-open").click();
+    await page.getByTestId("settings-language-zh").click();
+    await page
+      .getByTestId(`commit-row-${historicalOid}`)
+      .click({ button: "right" });
+    await expect(rootDrop).toContainText("不能丢弃首个提交");
+    await page.keyboard.press("Escape");
+    await page.getByTestId(`commit-row-${mergeOid}`).click({ button: "right" });
+    await expect(
+      page.getByTestId(`commit-context-${mergeOid}-revert-commit`),
+    ).toContainText("此操作不支持合并提交");
+    expect(await repo.headOid()).toBe(mergeOid);
+  });
+
+  test("keeps a short viewport menu open while scrolling its actions", async ({
+    page,
+  }) => {
+    // Prevents internal menu scrolling dismissing lower actions, while retaining anchor dismissal.
+    for (let index = 0; index < 18; index += 1) {
+      await repo.write("a.txt", `menu history ${index}\n`);
+      await repo.commitAll(`menu history ${index}`);
+    }
+    const headOid = await repo.headOid();
+    await page.setViewportSize({ width: 1440, height: 420 });
+    await page.goto(service.pairingUrl);
+    const row = page.getByTestId(`commit-row-${headOid}`);
+    await row.click({ button: "right" });
+    const menu = page.getByTestId(`commit-context-${headOid}`);
+    await expect(menu).toBeVisible();
+    expect(
+      await menu.evaluate(
+        (element) => element.scrollHeight > element.clientHeight,
+      ),
+    ).toBe(true);
+    // The production menu deliberately ignores opening-gesture scrolls for 150 ms.
+    await page.waitForTimeout(200);
+    await menu.hover();
+    await page.mouse.wheel(0, 700);
+    await expect(menu).toBeVisible();
+    await expect
+      .poll(() => menu.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(0);
+    const bottomItem = page.getByTestId(
+      `commit-context-${headOid}-copy-message`,
+    );
+    const menuBox = await menu.boundingBox();
+    const itemBox = await bottomItem.boundingBox();
+    if (menuBox === null || itemBox === null) {
+      throw new Error("the scrolled menu or bottom item has no box");
+    }
+    expect(itemBox.y + itemBox.height).toBeLessThanOrEqual(
+      menuBox.y + menuBox.height,
+    );
+    await page.mouse.wheel(0, 700);
+    await expect(menu).toBeVisible();
+    await page.getByTestId(`commit-context-${headOid}-reset-branch`).click();
+    await expect(page.getByTestId("commit-reset-dialog")).toBeVisible();
+    await page
+      .getByTestId("commit-reset-dialog")
+      .getByRole("button", { name: "Cancel", exact: true })
+      .click();
+    await row.click({ button: "right" });
+    await expect(menu).toBeVisible();
+    await page.waitForTimeout(200);
+    const history = page.getByTestId("history-scroll");
+    await history.evaluate((element) => {
+      element.scrollTop = 60;
+    });
+    await expect
+      .poll(() => history.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(0);
+    await expect(menu).toHaveCount(0);
+  });
+
+  test("navigates graph menus with arrows and skips disabled operations", async ({
+    page,
+  }) => {
+    // Prevents keyboard users being stranded on the menu container or a disabled operation.
+    await page.goto(service.pairingUrl);
+    const row = page.getByTestId(`commit-row-${historicalOid}`);
+    await row.click({ button: "right" });
+    const prefix = `commit-context-${historicalOid}`;
+    await page.keyboard.press("ArrowDown");
+    await expect(page.getByTestId(`${prefix}-create-branch`)).toBeFocused();
+    await page.keyboard.press("End");
+    await expect(page.getByTestId(`${prefix}-copy-message`)).toBeFocused();
+    await page.keyboard.press("ArrowDown");
+    await expect(page.getByTestId(`${prefix}-create-branch`)).toBeFocused();
+    await page.keyboard.press("ArrowUp");
+    await expect(page.getByTestId(`${prefix}-copy-message`)).toBeFocused();
+    await page.keyboard.press("ArrowUp");
+    await expect(page.getByTestId(`${prefix}-copy-sha`)).toBeFocused();
+    await page.keyboard.press("ArrowUp");
+    await expect(page.getByTestId(`${prefix}-reset-branch`)).toBeFocused();
+    await page.keyboard.press("ArrowUp");
+    await expect(
+      page.getByTestId(`${prefix}-cherry-pick-commit`),
+    ).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("commit-cherry-pick-dialog")).toBeVisible();
+    await page
+      .getByTestId("commit-cherry-pick-dialog")
+      .getByRole("button", { name: "Cancel", exact: true })
+      .click();
+    await expect(row).toBeFocused();
+    await row.click({ button: "right" });
+    await page.keyboard.press("Home");
+    await expect(page.getByTestId(`${prefix}-create-branch`)).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId(prefix)).toHaveCount(0);
+  });
+
+  test("returns keyboard focus to the trigger and lets Tab leave the menu", async ({
+    page,
+  }) => {
+    // Prevents Escape losing focus and Tab walking through every floating menu button.
+    await page.goto(service.pairingUrl);
+    const headOid = await repo.headOid();
+    const row = page.getByTestId(`commit-row-${headOid}`);
+    const menu = page.getByTestId(`commit-context-${headOid}`);
+    await row.click({ button: "right" });
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Escape");
+    await expect(menu).toHaveCount(0);
+    await expect(row).toBeFocused();
+    await row.click({ button: "right" });
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Tab");
+    await expect(menu).toHaveCount(0);
+    await expect(page.getByTestId(`commit-row-${historicalOid}`)).toBeFocused();
+    await row.click({ button: "right" });
+    await page.keyboard.press("Shift+Tab");
+    await expect(menu).toHaveCount(0);
+    await expect(page.getByTestId("commit-ref-refs/heads/main")).toBeFocused();
+    const badge = page.getByTestId("commit-ref-refs/heads/main");
+    await badge.click({ button: "right" });
+    await page.keyboard.press("Escape");
+    await expect(badge).toBeFocused();
+    const gear = page.getByTestId("history-column-settings");
+    await gear.click();
+    await expect(
+      page.getByTestId("history-column-settings-menu"),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(gear).toBeFocused();
+    await row.click({ button: "right" });
+    const search = page.getByPlaceholder("Search commit messages…");
+    await search.click();
+    await expect(menu).toHaveCount(0);
+    await expect(search).toBeFocused();
+  });
+
+  test("does not steal an annotation's focus when dialog autofocus runs late", async ({
+    page,
+  }) => {
+    // Prevents a delayed initial-focus callback redirecting tag annotation input into the name.
+    await page.goto(service.pairingUrl);
+    const row = page.getByTestId(`commit-row-${historicalOid}`);
+    await expect(row).toBeVisible();
+    await page.evaluate(`(() => {
+      const frame = window.requestAnimationFrame.bind(window);
+      window.requestAnimationFrame = (callback) => frame((time) => window.setTimeout(() => callback(time), 250));
+    })()`);
+    await row.click({ button: "right" });
+    await page
+      .getByTestId(`commit-context-${historicalOid}-create-tag`)
+      .click();
+    const name = page.getByTestId("commit-ref-name");
+    const annotation = page.getByTestId("commit-ref-annotation");
+    await name.fill("focus-tag");
+    await annotation.fill("annotation stays here");
+    await page.waitForTimeout(350);
+    await expect(annotation).toBeFocused();
+    await expect(name).toHaveValue("focus-tag");
+    await expect(annotation).toHaveValue("annotation stays here");
+  });
+
   test("creates refs from a commit context menu", async ({ page }) => {
     await page.goto(service.pairingUrl);
     const row = page.getByTestId(`commit-row-${historicalOid}`);
@@ -34,7 +406,8 @@ test.describe("Git context menus", () => {
     await expect(menu).toBeVisible();
     await expect(
       page.getByTestId(`commit-context-${historicalOid}-create-branch`),
-    ).toHaveText("Create Branch Here…");    await expect(
+    ).toHaveText("Create Branch Here…");
+    await expect(
       page.getByTestId(`commit-context-${historicalOid}-create-tag`),
     ).toHaveText("Create Tag Here…");
     await expect(

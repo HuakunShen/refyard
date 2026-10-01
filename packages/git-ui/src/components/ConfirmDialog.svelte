@@ -1,4 +1,5 @@
 <script lang="ts">
+  /** Confirms an operation with localized defaults and caller-supplied impact text. */
   import { m } from "../i18n.js";
   import { Button } from "./ui/button/index.js";
   import * as Dialog from "./ui/dialog/index.js";
@@ -21,7 +22,7 @@
     title,
     description,
     confirmLabel,
-    cancelLabel = "Cancel",
+    cancelLabel = undefined,
     disabled = false,
     busy = false,
     destructive = true,
@@ -43,7 +44,7 @@
     </Dialog.Header>
     <Dialog.Footer>
       <Button variant="ghost" disabled={busy} onclick={() => (open = false)}>
-        {cancelLabel}
+        {cancelLabel ?? m.common_cancel()}
       </Button>
       <Button
         variant={destructive ? "destructive" : "default"}

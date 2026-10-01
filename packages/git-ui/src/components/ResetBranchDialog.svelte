@@ -44,12 +44,12 @@
     {
       id: "mixed",
       label: m.reset_mixed_hint(),
-      note: "Moves the branch and resets the index to the commit. Staged work becomes unstaged; every file keeps its content.",
+      note: m.dialog_reset_mixed_note(),
     },
     {
       id: "soft",
       label: m.reset_soft_hint(),
-      note: "Moves the branch and leaves the index exactly as it is, so the same changes stay staged on top of the new head.",
+      note: m.dialog_reset_soft_note(),
     },
   ];
 
@@ -66,12 +66,11 @@
         {subject === null
           ? m.reset_branch_here()
           : branchName === null
-            ? `Reset branch to "${subject}"?`
-            : `Reset ${branchName} to "${subject}"?`}
+            ? m.dialog_reset_unnamed_title({ subject })
+            : m.dialog_reset_title({ branch: branchName, subject })}
       </Dialog.Title>
       <Dialog.Description>
-        Moves the checked-out branch to this commit. The working tree is never
-        touched and no content is lost.
+        {m.dialog_reset_note()}
       </Dialog.Description>
     </Dialog.Header>
     <div
@@ -121,7 +120,7 @@
         onclick={confirm}
         data-testid={testId === undefined ? undefined : `${testId}-confirm`}
       >
-        {busy ? m.working() : "Reset branch"}
+        {busy ? m.working() : m.dialog_reset_confirm()}
       </Button>
     </Dialog.Footer>
   </Dialog.Content>

@@ -52,17 +52,16 @@
       <Dialog.Title>
         {subject === null
           ? m.worktree_from_here()
-          : `Create worktree from "${subject}"?`}
+          : m.dialog_worktree_title({ subject })}
       </Dialog.Title>
       <Dialog.Description>
-        Adds a linked worktree inside the approved root, with a new branch
-        starting at this commit. Your checked-out branch and working tree stay
-        where they are.
+        {m.dialog_worktree_note()}
       </Dialog.Description>
     </Dialog.Header>
     <div class="flex flex-col gap-3">
       <label class="flex flex-col gap-1.5 text-sm">
-        <span class="text-muted-foreground">{m.worktree_new_branch_name()}</span>
+        <span class="text-muted-foreground">{m.worktree_new_branch_name()}</span
+        >
         <!-- svelte-ignore a11y_autofocus -->
         <input
           autofocus
@@ -78,7 +77,7 @@
         </span>
         <input
           bind:value={relativeDestination}
-          placeholder="e.g. worktrees/my-branch"
+          placeholder={m.dialog_worktree_placeholder()}
           class="h-9 rounded-lg border border-border/60 bg-transparent px-3"
           data-testid={testId === undefined
             ? undefined
@@ -96,7 +95,7 @@
         onclick={confirm}
         data-testid={testId === undefined ? undefined : `${testId}-confirm`}
       >
-        {busy ? m.working() : "Create worktree"}
+        {busy ? m.working() : m.dialog_worktree_confirm()}
       </Button>
     </Dialog.Footer>
   </Dialog.Content>

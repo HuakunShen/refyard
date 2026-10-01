@@ -7,15 +7,17 @@
    * triggers fighting over one right-click. The layer positions itself at
    * viewport coordinates (it must live outside any scrolling, transforming
    * ancestor), flips back inside the viewport when the pointer was near an
-   * edge, and closes on any outside pointer press, Escape, or scroll — the
+   * edge, and closes on any outside pointer press, Escape, or outside scroll — the
    * same dismissal set the native menu it replaces has.
    */
   import Check from "@lucide/svelte/icons/check";
   import {
     compactContextActions,
+    contextActionDisabled,
     type ContextAction,
   } from "../lib/context-actions.js";
   import { cn } from "../lib/utils.js";
+  import { tabStopsWithin } from "../lib/tab-stops.js";
 
   interface Props {
     open: boolean;
@@ -23,10 +25,19 @@
     y: number;
     actions: readonly ContextAction[];
     testId?: string;
+    trigger?: HTMLElement | null;
     onClose: () => void;
   }
 
-  let { open, x, y, actions, testId = undefined, onClose }: Props = $props();
+  let {
+    open,
+    x,
+    y,
+    actions,
+    testId = undefined,
+    trigger = null,
+    onClose,
+  }: Props = $props();
 
   let layer = $state<HTMLDivElement | null>(null);
   /** When this open cycle began, for the scroll grace window below. */
@@ -53,7 +64,18 @@
     element.style.top = `${top}px`;
   });
 
-  function onScroll(): void {
+  function onScroll(event: Event): void {
+    if (!open) {
+      return;
+    }
+    // Scrolling the menu reveals actions; only scrolling its background moves the anchor.
+    if (
+      layer !== null &&
+      event.target instanceof Node &&
+      layer.contains(event.target)
+    ) {
+      return;
+    }
     // The scroll that reveals the clicked target fires on the frame *after*
     // the click (Chromium dispatches scroll events asynchronously), so a scroll
     // arriving this soon after open is the opening gesture's own — not a user
@@ -76,18 +98,82 @@
     onClose();
   }
 
+  function closeToTrigger(): void {
+    if (trigger?.isConnected) {
+      trigger.focus({ preventScroll: true });
+    }
+    onClose();
+  }
+
   function onKeyDown(event: KeyboardEvent): void {
+    const element = layer;
+    if (
+      !open ||
+      element === null ||
+      !element.contains(document.activeElement)
+    ) {
+      return;
+    }
     if (event.key === "Escape") {
       event.stopPropagation();
-      onClose();
+      closeToTrigger();
+      return;
+    }
+    if (event.key === "Tab") {
+      event.stopPropagation();
+      // Follow the trigger's tab order consistently across browser keyboard settings.
+      const candidates = tabStopsWithin(document).filter(
+        (candidate) => !element.contains(candidate),
+      );
+      const index = candidates.findIndex((candidate) => candidate === trigger);
+      const next =
+        index < 0 ? undefined : candidates[index + (event.shiftKey ? -1 : 1)];
+      if (next !== undefined) {
+        event.preventDefault();
+        onClose();
+        next.focus({ preventScroll: true });
+      } else {
+        // At the document boundary, allow the browser to move into its own controls.
+        closeToTrigger();
+      }
+      return;
+    }
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+      return;
+    }
+    const items = Array.from(
+      element.querySelectorAll<HTMLButtonElement>(
+        'button[role="menuitem"]:not(:disabled)',
+      ),
+    );
+    if (items.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const current = items.findIndex((item) => item === document.activeElement);
+    const next =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? items.length - 1
+          : event.key === "ArrowDown"
+            ? (current + 1) % items.length
+            : current < 0
+              ? items.length - 1
+              : (current - 1 + items.length) % items.length;
+    const item = items[next];
+    if (item !== undefined) {
+      item.focus({ preventScroll: true });
+      item.scrollIntoView({ block: "nearest" });
     }
   }
 
   function select(action: Extract<ContextAction, { kind: "action" }>): void {
-    if (action.disabled) {
+    if (contextActionDisabled(action)) {
       return;
     }
-    onClose();
+    closeToTrigger();
     action.onSelect();
   }
 </script>
@@ -104,7 +190,7 @@
     role="menu"
     tabindex="-1"
     data-testid={testId}
-    class="fixed z-50 max-h-[70vh] min-w-56 overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none custom-scrollbar"
+    class="fixed z-50 max-h-[70vh] min-w-56 max-w-[min(28rem,calc(100vw-16px))] overflow-y-auto overscroll-contain rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none custom-scrollbar"
     style="left: {x}px; top: {y}px"
   >
     {#each visibleActions as action (action.id)}
@@ -114,15 +200,16 @@
         <button
           type="button"
           role="menuitem"
-          disabled={action.disabled}
+          tabindex="-1"
+          disabled={contextActionDisabled(action)}
           data-testid={testId === undefined
             ? undefined
             : `${testId}-${action.id}`}
           class={cn(
             "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none transition-colors",
-            action.disabled
-              ? "pointer-events-none opacity-50"
-              : "hover:bg-accent hover:text-accent-foreground",
+            contextActionDisabled(action)
+              ? "opacity-50"
+              : "hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground",
             action.destructive &&
               "text-destructive dark:text-red-400 hover:bg-destructive/10",
           )}
@@ -133,7 +220,15 @@
           {:else}
             <span class="size-3.5 shrink-0"></span>
           {/if}
-          {action.label}
+          <span class="min-w-0">
+            <span class="block">{action.label}</span>
+            {#if contextActionDisabled(action) && action.disabledReason !== undefined}
+              <span
+                class="block whitespace-normal text-xs font-normal text-muted-foreground"
+                >{action.disabledReason}</span
+              >
+            {/if}
+          </span>
         </button>
       {/if}
     {/each}

@@ -46,7 +46,6 @@
   import TagIcon from "@lucide/svelte/icons/tag";
   import { headSegmentFor } from "../lib/head-segment.js";
   import { Badge } from "./ui/badge/index.js";
-  import AuthorAvatar from "./AuthorAvatar.svelte";
   import CommitGraph from "./CommitGraph.svelte";
   import CommitRefDialog from "./CommitRefDialog.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
@@ -54,6 +53,7 @@
   import WorktreeFromCommitDialog from "./WorktreeFromCommitDialog.svelte";
   import SquashCommitDialog from "./SquashCommitDialog.svelte";
   import ContextMenuLayer from "./ContextMenuLayer.svelte";
+  import { commitReplayRestrictions } from "../lib/commit-replay-restrictions.js";
   import StateBanner from "./StateBanner.svelte";
   import {
     DEFAULT_METRICS,
@@ -63,6 +63,8 @@
   } from "../lib/geometry.js";
   import {
     authorAvatar,
+    gravatarAvatarUrl,
+    initialsAvatar,
     githubBranchUrl,
     githubCommitUrl,
   } from "../lib/avatars.js";
@@ -199,8 +201,7 @@
       branchName: string,
     ) => void;
     /**
-     * Author photos from GitHub, keyed off noreply commit emails. On by
-     * default; a privacy-conscious host can turn the column to initials only.
+     * Author photos on graph nodes. False disables all node photos and initials.
      */
     showAvatars?: boolean;
     /**
@@ -431,20 +432,67 @@
    */
   const headSegment = $derived(filtered ? null : headSegmentFor(rows));
 
-  /**
-   * GitHub photo URLs by commit oid, for the graph's avatar nodes. Authors the
-   * commit email cannot map keep the plain coloured dot.
-   */
+  // Photos are resolved once per distinct ordinary email, never once per commit.
+  let emailPhotos = $state<ReadonlyMap<string, string>>(new Map());
+  $effect(() => {
+    const emails = showAvatars
+      ? [
+          ...new Set(
+            commits
+              .filter(
+                (commit) =>
+                  commit.parents.length < 2 &&
+                  authorAvatar(commit.authorEmail, commit.authorName).kind !==
+                    "github",
+              )
+              .map((commit) => commit.authorEmail),
+          ),
+        ]
+      : [];
+    let current = true;
+    void Promise.all(
+      emails.map(
+        async (email) =>
+          [email, await gravatarAvatarUrl(email).catch(() => null)] as const,
+      ),
+    ).then((entries) => {
+      if (!current) return;
+      const photos = new Map<string, string>();
+      for (const [email, url] of entries)
+        if (url !== null) photos.set(email, url);
+      emailPhotos = photos;
+    });
+    return () => {
+      current = false;
+    };
+  });
+  const initialsByOid = $derived(
+    new Map(
+      showAvatars
+        ? commits
+            .filter((commit) => commit.parents.length < 2)
+            .map(
+              (commit) =>
+                [
+                  commit.oid,
+                  initialsAvatar(commit.authorEmail, commit.authorName),
+                ] as const,
+            )
+        : [],
+    ),
+  );
   const avatarByOid = $derived.by(() => {
     const map = new Map<string, string>();
-    if (showAvatars) {
+    if (showAvatars)
       for (const commit of commits) {
+        if (commit.parents.length > 1) continue;
         const avatar = authorAvatar(commit.authorEmail, commit.authorName);
-        if (avatar.kind === "github") {
-          map.set(commit.oid, avatar.url);
-        }
+        const url =
+          avatar.kind === "github"
+            ? avatar.url
+            : emailPhotos.get(commit.authorEmail);
+        if (url !== undefined) map.set(commit.oid, url);
       }
-    }
     return map;
   });
 
@@ -530,7 +578,7 @@
       settingsMenu,
       columnSettingsActions(),
       { left: rect.left, bottom: rect.bottom },
-      { testId: "history-column-settings-menu" },
+      { testId: "history-column-settings-menu", trigger: gear },
     );
   }
 
@@ -539,6 +587,18 @@
   const commitMenu = $state(createContextMenuState());
 
   function commitActionsFor(commit: CommitSummary): readonly ContextAction[] {
+    const restrictions = commitReplayRestrictions(commit);
+    const mergeReason = restrictions.merge
+      ? m.commit_replay_merge_unsupported()
+      : undefined;
+    const dropReason =
+      restrictions.drop === "merge"
+        ? mergeReason
+        : restrictions.drop === "root"
+          ? m.commit_drop_root_unsupported()
+          : restrictions.drop === "missing-parent"
+            ? m.commit_drop_parent_unavailable()
+            : undefined;
     return [
       ...(onCreateBranchAt === undefined
         ? []
@@ -546,8 +606,8 @@
             {
               kind: "action" as const,
               id: "create-branch",
-              label: "Create Branch Here…",
-              disabled: contextDisabled,
+              label: m.menu_create_branch_here(),
+              disabledWhile: () => contextDisabled,
               onSelect: () => openRefDialog("branch", commit),
             },
           ]),
@@ -557,8 +617,8 @@
             {
               kind: "action" as const,
               id: "create-tag",
-              label: "Create Tag Here…",
-              disabled: contextDisabled,
+              label: m.menu_create_tag_here(),
+              disabledWhile: () => contextDisabled,
               onSelect: () => openRefDialog("tag", commit),
             },
           ]),
@@ -568,8 +628,8 @@
             {
               kind: "action" as const,
               id: "create-worktree",
-              label: "Create Worktree from Here…",
-              disabled: contextDisabled,
+              label: m.menu_create_worktree_here(),
+              disabledWhile: () => contextDisabled,
               onSelect: () => askWorktree(commit),
             },
           ]),
@@ -580,8 +640,10 @@
             {
               kind: "action" as const,
               id: "revert-commit",
-              label: "Revert Commit…",
-              disabled: contextDisabled,
+              label: m.menu_revert_commit(),
+              disabled: restrictions.merge,
+              disabledWhile: () => contextDisabled,
+              disabledReason: mergeReason,
               onSelect: () => askRevert(commit),
             },
           ]),
@@ -591,8 +653,10 @@
             {
               kind: "action" as const,
               id: "cherry-pick-commit",
-              label: "Cherry-Pick Commit…",
-              disabled: contextDisabled,
+              label: m.menu_cherry_pick_commit(),
+              disabled: restrictions.merge,
+              disabledWhile: () => contextDisabled,
+              disabledReason: mergeReason,
               onSelect: () => askCherryPick(commit),
             },
           ]),
@@ -604,8 +668,8 @@
             {
               kind: "action" as const,
               id: "squash-commit",
-              label: "Squash into Parent…",
-              disabled: contextDisabled,
+              label: m.menu_squash_commit(),
+              disabledWhile: () => contextDisabled,
               onSelect: () => askSquash(),
             },
           ]
@@ -617,9 +681,11 @@
             {
               kind: "action" as const,
               id: "drop-commit",
-              label: "Drop Commit…",
+              label: m.menu_drop_commit(),
               destructive: true,
-              disabled: contextDisabled,
+              disabled: restrictions.drop !== null,
+              disabledWhile: () => contextDisabled,
+              disabledReason: dropReason,
               onSelect: () => askDrop(commit),
             },
           ]),
@@ -629,8 +695,8 @@
             {
               kind: "action" as const,
               id: "reset-branch",
-              label: "Reset Branch to Here…",
-              disabled: contextDisabled,
+              label: m.menu_reset_branch_here(),
+              disabledWhile: () => contextDisabled,
               onSelect: () => askReset(commit),
             },
           ]),
@@ -723,7 +789,15 @@
       commitMenu,
       actions,
       { x: event.clientX + 2, y: event.clientY + 2 },
-      { testId: `commit-context-${commit.oid}` },
+      {
+        testId: `commit-context-${commit.oid}`,
+        trigger:
+          event.currentTarget instanceof HTMLElement
+            ? event.currentTarget.querySelector<HTMLButtonElement>(
+                "[data-commit-trigger]",
+              )
+            : null,
+      },
     );
   }
 
@@ -796,8 +870,8 @@
               {
                 kind: "action" as const,
                 id: "checkout",
-                label: "Checkout",
-                disabled: contextDisabled,
+                label: m.menu_checkout_branch(),
+                disabledWhile: () => contextDisabled,
                 onSelect: () => onCheckoutBranch(ref.branchName),
               },
             ]
@@ -810,8 +884,11 @@
                 // GitKraken names both sides — "Merge feature into main" — because a
                 // menu opened on a ref label sits between other rows and the direction
                 // is the one thing a misread click cannot undo.
-                label: `Merge ${ref.branchName} into ${currentBranch ?? "current branch"}`,
-                disabled: contextDisabled,
+                label: m.menu_merge_branch_into({
+                  source: ref.branchName,
+                  target: currentBranch ?? m.menu_current_branch(),
+                }),
+                disabledWhile: () => contextDisabled,
                 onSelect: () => onMergeBranch(ref.branchName),
               },
             ]
@@ -821,8 +898,11 @@
               {
                 kind: "action" as const,
                 id: "rebase-onto",
-                label: `Rebase ${currentBranch ?? "current branch"} onto ${ref.branchName}`,
-                disabled: contextDisabled,
+                label: m.menu_rebase_branch_onto({
+                  branch: currentBranch ?? m.menu_current_branch(),
+                  upstream: ref.branchName,
+                }),
+                disabledWhile: () => contextDisabled,
                 onSelect: () => onRebaseOntoBranch(ref.branchName, commit.oid),
               },
             ]
@@ -833,9 +913,9 @@
               {
                 kind: "action" as const,
                 id: "delete",
-                label: "Delete…",
+                label: m.menu_delete_ref(),
                 destructive: true,
-                disabled: contextDisabled,
+                disabledWhile: () => contextDisabled,
                 onSelect: () => askDelete("branch", ref.branchName),
               },
             ]
@@ -874,9 +954,9 @@
               {
                 kind: "action" as const,
                 id: "delete",
-                label: "Delete…",
+                label: m.menu_delete_ref(),
                 destructive: true,
-                disabled: contextDisabled,
+                disabledWhile: () => contextDisabled,
                 onSelect: () => askDelete("tag", ref.tagName),
               },
             ]
@@ -900,8 +980,11 @@
               {
                 kind: "action" as const,
                 id: "checkout-remote",
-                label: `Checkout ${ref.remoteName}/${ref.branchName} as Local Branch`,
-                disabled: contextDisabled,
+                label: m.menu_checkout_remote({
+                  remote: ref.remoteName,
+                  branch: ref.branchName,
+                }),
+                disabledWhile: () => contextDisabled,
                 onSelect: () =>
                   onCheckoutRemoteBranch(ref.branchName, commit.oid),
               },
@@ -970,7 +1053,9 @@
               {
                 kind: "action" as const,
                 id: `copy-${entry.refName}`,
-                label: `Copy ${commitRefDisplayName(entry.ref)}`,
+                label: m.menu_copy_ref({
+                  ref: commitRefDisplayName(entry.ref),
+                }),
                 onSelect: () => onCopyText(commitRefDisplayName(entry.ref)),
               },
             ]),
@@ -983,7 +1068,13 @@
       commitMenu,
       actions,
       { x: event.clientX + 2, y: event.clientY + 2 },
-      { testId: `commit-ref-context-${group.primaryRefName}` },
+      {
+        testId: `commit-ref-context-${group.primaryRefName}`,
+        trigger:
+          event.currentTarget instanceof HTMLElement
+            ? event.currentTarget
+            : null,
+      },
     );
   }
 
@@ -1302,6 +1393,7 @@
                 startIndex={firstVisible}
                 metrics={graphMetrics}
                 {avatarByOid}
+                {initialsByOid}
                 {selectedOid}
               />
             </svg>
@@ -1453,6 +1545,7 @@
                     type="button"
                     onclick={() => onSelect(commit)}
                     aria-current={selected ? "true" : undefined}
+                    data-commit-trigger
                     data-testid={`commit-row-${commit.oid}`}
                     class={cn(
                       "flex h-full items-center gap-2 px-2.5 text-left",
@@ -1498,12 +1591,6 @@
                       class="flex shrink-0 items-center gap-1.5 overflow-hidden border-r border-border/25 px-2.5"
                       style="width: {authorCell.width}px; min-width: {authorCell.width}px"
                     >
-                      {#if showAvatars}
-                        <AuthorAvatar
-                          email={commit.authorEmail}
-                          name={commit.authorName}
-                        />
-                      {/if}
                       <span class="truncate text-xs text-muted-foreground"
                         >{commit.authorName}</span
                       >
@@ -1584,8 +1671,7 @@
           {:else if hasMore}
             <span class="text-xs text-ink-faint">{m.commit_scroll_more()}</span>
           {:else}
-            <span class="text-xs text-ink-faint">{m.history_end()}</span
-            >
+            <span class="text-xs text-ink-faint">{m.history_end()}</span>
           {/if}
         </div>
       </div>
@@ -1595,6 +1681,7 @@
 
 <ContextMenuLayer
   open={commitMenu.open}
+  trigger={commitMenu.trigger}
   x={commitMenu.x}
   y={commitMenu.y}
   actions={commitMenu.actions}
@@ -1603,6 +1690,7 @@
 />
 <ContextMenuLayer
   open={settingsMenu.open}
+  trigger={settingsMenu.trigger}
   x={settingsMenu.x}
   y={settingsMenu.y}
   actions={settingsMenu.actions}
@@ -1629,16 +1717,16 @@
   title={pendingDelete === null
     ? m.delete_ref()
     : pendingDelete.kind === "branch"
-      ? `Delete ${pendingDelete.name}?`
-      : `Delete tag ${pendingDelete.name}?`}
+      ? m.dialog_delete_branch_title({ name: pendingDelete.name })
+      : m.dialog_delete_tag_title({ name: pendingDelete.name })}
   description={pendingDelete?.kind === "tag"
-    ? "The tag is removed from this repository. Pushed copies stay on the remote until pushed as a deletion."
-    : "Only fully merged branches can be deleted; unmerged work is refused by Git."}
+    ? m.dialog_delete_tag_note()
+    : m.dialog_delete_branch_note()}
   confirmLabel={pendingDelete === null
     ? m.common_delete()
     : pendingDelete.kind === "branch"
-      ? `Delete ${pendingDelete.name}`
-      : `Delete tag ${pendingDelete.name}`}
+      ? m.dialog_delete_branch_confirm({ name: pendingDelete.name })
+      : m.dialog_delete_tag_confirm({ name: pendingDelete.name })}
   disabled={pendingDelete === null || contextDisabled}
   onConfirm={() => {
     if (pendingDelete === null) {
@@ -1658,11 +1746,11 @@
   bind:open={revertDialogOpen}
   title={pendingRevert === null
     ? m.revert_commit()
-    : `Revert "${pendingRevert.subject}"?`}
-  description="Creates a new commit that undoes this one, with Git's own revert message and your hooks running. Merge commits are refused, and if the revert conflicts with your working tree it is aborted, so your branch comes out unchanged."
+    : m.dialog_revert_title({ subject: pendingRevert.subject })}
+  description={m.dialog_revert_note()}
   confirmLabel={pendingRevert === null
     ? m.revert()
-    : `Revert "${pendingRevert.subject}"`}
+    : m.dialog_revert_confirm({ subject: pendingRevert.subject })}
   disabled={pendingRevert === null || contextDisabled}
   onConfirm={() => {
     if (pendingRevert === null) {
@@ -1706,12 +1794,15 @@
 <ConfirmDialog
   bind:open={cherryPickDialogOpen}
   title={pendingCherryPick === null
-    ? "Cherry-pick commit"
-    : `Cherry-pick "${pendingCherryPick.subject}" onto ${currentBranch ?? "the checked-out branch"}?`}
-  description="Applies this commit's change onto your checked-out branch as a new commit, keeping the original message and author. A conflict stops it for you to resolve, like a merge; a merge commit itself is refused."
+    ? m.cherry_pick_commit()
+    : m.dialog_cherry_pick_title({
+        subject: pendingCherryPick.subject,
+        branch: currentBranch ?? m.dialog_checked_out_branch(),
+      })}
+  description={m.dialog_cherry_pick_note()}
   confirmLabel={pendingCherryPick === null
-    ? "Cherry-pick"
-    : `Cherry-pick "${pendingCherryPick.subject}"`}
+    ? m.cherry_pick()
+    : m.dialog_cherry_pick_confirm({ subject: pendingCherryPick.subject })}
   disabled={pendingCherryPick === null || contextDisabled}
   onConfirm={() => {
     if (pendingCherryPick === null) {
@@ -1727,9 +1818,11 @@
   bind:open={dropDialogOpen}
   title={pendingDrop === null
     ? m.drop_commit()
-    : `Drop "${pendingDrop.subject}"?`}
-  description="Removes this commit from the checked-out branch and replays the commits after it onto its parent — a history rewrite. A conflict stops it for you to resolve, like a merge. Merge commits and the branch's first commit are refused."
-  confirmLabel={pendingDrop === null ? "Drop" : `Drop "${pendingDrop.subject}"`}
+    : m.dialog_drop_title({ subject: pendingDrop.subject })}
+  description={m.dialog_drop_note()}
+  confirmLabel={pendingDrop === null
+    ? m.dialog_drop()
+    : m.dialog_drop_confirm({ subject: pendingDrop.subject })}
   disabled={pendingDrop === null || contextDisabled}
   onConfirm={() => {
     if (pendingDrop === null) {

@@ -17,22 +17,32 @@ export interface ContextMenuState {
   actions: readonly ContextAction[];
   /** Rendered on the menu and each item as `data-testid` prefixes. */
   testId: string | undefined;
+  /** Local opening control; never serialized into backend requests. */
+  trigger?: HTMLElement | null;
 }
 
 export function createContextMenuState(): ContextMenuState {
-  return { open: false, x: 0, y: 0, actions: [], testId: undefined };
+  return {
+    open: false,
+    x: 0,
+    y: 0,
+    actions: [],
+    testId: undefined,
+    trigger: null,
+  };
 }
 
 export function openContextMenu(
   menu: ContextMenuState,
   actions: readonly ContextAction[],
   position: { readonly x: number; readonly y: number },
-  options?: { readonly testId?: string },
+  options?: { readonly testId?: string; readonly trigger?: HTMLElement | null },
 ): void {
   menu.actions = actions;
   menu.x = position.x;
   menu.y = position.y;
   menu.testId = options?.testId;
+  menu.trigger = options?.trigger ?? null;
   menu.open = true;
 }
 
@@ -41,7 +51,7 @@ export function openAnchoredContextMenu(
   menu: ContextMenuState,
   actions: readonly ContextAction[],
   anchor: { readonly left: number; readonly bottom: number },
-  options?: { readonly testId?: string },
+  options?: { readonly testId?: string; readonly trigger?: HTMLElement | null },
 ): void {
   openContextMenu(
     menu,

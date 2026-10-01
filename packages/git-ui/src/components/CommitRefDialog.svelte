@@ -1,4 +1,5 @@
 <script lang="ts">
+  /** Creates a branch or tag at the selected commit without changing the checkout. */
   import { m } from "../i18n.js";
   import type { CommitSummary } from "@refyard/git-contract";
   import { Button } from "./ui/button/index.js";
@@ -55,17 +56,25 @@
   <Dialog.Content data-testid="commit-ref-dialog">
     <Dialog.Header>
       <Dialog.Title>
-        Create {kind} at {commit === null ? "commit" : shortOid(commit.oid)}
+        {kind === "branch"
+          ? m.dialog_create_branch_title({
+              commit:
+                commit === null ? m.dialog_commit() : shortOid(commit.oid),
+            })
+          : m.dialog_create_tag_title({
+              commit:
+                commit === null ? m.dialog_commit() : shortOid(commit.oid),
+            })}
       </Dialog.Title>
       <Dialog.Description>
         {kind === "branch"
-          ? "Create a branch that points at this exact commit without switching HEAD."
-          : "Create a tag that points at this exact commit."}
+          ? m.dialog_create_branch_note()
+          : m.dialog_create_tag_note()}
       </Dialog.Description>
     </Dialog.Header>
 
     <label class="flex flex-col gap-1.5 text-xs text-ink-muted">
-      {kind === "branch" ? m.ref_branch_name() : "Tag name"}
+      {kind === "branch" ? m.ref_branch_name() : m.dialog_tag_name()}
       <input
         class="rounded border border-input bg-transparent px-2.5 py-1.5 font-mono text-sm text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
         bind:value={name}
@@ -86,13 +95,17 @@
     {/if}
 
     <Dialog.Footer>
-      <Button variant="ghost" onclick={() => (open = false)}>{m.common_cancel()}</Button>
+      <Button variant="ghost" onclick={() => (open = false)}
+        >{m.common_cancel()}</Button
+      >
       <Button
         disabled={disabled || name.trim().length === 0 || commit === null}
         onclick={submit}
         data-testid="commit-ref-submit"
       >
-        Create {kind}
+        {kind === "branch"
+          ? m.dialog_create_branch_confirm()
+          : m.dialog_create_tag_confirm()}
       </Button>
     </Dialog.Footer>
   </Dialog.Content>

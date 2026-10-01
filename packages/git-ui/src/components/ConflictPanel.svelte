@@ -1,21 +1,11 @@
 <script lang="ts">
   /**
-   * An unfinished operation: what it is, what is conflicted, and what can end it.
-   *
-   * This panel is deliberately two-sided:
-   *
-   * - **A merge this build started** can be continued or aborted here. The conflicted
-   *   paths come from the status read, never from the operation record, and the
-   *   guidance says resolution happens outside the workbench — there is no conflict
-   *   editor, and pretending otherwise would leave people waiting for one.
-   * - **An operation this build did not start** (rebase, cherry-pick, revert, bisect,
-   *   mailbox apply) is shown and offers nothing. Finishing somebody else's operation
-   *   is not a button this product should have, and the text says why.
-   *
-   * The continue control is disabled while any conflicted path is still unmerged, with
-   * the reason stated: Git would refuse the commit, and a button that can only fail is
-   * worse than a button that explains itself.
+   * The stopped Git operation, conflicted paths, and supported recovery actions.
+   * Status is authoritative even when another tool started the operation.
+   * Continue stays disabled until every conflict has been resolved and staged;
+   * unsupported sequencer states remain visible without completion controls.
    */
+  import { m } from "../i18n.js";
   import { Badge } from "./ui/badge/index.js";
   import { Button } from "./ui/button/index.js";
   import ConfirmAction from "./ConfirmAction.svelte";
@@ -34,8 +24,9 @@
     disabled?: boolean;
     busy?: boolean;
     message?: string | null;
-    onContinue: () => void;
-    onAbort: () => void;
+    /** Absent callbacks mean the backend does not advertise the corresponding recovery operation. */
+    onContinue?: () => void;
+    onAbort?: () => void;
     class?: string;
   }
 
@@ -45,34 +36,38 @@
     disabled = false,
     busy = false,
     message = null,
-    onContinue,
-    onAbort,
+    onContinue = undefined,
+    onAbort = undefined,
     class: className = "",
   }: Props = $props();
 
-  /**
-   * Operations this build can finish: the sequencer states its own effects can
-   * open. A rebase or a bisect is somebody else's state and offers nothing.
-   */
-  const ours: readonly string[] = ["merge", "cherry-pick", "rebase"];
-
   /** The operation's own name, for the buttons that finish it. */
-  const operationName = $derived(
-    operationInProgress === "cherry-pick"
-      ? "cherry-pick"
-      : operationInProgress === "rebase"
-        ? "rebase"
-        : "merge",
-  );
+  const operationName = $derived.by(() => {
+    switch (operationInProgress) {
+      case "merge":
+        return m.conflict_operation_merge();
+      case "cherry-pick":
+        return m.conflict_operation_cherry_pick();
+      case "rebase":
+        return m.conflict_operation_rebase();
+      case "revert":
+        return m.conflict_operation_revert();
+      case "bisect":
+        return m.conflict_operation_bisect();
+      case "apply-mailbox":
+        return m.conflict_operation_mailbox();
+      case "unknown":
+        return m.conflict_operation_unknown();
+      default:
+        return operationInProgress ?? m.conflict_operation_unknown();
+    }
+  });
 
-  const isOurs = $derived(
-    operationInProgress !== null && ours.includes(operationInProgress),
-  );
   const stageSummary = (entry: ConflictedPath): string => {
     const stages = (entry.stages ?? []).map((stage) => stage.stage).sort();
     return stages.length === 0
-      ? "no stages read"
-      : `stages ${stages.join("/")}`;
+      ? m.conflict_no_stages()
+      : m.conflict_stages({ stages: stages.join("/") });
   };
 </script>
 
@@ -91,18 +86,18 @@
   >
     {#if operationInProgress !== null}
       <div class="flex flex-wrap items-center gap-2">
-        <Badge tone="warn">{operationInProgress} in progress</Badge>
-        {#if isOurs}
-          <span class="text-xs text-ink-muted">
-            {conflicted.length === 0
-              ? "no conflicted paths remain — continue to commit the result"
-              : `${conflicted.length} conflicted path(s)`}
-          </span>
-        {/if}
+        <Badge tone="warn"
+          >{m.conflict_in_progress({ operation: operationName })}</Badge
+        >
+        <span class="text-xs text-ink-muted">
+          {conflicted.length === 0
+            ? m.conflict_no_paths()
+            : m.conflict_count({ n: conflicted.length })}
+        </span>
       </div>
     {/if}
 
-    {#if operationInProgress !== null && isOurs}
+    {#if operationInProgress !== null}
       {#if conflicted.length > 0}
         <ul
           class="flex max-h-32 flex-col gap-1 overflow-y-auto"
@@ -122,38 +117,52 @@
             </li>
           {/each}
         </ul>
-        <p class="text-xs text-ink-muted">
-          Resolve these files outside Refyard, stage the results with the
-          staging panel above, then continue. Nothing here edits a conflicted
-          file.
-        </p>
+        {#if onContinue !== undefined}
+          <p class="text-xs text-ink-muted">{m.conflict_resolution_hint()}</p>
+        {/if}
       {/if}
       <div class="flex flex-wrap items-center gap-2">
-        <Button
-          size="sm"
-          disabled={disabled || busy || conflicted.length > 0}
-          onclick={onContinue}
-          data-testid="continue-merge"
-        >
-          Continue {operationName}
-        </Button>
-        <ConfirmAction
-          label="Abort {operationName}"
-          confirmLabel="Abort and restore the state it started from"
-          description="Restores the commit and index the operation started from."
-          disabled={disabled || busy}
-          {busy}
-          onConfirm={onAbort}
-          data-testid="abort-merge"
-        />
+        {#if onContinue !== undefined}
+          <Button
+            size="sm"
+            disabled={disabled || busy || conflicted.length > 0}
+            onclick={onContinue}
+            data-testid="continue-merge"
+          >
+            {m.conflict_continue({ operation: operationName })}
+          </Button>
+        {/if}
+        {#if onAbort !== undefined}
+          <!-- A changed sequencer state must not inherit an armed confirmation. -->
+          {#key operationInProgress}
+            <ConfirmAction
+              label={m.conflict_abort({ operation: operationName })}
+              confirmLabel={m.abort_and_restore()}
+              description={m.conflict_abort_description()}
+              disabled={disabled || busy}
+              {busy}
+              onConfirm={onAbort}
+              data-testid="abort-merge"
+            />
+          {/key}
+        {/if}
       </div>
-    {:else if operationInProgress !== null}
-      <p class="text-xs text-ink-muted" data-testid="foreign-operation-note">
-        This operation was started outside Refyard, and this build does not
-        finish another tool's operation. Complete or abandon it with the tool
-        that started it; writes stay blocked in this worktree until the state is
-        resolved.
-      </p>
+      {#if onContinue === undefined && onAbort === undefined}
+        <p class="text-xs text-ink-muted" data-testid="foreign-operation-note">
+          {m.conflict_unsupported_hint()}
+        </p>
+      {:else if onContinue === undefined}
+        <p
+          class="text-xs text-ink-muted"
+          data-testid="conflict-no-continue-note"
+        >
+          {m.conflict_no_continue_hint()}
+        </p>
+      {:else if onAbort === undefined}
+        <p class="text-xs text-ink-muted" data-testid="conflict-no-abort-note">
+          {m.conflict_no_abort_hint()}
+        </p>
+      {/if}
     {/if}
 
     {#if message !== null}
