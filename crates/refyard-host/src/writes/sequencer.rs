@@ -96,25 +96,15 @@ sequencer_effect!(
 );
 sequencer_effect!(AbortRebaseEffect, MutationKind::AbortRebase, abort_rebase);
 
-/// `git rev-parse --verify --quiet <marker>` for the three markers this build starts.
-fn standing_plan(marker: &str) -> refyard_core::plan::GitPlan {
-    refyard_core::plan::GitPlan::read(vec![
-        "rev-parse".to_string(),
-        "--verify".to_string(),
-        "--quiet".to_string(),
-        marker.to_string(),
-    ])
-}
-
 /// Requires the named marker to stand, refusing with the Node reference's words when
 /// nothing does — "continue" with nothing to continue is a caller mistake, not a no-op.
 async fn require_standing(
     operation_id: &str,
     target: &super::WriteTarget,
-    marker: &str,
+    plan: &refyard_core::plan::GitPlan,
     noun: &str,
 ) -> Result<(), EffectOutcome> {
-    match probe(target, &standing_plan(marker)).await {
+    match probe(target, plan).await {
         None => Err(refused(
             operation_id,
             Problem::new(
@@ -192,7 +182,14 @@ async fn continue_merge(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> E
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };
-    if let Err(outcome) = require_standing(operation_id, &target, "MERGE_HEAD", "merge").await {
+    if let Err(outcome) = require_standing(
+        operation_id,
+        &target,
+        &refyard_core::plan::merge::plan_merge_in_progress(),
+        "merge",
+    )
+    .await
+    {
         return outcome;
     }
     run_plan(
@@ -216,7 +213,14 @@ async fn abort_merge(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> Effe
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };
-    if let Err(outcome) = require_standing(operation_id, &target, "MERGE_HEAD", "merge").await {
+    if let Err(outcome) = require_standing(
+        operation_id,
+        &target,
+        &refyard_core::plan::merge::plan_merge_in_progress(),
+        "merge",
+    )
+    .await
+    {
         return outcome;
     }
     run_plan(
@@ -240,8 +244,13 @@ async fn continue_cherry_pick(host: &Arc<WriteHost>, request: &EffectRequest<'_>
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };
-    if let Err(outcome) =
-        require_standing(operation_id, &target, "CHERRY_PICK_HEAD", "cherry-pick").await
+    if let Err(outcome) = require_standing(
+        operation_id,
+        &target,
+        &refyard_core::plan::replay::plan_cherry_pick_in_progress(),
+        "cherry-pick",
+    )
+    .await
     {
         return outcome;
     }
@@ -266,8 +275,13 @@ async fn abort_cherry_pick(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };
-    if let Err(outcome) =
-        require_standing(operation_id, &target, "CHERRY_PICK_HEAD", "cherry-pick").await
+    if let Err(outcome) = require_standing(
+        operation_id,
+        &target,
+        &refyard_core::plan::replay::plan_cherry_pick_in_progress(),
+        "cherry-pick",
+    )
+    .await
     {
         return outcome;
     }
@@ -292,7 +306,14 @@ async fn continue_rebase(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> 
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };
-    if let Err(outcome) = require_standing(operation_id, &target, "REBASE_HEAD", "rebase").await {
+    if let Err(outcome) = require_standing(
+        operation_id,
+        &target,
+        &refyard_core::plan::replay::plan_rebase_recovery_probe(),
+        "rebase",
+    )
+    .await
+    {
         return outcome;
     }
     run_plan(
@@ -316,7 +337,14 @@ async fn abort_rebase(host: &Arc<WriteHost>, request: &EffectRequest<'_>) -> Eff
         Ok(target) => target,
         Err(problem) => return refused(operation_id, problem),
     };
-    if let Err(outcome) = require_standing(operation_id, &target, "REBASE_HEAD", "rebase").await {
+    if let Err(outcome) = require_standing(
+        operation_id,
+        &target,
+        &refyard_core::plan::replay::plan_rebase_recovery_probe(),
+        "rebase",
+    )
+    .await
+    {
         return outcome;
     }
     run_plan(

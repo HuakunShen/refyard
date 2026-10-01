@@ -114,6 +114,14 @@ pub fn plan_rebase_in_progress() -> GitPlan {
     ])
 }
 
+/// Probe a stopped rebase for recovery without treating an absent marker as fatal.
+/// The diagnostic probe retains stderr; recovery needs the quiet exit-code contract.
+pub fn plan_rebase_recovery_probe() -> GitPlan {
+    let mut plan = plan_rebase_in_progress();
+    plan.argv.insert(2, "--quiet".to_string());
+    plan
+}
+
 /// `git -c core.editor=true rebase --continue` — resume with the editor suppressed.
 ///
 /// Measured on this machine's Git: a bare `rebase --continue` opens the message editor
@@ -285,6 +293,31 @@ mod drop_tests {
         assert_eq!(
             plan_rebase_in_progress().argv,
             vec!["rev-parse", "--verify", "REBASE_HEAD"]
+        );
+    }
+    #[test]
+    fn recovery_probe_preserves_the_read_contract_and_quiet_absence() {
+        // An absent marker must refuse recovery instead of becoming an unknown failure.
+        let plan = plan_rebase_recovery_probe();
+        assert_eq!(
+            plan.argv,
+            vec!["rev-parse", "--verify", "--quiet", "REBASE_HEAD"]
+        );
+        assert_eq!(plan.deadline_class, DeadlineClass::Read);
+        assert!(plan.stdin.is_empty());
+    }
+
+    #[test]
+    fn native_recovery_delegates_argument_construction_to_core() {
+        // Prevents recovery effects from bypassing the trusted planner boundary.
+        let host = include_str!("../../../refyard-host/src/writes/sequencer.rs");
+        assert!(
+            !host.contains("GitPlan::read("),
+            "recovery read argv belongs in core"
+        );
+        assert!(
+            !host.contains("\"rev-parse\""),
+            "Git probe arguments must not be assembled by the host"
         );
     }
 }
