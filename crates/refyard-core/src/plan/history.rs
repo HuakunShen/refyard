@@ -55,7 +55,7 @@ impl<'a> RevListOptions<'a> {
     }
 }
 
-/// `git rev-list --topo-order --parents --max-count=… [filters] --stdin [-- <path>]`.
+/// `git rev-list --date-order --parents --max-count=… [filters] --stdin [-- <path>]`.
 pub fn plan_rev_list(options: RevListOptions<'_>) -> Result<GitPlan, CoreError> {
     let RevListOptions {
         tips,
@@ -89,7 +89,7 @@ pub fn plan_rev_list(options: RevListOptions<'_>) -> Result<GitPlan, CoreError> 
     };
     let mut argv = argv(&[
         "rev-list",
-        "--topo-order",
+        "--date-order",
         "--parents",
         &format!("--max-count={effective_max_count}"),
     ]);
@@ -222,7 +222,7 @@ mod tests {
             plan.argv,
             strings(&[
                 "rev-list",
-                "--topo-order",
+                "--date-order",
                 "--parents",
                 "--max-count=50",
                 "--stdin"
@@ -266,7 +266,7 @@ mod tests {
             strings(&[
                 "--literal-pathspecs",
                 "rev-list",
-                "--topo-order",
+                "--date-order",
                 "--parents",
                 "--max-count=50",
                 "--no-walk=unsorted",

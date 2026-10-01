@@ -73,7 +73,7 @@ describe("literal history filters", () => {
     expect(spec.argv).toEqual([
       "--literal-pathspecs",
       "rev-list",
-      "--topo-order",
+      "--date-order",
       "--parents",
       "--max-count=3",
       "--skip=2",

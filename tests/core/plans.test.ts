@@ -673,7 +673,7 @@ describe("history and object planning", () => {
     // as a command line.
     expect(spec.argv).toEqual([
       "rev-list",
-      "--topo-order",
+      "--date-order",
       "--parents",
       "--max-count=200",
       "--skip=40",

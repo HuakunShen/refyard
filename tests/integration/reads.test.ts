@@ -457,6 +457,94 @@ describe("history reads and paging", () => {
     await harness.dispose();
   });
 
+  it("shows a newer parallel commit before an older ancestor of the current branch", async () => {
+    // Prevents a lane-first walk hiding newer work on independent branches below old history.
+    const base = await repo.headOid();
+    await repo.git(["commit", "--allow-empty", "-m", "current older"], {
+      env: {
+        GIT_AUTHOR_DATE: "2026-01-02T00:00:00Z",
+        GIT_COMMITTER_DATE: "2026-01-02T00:00:00Z",
+      },
+    });
+    const older = await repo.headOid();
+    await repo.git(["commit", "--allow-empty", "-m", "current newest"], {
+      env: {
+        GIT_AUTHOR_DATE: "2026-01-04T00:00:00Z",
+        GIT_COMMITTER_DATE: "2026-01-04T00:00:00Z",
+      },
+    });
+    const newest = await repo.headOid();
+    const tree = new TextDecoder()
+      .decode(await repo.git(["rev-parse", "HEAD^{tree}"]))
+      .trim();
+    const parallel = new TextDecoder()
+      .decode(
+        await repo.git(
+          ["commit-tree", tree, "-p", base, "-m", "parallel middle"],
+          {
+            env: {
+              GIT_AUTHOR_DATE: "2026-01-03T00:00:00Z",
+              GIT_COMMITTER_DATE: "2026-01-03T00:00:00Z",
+            },
+          },
+        ),
+      )
+      .trim();
+    await repo.git(["branch", "parallel", parallel]);
+    const page = await harness.service.history({
+      repositoryId: harness.repositoryId,
+    });
+    expect(page.commits.map((commit) => commit.oid)).toEqual([
+      newest,
+      parallel,
+      older,
+      base,
+    ]);
+  });
+
+  it("includes recent tips beyond sixteen branches and interleaves independent histories by date", async () => {
+    // Prevents alphabetic tip truncation and a topology walk burying recent parallel work.
+    const base = await repo.headOid();
+    const tree = new TextDecoder()
+      .decode(await repo.git(["rev-parse", "HEAD^{tree}"]))
+      .trim();
+    const expected: string[] = [];
+    for (let index = 0; index < 24; index += 1) {
+      const date = `2026-02-${String(index + 1).padStart(2, "0")}T00:00:00Z`;
+      const oid = new TextDecoder()
+        .decode(
+          await repo.git(
+            ["commit-tree", tree, "-p", base, "-m", `parallel ${index}`],
+            { env: { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } },
+          ),
+        )
+        .trim();
+      await repo.git([
+        "branch",
+        `parallel-${String(index).padStart(2, "0")}`,
+        oid,
+      ]);
+      expected.unshift(oid);
+    }
+    await repo.git(["commit", "--allow-empty", "-m", "current latest"], {
+      env: {
+        GIT_AUTHOR_DATE: "2026-03-02T00:00:00Z",
+        GIT_COMMITTER_DATE: "2026-03-02T00:00:00Z",
+      },
+    });
+    const latest = await repo.headOid();
+    const page = await harness.service.history({
+      repositoryId: harness.repositoryId,
+      limit: 100,
+    });
+    expect(page.commits.map((commit) => commit.oid)).toEqual([
+      latest,
+      ...expected,
+      base,
+    ]);
+    expect(page.nextCursor).toBeNull();
+  });
+
   it("filters literal messages, author identities, dates and exact observed refs with AND semantics", async () => {
     await repo.write("search.txt", "one");
     await repo.git(["add", "search.txt"]);

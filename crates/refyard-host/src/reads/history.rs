@@ -68,7 +68,8 @@ const HISTORY_DEFAULT_PAGE_SIZE: usize = 200;
 /// `LIMITS.historyMaxPageSize`.
 const HISTORY_MAX_PAGE_SIZE: usize = 500;
 /// `LIMITS.historyTipsMax`: how many walk tips one page may be pinned to.
-const HISTORY_TIPS_MAX: usize = 16;
+// All parser-accepted refs plus a detached HEAD fit without silently omitting a branch.
+const HISTORY_TIPS_MAX: usize = REF_LIST_MAX_ENTRIES + 1;
 
 /// The filters a cursor continuation may not redefine.
 const HISTORY_FILTERS: [&str; 7] = [
@@ -772,8 +773,20 @@ mod tests {
     }
 
     #[test]
-    fn tips_are_bounded_and_deduplicated() {
+    fn history_keeps_every_tip_in_a_repository_with_more_than_sixteen_branches() {
+        // Parallel development tips must not disappear because their names sort last.
         let refs: Vec<RefRecord> = (0..40)
+            .map(|index| ref_record(&format!("refs/heads/b{index:02}"), &format!("oid{index}")))
+            .collect();
+        let tips = collect_tips(&head_on(Some("detached")), &refs);
+        assert_eq!(tips.len(), 41);
+        assert!(tips.contains(&"oid39".to_string()));
+        assert_eq!(tips[0], "detached");
+    }
+
+    #[test]
+    fn tips_are_bounded_and_deduplicated() {
+        let refs: Vec<RefRecord> = (0..HISTORY_TIPS_MAX + 10)
             .map(|index| ref_record(&format!("refs/heads/b{index:02}"), &format!("oid{index}")))
             .collect();
         let tips = collect_tips(&head_on(None), &refs);

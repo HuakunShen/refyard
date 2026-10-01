@@ -47,7 +47,8 @@ export const LIMITS = {
   commitMessageMaxBytes: 1_048_576,
   branchNameMaxLength: 255,
   /** How many tips a history snapshot may pin. */
-  historyTipsMax: 16,
+  // Every accepted ref (5,000) plus a detached HEAD fits in the history snapshot.
+  historyTipsMax: 5_001,
 } as const;
 
 export const runtimeLimitsSchema = z

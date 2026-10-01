@@ -788,7 +788,7 @@ mod tests {
             event_ring_max_events: 1_024,
             event_ring_max_bytes: 1_048_576,
             path_selection_max_entries: 1_000,
-            history_tips_max: 16,
+            history_tips_max: 5_001,
             commit_message_max_bytes: 1_048_576,
             branch_name_max_length: 255,
         }
@@ -1021,7 +1021,7 @@ mod tests {
                     "eventRingMaxEvents": 1_024,
                     "eventRingMaxBytes": 1_048_576,
                     "pathSelectionMaxEntries": 1_000,
-                    "historyTipsMax": 16,
+                    "historyTipsMax": 5_001,
                     "commitMessageMaxBytes": 1_048_576,
                     "branchNameMaxLength": 255,
                 },

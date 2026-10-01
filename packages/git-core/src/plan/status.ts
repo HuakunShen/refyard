@@ -155,7 +155,7 @@ export function planRevList(
   }
   const argv = [
     "rev-list",
-    "--topo-order",
+    "--date-order",
     "--parents",
     // Git stores commit timestamps as unsigned seconds; a pre-epoch upper bound is empty.
     `--max-count=${options.committedBeforeSeconds !== undefined && options.committedBeforeSeconds < 0 ? 0 : options.maxCount}`,

@@ -125,7 +125,7 @@ fn runtime_limits() -> RuntimeLimits {
         event_ring_max_events: 1_024,
         event_ring_max_bytes: 1_048_576,
         path_selection_max_entries: 1_000,
-        history_tips_max: 16,
+        history_tips_max: 5_001,
         commit_message_max_bytes: 1_048_576,
         branch_name_max_length: 255,
     }
@@ -1852,7 +1852,7 @@ mod tests {
         let limits = runtime_limits();
         assert_eq!(limits.history_default_page_size, 200);
         assert_eq!(limits.history_max_page_size, 500);
-        assert_eq!(limits.history_tips_max, 16);
+        assert_eq!(limits.history_tips_max, 5_001);
         assert_eq!(limits.patch_max_bytes_per_file, 2_097_152);
     }
 
