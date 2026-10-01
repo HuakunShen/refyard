@@ -110,10 +110,10 @@ function contentSecurityPolicy(
     "default-src 'self'",
     `script-src 'self'${inlineHashes.length > 0 ? ` ${inlineHashes.join(" ")}` : ""}`,
     "style-src 'self' 'unsafe-inline'",
-    // Author avatars are the one deliberate cross-origin load: GitHub serves
-    // the photo for a noreply commit email, requested with no credentials and
-    // no referrer. Everything else stays same-origin.
-    "img-src 'self' data: https://github.com https://avatars.githubusercontent.com",
+    // Author photos are the deliberate cross-origin load: GitHub and Gravatar serve
+    // photos identified by noreply identity or a normalized email hash.
+    // The document sends no referrer; everything else stays same-origin.
+    "img-src 'self' data: https://github.com https://avatars.githubusercontent.com https://www.gravatar.com",
     "font-src 'self'",
     `connect-src ${connectSources.join(" ")}`,
     "object-src 'none'",

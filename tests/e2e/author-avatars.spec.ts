@@ -1,3 +1,4 @@
+/** Verifies graph-node photos, local fallback, and the persisted avatar opt-out. */
 import { expect, test } from "@playwright/test";
 import { createRepo, type GitFixtureRepo } from "../support/repo.js";
 import { startE2eService } from "../support/e2e-service.js";
@@ -51,38 +52,33 @@ test.describe("Author avatars", () => {
         body: PIXEL_PNG,
       }),
     );
+    await page.route("https://www.gravatar.com/**", (route) =>
+      route.fulfill({ status: 404, body: "" }),
+    );
     await page.goto(service.pairingUrl);
 
     const octoRow = page.getByTestId(`commit-row-${octocatOid}`);
     await expect(octoRow).toBeVisible();
-    // The avatar lives in the author cell, a sibling of the message button;
-    // scope to their shared row.
-    const octoAvatar = octoRow.locator(
-      "xpath=ancestor::div[contains(@class,'absolute')]//img[@data-testid='author-avatar-img']",
-    );
-    await expect(octoAvatar).toHaveAttribute(
-      "src",
-      "https://github.com/octocat.png?size=80",
-    );
-
-    // The graph draws the photo as the commit node itself, ringed in the lane
-    // colour — the same URL the author column uses, so the browser fetches it
-    // once for both.
+    // The Author column contains just the name; pictures belong to graph nodes.
     await expect(
-      page
-        .locator('svg[data-slot="graph-gutter"] image')
-        .first(),
+      octoRow.locator(
+        "xpath=ancestor::div[contains(@class,'absolute')]//img[@data-testid='author-avatar-img']",
+      ),
+    ).toHaveCount(0);
+    await expect(
+      page.locator('svg[data-slot="graph-gutter"] image').first(),
     ).toHaveAttribute("href", "https://github.com/octocat.png?size=80");
-
-    // The fixture-authored commit has no GitHub email: colored initials, and
-    // never a remote request for it.
+    // Unknown photos fall back inside the graph, with no network in this test.
     await expect(
-      page.locator('[data-testid="author-avatar-initials"]').first(),
+      page.getByTestId("graph-avatar-initials").first(),
     ).toBeVisible();
   });
 
   test("the settings toggle trades photos for initials", async ({ page }) => {
     await page.route("https://github.com/**", (route) => route.abort());
+    await page.route("https://www.gravatar.com/**", (route) =>
+      route.fulfill({ status: 404, body: "" }),
+    );
     await page.goto(service.pairingUrl);
     await page.getByTestId("settings-open").click();
     const section = page.getByTestId("settings-appearance");
@@ -95,12 +91,10 @@ test.describe("Author avatars", () => {
     // Off means no avatar decoration at all: plain author names, no photo and
     // no initials chip, and the graph draws plain dots — initials are the
     // fallback while photos are on, not a second persistent form.
-    await expect(
-      page.locator('[data-testid="author-avatar-img"]'),
-    ).toHaveCount(0);
-    await expect(
-      page.locator('[data-testid="author-avatar-initials"]'),
-    ).toHaveCount(0);
+    await expect(page.locator('[data-testid="author-avatar-img"]')).toHaveCount(
+      0,
+    );
+    await expect(page.getByTestId("graph-avatar-initials")).toHaveCount(0);
     await expect(
       page.locator('svg[data-slot="graph-gutter"] image'),
     ).toHaveCount(0);
@@ -108,11 +102,42 @@ test.describe("Author avatars", () => {
     // The refusal survives a reload — it is a stored preference, not view state.
     await page.reload();
     await page.getByTestId(`commit-row-${octocatOid}`).waitFor();
-    await expect(
-      page.locator('[data-testid="author-avatar-img"]'),
-    ).toHaveCount(0);
-    await expect(
-      page.locator('[data-testid="author-avatar-initials"]'),
-    ).toHaveCount(0);
+    await expect(page.locator('[data-testid="author-avatar-img"]')).toHaveCount(
+      0,
+    );
+    await expect(page.getByTestId("graph-avatar-initials")).toHaveCount(0);
   });
+});
+
+test("resolves ordinary email photos on graph nodes without SubtleCrypto", async ({
+  page,
+}) => {
+  // Prevents ordinary Git identities being permanently limited to initials.
+  const repo = await createRepo({ initialCommit: true });
+  const service = await startE2eService({ repo });
+  try {
+    await page.addInitScript(() => {
+      Object.defineProperty(globalThis.crypto, "subtle", {
+        get: () => undefined,
+      });
+    });
+    await page.route("https://www.gravatar.com/**", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "image/png",
+        body: PIXEL_PNG,
+      }),
+    );
+    await page.goto(service.pairingUrl);
+    const photo = page.locator('svg[data-slot="graph-gutter"] image').first();
+    await expect(photo).toHaveAttribute(
+      "href",
+      /^https:\/\/www\.gravatar\.com\/avatar\/[a-f0-9]{64}\?s=80&d=404&r=g$/,
+    );
+    await expect(page.getByTestId("graph-avatar-initials")).toHaveCount(0);
+    await expect(page.getByTestId("author-avatar-img")).toHaveCount(0);
+  } finally {
+    await service.stop();
+    await repo.dispose();
+  }
 });

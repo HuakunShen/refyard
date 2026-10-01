@@ -1,8 +1,8 @@
 /**
- * Author avatars for the history table: a GitHub photo where the commit email
- * identifies a GitHub account, and locally generated initials otherwise.
+ * Author identity: GitHub photos for noreply identities, local initials, and
+ * asynchronous Gravatar photo URLs for ordinary emails.
  *
- * The mapping is pure — no network happens here. GitHub commits since 2017
+ * Mapping and hashing make no network requests. GitHub commits since 2017
  * carry `{id}+{username}@users.noreply.github.com` (older ones the bare
  * `{username}@` form), and `github.com/<username>.png` serves that account's
  * avatar as a redirect into avatars.githubusercontent.com. Every other author
@@ -10,6 +10,7 @@
  * person keeps the same colour across sessions without anything being stored.
  */
 import { providerRepoFromRemote } from "@refyard/git-provider/remotes";
+import { avatarHash } from "./avatar-hash.js";
 
 export interface GithubAvatar {
   readonly kind: "github";
@@ -26,7 +27,8 @@ export interface InitialsAvatar {
 
 export type AuthorAvatar = GithubAvatar | InitialsAvatar;
 
-const GITHUB_NOREPLY_WITH_ID = /^(\d+)\+([a-z0-9-]+)@users\.noreply\.github\.com$/i;
+const GITHUB_NOREPLY_WITH_ID =
+  /^(\d+)\+([a-z0-9-]+)@users\.noreply\.github\.com$/i;
 const GITHUB_NOREPLY_LEGACY = /^([a-z0-9-]+)@users\.noreply\.github\.com$/i;
 
 export function authorAvatar(email: string, name: string): AuthorAvatar {
@@ -122,10 +124,7 @@ export function githubOwnerAvatarUrl(remoteUrl: string): string | null {
  * Null when the remote is not a GitHub remote, so a caller can leave the item
  * out of a menu rather than offer a link that cannot exist.
  */
-export function githubCommitUrl(
-  remoteUrl: string,
-  oid: string,
-): string | null {
+export function githubCommitUrl(remoteUrl: string, oid: string): string | null {
   const repo = githubRepoFromRemote(remoteUrl);
   if (repo === null || !/^[0-9a-f]{7,64}$/i.test(oid)) {
     return null;
@@ -149,4 +148,12 @@ export function githubBranchUrl(
     return null;
   }
   return `https://github.com/${repo.owner}/${repo.name}/tree/${name.split("/").map(encodeURIComponent).join("/")}`;
+}
+
+/** Gravatar photos for ordinary emails; no request occurs until an image uses the URL. */
+export async function gravatarAvatarUrl(email: string): Promise<string | null> {
+  const normalized = email.trim().toLowerCase();
+  if (normalized.length === 0) return null;
+  const hash = avatarHash(normalized);
+  return `https://www.gravatar.com/avatar/${hash}?s=80&d=404&r=g`;
 }

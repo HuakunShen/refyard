@@ -2,9 +2,12 @@
  * Verifies the author-avatar mapping: GitHub photos from noreply emails,
  * deterministic initials for everyone else, and no spoofable look-alikes.
  */
-import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
+import { describe, expect, it, vi } from "vitest";
+import { avatarHash } from "@refyard/git-ui/lib/avatar-hash";
 import {
   authorAvatar,
+  gravatarAvatarUrl,
   githubBranchUrl,
   githubCommitUrl,
   githubOwnerAvatarUrl,
@@ -28,10 +31,7 @@ describe("author avatars", () => {
   });
 
   it("maps the pre-2017 bare noreply form too", () => {
-    const avatar = authorAvatar(
-      "bruno@users.noreply.github.com",
-      "Bruno",
-    );
+    const avatar = authorAvatar("bruno@users.noreply.github.com", "Bruno");
     expect(avatar).toEqual({
       kind: "github",
       username: "bruno",
@@ -109,9 +109,7 @@ describe("remote owner avatars", () => {
     // Real-world failure prevented: a remote URL carrying an embedded token
     // must not leak it, and must still resolve the owner.
     expect(
-      githubOwnerAvatarUrl(
-        "https://user:token@github.com/octocat/hello.git",
-      ),
+      githubOwnerAvatarUrl("https://user:token@github.com/octocat/hello.git"),
     ).toBe("https://github.com/octocat.png?size=40");
   });
 
@@ -127,10 +125,12 @@ describe("remote owner avatars", () => {
 
 describe("GitHub links from a remote", () => {
   it("reads owner and repository from both remote spellings", () => {
-    expect(githubRepoFromRemote("https://github.com/drizzle-team/drizzle-orm.git")).toEqual(
-      { owner: "drizzle-team", name: "drizzle-orm" },
-    );
-    expect(githubRepoFromRemote("git@github.com:HuakunShen/refyard.git")).toEqual({
+    expect(
+      githubRepoFromRemote("https://github.com/drizzle-team/drizzle-orm.git"),
+    ).toEqual({ owner: "drizzle-team", name: "drizzle-orm" });
+    expect(
+      githubRepoFromRemote("git@github.com:HuakunShen/refyard.git"),
+    ).toEqual({
       owner: "HuakunShen",
       name: "refyard",
     });
@@ -143,8 +143,12 @@ describe("GitHub links from a remote", () => {
   it("refuses a remote that is not a GitHub repository", () => {
     // Prevents: offering "Copy GitHub Link" on a GitLab or self-hosted remote and
     // handing the user a github.com URL that 404s.
-    expect(githubRepoFromRemote("https://gitlab.com/owner/repo.git")).toBeNull();
-    expect(githubRepoFromRemote("git@code.example.com:team/repo.git")).toBeNull();
+    expect(
+      githubRepoFromRemote("https://gitlab.com/owner/repo.git"),
+    ).toBeNull();
+    expect(
+      githubRepoFromRemote("git@code.example.com:team/repo.git"),
+    ).toBeNull();
     expect(githubRepoFromRemote("https://github.com/owner")).toBeNull();
     expect(githubRepoFromRemote("")).toBeNull();
   });
@@ -161,13 +165,54 @@ describe("GitHub links from a remote", () => {
     // the path is not a branch: both produce no link rather than a wrong one.
     expect(githubCommitUrl(remote, "not-a-sha")).toBeNull();
     expect(githubBranchUrl(remote, "../../etc/passwd")).toBeNull();
-    expect(githubBranchUrl("https://gitlab.com/owner/repo.git", "main")).toBeNull();
+    expect(
+      githubBranchUrl("https://gitlab.com/owner/repo.git", "main"),
+    ).toBeNull();
   });
 
   it("keeps the owner avatar working through the same parser", () => {
     expect(githubOwnerAvatarUrl("git@github.com:HuakunShen/refyard.git")).toBe(
       "https://github.com/HuakunShen.png?size=40",
     );
-    expect(githubOwnerAvatarUrl("https://gitlab.com/owner/repo.git")).toBeNull();
+    expect(
+      githubOwnerAvatarUrl("https://gitlab.com/owner/repo.git"),
+    ).toBeNull();
   });
+});
+
+describe("email photos", () => {
+  it("uses Gravatar's normalized SHA256 identifier without sending a raw email", async () => {
+    // Prevents normal commit emails missing photos or being sent verbatim in an image URL.
+    expect(await gravatarAvatarUrl(" MyEmailAddress@example.com ")).toBe(
+      "https://www.gravatar.com/avatar/84059b07d4be67b806386c0aad8070a23f18836bbaae342275dc0a83414c32ee?s=80&d=404&r=g",
+    );
+    expect(await gravatarAvatarUrl(" ")).toBeNull();
+  });
+});
+
+it("resolves email photos in WebViews without SubtleCrypto", async () => {
+  // Native custom-scheme WebViews must not require a secure-context browser API
+  // just to calculate a public image identifier.
+  vi.stubGlobal("crypto", undefined);
+  try {
+    expect(await gravatarAvatarUrl("myemailaddress@example.com")).toBe(
+      "https://www.gravatar.com/avatar/84059b07d4be67b806386c0aad8070a23f18836bbaae342275dc0a83414c32ee?s=80&d=404&r=g",
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it("matches system SHA256 for Unicode and block-boundary identifiers", () => {
+  // Prevents padding or UTF-8 differences identifying a different person's image.
+  for (const value of [
+    "",
+    "abc",
+    "作者@example.com",
+    ...Array.from({ length: 140 }, (_, size) => "a".repeat(size)),
+  ]) {
+    expect(avatarHash(value)).toBe(
+      createHash("sha256").update(value).digest("hex"),
+    );
+  }
 });
