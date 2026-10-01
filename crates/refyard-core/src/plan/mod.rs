@@ -24,6 +24,7 @@ pub mod paths;
 pub mod refs;
 pub mod remotes;
 pub mod replay;
+pub mod repository;
 pub mod status;
 pub mod submodules;
 pub mod tags;
