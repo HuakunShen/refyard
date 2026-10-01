@@ -20,11 +20,11 @@
    * in the language they are picking, not in the one they are leaving. */
   const LANGUAGE_CHOICES: readonly {
     readonly id: UiLanguage;
-    readonly label: string;
+    readonly label: () => string;
   }[] = [
-    { id: "auto", label: "" },
-    { id: "en", label: "" },
-    { id: "zh", label: "" },
+    { id: "auto", label: m.settings_language_auto },
+    { id: "en", label: m.settings_language_en },
+    { id: "zh", label: m.settings_language_zh },
   ];
 
   interface Props {
@@ -58,14 +58,12 @@
     onDensityChange = undefined,
   }: Props = $props();
 
-  /** The three buttons, each drawn with its own node size so the choice is visible. */
+  /** The density buttons, each drawn with its own node size so the choice is visible. */
   const DENSITIES = ROW_DENSITIES.map((id) => {
     const metrics = densityMetrics(id);
     return {
       id,
-      name: id.charAt(0).toUpperCase() + id.slice(1),
-      // The dot in the button is the graph's node at that density, capped so the
-      // roomy one does not outgrow the button.
+      // Cap the graph node preview so it fits inside the density button.
       node: Math.round(Math.min(14, metrics.radius * 2)),
       dots: 3,
     };
@@ -157,7 +155,11 @@
               <Check class="size-2.5" />
             {/if}
           </span>
-          <span class="truncate">{item.name}</span>
+          <span class="truncate"
+            >{item.id === "compact"
+              ? m.settings_density_compact_name()
+              : m.settings_density_comfortable_name()}</span
+          >
         </button>
       {/each}
     </div>
@@ -278,10 +280,11 @@
     class="flex items-center justify-between rounded-lg border border-border/60 bg-card/50 p-3"
   >
     <div class="flex flex-col gap-0.5">
-      <span class="text-xs font-medium text-foreground">{m.appearance_author_photos()}</span>
+      <span class="text-xs font-medium text-foreground"
+        >{m.appearance_author_photos()}</span
+      >
       <span class="text-[11px] text-ink-faint">
-        GitHub profile pictures in the history list — commits identify their
-        author by email; authors without a photo get colored initials
+        {m.appearance_author_photos_description()}
       </span>
     </div>
     <label class="relative inline-flex items-center cursor-pointer">
@@ -331,7 +334,7 @@
           )}
           data-testid={`settings-language-${choice.id}`}
         >
-          <span class="truncate">{choice.label}</span>
+          <span class="truncate">{choice.label()}</span>
         </button>
       {/each}
     </div>
@@ -348,13 +351,11 @@
       <span class="text-[11px] text-ink-faint"
         >{density === "compact"
           ? m.settings_density_compact()
-          : density === "comfortable"
-            ? m.settings_density_comfortable()
-            : m.settings_density_roomy()}</span
+          : m.settings_density_comfortable()}</span
       >
     </div>
     <div
-      class="grid grid-cols-3 gap-2"
+      class="grid grid-cols-2 gap-2"
       role="radiogroup"
       aria-label={m.settings_density()}
     >
@@ -381,7 +382,11 @@
               ></span>
             {/each}
           </span>
-          <span class="truncate">{item.name}</span>
+          <span class="truncate"
+            >{item.id === "compact"
+              ? m.settings_density_compact_name()
+              : m.settings_density_comfortable_name()}</span
+          >
         </button>
       {/each}
     </div>

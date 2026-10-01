@@ -141,10 +141,16 @@ describe("the browser's stored session", () => {
     // default this workbench opens at, and the name is what the reader round-trips.
     expect(storage.readStoredDensity()).toBe("compact");
 
-    storage.storeDensity("roomy");
+    storage.storeDensity("comfortable");
 
-    expect(storage.readStoredDensity()).toBe("roomy");
-    expect(local.getItem("refyard.appearance.density")).toBe("roomy");
+    expect(storage.readStoredDensity()).toBe("comfortable");
+    expect(local.getItem("refyard.appearance.density")).toBe("comfortable");
+  });
+
+  it("migrates a removed roomy preference to the compact default", () => {
+    // An older saved setting must not reopen history at a removed density.
+    local.setItem("refyard.appearance.density", "roomy");
+    expect(storage.readStoredDensity()).toBe("compact");
   });
 
   it("reads as unpaired when the browser refuses storage entirely", () => {

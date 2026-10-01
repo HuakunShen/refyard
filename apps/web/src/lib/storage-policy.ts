@@ -13,6 +13,8 @@
  * tab and that process.
  */
 
+import { isRowDensity } from "@refyard/git-ui/lib/geometry";
+
 const TOKEN_KEY = "refyard.session.token";
 /**
  * The service instance the stored token belongs to.
@@ -28,7 +30,7 @@ const UPDATE_CHECK_KEY = "refyard.updates.checkOnStartup";
 const BG_KEY = "refyard.theme.background";
 const GLASS_KEY = "refyard.theme.glass";
 /**
- * Author avatars from GitHub are on unless explicitly refused — the stored
+ * Author photos on graph nodes are on unless explicitly refused — the stored
  * value exists to record an opt-out, not permission.
  */
 const AVATARS_KEY = "refyard.appearance.avatars";
@@ -178,7 +180,8 @@ export function createBrowserStorage(stores: BrowserStores): BrowserStorage {
       writeTo(stores.local, AVATARS_KEY, enabled ? "true" : "false");
     },
     readStoredDensity(): string {
-      return readFrom(stores.local, DENSITY_KEY) ?? "compact";
+      const density = readFrom(stores.local, DENSITY_KEY);
+      return isRowDensity(density) ? density : "compact";
     },
     storeDensity(density: string | null): void {
       writeTo(stores.local, DENSITY_KEY, density);

@@ -324,6 +324,45 @@ test.describe("Workbench layout", () => {
     expect(bandNav.width).toBeGreaterThan(bandNav.height);
   });
 
+  test("keeps language choices visible and translates density names after a locale switch", async ({
+    page,
+  }) => {
+    // Prevents empty language buttons and English-only density names in Chinese settings.
+    await page.goto(service.pairingUrl);
+    await page.getByTestId("settings-open").click();
+    await expect(page.getByTestId("settings-language-auto")).toHaveText("Auto");
+    await expect(page.getByTestId("settings-language-en")).toHaveText(
+      "English",
+    );
+    await expect(page.getByTestId("settings-language-zh")).toHaveText("中文");
+    await expect(page.getByTestId("settings-density-compact")).toHaveText(
+      "Compact",
+    );
+    await expect(page.getByTestId("settings-density-comfortable")).toHaveText(
+      "Comfortable",
+    );
+    await expect(page.getByTestId("settings-density-roomy")).toHaveCount(0);
+    await page.getByTestId("settings-language-zh").click();
+    await page.getByTestId("settings-open").click();
+    await expect(page.getByTestId("settings-language-auto")).toHaveText("自动");
+    await expect(page.getByTestId("settings-language-en")).toHaveText(
+      "English",
+    );
+    await expect(page.getByTestId("settings-language-zh")).toHaveText("中文");
+    await expect(page.getByTestId("settings-density-compact")).toHaveText(
+      "紧凑",
+    );
+    await expect(page.getByTestId("settings-density-comfortable")).toHaveText(
+      "舒适",
+    );
+    await page.getByTestId("settings-language-en").click();
+    await page.getByTestId("settings-open").click();
+    await expect(page.getByTestId("settings-language-auto")).toHaveText("Auto");
+    await expect(page.getByTestId("settings-density-compact")).toHaveText(
+      "Compact",
+    );
+  });
+
   test("renders the interface in Chinese when the reader picks it", async ({
     page,
   }) => {
