@@ -17,9 +17,12 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_PALETTE,
   layoutGraph,
+  layoutPages,
   refColorFor,
   type GraphCommit,
 } from "@refyard/git-graph";
+
+import xrossTopology from "../fixtures/graph/xross-e8e312.json";
 
 function commit(
   id: string,
@@ -224,7 +227,7 @@ describe("determinism and bounds", () => {
   });
 });
 
-describe("adjacent branch lanes", () => {
+describe("stable branch lanes", () => {
   const history: GraphCommit[] = [
     commit("t", ["m"]),
     commit("u", ["o"]),
@@ -235,36 +238,34 @@ describe("adjacent branch lanes", () => {
     commit("base"),
   ];
 
-  it("opens a branch lane beside the lane it branches from, not at the right edge", () => {
-    // GitKraken keeps a branch's lane next to its parent's, so the branch curve into
-    // the trunk is one lane wide and unrelated lanes keep their distance.
+  it("opens a new parent in the next free slot without displacing other branches", () => {
+    // Updated product requirement: keep live branches parallel instead of inserting
+    // a merge parent beside the trunk and moving every intervening branch.
     const result = layoutGraph(history);
     const mergeRow = result.rows[2];
     expect(mergeRow?.outputLanes.map((lane) => lane.id)).toEqual([
       "left",
-      "side",
       "o",
+      "side",
     ]);
   });
 
-  it("shifts a surviving unrelated lane sideways by the lanes opened left of it", () => {
-    // Prevents: a renderer matching lanes by index drawing the unrelated lane as a
-    // merge into this row's commit. The lane keeps its identity (id) across the shift;
-    // `rowGeometry` matches by id, and this pins the data it matches on.
+  it("keeps the unrelated branch in its original slot", () => {
+    // Prevents an unrelated track wobbling sideways at every merge.
     const result = layoutGraph(history);
     const mergeRow = result.rows[2];
     expect(mergeRow?.inputLanes.map((lane) => lane.id)).toEqual(["m", "o"]);
     const outputSlotOfO = mergeRow?.outputLanes.findIndex(
       (lane) => lane.id === "o",
     );
-    expect(outputSlotOfO).toBe(2);
+    expect(outputSlotOfO).toBe(1);
   });
 
   it("keeps each branch's circle in the lane that waited for it", () => {
     const result = layoutGraph(history);
     expect(result.rows[3]?.laneIndex).toBe(0); // left
-    expect(result.rows[4]?.laneIndex).toBe(1); // side — opened beside the trunk
-    expect(result.rows[5]?.laneIndex).toBe(2); // o — pushed right by `side`
+    expect(result.rows[4]?.laneIndex).toBe(2); // side — newly opened track
+    expect(result.rows[5]?.laneIndex).toBe(1); // o — stays parallel
   });
 });
 
@@ -336,5 +337,84 @@ describe("lane colour at branch tips", () => {
     );
     expect(result.rows[1]?.outputLanes[0]?.color).toBe("lane-current");
     expect(result.rows[2]?.outputLanes[0]?.color).toBe("lane-current");
+  });
+});
+
+describe("parallel tracks", () => {
+  it("does not bend unrelated tracks when a merge opens another parent", () => {
+    // Prevents the sideways wobble seen around Xross's e8e312 merge.
+    const result = layoutGraph([
+      commit("tip", ["merge"]),
+      commit("other", ["older"]),
+      commit("merge", ["first", "side"]),
+    ]);
+    const row = result.rows[2];
+    expect(row?.inputLanes.find((lane) => lane.id === "older")?.position).toBe(
+      1,
+    );
+    expect(row?.outputLanes.find((lane) => lane.id === "older")?.position).toBe(
+      1,
+    );
+    expect(row?.outputLanes.find((lane) => lane.id === "side")?.position).toBe(
+      2,
+    );
+  });
+
+  it("preserves the other tracks when an unrelated root closes", () => {
+    // Prevents a root in one history silently cutting every other live branch.
+    const result = layoutGraph([
+      commit("a", ["root"]),
+      commit("b", ["older"]),
+      commit("root"),
+      commit("older", ["base"]),
+    ]);
+    expect(result.rows[2]?.outputLanes.map((lane) => lane.id)).toEqual([
+      "older",
+    ]);
+    expect(result.rows[3]?.laneIndex).toBe(1);
+  });
+
+  it("joins an already active merge parent without opening a duplicate track", () => {
+    // e8e312's second parent already has a parallel track from another branch tip.
+    const result = layoutGraph([
+      commit("tip", ["merge"]),
+      commit("other", ["shared"]),
+      commit("merge", ["first", "shared"]),
+    ]);
+    expect(result.rows[2]?.outputLanes.map((lane) => lane.id)).toEqual([
+      "first",
+      "shared",
+    ]);
+    expect(result.laneCount).toBe(2);
+  });
+});
+
+describe("Xross merge topology", () => {
+  it("keeps the real e8e312 parent tracks parallel through the merge and page boundaries", () => {
+    // Read-only snapshot of 271 date-ordered commits from xross-dev. OIDs except
+    // the reported merge are anonymized; no author, message or file content is included.
+    const result = layoutGraph(xrossTopology);
+    const merge = result.rows.find(
+      (row) => row.id === "e8e312c3ae194a418596e40a3ed5c192b6a31fd1",
+    );
+    expect(merge?.parentIds).toHaveLength(2);
+    expect(
+      merge?.outputLanes.filter((lane) => lane.id === merge.parentIds[1]),
+    ).toHaveLength(1);
+    for (const row of result.rows)
+      for (const lane of row.inputLanes) {
+        if (lane.id === row.id) continue;
+        expect(
+          row.outputLanes.find(
+            (out) => out.id === lane.id && out.position === lane.position,
+          ),
+        ).toBeDefined();
+      }
+    for (const split of [100, 240, 247, 260]) {
+      expect(
+        layoutPages([xrossTopology.slice(0, split), xrossTopology.slice(split)])
+          .rows,
+      ).toEqual(result.rows);
+    }
   });
 });

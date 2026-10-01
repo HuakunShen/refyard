@@ -9,6 +9,7 @@
 import { describe, expect, it } from "vitest";
 import { layoutGraph, type GraphRow, type LaneRef } from "@refyard/git-graph";
 import {
+  ROW_DENSITIES,
   avatarRadiusFor,
   DEFAULT_METRICS,
   compressedMetrics,
@@ -89,11 +90,7 @@ describe("row density", () => {
     // matching the rows it is drawn against.
     const compact = densityMetrics("compact");
     const comfortable = densityMetrics("comfortable");
-    const roomy = densityMetrics("roomy");
-    for (const [small, large] of [
-      [compact, comfortable],
-      [comfortable, roomy],
-    ] as const) {
+    for (const [small, large] of [[compact, comfortable]] as const) {
       expect(large.rowHeight).toBeGreaterThan(small.rowHeight);
       expect(large.laneWidth).toBeGreaterThan(small.laneWidth);
       expect(large.radius).toBeGreaterThan(small.radius);
@@ -106,15 +103,15 @@ describe("row density", () => {
 
   it("draws an avatar at GitKraken's 30% of the row, within floors", () => {
     expect(avatarRadiusFor(densityMetrics("comfortable"))).toBeCloseTo(10.8, 5);
-    expect(avatarRadiusFor(densityMetrics("roomy"))).toBeCloseTo(13.2, 5);
     // A compact row still shows a face; a row too short for one keeps the floor.
-    expect(avatarRadiusFor({ ...densityMetrics("compact"), rowHeight: 8 })).toBe(
-      6,
-    );
+    expect(
+      avatarRadiusFor({ ...densityMetrics("compact"), rowHeight: 8 }),
+    ).toBe(6);
   });
 
   it("recognises only the densities it defines", () => {
-    expect(isRowDensity("roomy")).toBe(true);
+    expect(ROW_DENSITIES).toEqual(["compact", "comfortable"]);
+    expect(isRowDensity("roomy")).toBe(false);
     expect(isRowDensity("spacious")).toBe(false);
     expect(isRowDensity(null)).toBe(false);
   });
@@ -171,14 +168,17 @@ describe("compressed metrics", () => {
     // it is the base padding times that factor, not the base padding.
     const floorScale = 6 / metrics.laneWidth;
     const squeezed = compressedMetrics(20, 40, metrics);
-    expect(squeezed.lanePadding).toBeCloseTo(metrics.lanePadding * floorScale, 9);
+    expect(squeezed.lanePadding).toBeCloseTo(
+      metrics.lanePadding * floorScale,
+      9,
+    );
     // A roomy base scales further down than its own floor allows: 14px insets at the
     // lane floor would be 3.2px, which is not an inset any more.
-    const roomy = compressedMetrics(
-      20,
-      40,
-      densityMetrics("roomy"),
-    );
+    const roomy = compressedMetrics(20, 40, {
+      ...densityMetrics("comfortable"),
+      laneWidth: 26,
+      lanePadding: 14,
+    });
     expect(roomy.lanePadding).toBe(6);
   });
 
@@ -188,9 +188,7 @@ describe("compressed metrics", () => {
     // dip under its own floor.
     const floorScale = 6 / metrics.laneWidth;
     expect(squeezed.laneWidth).toBe(6);
-    expect(squeezed.radius).toBe(
-      Math.max(2.5, metrics.radius * floorScale),
-    );
+    expect(squeezed.radius).toBe(Math.max(2.5, metrics.radius * floorScale));
     // Past the floor the gutter may exceed the column; the SVG clips, which is
     // exactly what a hard-squeezed GitKraken graph does.
     expect(gutterWidth(20, squeezed)).toBeGreaterThan(40);
@@ -402,4 +400,67 @@ describe("shifted lanes", () => {
       ),
     );
   });
+});
+
+describe("stable track geometry", () => {
+  it("draws the right track straight after the left root closes", () => {
+    // Prevents array compaction making a surviving branch curve into an empty slot.
+    const result = layoutGraph([
+      { id: "a", parentIds: ["root"] },
+      { id: "b", parentIds: ["older"] },
+      { id: "root", parentIds: [] },
+      { id: "older", parentIds: ["base"] },
+    ]);
+    const root = result.rows[2];
+    if (root === undefined) throw new Error("root row missing");
+    const geometry = rowGeometry(root, 2, metrics);
+    expect(
+      geometry.segments.some(
+        (segment) =>
+          segment.path ===
+          edgePath(laneX(1, metrics), 48, laneX(1, metrics), 72),
+      ),
+    ).toBe(true);
+  });
+  it("draws a merge edge to an existing parent without bending its through track", () => {
+    const result = layoutGraph([
+      { id: "tip", parentIds: ["merge"] },
+      { id: "other", parentIds: ["shared"] },
+      { id: "merge", parentIds: ["first", "shared"] },
+    ]);
+    const merge = result.rows[2];
+    if (merge === undefined) throw new Error("merge row missing");
+    const geometry = rowGeometry(merge, 2, metrics);
+    expect(
+      geometry.segments.some(
+        (segment) =>
+          segment.path ===
+          edgePath(laneX(1, metrics), 48, laneX(1, metrics), 72),
+      ),
+    ).toBe(true);
+    expect(
+      geometry.segments.some(
+        (segment) =>
+          segment.path ===
+          edgePath(laneX(0, metrics), 60, laneX(1, metrics), 72),
+      ),
+    ).toBe(true);
+  });
+});
+
+it("keeps duplicate ancestor tracks attached to their own slots", () => {
+  // Prevents matching by pending OID choosing a different parallel track with that OID.
+  const result = layoutGraph([
+    { id: "tip", parentIds: ["next"] },
+    { id: "other", parentIds: ["base"] },
+    { id: "next", parentIds: ["base"] },
+  ]);
+  const entry = result.rows[2];
+  if (entry === undefined) throw new Error("row missing");
+  expect(
+    rowGeometry(entry, 2, metrics).segments.some(
+      (segment) =>
+        segment.path === edgePath(laneX(1, metrics), 48, laneX(1, metrics), 72),
+    ),
+  ).toBe(true);
 });

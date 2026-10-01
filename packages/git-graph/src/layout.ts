@@ -1,25 +1,8 @@
 /**
- * Commit-graph lane layout, as a pure fold over an ordered commit list.
- *
- * The algorithm is the one described in `docs/research/2026-09-14-vscode-graph-findings.md`,
- * reimplemented in TypeScript with no framework and no DOM. It is a single pass in
- * topological order, and it produces, for every row, the lanes entering it and the
- * lanes leaving it — which is what makes each row renderable on its own, without a
- * shared canvas or a second pass.
- *
- * Three properties are worth stating because the renderer depends on them:
- *
- * - **Lane index is a position, not an identity.** A branch is a *ref name*; a lane
- *   is just a slot in one row. Two rows may draw different branches in the same lane,
- *   and the UI must never label a lane with a branch name.
- * - **A lane's identity survives index changes.** Lanes close when they converge and
- *   new lanes open directly beside the lane they branch from, so a surviving lane can
- *   shift sideways across one row. Renderers must therefore match lanes by *id*
- *   between a row's input and output, never by index — `rowGeometry` in the UI
- *   package does exactly that.
- * - **Continuation is explicit.** The last row's `outputLanes` is the state to draw
- *   under a "load more" row, and an unresolved parent stays in the array as a
- *   placeholder until it appears — a page boundary therefore never breaks a line.
+ * Host-free commit DAG layout with stable parallel tracks. A live track keeps its
+ * horizontal slot until it converges; only a newly opened track can reuse a hole.
+ * Continuation carries the slots across pages, so loading history cannot move a
+ * surviving branch. Additional parents already on screen join their existing track.
  */
 import type { GraphRow, LaneColor, LaneRef } from "./types.js";
 
@@ -86,100 +69,59 @@ export function layoutGraph(
 ): LayoutResult {
   const palette = options.palette ?? DEFAULT_PALETTE;
   const defaultColor = options.defaultColor ?? palette[0] ?? "lane-1";
-  // The cursor is function-scoped, exactly like the reference implementation: it
-  // advances across the whole run so consecutive new lanes get different colours.
-  let paletteCursor = -1;
-  let previousOut: LaneRef[] = (options.continuation ?? []).map((lane) => ({
+  let previousOut = (options.continuation ?? []).map((lane, index) => ({
     ...lane,
+    position: lane.position ?? index,
   }));
   const rows: GraphRow[] = [];
-  let laneCount = previousOut.length;
+  let laneCount = previousOut.reduce(
+    (count, lane) => Math.max(count, lane.position + 1),
+    0,
+  );
 
   for (const commit of commits) {
-    // 1. Copy the incoming lanes; never mutate the previous row's array.
-    const inputLanes: LaneRef[] = previousOut.map((lane) => ({ ...lane }));
-    const outputLanes: LaneRef[] = [];
-    let firstParentPlaced = false;
-    /** Where the commit's own lane sits in `outputLanes` (-1 until placed). */
-    let ownLaneOutputIndex = -1;
-
-    // 2. The lane waiting for this commit becomes its first parent, in place, so the
-    //    lane keeps its index, colour and identity down the row. A branch tip sitting
-    //    on this commit takes ownership of that line from here down — GitKraken paints
-    //    every segment in the colour of the nearest branch tip above it, which is how
-    //    a trunk that absorbed other branches' history reads as theirs below the
-    //    point where it absorbed them. The callback decides what a tip means: it is
-    //    what lets a host keep its *own* branch's remote twin (origin ahead-of/behind
-    //    local) from splitting the trunk into two hues. Tags never own the line: a
-    //    tag landing on a trunk commit must not recolor anything.
-    if (commit.parentIds.length > 0) {
-      for (const lane of inputLanes) {
-        if (lane.id === commit.id) {
-          if (!firstParentPlaced) {
-            const tipColour = commit.refNames?.some(
-              (name) =>
-                name.startsWith("refs/heads/") ||
-                name.startsWith("refs/remotes/"),
-            )
-              ? options.colorForRef?.(commit)
-              : undefined;
-            outputLanes.push({
-              id: commit.parentIds[0] ?? "",
-              color: tipColour ?? lane.color,
-            });
-            ownLaneOutputIndex = outputLanes.length - 1;
-            firstParentPlaced = true;
-          }
-          continue;
-        }
-        outputLanes.push({ ...lane });
-      }
-    }
-
-    // 3. Additional parents (a merge or an octopus) open their lanes directly next to
-    //    the lane they branch from — GitKraken-style adjacency, which keeps a branch's
-    //    line short and its curve into the trunk tight instead of sweeping across every
-    //    lane to the right edge. When this commit opened its own new lane (it was not
-    //    awaited), there is no adjacent slot, so the parents append at the right edge.
-    let inserted = 0;
-    const start = firstParentPlaced ? 1 : 0;
-    for (let index = start; index < commit.parentIds.length; index += 1) {
-      const parentId = commit.parentIds[index];
-      if (parentId === undefined) {
-        continue;
-      }
-      let color: LaneColor | undefined;
-      if (index === 0) {
-        color = options.colorForRef?.(commit);
-      } else {
-        const parent = commits.find((candidate) => candidate.id === parentId);
-        color =
-          parent === undefined ? undefined : options.colorForRef?.(parent);
-      }
-      if (color === undefined) {
-        paletteCursor = (paletteCursor + 1) % palette.length;
-        color = palette[paletteCursor] ?? defaultColor;
-      }
-      const lane: LaneRef = { id: parentId, color };
-      if (ownLaneOutputIndex !== -1) {
-        outputLanes.splice(ownLaneOutputIndex + 1 + inserted, 0, lane);
-        inserted += 1;
-      } else {
-        outputLanes.push(lane);
-      }
-    }
-
-    // 4. The circle: this commit's own lane, or a new one to the right of everything
-    //    currently drawn.
-    const inputIndex = inputLanes.findIndex((lane) => lane.id === commit.id);
-    const laneIndex = inputIndex !== -1 ? inputIndex : inputLanes.length;
+    const inputLanes = previousOut.map((lane) => ({ ...lane }));
+    const awaited = inputLanes.find((lane) => lane.id === commit.id);
+    const occupied = new Set(inputLanes.map((lane) => lane.position));
+    const freeSlot = () => {
+      let position = 0;
+      while (occupied.has(position)) position += 1;
+      occupied.add(position);
+      return position;
+    };
+    const laneIndex = awaited?.position ?? freeSlot();
+    const tipColor = commit.refNames?.some(
+      (name) =>
+        name.startsWith("refs/heads/") || name.startsWith("refs/remotes/"),
+    )
+      ? options.colorForRef?.(commit)
+      : undefined;
     const laneColor =
-      laneIndex < outputLanes.length
-        ? (outputLanes[laneIndex]?.color ?? defaultColor)
-        : laneIndex < inputLanes.length
-          ? (inputLanes[laneIndex]?.color ?? defaultColor)
-          : defaultColor;
-
+      tipColor ??
+      awaited?.color ??
+      options.colorForRef?.(commit) ??
+      palette[laneIndex % palette.length] ??
+      defaultColor;
+    // Removing converging tracks does not compact the surviving slots.
+    const outputLanes = inputLanes.filter((lane) => lane.id !== commit.id);
+    const firstParent = commit.parentIds[0];
+    if (firstParent !== undefined) {
+      outputLanes.push({
+        id: firstParent,
+        color: laneColor,
+        position: laneIndex,
+      });
+    }
+    for (const parentId of commit.parentIds.slice(1)) {
+      if (outputLanes.some((lane) => lane.id === parentId)) continue;
+      const position = freeSlot();
+      outputLanes.push({
+        id: parentId,
+        color: palette[position % palette.length] ?? defaultColor,
+        position,
+      });
+    }
+    outputLanes.sort((a, b) => a.position - b.position);
     rows.push({
       id: commit.id,
       parentIds: [...commit.parentIds],
@@ -191,16 +133,13 @@ export function layoutGraph(
       isMerge: commit.parentIds.length > 1,
       isRoot: commit.parentIds.length === 0,
     });
-
     laneCount = Math.max(
       laneCount,
-      inputLanes.length,
-      outputLanes.length,
       laneIndex + 1,
+      ...outputLanes.map((lane) => lane.position + 1),
     );
     previousOut = outputLanes;
   }
-
   return {
     rows,
     continuation: previousOut.map((lane) => ({ ...lane })),

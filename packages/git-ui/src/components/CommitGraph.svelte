@@ -10,9 +10,8 @@
    * the row height is the list's row height (so a circle is never off its text), and the
    * lane colours are CSS variables (so a theme change never touches this file).
    *
-   * A commit whose author maps to a GitHub photo draws that photo as the node —
-   * ringed in the lane colour, GitKraken-style — instead of a plain dot. A photo
-   * that fails to load falls back to the dot; an author without one never had it.
+   * Author photos draw inside lane-colored node rings. Missing photos use local
+   * initials; merge commits and disabled photos draw plain dots.
    */
   import type { GraphRow } from "@refyard/git-graph";
   import {
@@ -24,14 +23,17 @@
     type GraphMetrics,
   } from "../lib/geometry.js";
 
+  import type { InitialsAvatar } from "../lib/avatars.js";
+
   interface Props {
     /** Visible rows only, starting at `startIndex`. */
     rows: readonly GraphRow[];
     /** Absolute index of `rows[0]`, which is what turns an index into a y position. */
     startIndex: number;
     metrics?: GraphMetrics;
-    /** GitHub avatar URL per commit oid; commits absent from it draw plain dots. */
+    /** Resolved photo URL per commit oid. Missing photos use supplied initials. */
     avatarByOid?: ReadonlyMap<string, string>;
+    initialsByOid?: ReadonlyMap<string, InitialsAvatar>;
     /** Widens strokes and dots for the selected row. */
     selectedOid?: string | null;
   }
@@ -41,6 +43,7 @@
     startIndex,
     metrics = DEFAULT_METRICS,
     avatarByOid = undefined,
+    initialsByOid = undefined,
     selectedOid = null,
   }: Props = $props();
 
@@ -71,9 +74,12 @@
       />
     {/each}
     {@const avatarUrl = avatarByOid?.get(entry.row.id)}
-    {@const failed = failedAvatars.has(entry.row.id)}
+    {@const failed = failedAvatars.has(avatarUrl ?? "")}
+    {@const initials = initialsByOid?.get(entry.row.id)}
     {@const nodeRadius =
-      avatarUrl !== undefined && !failed ? avatarRadius : metrics.radius}
+      (avatarUrl !== undefined && !failed) || initials !== undefined
+        ? avatarRadius
+        : metrics.radius}
     {#if entry.row.refNames.length > 0}
       <!-- The label sits in the column to the left; this is the line that ties it to
            the node it names. -->
@@ -120,9 +126,28 @@
         clip-path="url(#graph-avatar-{entry.row.id})"
         preserveAspectRatio="xMidYMid slice"
         onerror={() => {
-          failedAvatars = new Set(failedAvatars).add(entry.row.id);
+          failedAvatars = new Set(failedAvatars).add(avatarUrl);
         }}
       ></image>
+    {:else if initials !== undefined}
+      <circle
+        cx={entry.geometry.circle.cx}
+        cy={entry.geometry.circle.cy}
+        r={avatarRadius + 1}
+        fill="var(--color-panel, currentColor)"
+        stroke={entry.geometry.circle.paint}
+        stroke-width={metrics.lineWidth}
+      />
+      <text
+        data-testid="graph-avatar-initials"
+        x={entry.geometry.circle.cx}
+        y={entry.geometry.circle.cy}
+        dy="0.35em"
+        text-anchor="middle"
+        fill="var(--color-foreground)"
+        font-size={Math.max(7, avatarRadius)}
+        font-weight="600">{initials.initials}</text
+      >
     {:else}
       <circle
         cx={entry.geometry.circle.cx}

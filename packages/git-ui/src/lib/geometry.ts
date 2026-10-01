@@ -44,13 +44,9 @@ export interface GraphMetrics {
  * proportions are held constant here (lane stroke ≈ 7% of the row, avatar ≈ 30%) so the
  * denser rows stay legible rather than merely smaller.
  */
-export type RowDensity = "compact" | "comfortable" | "roomy";
+export type RowDensity = "compact" | "comfortable";
 
-export const ROW_DENSITIES: readonly RowDensity[] = [
-  "compact",
-  "comfortable",
-  "roomy",
-];
+export const ROW_DENSITIES: readonly RowDensity[] = ["compact", "comfortable"];
 
 const DENSITY_METRICS: Record<RowDensity, GraphMetrics> = {
   compact: {
@@ -66,13 +62,6 @@ const DENSITY_METRICS: Record<RowDensity, GraphMetrics> = {
     lanePadding: 12,
     radius: 6,
     lineWidth: 2.5,
-  },
-  roomy: {
-    rowHeight: 44,
-    laneWidth: 26,
-    lanePadding: 14,
-    radius: 7.5,
-    lineWidth: 3,
   },
 };
 
@@ -169,10 +158,7 @@ export function compressedMetrics(
   const last = laneCount - 1;
   const span = 2 * base.lanePadding + 2 * base.radius + last * base.laneWidth;
   const scale = Math.min(
-    Math.max(
-      availableWidth / span,
-      MIN_LANE_WIDTH / base.laneWidth,
-    ),
+    Math.max(availableWidth / span, MIN_LANE_WIDTH / base.laneWidth),
     1,
   );
   const lanePadding = Math.max(MIN_LANE_PADDING, base.lanePadding * scale);
@@ -245,8 +231,8 @@ export function edgePath(
  * Everything one row draws, in row-local coordinates (the caller translates by index).
  *
  * Lanes are matched between the row's input and output **by id, not by index**: the
- * layout opens a branch's lane beside its parent's, so a surviving lane can shift one
- * slot sideways across a row. Matching by index would draw that shift as a merge into
+ * layout preserves explicit positions; legacy rows may still shift array indices.
+ * Matching by index would draw that shift as a merge into
  * this row's commit — a line the data does not contain. The id match gives the three
  * segment kinds a row can have:
  *
@@ -270,9 +256,21 @@ export function rowGeometry(
   // One output slot can be claimed by at most one input lane, so a degenerate commit
   // that lists one parent twice still draws both of its lines.
   const claimed = new Set<number>();
-  const outputSlotOf = (id: string): number | undefined => {
+  const outputSlotOf = (lane: {
+    readonly id: string;
+    readonly position?: number;
+  }): number | undefined => {
+    if (lane.position !== undefined) {
+      const stableSlot = row.outputLanes.findIndex(
+        (out, slot) =>
+          out.id === lane.id &&
+          out.position === lane.position &&
+          !claimed.has(slot),
+      );
+      if (stableSlot !== -1) return stableSlot;
+    }
     for (let slot = 0; slot < row.outputLanes.length; slot += 1) {
-      if (row.outputLanes[slot]?.id === id && !claimed.has(slot)) {
+      if (row.outputLanes[slot]?.id === lane.id && !claimed.has(slot)) {
         return slot;
       }
     }
@@ -280,7 +278,7 @@ export function rowGeometry(
   };
 
   row.inputLanes.forEach((lane, laneIndex) => {
-    const x = laneX(laneIndex, metrics);
+    const x = laneX(lane.position ?? laneIndex, metrics);
     if (lane.id === row.id) {
       // This lane was waiting for the commit: it ends at the circle, whether it is
       // the lane that continues as the first parent or one that converges here.
@@ -291,7 +289,7 @@ export function rowGeometry(
       });
       return;
     }
-    const outputSlot = outputSlotOf(lane.id);
+    const outputSlot = outputSlotOf(lane);
     if (outputSlot === undefined) {
       // A live lane always continues; drawing a straight pass-through keeps the line
       // whole even if the layout ever hands over a row that drops one.
@@ -303,7 +301,10 @@ export function rowGeometry(
       return;
     }
     claimed.add(outputSlot);
-    const xOut = laneX(outputSlot, metrics);
+    const xOut = laneX(
+      row.outputLanes[outputSlot]?.position ?? outputSlot,
+      metrics,
+    );
     segments.push({
       path: edgePath(x, top, xOut, bottom),
       paint: lanePaint(lane.color),
@@ -312,10 +313,16 @@ export function rowGeometry(
   });
 
   row.outputLanes.forEach((lane, laneIndex) => {
-    if (claimed.has(laneIndex)) {
+    if (
+      claimed.has(laneIndex) &&
+      (!row.parentIds.includes(lane.id) ||
+        row.outputLanes.some(
+          (other, slot) => other.id === lane.id && !claimed.has(slot),
+        ))
+    ) {
       return;
     }
-    const x = laneX(laneIndex, metrics);
+    const x = laneX(lane.position ?? laneIndex, metrics);
     segments.push({
       path: edgePath(cx, cy, x, bottom),
       paint: lanePaint(lane.color),

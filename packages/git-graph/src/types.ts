@@ -10,11 +10,13 @@
 /** An opaque lane colour token. The meaning of `lane-3` belongs to the renderer. */
 export type LaneColor = string;
 
-/** One lane entering or leaving a row. Array index is the lane index. */
+/** One live track entering or leaving a row. Closed tracks leave reusable slots. */
 export interface LaneRef {
   /** The commit this lane is waiting for. */
   readonly id: string;
   readonly color: LaneColor;
+  /** Stable horizontal slot; omitted by legacy callers that use array indices. */
+  readonly position?: number;
 }
 
 export interface GraphRow {
