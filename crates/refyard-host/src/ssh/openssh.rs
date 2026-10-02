@@ -143,19 +143,13 @@ pub fn exec_argv(
 /// Resolves the `ssh` executable once, at startup.
 ///
 /// A path is resolved rather than a bare name passed to `Command`, so a later change to
-/// `PATH` cannot swap the program between two commands of one session.
+/// `PATH` cannot swap the program between two commands of one session. The PATH rules
+/// themselves — the separator and the executable's name — are the platform's, via
+/// `crate::locate`.
 pub fn discover() -> Result<PathBuf, String> {
     let path = std::env::var("PATH").unwrap_or_default();
-    for directory in path.split(':') {
-        if directory.is_empty() {
-            continue;
-        }
-        let candidate = Path::new(directory).join("ssh");
-        if candidate.is_file() {
-            return Ok(candidate);
-        }
-    }
-    Err("ssh was not found on PATH".to_string())
+    crate::locate::program(&path, "ssh", std::env::consts::OS)
+        .ok_or_else(|| "ssh was not found on PATH".to_string())
 }
 
 /// The same resolution, as the typed problem a capability answer carries.
@@ -267,12 +261,14 @@ mod tests {
 
     #[test]
     fn a_chosen_config_source_is_appended_and_never_replaces_a_safety_option() {
-        let argv =
-            exec_argv("prod", "true", Some(Path::new("/scratch/.ssh/config"))).expect("argv");
+        // Absolute for whichever host runs the test: "/scratch/..." is not absolute on
+        // Windows, and refusing a relative source is the next test's own assertion.
+        let config = std::env::temp_dir().join("scratch-config");
+        let argv = exec_argv("prod", "true", Some(&config)).expect("argv");
         // The fixed options keep their exact positions, with the source after them.
         assert_eq!(&argv[..base_options().len()], base_options().as_slice());
         assert_eq!(argv[base_options().len()], "-F");
-        assert_eq!(argv[base_options().len() + 1], "/scratch/.ssh/config");
+        assert_eq!(argv[base_options().len() + 1], config.display().to_string());
         assert_eq!(argv[argv.len() - 2], "prod");
     }
 
