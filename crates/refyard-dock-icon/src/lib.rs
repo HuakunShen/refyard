@@ -16,8 +16,10 @@
 
 /// The user default macOS sets to `"Dark"` while dark appearance is active. Its
 /// absence (any other value, or no value) means light.
+#[cfg(target_os = "macos")]
 const APPEARANCE_DEFAULT: &str = "AppleInterfaceStyle";
 /// The distributed notification the system posts when that default changes.
+#[cfg(target_os = "macos")]
 const APPEARANCE_CHANGED: &str = "AppleInterfaceThemeChangedNotification";
 
 /// [`install`] with the main-thread marker asserted here, for callers that are

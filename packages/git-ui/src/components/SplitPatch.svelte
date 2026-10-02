@@ -6,7 +6,6 @@
     buildSplitPatch,
     type SplitPatchCell,
     type SplitPatchCellKind,
-    type SplitPatchHunk,
   } from "../lib/split-patch.js";
   import { cn } from "../lib/utils.js";
 
@@ -49,16 +48,14 @@
     }
   }
 
-  function gridTemplate(hunk: SplitPatchHunk): string {
-    const longestLine = hunk.rows.reduce(
-      (longest, row) =>
-        Math.max(longest, row.old.text.length, row.new.text.length),
+  function sideWidth(lines: readonly string[]): string {
+    const longest = lines.reduce(
+      (longest, text) => Math.max(longest, text.length),
       0,
     );
-    // Both sides share one width so aligned rows never paint into the next
-    // column. Very long lines make the outer container scroll horizontally.
-    const sideWidth = Math.max(36, longestLine + 4);
-    return `3rem minmax(${sideWidth}ch, 1fr) 3rem minmax(${sideWidth}ch, 1fr)`;
+    // Each side sizes to its own longest line: a wide change on one side must not
+    // widen — and force scrolling onto — the other.
+    return `minmax(${Math.max(36, longest + 4)}ch, 1fr)`;
   }
 </script>
 
@@ -70,7 +67,12 @@
     <p class="px-3 py-2 text-xs text-ink-muted">{m.split_no_changes()}</p>
   {:else}
     {#each splitHunks as hunk, hunkIndex}
-      {@const columns = gridTemplate(hunk)}
+      {@const oldSide = sideWidth(
+        hunk.rows.map((row) => row.old.text),
+      )}
+      {@const newSide = sideWidth(
+        hunk.rows.map((row) => row.new.text),
+      )}
       <section
         class="min-w-0 overflow-hidden rounded-lg border border-border/60 bg-card/90"
         data-testid={`split-patch-hunk-${hunkIndex}`}
@@ -81,91 +83,76 @@
           {hunk.header}
         </h3>
 
-        <div class="overflow-x-auto custom-scrollbar">
+        <div class="grid grid-cols-2 items-start">
+        {#each [{ side: "old" as const }, { side: "new" as const }] as half, halfIndex}
           <div
-            class="min-w-[52rem] font-mono text-xs"
-            role="table"
-            aria-label={`Side-by-side diff ${hunk.header}`}
+            class="min-w-0 overflow-x-auto custom-scrollbar {halfIndex === 1
+              ? 'border-l border-border/30'
+              : ''}"
+            data-testid={`split-patch-${half.side}-${hunkIndex}`}
           >
             <div
-              class="grid border-b border-border/30 bg-muted/25 text-[10px] font-semibold tracking-wider text-ink-faint uppercase"
-              style={`grid-template-columns: ${columns}`}
-              role="row"
+              class="font-mono text-xs"
+              role="table"
+              aria-label={`Side-by-side diff ${hunk.header}`}
             >
-              <span class="px-2 py-1 text-right" role="columnheader">Old</span>
-              <span class="px-2 py-1" role="columnheader">{m.split_before()}</span>
-              <span class="px-2 py-1 text-right" role="columnheader">New</span>
-              <span class="px-2 py-1" role="columnheader">{m.split_after()}</span>
-            </div>
-
-            {#each hunk.rows as row, rowIndex}
               <div
-                class="grid border-b border-border/20 last:border-b-0"
-                style={`grid-template-columns: ${columns}`}
+                class="grid border-b border-border/30 bg-muted/25 text-[10px] font-semibold tracking-wider text-ink-faint uppercase"
+                style={`grid-template-columns: 3rem ${half.side === "old" ? oldSide : newSide}`}
                 role="row"
-                data-testid={`split-patch-row-${hunkIndex}-${rowIndex}`}
               >
-                <span
-                  class={cn(
-                    "select-none px-2 py-0.5 text-right text-[10px] leading-relaxed",
-                    lineNumberClass(row.old.kind),
-                  )}
-                  role="cell"
-                  aria-label={row.old.lineNumber === null
-                    ? m.split_no_old()
-                    : `Old line ${row.old.lineNumber}`}
+                <span class="px-2 py-1 text-right" role="columnheader">Old</span>
+                <span class="px-2 py-1" role="columnheader"
+                  >{half.side === "old"
+                    ? m.split_before()
+                    : m.split_after()}</span
                 >
-                  {row.old.lineNumber ?? ""}
-                </span>
-                <span
-                  class={cn(
-                    "min-w-0 px-2 py-0.5 leading-relaxed whitespace-pre",
-                    cellClass(row.old),
-                  )}
-                  role="cell"
-                  data-kind={row.old.kind}
-                >
-                  {#if row.old.kind !== "empty"}
-                    <span class="mr-1 select-none opacity-60"
-                      >{marker(row.old.kind)}</span
-                    >{row.old.text}{#if row.old.noNewline}<span
-                        class="ml-2 text-[10px] italic text-ink-faint"
-                        >⏎ no newline</span
-                      >{/if}
-                  {/if}
-                </span>
-                <span
-                  class={cn(
-                    "select-none px-2 py-0.5 text-right text-[10px] leading-relaxed",
-                    lineNumberClass(row.new.kind),
-                  )}
-                  role="cell"
-                  aria-label={row.new.lineNumber === null
-                    ? m.split_no_new()
-                    : `New line ${row.new.lineNumber}`}
-                >
-                  {row.new.lineNumber ?? ""}
-                </span>
-                <span
-                  class={cn(
-                    "min-w-0 px-2 py-0.5 leading-relaxed whitespace-pre",
-                    cellClass(row.new),
-                  )}
-                  role="cell"
-                  data-kind={row.new.kind}
-                >
-                  {#if row.new.kind !== "empty"}
-                    <span class="mr-1 select-none opacity-60"
-                      >{marker(row.new.kind)}</span
-                    >{row.new.text}{#if row.new.noNewline}<span
-                        class="ml-2 text-[10px] italic text-ink-faint"
-                        >⏎ no newline</span
-                      >{/if}
-                  {/if}
-                </span>
               </div>
-            {/each}
+
+              {#each hunk.rows as row, rowIndex}
+                {@const cell = half.side === "old" ? row.old : row.new}
+                <div
+                  class="grid border-b border-border/20 last:border-b-0"
+                  style={`grid-template-columns: 3rem ${half.side === "old" ? oldSide : newSide}`}
+                  role="row"
+                  data-testid={`split-patch-row-${hunkIndex}-${half.side}-${rowIndex}`}
+                >
+                  <span
+                    class={cn(
+                      "select-none px-2 py-0.5 text-right text-[10px] leading-relaxed",
+                      lineNumberClass(cell.kind),
+                    )}
+                    role="cell"
+                    aria-label={cell.lineNumber === null
+                      ? half.side === "old"
+                        ? m.split_no_old()
+                        : m.split_no_new()
+                      : `${half.side === "old" ? "Old" : "New"} line ${cell.lineNumber}`}
+                  >
+                    {cell.lineNumber ?? ""}
+                  </span>
+                  <span
+                    class={cn(
+                      "min-w-0 px-2 py-0.5 leading-relaxed whitespace-pre",
+                      cellClass(cell),
+                    )}
+                    role="cell"
+                    data-kind={cell.kind}
+                  >
+                    {#if cell.kind !== "empty"}
+                      <span class="mr-1 select-none opacity-60"
+                        >{marker(cell.kind)}</span
+                      >{cell.text}{#if cell.noNewline}<span
+                          class="ml-2 text-[10px] italic text-ink-faint"
+                          >⏎ no newline</span
+                        >{/if}
+                    {/if}
+                  </span>
+                </div>
+              {/each}
+            </div>
           </div>
+        {/each}
         </div>
       </section>
     {/each}

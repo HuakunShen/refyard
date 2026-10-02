@@ -7,6 +7,10 @@
 # icon for the current appearance, apply it to `NSApplication`, and re-apply it when
 # the system appearance changes. The shells share one implementation because the
 # behaviour — and the two PNGs it reads — is a product fact, not a shell detail.
+#
+# The Cocoa dependencies are gated to macOS itself: the release gate's `cargo test`
+# runs on Linux, where `objc2` refuses to compile by design, and the crate's non-macOS
+# build is the documented no-op stub.
 [package]
 name = "refyard-dock-icon"
 version = "0.1.0"
@@ -14,7 +18,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
-[dependencies]
+[target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-app-kit = "0.3"
 objc2-foundation = "0.3"
