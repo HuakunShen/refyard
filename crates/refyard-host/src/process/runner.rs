@@ -23,6 +23,18 @@ use crate::process::cleanup::{terminate, CancelSignal};
 /// then report the output as incomplete rather than pretending we read all of it.
 const DRAIN_GRACE: Duration = Duration::from_secs(2);
 
+/// The creation flags a windowed host must give a console child on Windows.
+///
+/// A GUI-subsystem process has no console, so Windows would give every console
+/// program it starts — `git.exe`, `ssh.exe` — a console window of its own: one per
+/// command, a screen of flashing windows for a single repository refresh.
+/// `CREATE_NO_WINDOW` runs the child with no console at all, which loses nothing here
+/// because every stream is a pipe and interactivity is already refused
+/// (`GIT_TERMINAL_PROMPT=0`, deadlines): a child that stopped to ask a question
+/// would never get an answer anyway.
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 /// Runs one command to completion, a deadline, or cancellation.
 pub async fn run(spec: ProcessSpec, cancel: Option<CancelSignal>) -> RunOutcome {
     let mut command = Command::new(&spec.program);
@@ -33,6 +45,10 @@ pub async fn run(spec: ProcessSpec, cancel: Option<CancelSignal>) -> RunOutcome 
         .stderr(Stdio::piped())
         // A dropped future must not leave the child behind.
         .kill_on_drop(true);
+    #[cfg(windows)]
+    {
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
     if let Some(cwd) = &spec.cwd {
         command.current_dir(cwd);
     }
@@ -220,4 +236,53 @@ fn signal_of(status: &std::process::ExitStatus) -> i32 {
 #[cfg(not(unix))]
 fn signal_of(_status: &std::process::ExitStatus) -> i32 {
     0
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+
+    // Prevents: every Git command flashing its own console window over the workbench —
+    // a GUI-subsystem host has no console to share, so Windows gave each console child
+    // a window of its own, one per read, until the screen filled with them. The probe
+    // runs inside the child, through the same run() path production takes: GetConsoleWindow
+    // is NULL exactly when the console has no window, and CREATE_NO_WINDOW is the flag
+    // that makes it so — while a plain inherit (what a console-equipped parent gives)
+    // leaves a real window handle to find.
+    #[tokio::test]
+    async fn a_spawned_child_gets_no_console_window_of_its_own() {
+        let system_root = std::env::var("SystemRoot").expect("SystemRoot is set");
+        let scratch = std::env::temp_dir();
+        let powershell = std::path::Path::new(&system_root)
+            .join("System32")
+            .join("WindowsPowerShell")
+            .join("v1.0")
+            .join("powershell.exe");
+        let probe = "Add-Type -Name W -Namespace K -MemberDefinition '[DllImport(\"kernel32\")] \
+                     public static extern IntPtr GetConsoleWindow();'; \
+                     [Environment]::Exit([int]([K.W]::GetConsoleWindow() -ne [IntPtr]::Zero))";
+        let spec = ProcessSpec {
+            program: powershell,
+            argv: vec!["-NoProfile".to_owned(), "-Command".to_owned(), probe.to_owned()],
+            stdin: Vec::new(),
+            cwd: Some(scratch.clone()),
+            env: vec![
+                ("SystemRoot".to_owned(), system_root),
+                // Add-Type compiles through a temporary file; without TEMP it writes
+                // under the Windows directory, which this user cannot write to.
+                ("TEMP".to_owned(), scratch.display().to_string()),
+                ("TMP".to_owned(), scratch.display().to_string()),
+            ],
+            deadline: std::time::Duration::from_secs(60),
+            stdout_limit: 1024,
+            stderr_limit: 1024,
+        };
+        let outcome = run(spec, None).await;
+        assert!(
+            outcome.succeeded(),
+            "the child saw its own console window; code: {:?}, stderr: {:?}",
+            outcome.exit_code,
+            String::from_utf8_lossy(&outcome.stderr)
+        );
+    }
 }
