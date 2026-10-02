@@ -9,18 +9,18 @@
  * Usage:
  *   bun scripts/build-gpui-app.ts            # build bundle at apps/desktop-gpui/target/Refyard.app
  *   bun scripts/build-gpui-app.ts --open     # …and `open` it afterwards
- *   bun scripts/build-gpui-app.ts --release  # cargo build --release
+ *   bun scripts/build-gpui-app.ts --release  # cargo build --release first
  *
  * The logo source is `packages/logo/refyard-app-icon-v2.svg`, rasterized at 1024px and
  * downscaled into a full iconset, so every size comes from the vector rather than an
  * upscaled bitmap.
  */
+import { execFileSync } from "node:child_process";
+import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-import { $ } from "bun";
-import { existsSync, mkdirSync, cpSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-
-const repoRoot = join(import.meta.dir, "..");
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const appDir = join(repoRoot, "apps/desktop-gpui");
 const logoSvg = join(repoRoot, "packages/logo/refyard-app-icon-v2.svg");
 
@@ -33,6 +33,13 @@ const target = join(appDir, "target");
 const binary = join(target, profile, "refyard-gpui");
 const bundle = join(target, "Refyard.app");
 
+function run(command: string, ...arguments_: string[]): void {
+  execFileSync(command, arguments_, { stdio: "inherit" });
+}
+
+if (args.has("--release")) {
+  run("cargo", "build", "--release");
+}
 if (!existsSync(binary)) {
   console.error(`refyard: ${binary} not found — run 'cargo build' in apps/desktop-gpui first`);
   process.exit(1);
@@ -44,7 +51,7 @@ rmSync(scratch, { recursive: true, force: true });
 const iconset = join(scratch, "refyard.iconset");
 mkdirSync(iconset, { recursive: true });
 const rasterized = join(scratch, "icon-1024.png");
-await $`sips -s format png -Z 1024 ${logoSvg} --out ${rasterized}`.quiet();
+run("sips", "-s", "format", "png", "-Z", "1024", logoSvg, "--out", rasterized);
 const sizes: Array<[string, string]> = [
   ["16", "icon_16x16.png"],
   ["32", "icon_16x16@2x.png"],
@@ -58,10 +65,10 @@ const sizes: Array<[string, string]> = [
   ["1024", "icon_512x512@2x.png"],
 ];
 for (const [size, name] of sizes) {
-  await $`sips -s format png -Z ${size} ${rasterized} --out ${join(iconset, name)}`.quiet();
+  run("sips", "-s", "format", "png", "-Z", size, rasterized, "--out", join(iconset, name));
 }
 const icns = join(scratch, "refyard.icns");
-await $`iconutil -c icns ${iconset} -o ${icns}`;
+run("iconutil", "-c", "icns", iconset, "-o", icns);
 
 console.log("refyard: assembling Refyard.app");
 const contents = join(bundle, "Contents");
@@ -103,11 +110,11 @@ const infoPlist = `<?xml version="1.0" encoding="UTF-8"?>
 writeFileSync(join(contents, "Info.plist"), infoPlist);
 // Ad-hoc signature: without one, Gatekeeper re-checks the bundle on every launch and
 // the Dock icon lags a build behind.
-await $`codesign --force --sign - ${bundle}`;
+run("codesign", "--force", "--sign", "-", bundle);
 
 console.log(`refyard: built ${bundle}`);
 if (args.has("--open")) {
-  const launchArgs = repoPath ? [bundle, "--args", repoPath] : [bundle];
-  await $`open ${launchArgs}`;
+  const launchArguments = repoPath ? [bundle, "--args", repoPath] : [bundle];
+  run("open", ...launchArguments);
   console.log("refyard: launched");
 }
