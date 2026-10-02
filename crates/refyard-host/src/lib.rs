@@ -10,6 +10,7 @@ pub mod clock;
 pub mod events;
 pub mod files;
 pub mod jobs;
+pub mod locate;
 pub mod paths;
 pub mod process;
 pub mod providers;

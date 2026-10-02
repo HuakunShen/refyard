@@ -34,22 +34,16 @@ impl LocalGit {
     ///
     /// A path is resolved rather than a bare name passed to `Command`, so a later
     /// change to `PATH` (or a malicious directory earlier in it) cannot swap the
-    /// program between two commands of one session.
+    /// program between two commands of one session. The PATH rules themselves — the
+    /// separator and the executable's name — are the platform's, via [`crate::locate`].
     pub fn discover() -> Result<Self, String> {
         let path = std::env::var("PATH").unwrap_or_default();
-        for directory in path.split(':') {
-            if directory.is_empty() {
-                continue;
-            }
-            let candidate = Path::new(directory).join("git");
-            if candidate.is_file() {
-                return Ok(Self {
-                    program: candidate,
-                    env: git_environment(),
-                });
-            }
-        }
-        Err("git was not found on PATH".to_string())
+        let program = crate::locate::program(&path, "git", std::env::consts::OS)
+            .ok_or_else(|| "git was not found on PATH".to_string())?;
+        Ok(Self {
+            program,
+            env: git_environment(),
+        })
     }
 
     /// A provider for a specific executable, used by tests and by `doctor`.
