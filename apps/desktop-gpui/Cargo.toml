@@ -25,6 +25,7 @@ path = "src/main.rs"
 gpui-kit = "0.7"
 refyard-contract = { path = "../../crates/refyard-contract" }
 refyard-graph = { path = "../../crates/refyard-graph" }
+refyard-dock-icon = { path = "../../crates/refyard-dock-icon" }
 refyard-host = { path = "../../crates/refyard-host" }
 # The service is tokio-native (tokio::process, tokio::sync::broadcast); the app owns one
 # multi-thread runtime and bridges results to the GPUI executor over smol channels.

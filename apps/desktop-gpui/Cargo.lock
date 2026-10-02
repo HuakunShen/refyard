@@ -5558,6 +5558,7 @@ version = "0.1.0"
 dependencies = [
  "gpui-kit",
  "refyard-contract",
+ "refyard-dock-icon",
  "refyard-graph",
  "refyard-host",
  "rfd",
@@ -5565,6 +5566,15 @@ dependencies = [
  "serde_json",
  "smol",
  "tokio",
+]
+
+[[package]]
+name = "refyard-dock-icon"
+version = "0.1.0"
+dependencies = [
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
 ]
 
 [[package]]

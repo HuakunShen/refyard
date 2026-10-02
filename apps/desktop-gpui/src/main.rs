@@ -23,6 +23,8 @@ use std::sync::Arc;
 
 use crate::composition::Host;
 
+actions!(refyard, [Quit]);
+
 fn main() {
     let open_path = std::env::args().nth(1);
     let host = match Host::for_this_machine() {
@@ -38,6 +40,10 @@ fn main() {
         .with_assets(assets::Assets)
         .run(move |cx| {
             init(cx);
+            // Cmd+Q quits: without an app menu the binding has nothing to invoke.
+            cx.on_action(|_: &Quit, cx| cx.quit());
+            cx.bind_keys([KeyBinding::new("cmd-q", Quit, None)]);
+            cx.set_menus([Menu::new("Refyard").items([MenuItem::action("Quit Refyard", Quit)])]);
             // Dark is the workbench default; `REFYARD_THEME=light` starts light, which
             // is how the light palette gets verified without in-app interaction.
             let mode = if theme_override.as_deref() == Some("light") {
@@ -60,5 +66,21 @@ fn main() {
                 cx.new(|cx| app_state::AppState::new(host.clone(), open_path, window, cx))
             })
             .expect("Failed to open window");
+
+            // The Dock icon follows the system appearance: two tiles ship in the
+            // bundle's resources, and the crate swaps them as macOS switches. The
+            // handle is leaked on purpose — the observer serves the process's life.
+            if let Ok(executable) = std::env::current_exe() {
+                if let Some(resources) = executable.parent().map(|dir| dir.join("../Resources"))
+                {
+                    match refyard_dock_icon::install_on_current_thread(
+                        &resources.join("icon-light.png"),
+                        &resources.join("icon-dark.png"),
+                    ) {
+                        Ok(dock_icon) => std::mem::forget(dock_icon),
+                        Err(problem) => eprintln!("refyard-gpui: {problem}"),
+                    }
+                }
+            }
         });
 }

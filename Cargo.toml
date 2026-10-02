@@ -12,6 +12,7 @@ members = [
   "crates/refyard-cli",
   "crates/refyard-http",
   "crates/refyard-graph",
+  "crates/refyard-dock-icon",
 ]
 default-members = [
   "crates/refyard-contract",
@@ -20,6 +21,7 @@ default-members = [
   "crates/refyard-cli",
   "crates/refyard-http",
   "crates/refyard-graph",
+  "crates/refyard-dock-icon",
 ]
 
 [workspace.package]

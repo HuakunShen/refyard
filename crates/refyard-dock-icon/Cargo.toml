@@ -1,0 +1,20 @@
+# A per-user appearance-aware Dock icon for the macOS shells.
+#
+# macOS switches an app's Dock icon with the system appearance only when the bundle
+# carries an appearance-aware asset catalog; neither the GPUI nor the Tauri bundle
+# ships one (the platform `actool` compiles no dark renditions for a hand-written mac
+# app-icon set), so this crate does what the catalog would do at run time: pick the
+# icon for the current appearance, apply it to `NSApplication`, and re-apply it when
+# the system appearance changes. The shells share one implementation because the
+# behaviour — and the two PNGs it reads — is a product fact, not a shell detail.
+[package]
+name = "refyard-dock-icon"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+objc2 = "0.6"
+objc2-app-kit = "0.3"
+objc2-foundation = "0.3"

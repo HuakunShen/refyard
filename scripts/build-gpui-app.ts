@@ -23,6 +23,7 @@ import { fileURLToPath } from "node:url";
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const appDir = join(repoRoot, "apps/desktop-gpui");
 const logoSvg = join(repoRoot, "packages/logo/refyard-app-icon-v2.svg");
+const darkSvg = join(repoRoot, "packages/logo/refyard-app-icon-v2-dark.svg");
 
 const argv = process.argv.slice(2);
 const args = new Set(argv);
@@ -70,6 +71,11 @@ for (const [size, name] of sizes) {
 const icns = join(scratch, "refyard.icns");
 run("iconutil", "-c", "icns", iconset, "-o", icns);
 
+// The two appearance tiles the dock-icon crate swaps at run time: the same SVGs the
+// catalog above comes from, rasterized straight to 1024px.
+const darkRasterized = join(scratch, "icon-dark-1024.png");
+run("sips", "-s", "format", "png", "-Z", "1024", darkSvg, "--out", darkRasterized);
+
 console.log("refyard: assembling Refyard.app");
 const contents = join(bundle, "Contents");
 rmSync(bundle, { recursive: true, force: true });
@@ -77,6 +83,8 @@ mkdirSync(join(contents, "MacOS"), { recursive: true });
 mkdirSync(join(contents, "Resources"), { recursive: true });
 cpSync(binary, join(contents, "MacOS", "Refyard"));
 cpSync(icns, join(contents, "Resources", "refyard.icns"));
+cpSync(rasterized, join(contents, "Resources", "icon-light.png"));
+cpSync(darkRasterized, join(contents, "Resources", "icon-dark.png"));
 // The identifier is a placeholder: `refyard` is a working name and no domain is owned.
 const infoPlist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

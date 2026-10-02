@@ -37,6 +37,7 @@ pub mod session;
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use objc2::MainThreadMarker;
 
 use tauri::Manager;
 
@@ -258,6 +259,20 @@ pub fn run() {
             let service = Arc::clone(&state.service);
             let events = Arc::clone(&state.events);
             tauri::async_runtime::spawn(relay::run(handle, service, events));
+            // The Dock icon follows the system appearance: two tiles ship as bundle
+            // resources, and the crate swaps them as macOS switches. The handle is
+            // intentionally forgotten — the observer serves the process's life.
+            if let Ok(resource_dir) = app.path().resource_dir() {
+                let resources = resource_dir.join("resources");
+                match refyard_dock_icon::install(
+                    MainThreadMarker::new().expect("tauri setup runs on the main thread"),
+                    &resources.join("icon-light.png"),
+                    &resources.join("icon-dark.png"),
+                ) {
+                    Ok(dock_icon) => std::mem::forget(dock_icon),
+                    Err(problem) => eprintln!("refyard: {problem}"),
+                }
+            }
             if let Some(window) = app.get_webview_window("main") {
                 follow_system_appearance(&window);
                 let guard = window.clone();
