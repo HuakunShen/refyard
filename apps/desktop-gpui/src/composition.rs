@@ -22,7 +22,6 @@ use crate::bridge::HostRuntime;
 
 /// The actor every UI submission is made under. The service namespaces its idempotency
 /// and queue records per actor; one process, one actor.
-#[expect(dead_code, reason = "mutations arrive with the changes view")]
 pub const ACTOR: &str = "gpui-main";
 
 /// Everything the UI needs to reach the host.

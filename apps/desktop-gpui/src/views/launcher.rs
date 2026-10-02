@@ -101,9 +101,9 @@ impl LauncherView {
                 .await;
         });
         self._task = Some(cx.spawn(async move |this, cx| {
+            // Channel closed with nothing in flight: the background task aborted.
+            // Reset the UI rather than leaving it pending forever.
             let Ok(message) = rx.recv().await else {
-                // Channel closed with nothing in flight: the background task aborted.
-                // Reset the UI rather than leaving it pending forever.
                 this.update(cx, |this, cx| {
                     this.loading = false;
                     this.error = Some("the background task aborted".to_owned());
