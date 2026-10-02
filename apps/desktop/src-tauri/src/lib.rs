@@ -11,9 +11,10 @@
 //!   as assets and reached over Tauri's IPC; nothing in this dependency tree contains a JS
 //!   engine, an HTTP server or a sidecar.
 //! - **one plugin, never granted to the WebView.** The dialog plugin is linked so the host
-//!   can open the OS folder picker when a session asks for it, but no `dialog:*` permission
-//!   is granted, so the WebView has no command of the plugin to call. The picker is
-//!   reachable only through `refyard_host_request`, behind the session registry like
+//!   can open the OS folder picker when a session asks for it, and so a startup failure can
+//!   be shown as a dialog instead of a process that dies unseen, but no `dialog:*`
+//!   permission is granted, so the WebView has no command of the plugin to call. The picker
+//!   is reachable only through `refyard_host_request`, behind the session registry like
 //!   everything else. The other capabilities are `core:event:default` (listen and
 //!   unlisten), `core:window:allow-start-dragging` for the overlay title bar's drag
 //!   strip, and the updater pair — `updater:default` plus `process:allow-restart` —
@@ -68,9 +69,9 @@ impl AppState {
     /// Builds the state a desktop process serves: the local target, discovered once, with the
     /// private state directory this machine's platform gives a per-user application.
     ///
-    /// Discovery happens before the window opens, so a machine without `git` fails to start
-    /// with that sentence on stderr instead of opening a workbench whose every panel reports
-    /// an error.
+    /// Discovery happens here, before the window exists, so a machine without `git` is
+    /// told at startup — `run` decides how the failure reaches the person — rather than
+    /// by a workbench that cannot explain why every panel is empty.
     pub fn for_this_machine() -> Result<Self, String> {
         let git = LocalGit::discover()?;
         let environment: Vec<(String, String)> = std::env::vars().collect();
@@ -226,20 +227,21 @@ fn follow_system_appearance(window: &tauri::WebviewWindow) {
 }
 
 /// Opens the window and serves commands until it closes.
+///
+/// A machine whose startup fails — no Git found, a state directory that cannot be made —
+/// still gets a window and a message: the failure is reported as a dialog the person
+/// reads (and on stderr, for a terminal launch), every command meanwhile answering
+/// "state not managed" because nothing was `manage`d, and acknowledging the dialog ends
+/// the process. Exiting before the event loop — what this used to do — showed nothing at
+/// all under `windows_subsystem = "windows"`, which is how a Windows machine with Git
+/// installed read as a dead shortcut.
 pub fn run() {
-    let state = match AppState::for_this_machine() {
-        Ok(state) => state,
-        Err(message) => {
-            eprintln!("refyard: {message}");
-            std::process::exit(1);
-        }
-    };
+    let startup = AppState::for_this_machine();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .manage(state)
         // The window is born hidden and appears only when the document has finished loading,
         // so nobody ever sees a bare white canvas: the first visible frame already carries the
         // theme. The host cannot know whether the page will ever finish, so a guard thread
@@ -249,7 +251,15 @@ pub fn run() {
                 let _ = webview.window().show();
             }
         })
-        .setup(|app| {
+        .setup(move |app| {
+            let state = match startup {
+                Ok(state) => state,
+                Err(message) => {
+                    report_startup_failure(app.handle().clone(), message);
+                    return Ok(());
+                }
+            };
+            app.manage(state);
             // One relay for the process: it reads the service's event stream and hands each
             // frame to the windows that subscribed, so a write in one window reaches another
             // window watching the same repository.
@@ -294,7 +304,27 @@ pub fn run() {
             commands::refyard_operation_cancel,
         ])
         .run(tauri::generate_context!())
-        .expect("the desktop window failed to start");
+        .expect("the desktop window failed to start")
+}
+
+/// Puts a startup failure where a person can read it, then ends the process.
+///
+/// `blocking_show` must not run on the main thread — it would starve the event loop the
+/// dialog itself needs — so the dialog runs on a spawned thread and its dismissal is
+/// what exits. Setup has already returned by then and the loop is serving: the window
+/// the guard thread shows carries the frontend's own error surfaces while the dialog
+/// is up.
+fn report_startup_failure(app: tauri::AppHandle, message: String) {
+    eprintln!("refyard: {message}");
+    std::thread::spawn(move || {
+        use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+        app.dialog()
+            .message(format!("Refyard could not start.\n\n{message}"))
+            .title("Refyard")
+            .kind(MessageDialogKind::Error)
+            .blocking_show();
+        std::process::exit(1);
+    });
 }
 
 #[cfg(test)]
@@ -316,13 +346,19 @@ mod tests {
 
     #[test]
     fn an_ssh_config_file_is_taken_only_when_the_environment_names_a_usable_one() {
+        // Absolute on whichever host runs the test: a leading slash is not an absolute
+        // path on Windows, and the empty and relative cases below are the refusals.
+        let absolute = std::env::temp_dir()
+            .join("fixture")
+            .join(".ssh")
+            .join("config");
         assert_eq!(
-            ssh_config_from(&environment("/tmp/fixture/.ssh/config")),
-            Some(PathBuf::from("/tmp/fixture/.ssh/config"))
+            ssh_config_from(&environment(&absolute.display().to_string())),
+            Some(absolute)
         );
         assert_eq!(ssh_config_from(&[]), None);
-        // An empty value would become `-F ""`, which OpenSSH refuses; a relative one would
-        // be resolved against whatever directory the process happens to be in.
+        // An empty value would become `-F ""`, which OpenSSH refuses; a relative one would be
+        // resolved against whatever directory the process happens to be in.
         assert_eq!(ssh_config_from(&environment("")), None);
         assert_eq!(ssh_config_from(&environment("ssh/config")), None);
         // Another variable's presence is not this variable's value.
