@@ -19,6 +19,7 @@
   import type {
     CommitSummary,
     ExecutionTargetSummary,
+    RepositorySummary,
   } from "@refyard/git-contract";
   import {
     SettingsDialog,
@@ -97,6 +98,11 @@
     repositoryTabKey,
     type RepositoryTab,
   } from "$lib/workbench/repository-tabs.js";
+  import {
+    loadSessionTabs,
+    restoreSessionTabs,
+    saveSessionTabs,
+  } from "$lib/workbench/session-restore.js";
   import {
     recentRepositoryKey,
     type RecentRepository,
@@ -412,6 +418,20 @@
   let launcherTargetSummary = $state<ExecutionTargetSummary | null>(null);
   let recentLoaded = $state(false);
   let launcherRequested = $state(false);
+  /**
+   * Session restore runs once per launch, after a session exists: the saved tab paths
+   * are re-registered (idempotent by location) and the workbench opens on what comes
+   * back. Until it has attempted, the save effect stays out of the way so an in-flight
+   * restore cannot overwrite the very set it is restoring.
+   */
+  let sessionRestoreAttempted = $state(false);
+  /**
+   * Restore has *finished* — every registration resolved, well or poorly. The save
+   * effect waits for this, not merely for the attempt: writing while a restore is in
+   * flight would replace the set being restored with an empty one, and a quit during
+   * that window would cost the reader their session.
+   */
+  let sessionRestoreSettled = $state(false);
   let knownRepositoryIds = $state<string[]>([]);
   let tabWorktrees = $state<
     Record<string, { id: string; label: string; path: string }>
@@ -644,6 +664,75 @@
     selection.diffPathId = null;
   }
 
+  /**
+   * Session restore, GitKraken-style: the tabs the last session had open come back on
+   * launch. Re-registering each saved path is idempotent by location, so "restore" is
+   * just "open again" — the ones that come back rejoin the registry and the adoption
+   * effect below treats them like any other repository it finds. A path that fails
+   * (moved, deleted, on an unconnected host) is skipped: the launcher opens over
+   * whatever did come back, and the recent list still knows where everything went.
+   */
+  $effect(() => {
+    if (!browser || sessionRestoreAttempted) return;
+    // Single mode pins its one tab by URL; there is nothing of the reader's to restore.
+    if (singleRepository) {
+      sessionRestoreAttempted = true;
+      sessionRestoreSettled = true;
+      return;
+    }
+    if (backendSession === null) return;
+    sessionRestoreAttempted = true;
+    void (async () => {
+      try {
+        const saved = loadSessionTabs(window.localStorage);
+        if (saved === null) return;
+        const { tabs, activeRepositoryId } = await restoreSessionTabs(
+          saved.tabs,
+          backendSession.git,
+        );
+        if (tabs.length === 0) return;
+        for (const tab of tabs) {
+          openRepositoryTab(repositoryTabs, tab);
+        }
+        // The restored ids join the adoption guard: the list read that follows the
+        // registrations would otherwise adopt the same repositories again as fresh,
+        // unworktreed tabs beside the ones restore just opened.
+        knownRepositoryIds = [
+          ...knownRepositoryIds,
+          ...tabs.map((tab) => tab.repositoryId),
+        ];
+        if (activeRepositoryId !== null) {
+          repositoryTabs.activeRepositoryId = activeRepositoryId;
+          repositoryTabs.revision += 1;
+        }
+        if (selection.repositoryId === null && tabs[0] !== undefined) {
+          selectRepository(selection, tabs[0].repositoryId);
+        }
+        launcherOpen = false;
+        // The sidebar and adoption work from the list; make it reflect what restore
+        // just registered.
+        await queries.repositories.refetch();
+      } finally {
+        sessionRestoreSettled = true;
+      }
+    })();
+  });
+
+  /**
+   * Persist the open-tab set on every change, so the next launch restores this exact
+   * set instead of asking the reader to find their repositories in the recent list.
+   * Runs only after restore has settled: writing while a restore is in flight would
+   * replace the set it is restoring with an empty one.
+   */
+  $effect(() => {
+    if (!browser || singleRepository || !sessionRestoreSettled) return;
+    saveSessionTabs(
+      window.localStorage,
+      repositoryTabs.tabs,
+      repositoryTabs.activeRepositoryId,
+    );
+  });
+
   $effect(() => {
     if (browser && !recentLoaded) {
       recentLoaded = true;
@@ -665,6 +754,11 @@
         recentRepositories = [];
       }
     }
+    // While a session restore is in flight, the repository list is what restore is
+    // rewriting register-by-register — and each registration's refetch would have
+    // adoption open a second, worktree-less tab beside the one restore just opened.
+    // Restore marks its ids as it finishes; adoption resumes from there.
+    if (!sessionRestoreSettled) return;
     // A repository may already have a tab when it reaches this effect: an open the user
     // just triggered adds its own tab first, and a list read that arrives afterwards
     // must not add a second one with the same identity. Svelte's keyed tab list cannot
