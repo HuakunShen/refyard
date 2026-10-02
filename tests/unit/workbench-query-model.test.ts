@@ -9,6 +9,7 @@ import {
   diffRequestForSelection,
   historyNoticesFor,
   laneColorFor,
+  readAdvertised,
   workspaceRootsFor,
 } from "../../apps/web/src/lib/workbench/query-model.js";
 
@@ -50,6 +51,23 @@ function status(kind: StatusEntry["kind"], indexStatus = "."): StatusEntry {
 }
 
 describe("workbench query model", () => {
+  it("treats a host that has not answered capabilities as advertising every read", () => {
+    // A panel must not flash hidden while capabilities is still in flight: the
+    // same "unknown must not hold back reads" rule the queries' supportsRead
+    // follows, so the section gate and the query gate can never disagree.
+    expect(readAdvertised(undefined, "worktrees")).toBe(true);
+  });
+
+  it("answers readAdvertised from the reported reads list and nothing else", () => {
+    // A host that offers worktree writes but not the worktrees read (the native
+    // host before its worktrees read shipped) must not see the panel mount on a
+    // query that can never resolve — this is the forever-"Reading worktrees…"
+    // failure this function exists to prevent.
+    const reads = ["capabilities", "status", "refs"] as const;
+    expect(readAdvertised(reads, "worktrees")).toBe(false);
+    expect(readAdvertised([...reads, "worktrees"], "worktrees")).toBe(true);
+  });
+
   it("keeps first root order while duplicate ids take the last repository path", () => {
     expect(
       workspaceRootsFor([

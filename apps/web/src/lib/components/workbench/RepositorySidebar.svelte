@@ -115,10 +115,19 @@
   const writesAllowed = $derived(mutations.writesAllowed);
   const branchAvailable = $derived(mutations.availability.branch);
   const networkAvailable = $derived(mutations.availability.network);
-  const stashAvailable = $derived(mutations.availability.stash);
+  // A list panel needs its read, not just its write operations: a host that can
+  // create worktrees/stashes/submodules but not list them would mount a section
+  // on a query its gate never enables — a loading state that never resolves.
+  const stashAvailable = $derived(
+    mutations.availability.stash && queries.stashesPanelAvailable,
+  );
   const tagAvailable = $derived(mutations.availability.tag);
-  const worktreeAvailable = $derived(mutations.availability.worktree);
-  const submoduleAvailable = $derived(mutations.availability.submodule);
+  const worktreeAvailable = $derived(
+    mutations.availability.worktree && queries.worktreesPanelAvailable,
+  );
+  const submoduleAvailable = $derived(
+    mutations.availability.submodule && queries.submodulesPanelAvailable,
+  );
   const providerAvailable = $derived(queries.providerAvailable);
   const mergeAvailable = $derived(mutations.availability.merge);
   const repositoryCreationAvailable = $derived(

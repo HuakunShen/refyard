@@ -61,6 +61,7 @@ import {
   graphCommitFor,
   historyNoticesFor,
   laneColorFor,
+  readAdvertised,
   workspaceRootsFor,
 } from "./query-model.js";
 import { describeBackendProblem } from "./session.js";
@@ -589,6 +590,22 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
   );
 
   /**
+   * Whether the host's capabilities answer backs each list panel's read. A host
+   * may offer a panel's write operations without its read; a section mounted on
+   * that combination shows its loading state forever, because the query's gate
+   * never enables it. Unknown counts as available, matching `supportsRead`.
+   */
+  const worktreesPanelAvailable = $derived(
+    readAdvertised(capabilities.data?.reads, "worktrees"),
+  );
+  const submodulesPanelAvailable = $derived(
+    readAdvertised(capabilities.data?.reads, "submodules"),
+  );
+  const stashesPanelAvailable = $derived(
+    readAdvertised(capabilities.data?.reads, "stashes"),
+  );
+
+  /**
    * Keep an explicit worktree selection valid after a remove/refresh. The null override always
    * remains valid because it resolves to the repository's primary worktree.
    */
@@ -967,6 +984,15 @@ export function createWorkbenchQueries(input: WorkbenchQueryInputs) {
     },
     get stashPanelAvailable() {
       return stashPanelAvailable;
+    },
+    get worktreesPanelAvailable() {
+      return worktreesPanelAvailable;
+    },
+    get submodulesPanelAvailable() {
+      return submodulesPanelAvailable;
+    },
+    get stashesPanelAvailable() {
+      return stashesPanelAvailable;
     },
     get providerAvailable() {
       return providerAvailable;

@@ -2,6 +2,7 @@
 import type {
   CommitSummary,
   HistoryPage,
+  ReadKind,
   RepositorySummary,
   StatusEntry,
 } from "@refyard/git-contract";
@@ -44,6 +45,22 @@ function diffSideForSelection(
     return hasUnstaged || !hasStaged ? "unstaged" : "staged";
   }
   return hasStaged ? "staged" : "unstaged";
+}
+
+/**
+ * Whether a host's capabilities answer says it serves a read.
+ *
+ * Unknown (capabilities not yet answered) counts as advertised, matching the
+ * queries' own `supportsRead`: a panel must not flash hidden while capabilities
+ * is in flight, and the section gate must never be stricter than the query gate
+ * it sits in front of — a section that mounts on a query its host never enables
+ * shows its loading state forever.
+ */
+export function readAdvertised(
+  reads: readonly ReadKind[] | undefined,
+  kind: ReadKind,
+): boolean {
+  return reads === undefined || reads.includes(kind);
 }
 
 /** Preserve the existing Map semantics: duplicate root ids keep their last repository path. */

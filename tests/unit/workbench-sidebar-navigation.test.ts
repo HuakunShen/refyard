@@ -159,3 +159,18 @@ describe("pull requests view", () => {
     ).toBe(false);
   });
 });
+
+describe("worktree-backed views", () => {
+  it("appear only when the host's worktrees read backs the panel", () => {
+    // Prevents: a worktrees entry whose availability came from write operations
+    // alone — a host that can create worktrees but not list them would mount a
+    // section on a query it never enables, showing "Reading worktrees…" forever.
+    expect(
+      views().some((entry) => entry.id === "worktrees" && entry.available),
+    ).toBe(true);
+    const withoutRead = views({ worktreeAvailable: false });
+    expect(
+      withoutRead.some((entry) => entry.id === "worktrees" && entry.available),
+    ).toBe(false);
+  });
+});
