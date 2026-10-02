@@ -37,7 +37,6 @@ pub mod session;
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use objc2::MainThreadMarker;
 
 use tauri::Manager;
 
@@ -264,8 +263,7 @@ pub fn run() {
             // intentionally forgotten — the observer serves the process's life.
             if let Ok(resource_dir) = app.path().resource_dir() {
                 let resources = resource_dir.join("resources");
-                match refyard_dock_icon::install(
-                    MainThreadMarker::new().expect("tauri setup runs on the main thread"),
+                match refyard_dock_icon::install_on_current_thread(
                     &resources.join("icon-light.png"),
                     &resources.join("icon-dark.png"),
                 ) {
