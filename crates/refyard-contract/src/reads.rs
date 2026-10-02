@@ -447,6 +447,35 @@ pub struct StatusSnapshot {
     pub truncated: bool,
 }
 
+/* ---------------------------------------------------------------- worktrees */
+
+/// One worktree of a repository, primary or linked, as `git worktree list` reports it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeSummary {
+    pub worktree_id: String,
+    pub display_path: String,
+    pub head: HeadState,
+    /// False for every row of a bare repository: a bare repo has no checkout.
+    pub is_main: bool,
+    pub is_bare: bool,
+    pub is_detached: bool,
+    pub is_locked: bool,
+    /// Null when the worktree is unlocked or was locked without a reason.
+    pub lock_reason: Option<String>,
+    pub is_prunable: bool,
+}
+
+/// All worktrees of a repository, including the primary one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreesResponse {
+    pub snapshot_id: String,
+    pub repository_id: String,
+    pub read_at: String,
+    pub worktrees: Vec<WorktreeSummary>,
+}
+
 /* ------------------------------------------------------------------ previews */
 
 /// Ask for content fingerprints of selected paths before a stage or discard.
@@ -792,6 +821,92 @@ mod tests {
             commit_message_max_bytes: 1_048_576,
             branch_name_max_length: 255,
         }
+    }
+
+    #[test]
+    fn worktrees_response_serializes_the_shape_the_contract_publishes() {
+        let response = WorktreesResponse {
+            snapshot_id: "snap_1".to_string(),
+            repository_id: "repo_1".to_string(),
+            read_at: "2026-09-18T10:00:00.000Z".to_string(),
+            worktrees: vec![
+                WorktreeSummary {
+                    worktree_id: "wt_1".to_string(),
+                    display_path: "/code/repo".to_string(),
+                    head: HeadState {
+                        kind: HeadKind::Born,
+                        branch_name: Some("main".to_string()),
+                        oid: Some(OID_A.to_string()),
+                        detached: false,
+                    },
+                    is_main: true,
+                    is_bare: false,
+                    is_detached: false,
+                    is_locked: false,
+                    lock_reason: None,
+                    is_prunable: false,
+                },
+                WorktreeSummary {
+                    worktree_id: "wt_2".to_string(),
+                    display_path: "/code/repo-wt".to_string(),
+                    head: HeadState {
+                        kind: HeadKind::Born,
+                        branch_name: None,
+                        oid: Some(OID_B.to_string()),
+                        detached: true,
+                    },
+                    is_main: false,
+                    is_bare: false,
+                    is_detached: true,
+                    is_locked: true,
+                    lock_reason: Some("on a removable disk".to_string()),
+                    is_prunable: false,
+                },
+            ],
+        };
+
+        assert_eq!(
+            serde_json::to_value(&response).expect("serializes"),
+            json!({
+                "snapshotId": "snap_1",
+                "repositoryId": "repo_1",
+                "readAt": "2026-09-18T10:00:00.000Z",
+                "worktrees": [
+                    {
+                        "worktreeId": "wt_1",
+                        "displayPath": "/code/repo",
+                        "head": {
+                            "kind": "born",
+                            "branchName": "main",
+                            "oid": OID_A,
+                            "detached": false,
+                        },
+                        "isMain": true,
+                        "isBare": false,
+                        "isDetached": false,
+                        "isLocked": false,
+                        "lockReason": null,
+                        "isPrunable": false,
+                    },
+                    {
+                        "worktreeId": "wt_2",
+                        "displayPath": "/code/repo-wt",
+                        "head": {
+                            "kind": "born",
+                            "branchName": null,
+                            "oid": OID_B,
+                            "detached": true,
+                        },
+                        "isMain": false,
+                        "isBare": false,
+                        "isDetached": true,
+                        "isLocked": true,
+                        "lockReason": "on a removable disk",
+                        "isPrunable": false,
+                    },
+                ],
+            }),
+        );
     }
 
     #[test]
