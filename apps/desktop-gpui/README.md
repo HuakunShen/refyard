@@ -16,6 +16,19 @@ cargo run --release -- /path/to/repo   # straight into a workbench
 macOS 15+ with Xcode Command Line Tools; Rust 1.92+ (the repository pins 1.98). First
 build compiles the whole GPUI stack — minutes are normal.
 
+### As a macOS app
+
+A bare binary gets a generic exec icon in the Dock. Build the `.app` bundle instead —
+it carries the repository logo and the proper name:
+
+```sh
+cargo build --release
+cd ../..                                   # repository root
+bun scripts/build-gpui-app.ts --open       # builds target/Refyard.app and opens it
+```
+
+`REFYARD_THEME=light` starts the light appearance (dark is the default).
+
 The shell is its own cargo workspace on purpose, like `apps/desktop/src-tauri`: the
 Metal/winit dependency graph must never sit in the headless crates' build, and the root
 release profile is not this binary's profile.
