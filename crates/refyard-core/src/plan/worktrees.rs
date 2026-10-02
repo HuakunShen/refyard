@@ -86,17 +86,27 @@ pub fn plan_worktree_add_detached(destination: &str, oid: &str) -> Result<GitPla
     })
 }
 
-/// One worktree from `git worktree list --porcelain -z`: its raw path bytes and whether
-/// it is locked. The path is bytes — a worktree path can be a POSIX byte path that is not
-/// valid UTF-8, and it is the field a write addresses, so it is never decoded here.
+/// One worktree from `git worktree list --porcelain -z`: its raw path bytes and the
+/// attributes the worktrees read reports. The path and the lock reason are bytes —
+/// both can be POSIX byte strings that are not valid UTF-8, and the path is the field
+/// a write addresses, so neither is decoded here.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorktreeEntry {
     pub path: Vec<u8>,
     pub locked: bool,
+    /// Everything after the first space of the `locked` attribute — raw bytes, so a
+    /// reason holding spaces or a newline survives intact.
+    pub lock_reason: Option<Vec<u8>>,
     /// The commit and branch the worktree holds — the recreation info a destructive remove
     /// reads as its backup before anything is destroyed.
     pub head_oid: Option<String>,
     pub branch: Option<String>,
+    /// A `detached` worktree holds a commit, not a branch.
+    pub detached: bool,
+    /// A bare repository's first block carries `bare` instead of a checkout.
+    pub bare: bool,
+    /// Git considers this worktree prunable (its directory is gone).
+    pub prunable: bool,
     /// The primary worktree (Git lists it first); never a remove's target.
     pub is_primary: bool,
 }
@@ -124,8 +134,12 @@ pub fn parse_worktree_list(bytes: &[u8]) -> Vec<WorktreeEntry> {
     let mut entries: Vec<WorktreeEntry> = Vec::new();
     let mut path: Option<Vec<u8>> = None;
     let mut locked = false;
+    let mut lock_reason: Option<Vec<u8>> = None;
     let mut head_oid: Option<String> = None;
     let mut branch: Option<String> = None;
+    let mut detached = false;
+    let mut bare = false;
+    let mut prunable = false;
     for frame in bytes.split(|b| *b == 0) {
         if frame.is_empty() {
             if let Some(p) = path.take() {
@@ -133,12 +147,19 @@ pub fn parse_worktree_list(bytes: &[u8]) -> Vec<WorktreeEntry> {
                 entries.push(WorktreeEntry {
                     path: p,
                     locked,
+                    lock_reason: lock_reason.take(),
                     head_oid: head_oid.take(),
                     branch: branch.take(),
+                    detached,
+                    bare,
+                    prunable,
                     is_primary,
                 });
             }
             locked = false;
+            detached = false;
+            bare = false;
+            prunable = false;
             continue;
         }
         let (key, value) = match frame.iter().position(|b| *b == b' ') {
@@ -149,10 +170,17 @@ pub fn parse_worktree_list(bytes: &[u8]) -> Vec<WorktreeEntry> {
             path = value.map(|v| v.to_vec());
         } else if key == b"locked" {
             locked = true;
+            lock_reason = value.map(|v| v.to_vec());
         } else if key == b"HEAD" {
             head_oid = value.map(|v| String::from_utf8_lossy(v).to_string());
         } else if key == b"branch" {
             branch = value.map(|v| String::from_utf8_lossy(v).to_string());
+        } else if key == b"detached" {
+            detached = true;
+        } else if key == b"bare" {
+            bare = true;
+        } else if key == b"prunable" {
+            prunable = true;
         }
     }
     if let Some(p) = path.take() {
@@ -160,8 +188,12 @@ pub fn parse_worktree_list(bytes: &[u8]) -> Vec<WorktreeEntry> {
         entries.push(WorktreeEntry {
             path: p,
             locked,
+            lock_reason,
             head_oid,
             branch,
+            detached,
+            bare,
+            prunable,
             is_primary,
         });
     }
@@ -318,6 +350,39 @@ mod lock_tests {
         assert_eq!(entries[0].branch.as_deref(), Some("refs/heads/main"));
         assert!(!entries[1].is_primary);
         assert_eq!(entries[1].head_oid.as_deref(), Some("2222"));
+    }
+
+    #[test]
+    fn a_lock_reason_keeps_its_bytes_including_spaces_and_newlines() {
+        // Prevents: a lock reason mangled to its first token or dropped entirely,
+        // which the worktrees read would surface as a wrong lockReason.
+        let list =
+            b"worktree /repo\0HEAD 1111\0branch refs/heads/main\0\0worktree /repo-wt\0HEAD 2222\0locked waiting\nfor disk\0\0";
+        let entries = parse_worktree_list(list);
+        assert!(entries[1].locked);
+        assert_eq!(entries[1].lock_reason.as_deref(), Some(b"waiting\nfor disk".as_slice()));
+        assert!(entries[0].lock_reason.is_none(), "an unlocked worktree has no reason");
+    }
+
+    #[test]
+    fn a_locked_frame_without_a_reason_is_locked_with_no_reason() {
+        // `git worktree lock` without --reason emits a bare `locked` attribute.
+        let list = b"worktree /repo\0HEAD 1111\0branch refs/heads/main\0\0worktree /repo-wt\0HEAD 2222\0locked\0\0";
+        let entries = parse_worktree_list(list);
+        assert!(entries[1].locked);
+        assert!(entries[1].lock_reason.is_none());
+    }
+
+    #[test]
+    fn the_worktree_list_reads_detached_bare_and_prunable_attributes() {
+        // Prevents: a worktrees read that reports every linked worktree as
+        // attached/non-bare/unprunable because the parser skipped those frames.
+        let list = b"worktree /repo\0bare\0\0worktree /repo-wt\0HEAD 2222\0detached\0prunable gitdir file is gone\0\0";
+        let entries = parse_worktree_list(list);
+        assert!(entries[0].bare, "the bare attribute is read");
+        assert!(entries[1].detached, "the detached attribute is read");
+        assert!(entries[1].prunable, "the prunable attribute is read");
+        assert!(entries[1].branch.is_none(), "a detached worktree carries no branch");
     }
 
     #[test]
