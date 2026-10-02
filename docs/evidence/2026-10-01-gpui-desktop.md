@@ -33,6 +33,10 @@ changes panel). Created with local `git` only; no network.
 4. `04-branches-panel.png` — branches: create input + Create, "Create and switch"
    toggle, list with `feature-branch` (Switch button) and `main` (current: no
    switch/delete offered).
+5. `05-light-changes.png` — the changes panel in the light theme (`REFYARD_THEME=light`).
+6. `06-light-history-graph.png` — the graph in the light theme: blue trunk, purple
+   feature lane with the merge curve, short ref pills (`main` filled, `feature-branch`
+   outlined), striped rows — lane colours legible on both themes.
 
 ## Behaviour verified against the running app
 

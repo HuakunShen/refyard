@@ -33,11 +33,19 @@ fn main() {
         }
     };
 
+    let theme_override = std::env::var("REFYARD_THEME").ok();
     application()
         .with_assets(assets::Assets)
         .run(move |cx| {
             init(cx);
-            theme::apply_theme(gpui_kit::component::theme::ThemeMode::Dark, cx);
+            // Dark is the workbench default; `REFYARD_THEME=light` starts light, which
+            // is how the light palette gets verified without in-app interaction.
+            let mode = if theme_override.as_deref() == Some("light") {
+                gpui_kit::component::theme::ThemeMode::Light
+            } else {
+                gpui_kit::component::theme::ThemeMode::Dark
+            };
+            theme::apply_theme(mode, cx);
 
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(1360.), px(900.)), cx))),
