@@ -119,6 +119,16 @@ pub fn install(_light: &std::path::Path, _dark: &std::path::Path) -> Result<Dock
     Err("dock icon switching is macOS-only".to_owned())
 }
 
+/// The non-macOS twin of the macOS `install_on_current_thread`: same signature, same
+/// answer, so a call site compiles on every platform the shells build for.
+#[cfg(not(target_os = "macos"))]
+pub fn install_on_current_thread(
+    _light: &std::path::Path,
+    _dark: &std::path::Path,
+) -> Result<DockIcon, String> {
+    Err("dock icon switching is macOS-only".to_owned())
+}
+
 #[cfg(target_os = "macos")]
 pub(crate) mod imp {
     use std::path::{Path, PathBuf};
