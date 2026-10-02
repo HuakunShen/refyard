@@ -45,7 +45,8 @@ pub enum StoreMsg {
     Booted {
         generation: u64,
         capabilities: Result<CapabilitiesResponse, String>,
-    },
+        repositories: Vec<RepositorySummary>,
+},
     Status {
         generation: u64,
         snapshot: Result<StatusSnapshot, String>,
@@ -110,6 +111,7 @@ pub struct RepoStore {
     host: Arc<Host>,
     pub repository: RepositorySummary,
     pub capabilities: Option<CapabilitiesResponse>,
+    pub repositories: Vec<RepositorySummary>,
     pub status: Option<StatusSnapshot>,
     pub refs: Option<RefsSnapshot>,
     pub history: HistoryState,
@@ -149,6 +151,7 @@ impl RepoStore {
             host,
             repository,
             capabilities: None,
+            repositories: Vec::new(),
             status: None,
             refs: None,
             history: HistoryState::default(),
@@ -204,10 +207,12 @@ impl RepoStore {
         let service = self.host.service.clone();
         self.host.runtime.spawn(async move {
             let capabilities = service.capabilities().await;
+            let repositories = service.repositories().await;
             let _ = tx
                 .send(StoreMsg::Booted {
                     generation,
                     capabilities: capabilities.map_err(|problem| problem.to_string()),
+                    repositories: repositories.repositories,
                 })
                 .await;
         });
@@ -253,9 +258,12 @@ impl RepoStore {
 
     fn apply(&mut self, message: StoreMsg, cx: &mut Context<Self>) {
         match message {
-            StoreMsg::Booted { generation, capabilities } if generation == self.request_counter => {
+            StoreMsg::Booted { generation, capabilities, repositories }
+                if generation == self.request_counter =>
+            {
                 self.booted = true;
                 self.capabilities = capabilities.ok();
+                self.repositories = repositories;
                 cx.notify();
             }
             StoreMsg::Status { generation, snapshot } if generation == self.status_generation => {
@@ -663,10 +671,40 @@ fn handle_event(
         }
     }
 
+    /// Clear the commit selection — the WIP row's job, handing the right panel back
+    /// to the working copy.
+    pub fn clear_commit_selection(&mut self, cx: &mut Context<Self>) {
+        if self.selected_commit.is_some() || self.commit_detail.is_some() {
+            self.selected_commit = None;
+            self.commit_detail = None;
+            cx.emit(StoreEvent::Changed);
+            cx.notify();
+        }
+    }
+
+    /// The uncommitted-change count the WIP row shows.
+    pub fn wip_count(&self) -> usize {
+        self.status
+            .as_ref()
+            .map(|status| status.entries.len())
+            .unwrap_or(0)
+    }
+
+    /// The current branch's short name, for the WIP row's pill.
+    pub fn current_branch(&self) -> Option<String> {
+        self.status
+            .as_ref()
+            .and_then(|status| status.head.branch_name.clone())
+    }
+
+    /// Every repository the host has registered this session, for the sidebar.
+    pub fn registered_repositories(&self) -> Vec<RepositorySummary> {
+        self.repositories.clone()
+    }
+
     /// Select a history commit: its full message and its changed files, in one round.
     pub fn select_commit(&mut self, oid: String, _cx: &mut Context<Self>) {
         self.selected_commit = Some(oid.clone());
-        let _ = &oid;
         let Some(tx) = self.msg_tx.clone() else {
             return;
         };
@@ -844,6 +882,7 @@ fn handle_event(
         );
     }
 
+    #[expect(dead_code, reason = "branch creation UI returns with the branch actions card")]
     pub fn create_branch(
         &mut self,
         branch_name: String,
@@ -868,6 +907,7 @@ fn handle_event(
         );
     }
 
+    #[expect(dead_code, reason = "branch deletion returns with its confirmation card")]
     pub fn delete_branch(&mut self, branch_name: String, cx: &mut Context<Self>) {
         let target = MutationTarget::Repository {
             repository_id: self.repository.repository_id.clone(),

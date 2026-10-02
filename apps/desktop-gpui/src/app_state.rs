@@ -135,6 +135,7 @@ impl AppState {
             window,
             |this, _, event: &WorkbenchEvent, _window, cx| match event {
                 WorkbenchEvent::Closed => this.close_workbench(cx),
+                WorkbenchEvent::OpenLauncher => this.close_workbench(cx),
             },
         );
         self._subscriptions.push(subscription);

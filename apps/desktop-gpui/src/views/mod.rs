@@ -2,9 +2,9 @@
 //! navigation upward by emitting events, and reads repository state from the shared
 //! `RepoStore`.
 
-pub mod branches;
-pub mod changes;
 pub mod diff_view;
 pub mod history;
 pub mod launcher;
+pub mod sidebar;
+pub mod working_copy;
 pub mod workbench;

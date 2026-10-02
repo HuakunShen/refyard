@@ -1,21 +1,18 @@
 //! Theme handling and the lane colour palette.
 //!
-//! The application pins a macOS-native look on top of the component theme: the system
-//! UI font, a 13px base size, tighter radii, and a full light/dark palette tuned for a
-//! Git workbench (pattern learned from the committed space-lens GPUI shell). `Theme::
-//! change` alone would leave the default web-styled palette; `Theme::update` is what
-//! recolours every component.
-//!
-//! Lane colours are the renderer's side of the opaque `lane-N` tokens the layout crate
-//! produces: an unknown token falls back to lane 1 rather than throwing, exactly as the
-//! web renderer's `lanePaint` does — a graph is not the place to discover that a
-//! palette changed.
+//! The palette is the web workbench's own (`packages/git-ui/src/styles.css`), converted
+//! from oklch to sRGB — the two shells are one product and must not disagree about what
+//! "the workbench" looks like. `Theme::update` recolours every component; the lane
+//! colours below are the renderer's side of the opaque `lane-N` tokens the layout crate
+//! produces, and an unknown token falls back to lane 1 rather than throwing, exactly as
+//! the web renderer's `lanePaint` does.
 
 use gpui_kit::component::theme::{Theme, ThemeMode};
 use gpui_kit::component::ActiveTheme as _;
 use gpui_kit::{px, rgb, App, Hsla, Rgba};
 
-/// Pin the dark theme with the workbench's full palette.
+/// Pin the workbench palette for `mode`. `REFYARD_THEME=light` starts light; dark is
+/// the workbench default.
 pub fn apply_theme(mode: ThemeMode, cx: &mut App) {
     Theme::change(mode, None, cx);
     Theme::update(cx, |theme| {
@@ -25,32 +22,39 @@ pub fn apply_theme(mode: ThemeMode, cx: &mut App) {
         theme.font_size = px(13.);
         theme.radius = px(5.);
         theme.radius_lg = px(9.);
-        theme.colors.background = color(0xffffff, 0x1e1e20);
-        theme.colors.foreground = color(0x202024, 0xeeeeef);
-        theme.colors.muted_foreground = color(0x727278, 0xaaaab0);
-        theme.colors.border = color(0xdcdcdf, 0x3c3c40);
-        theme.colors.input = color(0xc6c6cb, 0x535357);
-        theme.colors.primary = color(0x4f6df5, 0x7c93ff);
-        theme.colors.primary_foreground = rgb(0xffffff).into();
+        // Neutrals: the web tokens background/card/muted/accent/border in dark and
+        // light, so a panel edge in the GPUI shell sits on the same grey it sits on
+        // in the browser.
+        theme.colors.background = color(0xfafafa, 0x0a0a0a);
+        theme.colors.foreground = color(0x0a0a0a, 0xfafafa);
+        theme.colors.popover = color(0xffffff, 0x121212);
+        theme.colors.popover = color(0xffffff, 0x121212);
+        theme.colors.muted = color(0xf3f3f3, 0x1f1f1f);
+        theme.colors.muted_foreground = color(0x737373, 0xa1a1a1);
+        theme.colors.accent = color(0xf3f3f3, 0x262626);
+        theme.colors.border = color(0xe5e5e5, 0x262626);
+        theme.colors.input = color(0xe5e5e5, 0x262626);
+        // The web's default accent is near-neutral in both modes — buttons are
+        // surfaces, not colour.
+        theme.colors.primary = color(0x171717, 0xfafafa);
+        theme.colors.primary_foreground = color(0xfafafa, 0x0a0a0a);
         theme.colors.button_primary = theme.colors.primary;
-        theme.colors.button_primary_foreground = rgb(0xffffff).into();
-        theme.colors.button_primary_hover = color(0x6380f7, 0x8ea3ff);
-        theme.colors.button_primary_active = color(0x4460e0, 0x6b83ef);
-        theme.colors.button = color(0xffffff, 0x3c3c40);
+        theme.colors.button_primary_foreground = theme.colors.primary_foreground;
+        theme.colors.button = color(0xffffff, 0x1f1f1f);
         theme.colors.button_foreground = theme.colors.foreground;
-        theme.colors.button_hover = color(0xf0f0f3, 0x48484d);
-        theme.colors.list_even = color(0xf7f7f8, 0x242426);
-        theme.colors.list_hover = color(0xe8eef7, 0x2f3540);
-        theme.colors.list_active = color(0xd8d8df, 0x45454b);
-        theme.colors.sidebar = color(0xf2f2f4, 0x252527);
+        theme.colors.button_hover = color(0xf3f3f3, 0x262626);
+        theme.colors.list_even = color(0xfafafa, 0x0e0e0e);
+        theme.colors.list_hover = color(0xf3f3f3, 0x1f1f1f);
+        theme.colors.list_active = color(0xe5e5e5, 0x262626);
+        theme.colors.sidebar = color(0xfafafa, 0x0e0e0e);
         theme.colors.sidebar_foreground = theme.colors.foreground;
-        theme.colors.ring = theme.colors.primary.opacity(0.5);
+        theme.colors.selection = color(0xe8eef7, 0x1f2a3a);
     });
 }
 
 /// Whether the component theme is currently dark, for lane colours and hand-drawn
 /// surfaces that the component tokens do not cover.
-#[expect(dead_code, reason = "used by the theme toggle in the polish task")]
+#[expect(dead_code, reason = "used by hand-drawn surfaces as they arrive")]
 pub fn is_dark(cx: &App) -> bool {
     cx.theme().mode.is_dark()
 }
@@ -62,76 +66,93 @@ pub fn is_dark(cx: &App) -> bool {
 /// out first. Every field is `Copy`, so views treat this like the theme itself.
 #[derive(Clone, Copy)]
 pub struct Palette {
-    #[expect(dead_code, reason = "the theme toggle reads it in the polish task")]
-    pub mode: ThemeMode,
     pub dark: bool,
     pub background: Hsla,
     pub foreground: Hsla,
     pub muted_foreground: Hsla,
+    pub faint: Hsla,
     pub border: Hsla,
     pub danger: Hsla,
-    #[expect(dead_code, reason = "reserved for status colouring")]
     pub success: Hsla,
     pub warning: Hsla,
+    #[expect(dead_code, reason = "the diff renderer colours its own lines")]
+    pub add: Hsla,
+    #[expect(dead_code, reason = "the diff renderer colours its own lines")]
+    pub remove: Hsla,
     pub primary: Hsla,
+    #[expect(dead_code, reason = "primary-filled buttons read their own token")]
     pub primary_foreground: Hsla,
     pub secondary: Hsla,
     pub accent: Hsla,
     pub list_hover: Hsla,
+    #[expect(dead_code, reason = "reserved for selected-row surfaces")]
     pub selection: Hsla,
-    #[expect(dead_code, reason = "reserved for the diff header strip")]
-    pub table_head: Hsla,
+    pub card: Hsla,
+    pub muted: Hsla,
+    pub sidebar: Hsla,
 }
 
 /// Copy the live theme's palette out of the context.
 pub fn palette(cx: &App) -> Palette {
     let theme = cx.theme();
     let colors = &theme.colors;
+    let dark = theme.mode.is_dark();
+    // Status colours are fixed tokens in the web stylesheet, not theme states: add /
+    // remove / warn per mode (dark 0.72-0.76 lightness, light 0.55-0.62).
+    let (add, remove, warn, danger) = if dark {
+        (
+            rgb(0x53be70).into(),
+            rgb(0xef6661).into(),
+            rgb(0xdca744).into(),
+            rgb(0xfb2c36).into(),
+        )
+    } else {
+        (
+            rgb(0x1c8742).into(),
+            rgb(0xc53637).into(),
+            rgb(0xb37903).into(),
+            rgb(0xe7000b).into(),
+        )
+    };
     Palette {
-        mode: theme.mode,
-        dark: theme.mode.is_dark(),
+        dark,
         background: colors.background,
         foreground: colors.foreground,
         muted_foreground: colors.muted_foreground,
+        faint: rgb(if dark { 0x717171 } else { 0x8f8f8f }).into(),
         border: colors.border,
-        danger: colors.danger,
-        success: colors.success,
-        warning: colors.warning,
+        danger,
+        success: add,
+        warning: warn,
+        add,
+        remove,
         primary: colors.primary,
         primary_foreground: colors.primary_foreground,
-        secondary: colors.secondary,
+        secondary: colors.muted,
         accent: colors.accent,
         list_hover: colors.list_hover,
         selection: colors.selection,
-        table_head: colors.table_head,
+        card: colors.popover,
+        muted: colors.muted,
+        sidebar: colors.sidebar,
     }
 }
 
-/// Surface colours for the hand-drawn graph and diff areas: the quiet backgrounds a
-/// workbench is read against, one pair per surface.
-#[expect(dead_code, reason = "reserved for hand-drawn surfaces")]
-pub fn surface(cx: &App, light: u32, dark: u32) -> Hsla {
-    rgb(if is_dark(cx) { dark } else { light }).into()
-}
-
-/// Resolve a lane colour token to a concrete paint for the current theme.
-///
-/// `lane-current` is HEAD's colour and must read differently from every hashed lane, so
-/// it uses the indigo family while the palette cycles around it. The mid-brightness
-/// hues below stay legible on both themes.
+/// Resolve a lane colour token to a concrete paint for the current theme — the web
+/// stylesheet's `--color-lane-*` values, converted per theme.
 pub fn lane_color(token: &str, dark: bool) -> Rgba {
     let (dark_color, light_color) = match token {
-        "lane-current" => (0x9d8cff, 0x5340c9),
-        "lane-1" => (0x5b9cf8, 0x2f6fd0),
-        "lane-2" => (0xc586f2, 0x7d3fc9),
-        "lane-3" => (0xf29a5c, 0xc25f18),
-        "lane-4" => (0x57c472, 0x1e8c3c),
-        "lane-5" => (0x43c5d9, 0x0e7f96),
-        "lane-6" => (0xef79ab, 0xc22a6e),
-        "lane-7" => (0xe3c04a, 0xa67c0a),
-        "lane-8" => (0xef7470, 0xc74038),
+        "lane-current" => (0x5abbe6, 0x0086b3),
+        "lane-1" => (0x85acff, 0x4f6eb7),
+        "lane-2" => (0x5dc879, 0x1c8742),
+        "lane-3" => (0xe69c3a, 0xa76700),
+        "lane-4" => (0xf66d67, 0xbd413f),
+        "lane-5" => (0xcd8ff9, 0x8c54b2),
+        "lane-6" => (0x2ac4cc, 0x008a91),
+        "lane-7" => (0xef82cd, 0xa8488d),
+        "lane-8" => (0xa4b95e, 0x6a7b27),
         // An unknown token falls back to lane 1 instead of throwing.
-        _ => (0x5b9cf8, 0x2f6fd0),
+        _ => (0x85acff, 0x4f6eb7),
     };
     if dark {
         rgb(dark_color)
