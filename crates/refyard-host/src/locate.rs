@@ -98,7 +98,10 @@ mod tests {
     fn unix_paths_still_split_on_colons_and_run_extensionless() {
         let tools = TempDir::new().unwrap();
         let git = executable(&tools, "git");
-        let path_var = format!("/usr/bin:{}", tools.path().display());
+        // The fixture directory leads and /usr/bin trails: a runner whose /usr/bin/git
+        // really exists must not win over PATH order, which is exactly the rule this
+        // test asserts.
+        let path_var = format!("{}:/usr/bin", tools.path().display());
         for os in ["linux", "macos"] {
             assert_found(program(&path_var, "git", os), &git);
         }
