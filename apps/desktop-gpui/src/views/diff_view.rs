@@ -191,10 +191,6 @@ fn hunk_header_background(dark: bool) -> Hsla {
     }
 }
 
-fn line_number_color(dark: bool) -> Hsla {
-    if dark {
-        hsla(0., 0., 0.55, 1.)
-    } else {
-        hsla(0., 0., 0.55, 1.)
-    }
+fn line_number_color(_dark: bool) -> Hsla {
+    hsla(0., 0., 0.55, 1.)
 }

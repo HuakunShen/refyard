@@ -28,7 +28,7 @@ use refyard_graph::layout::{
     default_palette, layout_graph, ref_color_for, GraphCommit, GraphRow, LaneRef, LayoutOptions,
 };
 use refyard_host::events::SubscriberEvent;
-use refyard_host::jobs::{MutationOperation, MutationRequest, SubmitResult};
+use refyard_host::jobs::{FetchTagMode, MutationOperation, MutationRequest, PullMode, SubmitResult};
 use refyard_host::service::StatusQuery;
 use smol::channel;
 
@@ -41,6 +41,9 @@ pub enum StoreEvent {
 }
 
 /// One background message, tagged with the generation that asked for it.
+// Held unboxed for the same reason the contract holds its `Operation` variant: this is
+// a shape on an internal channel, not a hot collection.
+#[allow(clippy::large_enum_variant)]
 pub enum StoreMsg {
     Booted {
         generation: u64,
@@ -105,6 +108,20 @@ pub struct HistoryState {
 pub struct HistoryFilters {
     pub message: Option<String>,
     pub author: Option<String>,
+}
+
+/// The toolbar's one snapshot: what is offered, what changed, what sync acts on.
+#[derive(Clone, Default)]
+pub struct ToolbarState {
+    pub can_stage: bool,
+    pub can_stash: bool,
+    pub can_fetch: bool,
+    pub can_pull: bool,
+    pub can_push: bool,
+    pub changed: usize,
+    pub branch: Option<String>,
+    pub remote_name: Option<String>,
+    pub has_upstream: bool,
 }
 
 pub struct RepoStore {
@@ -229,14 +246,9 @@ impl RepoStore {
         let service = self.host.service.clone();
         self.host.runtime.spawn(async move {
             let mut subscription = service.subscribe_events();
-            loop {
-                match subscription.recv().await {
-                    Some(event) => {
-                        if tx.send(event).await.is_err() {
-                            break;
-                        }
-                    }
-                    None => break,
+            while let Some(event) = subscription.recv().await {
+                if tx.send(event).await.is_err() {
+                    break;
                 }
             }
         });
@@ -697,6 +709,104 @@ fn handle_event(
             .and_then(|status| status.head.branch_name.clone())
     }
 
+    /// Everything the toolbar decides by: what the host offers, what changed, and
+    /// which remote/branch the sync trio would act on. Pure derived data; the row
+    /// holds a button when its operation is advertised and explains itself when the
+    /// repository gives it nothing to do.
+    pub fn toolbar_state(&self) -> ToolbarState {
+        let branch = self
+            .status
+            .as_ref()
+            .and_then(|status| status.head.branch_name.clone());
+        let remotes: Vec<String> = self
+            .refs
+            .as_ref()
+            .map(|refs| refs.remotes.iter().map(|r| r.name.clone()).collect())
+            .unwrap_or_default();
+        let changed = self
+            .status
+            .as_ref()
+            .map(|status| status.entries.iter().filter(|e| e.kind != StatusEntryKind::Ignored).count())
+            .unwrap_or(0);
+        // The branch's own upstream remote first, else origin, else the first remote.
+        let upstream_remote = self
+            .status
+            .as_ref()
+            .and_then(|status| status.upstream.as_ref())
+            .and_then(|upstream| upstream.name.split('/').next().map(str::to_owned))
+            .filter(|name| !name.is_empty());
+        let remote_name = match upstream_remote {
+            Some(name) => Some(name),
+            None if remotes.is_empty() => None,
+            None => Some(
+                remotes
+                    .iter()
+                    .find(|name| name.as_str() == "origin")
+                    .cloned()
+                    .unwrap_or_else(|| remotes[0].clone()),
+            ),
+        };
+        let has_upstream = self
+            .status
+            .as_ref()
+            .and_then(|status| status.upstream.as_ref())
+            .is_some();
+        ToolbarState {
+            can_stage: self.can(MutationKind::StagePaths),
+            can_stash: self.can(MutationKind::CreateStash),
+            can_fetch: self.can(MutationKind::Fetch),
+            can_pull: self.can(MutationKind::Pull),
+            can_push: self.can(MutationKind::Push),
+            changed,
+            branch,
+            remote_name,
+            has_upstream,
+        }
+    }
+
+    /// Map a toolbar action to its mutation, resolving the sync target the same way
+    /// `toolbar_state` reported it.
+    pub fn run_toolbar_action(&mut self, action: crate::views::workbench::ToolbarAction, cx: &mut Context<Self>) {
+        let state = self.toolbar_state();
+        match action {
+            crate::views::workbench::ToolbarAction::StageAll => {
+                let paths: Vec<String> = self
+                    .status
+                    .as_ref()
+                    .map(|status| {
+                        status
+                            .entries
+                            .iter()
+                            .filter(|e| e.kind != StatusEntryKind::Ignored)
+                            .map(|e| e.path_id.clone())
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if !paths.is_empty() {
+                    self.stage_paths(paths, cx);
+                }
+            }
+            crate::views::workbench::ToolbarAction::Stash => self.stash_everything(cx),
+            crate::views::workbench::ToolbarAction::Fetch => {
+                if let Some(remote) = state.remote_name {
+                    self.fetch_remote(remote, cx);
+                }
+            }
+            crate::views::workbench::ToolbarAction::Pull => {
+                if let (Some(remote), true) = (state.remote_name.clone(), state.has_upstream) {
+                    self.pull_remote(remote, cx);
+                }
+            }
+            crate::views::workbench::ToolbarAction::Push => {
+                if let (Some(remote), Some(branch), true) =
+                    (state.remote_name, state.branch, state.has_upstream)
+                {
+                    self.push_branch(remote, branch, cx);
+                }
+            }
+        }
+    }
+
     /// Every repository the host has registered this session, for the sidebar.
     pub fn registered_repositories(&self) -> Vec<RepositorySummary> {
         self.repositories.clone()
@@ -774,6 +884,15 @@ fn handle_event(
         Some(MutationTarget::Worktree {
             repository_id: status.repository_id.clone(),
             worktree_id: status.worktree_id.clone(),
+            expected_snapshot_id: status.snapshot_id.clone(),
+        })
+    }
+
+    /// The repository-level target sync operations address.
+    fn repository_target(&self) -> Option<MutationTarget> {
+        let status = self.status.as_ref()?;
+        Some(MutationTarget::Repository {
+            repository_id: status.repository_id.clone(),
             expected_snapshot_id: status.snapshot_id.clone(),
         })
     }
@@ -882,7 +1001,84 @@ fn handle_event(
         );
     }
 
-    #[expect(dead_code, reason = "branch creation UI returns with the branch actions card")]
+    /// Fetch a remote: prune yes, tags follow. Addressed to the repository target so
+    /// the snapshot binding the host enforces stays in force.
+    pub fn fetch_remote(&mut self, remote_name: String, cx: &mut Context<Self>) {
+        let Some(target) = self.repository_target() else {
+            self.last_problem = Some("no repository target".to_owned());
+            cx.notify();
+            return;
+        };
+        self.submit(
+            "fetch",
+            target,
+            MutationOperation::Fetch {
+                remote_name,
+                prune: true,
+                tags: FetchTagMode::Following,
+            },
+            cx,
+        );
+    }
+
+    /// Fast-forward-only pull from the tracked remote.
+    pub fn pull_remote(&mut self, remote_name: String, cx: &mut Context<Self>) {
+        let Some(target) = self.worktree_target() else {
+            self.last_problem = Some("the status snapshot is not loaded yet".to_owned());
+            cx.notify();
+            return;
+        };
+        self.submit(
+            "pull",
+            target,
+            MutationOperation::Pull {
+                remote_name,
+                mode: PullMode::FfOnly,
+            },
+            cx,
+        );
+    }
+
+    /// Push the current branch to the same name on the remote.
+    pub fn push_branch(&mut self, remote_name: String, branch_name: String, cx: &mut Context<Self>) {
+        let Some(target) = self.repository_target() else {
+            self.last_problem = Some("no repository target".to_owned());
+            cx.notify();
+            return;
+        };
+        self.submit(
+            "push",
+            target,
+            MutationOperation::Push {
+                remote_name,
+                source_ref: format!("refs/heads/{branch_name}"),
+                destination_ref: format!("refs/heads/{branch_name}"),
+                set_upstream: false,
+            },
+            cx,
+        );
+    }
+
+    /// Stash every change, untracked included, with no message.
+    pub fn stash_everything(&mut self, cx: &mut Context<Self>) {
+        let Some(target) = self.worktree_target() else {
+            self.last_problem = Some("the status snapshot is not loaded yet".to_owned());
+            cx.notify();
+            return;
+        };
+        self.submit(
+            "stash",
+            target,
+            MutationOperation::CreateStash {
+                message: None,
+                include_untracked: true,
+                keep_index: false,
+            },
+            cx,
+        );
+    }
+
+    #[expect(dead_code, reason = "branch creation returns with the branches card actions")]
     pub fn create_branch(
         &mut self,
         branch_name: String,

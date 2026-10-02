@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants};
-use gpui_kit::component::{h_flex, v_flex, Icon, Sizable as _};
+use gpui_kit::component::{h_flex, v_flex, Disableable as _, Icon, Sizable as _};
 use gpui_kit::*;
 use refyard_contract::reads::{MutationKind, ReadKind, RepositorySummary};
 
@@ -72,7 +72,7 @@ impl Render for WorkbenchView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = crate::theme::palette(cx);
         // One owned snapshot; the store read ends here so the panels can borrow cx.
-        let (repository_name, repository_path, head_label, upstream, running, last_problem, commit_detail, can_history) = {
+        let (repository_name, repository_path, head_label, upstream, running, last_problem, commit_detail, can_history, toolbar) = {
             let store = self.store.read(cx);
             (
                 store.repository.display_name.clone(),
@@ -93,6 +93,7 @@ impl Render for WorkbenchView {
                 store.last_problem.clone(),
                 store.commit_detail.clone(),
                 store.can_read(ReadKind::History),
+                store.toolbar_state(),
             )
         };
         let _ = MutationKind::DiscardTrackedPaths; // advertised-only; see the working copy
@@ -157,6 +158,17 @@ impl Render for WorkbenchView {
                         })),
                 ),
         );
+
+        // The action toolbar: the basic operations a workbench is operated by, each
+        // present only when the host advertises it and held (with its reason in the
+        // tooltip) when the repository gives it nothing to act on.
+        column = column.child(toolbar_row(
+            self.store.clone(),
+            &toolbar,
+            running.is_some(),
+            &theme,
+            cx,
+        ));
 
         // Body: sidebar | history | working copy (or the selected commit's detail).
         let right_panel: AnyElement = if can_history {
@@ -243,6 +255,155 @@ impl Render for WorkbenchView {
 
         column
     }
+}
+
+/// One toolbar button: outline style, held with its reason. The theme parameter keeps
+/// every call site uniform; the button reads its colours from the component theme.
+#[allow(clippy::too_many_arguments)]
+fn tool_button(
+    id: &'static str,
+    label: &'static str,
+    enabled: bool,
+    tooltip: String,
+    store: &Entity<RepoStore>,
+    action: ToolbarAction,
+    _theme: &crate::theme::Palette,
+    _cx: &mut Context<WorkbenchView>,
+) -> Button {
+    let store = store.clone();
+    Button::new(id)
+        .outline()
+        .small()
+        .label(label)
+        .disabled(!enabled)
+        .tooltip(tooltip)
+        .on_click(move |_, _, cx| {
+            let store = store.clone();
+            store.update(cx, |store, cx| store.run_toolbar_action(action, cx));
+        })
+}
+
+/// The action a toolbar button names — the store maps each to its mutation.
+#[derive(Clone, Copy)]
+pub(crate) enum ToolbarAction {
+    StageAll,
+    Stash,
+    Fetch,
+    Pull,
+    Push,
+}
+
+/// The toolbar row: stage all, stash, then the sync trio — each present only when the
+/// host advertises the operation, each held with its reason when the repository gives
+/// it nothing to act on.
+fn toolbar_row(
+    store: Entity<RepoStore>,
+    state: &crate::store::ToolbarState,
+    busy: bool,
+    theme: &crate::theme::Palette,
+    cx: &mut Context<WorkbenchView>,
+) -> AnyElement {
+    let remote = state.remote_name.clone().unwrap_or_default();
+    let sync_reason = if state.remote_name.is_none() {
+        Some("no remote is configured")
+    } else if state.branch.is_none() {
+        Some("HEAD is not on a branch")
+    } else {
+        None
+    };
+    let mut row = h_flex()
+        .flex_none()
+        .items_center()
+        .gap_1p5()
+        .px_3()
+        .py_1p5()
+        .border_b_1()
+        .border_color(theme.border.opacity(0.6))
+        .bg(theme.card.opacity(0.4));
+
+    if state.can_stage {
+        let changed = state.changed;
+        row = row.child(tool_button(
+            "tb-stage-all",
+            "Stage all",
+            changed > 0 && !busy,
+            if changed == 0 {
+                "Working tree is clean.".to_owned()
+            } else {
+                format!("Stage all {changed} changed path{}", if changed == 1 { "" } else { "s" })
+            },
+            &store,
+            ToolbarAction::StageAll,
+            theme,
+            cx,
+        ));
+    }
+    if state.can_stash {
+        row = row.child(tool_button(
+            "tb-stash",
+            "Stash",
+            state.changed > 0 && !busy,
+            "Stash every change, untracked included".to_owned(),
+            &store,
+            ToolbarAction::Stash,
+            theme,
+            cx,
+        ));
+    }
+    if state.can_fetch || state.can_pull || state.can_push {
+        row = row.child(div().mx_1().h(px(16.0)).w(px(1.0)).bg(theme.border.opacity(0.6)));
+    }
+    if state.can_fetch {
+        row = row.child(tool_button(
+            "tb-fetch",
+            "Fetch",
+            state.remote_name.is_some() && !busy,
+            if state.remote_name.is_none() {
+                "no remote is configured".to_owned()
+            } else {
+                format!("Fetch · {remote}")
+            },
+            &store,
+            ToolbarAction::Fetch,
+            theme,
+            cx,
+        ));
+    }
+    if state.can_pull {
+        let reason = sync_reason
+            .or((!state.has_upstream).then_some("the branch has no upstream"));
+        row = row.child(tool_button(
+            "tb-pull",
+            "Pull",
+            reason.is_none() && !busy,
+            match reason {
+                Some(reason) => reason.to_owned(),
+                None => format!("Fast-forward pull · {remote}"),
+            },
+            &store,
+            ToolbarAction::Pull,
+            theme,
+            cx,
+        ));
+    }
+    if state.can_push {
+        let reason = sync_reason
+            .or((!state.has_upstream).then_some("the branch has no upstream"));
+        row = row.child(tool_button(
+            "tb-push",
+            "Push",
+            reason.is_none() && !busy,
+            match reason {
+                Some(reason) => reason.to_owned(),
+                None => format!("Push · {remote}"),
+            },
+            &store,
+            ToolbarAction::Push,
+            theme,
+            cx,
+        ));
+    }
+    row.into_any_element()
 }
 
 /// What the status line calls a running mutation.

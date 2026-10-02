@@ -34,6 +34,7 @@
     DiffPanel,
     RepositoryLauncher,
     RepositoryTabs,
+    WorkbenchToolbar,
     StateBanner,
     UncertainOutcomePanel,
     cn,
@@ -103,6 +104,7 @@
     restoreSessionTabs,
     saveSessionTabs,
   } from "$lib/workbench/session-restore.js";
+  import { syncTarget } from "$lib/workbench/sync-target.js";
   import {
     recentRepositoryKey,
     type RecentRepository,
@@ -595,6 +597,55 @@
   );
   const draftKey = $derived(`${selectedRepositoryId}:${activeWorktreeId}`);
   let commitDrafts = $state<Record<string, string>>({});
+
+  /* ------------------------------------------------------ toolbar actions */
+
+  /**
+   * The toolbar's actions are the same write flows the side panels run — the toolbar
+   * only surfaces them, gated by the same availability answers. Staging resolves the
+   * paths from the live status snapshot; the sync trio acts on the upstream's remote
+   * (or the repository's first one) for the current branch.
+   */
+  const toolbarTarget = $derived(syncTarget(status.data, refs.data));
+
+  function stageAllChanges(): void {
+    const pathIds = (status.data?.entries ?? [])
+      .filter((entry) => entry.kind !== "ignored")
+      .map((entry) => entry.pathId);
+    if (pathIds.length === 0 || writeController.busy) return;
+    writeController.onStage(pathIds);
+  }
+
+  function stashEverything(): void {
+    if (writeController.busy) return;
+    writeController.onStashCreate("", true);
+  }
+
+  function popLatestStash(): void {
+    const latest = queries.stashes.data?.stashes[0] ?? null;
+    if (latest === null || writeController.busy) return;
+    writeController.onStashPop(latest);
+  }
+
+  function toolbarFetch(): void {
+    if (toolbarTarget === null || writeController.busy) return;
+    writeController.onFetch(toolbarTarget.remoteName);
+  }
+
+  function toolbarPull(): void {
+    if (toolbarTarget === null || writeController.busy) return;
+    writeController.onPull(toolbarTarget.remoteName);
+  }
+
+  function toolbarPush(): void {
+    if (
+      toolbarTarget === null ||
+      toolbarTarget.branchName === null ||
+      writeController.busy
+    )
+      return;
+    writeController.onPush(toolbarTarget.remoteName, toolbarTarget.branchName);
+  }
 
   function openWorktree(worktreeId: string, inNewTab = false): void {
     if (writeController.busy || repository === null) return;
@@ -1629,6 +1680,26 @@
       />
     {/if}
   </header>
+
+  <WorkbenchToolbar
+    visible={repository !== null && !singleRepository && backendSession !== null}
+    busy={mutationBusy}
+    changedCount={status.data?.entries.filter((entry) => entry.kind !== "ignored")
+      .length ?? 0}
+    stashCount={queries.stashes.data?.stashes.length ?? 0}
+    remoteName={toolbarTarget?.remoteName ?? ""}
+    syncProblem={toolbarTarget?.problem ?? null}
+    onStageAll={writeController.availability.staging ? stageAllChanges : null}
+    onStash={writeController.availability.stash ? stashEverything : null}
+    onPopStash={
+      writeController.availability.stashPop && queries.stashes.data !== undefined
+        ? popLatestStash
+        : null
+    }
+    onFetch={writeController.availability.network ? toolbarFetch : null}
+    onPull={writeController.availability.pull ? toolbarPull : null}
+    onPush={writeController.availability.push ? toolbarPush : null}
+  />
 
   {#if sessionExpired}
     <div class="border-b border-border bg-panel px-4 py-2">

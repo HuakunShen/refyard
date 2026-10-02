@@ -7,6 +7,9 @@ export interface MutationAvailability {
   readonly branch: boolean;
   readonly network: boolean;
   readonly stash: boolean;
+  readonly push: boolean;
+  readonly pull: boolean;
+  readonly stashPop: boolean;
   readonly tag: boolean;
   readonly worktree: boolean;
   readonly submodule: boolean;
@@ -25,6 +28,9 @@ export function mutationAvailabilityFor(
     branch: kinds.has("createBranch"),
     network: kinds.has("fetch"),
     stash: kinds.has("createStash"),
+    push: kinds.has("push"),
+    pull: kinds.has("pull"),
+    stashPop: kinds.has("popStash"),
     tag: kinds.has("createTag"),
     worktree: kinds.has("createWorktree"),
     submodule: kinds.has("addSubmodule"),

@@ -173,6 +173,7 @@ export {
   default as RepositoryTabs,
   type RepositoryTabItem,
 } from "./components/RepositoryTabs.svelte";
+export { default as WorkbenchToolbar } from "./components/WorkbenchToolbar.svelte";
 export type {
   CloneRequest as RepositoryCloneRequest,
   InitRequest as RepositoryInitRequest,

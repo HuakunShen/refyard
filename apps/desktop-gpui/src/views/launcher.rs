@@ -26,6 +26,8 @@ pub enum LauncherEvent {
 }
 
 /// One message from a background call, tagged with the generation that asked for it.
+// Held unboxed deliberately: an internal channel's shape, not a hot collection.
+#[allow(clippy::large_enum_variant)]
 enum LauncherMsg {
     Booted {
         generation: u64,

@@ -77,7 +77,7 @@ fn main() {
                         &resources.join("icon-light.png"),
                         &resources.join("icon-dark.png"),
                     ) {
-                        Ok(dock_icon) => std::mem::forget(dock_icon),
+                        Ok(_) => {}
                         Err(problem) => eprintln!("refyard-gpui: {problem}"),
                     }
                 }
