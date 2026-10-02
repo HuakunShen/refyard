@@ -24,8 +24,8 @@
 //!   cannot name a path, a program or an argument. Git runs only where the service's planners
 //!   put it, against repositories the host approved.
 //!
-//! The bundle identifier is a placeholder: `refyard` is a working name and no domain is owned,
-//! so this file claims none.
+//! The bundle identifier is `tech.huakun.refyard`: the owner's own domain, reversing the
+//! earlier placeholder, which claimed `dev.refyard` while no such domain existed.
 //!
 //! The modules are public so the integration tests can drive the production dispatcher and the
 //! real ownership gate instead of a test double.
@@ -336,8 +336,14 @@ mod tests {
         // The host-side backdrop must be the exact --color-canvas each theme ships (converted
         // from oklch 0.145 / 0.985); any drift shows as a one-frame recolor when the
         // stylesheet lands, which is precisely the flash this path exists to prevent.
-        assert_eq!(canvas_color(true), tauri::window::Color(0x0a, 0x0a, 0x0a, 0xff));
-        assert_eq!(canvas_color(false), tauri::window::Color(0xfa, 0xfa, 0xfa, 0xff));
+        assert_eq!(
+            canvas_color(true),
+            tauri::window::Color(0x0a, 0x0a, 0x0a, 0xff)
+        );
+        assert_eq!(
+            canvas_color(false),
+            tauri::window::Color(0xfa, 0xfa, 0xfa, 0xff)
+        );
     }
 
     fn environment(value: &str) -> Vec<(String, String)> {

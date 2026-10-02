@@ -27,6 +27,6 @@ that request, and a signature that does not verify stops it.
 | Path                                             | What it holds                     |
 | ------------------------------------------------ | --------------------------------- |
 | `~/Library/Application Support/refyard` (macOS)   | Approved roots, settings, journal |
-| `~/Library/WebKit/dev.refyard.desktop` (macOS)    | The webview's own storage         |
+| `~/Library/WebKit/tech.huakun.refyard` (macOS)    | The webview's own storage         |
 
 `brew uninstall --zap --cask refyard` removes both.

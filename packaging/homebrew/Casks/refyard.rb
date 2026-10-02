@@ -34,6 +34,10 @@ cask "refyard" do
 
   zap trash: [
     "~/Library/Application Support/refyard",
+    # The identifier became tech.huakun.refyard after 0.2.2; zap cleans both so a
+    # machine that lived through the change keeps neither the old webview storage nor
+    # the new.
     "~/Library/WebKit/dev.refyard.desktop",
+    "~/Library/WebKit/tech.huakun.refyard",
   ]
 end

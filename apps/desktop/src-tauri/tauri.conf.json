@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Refyard",
   "version": "0.2.3",
-  "identifier": "dev.refyard.desktop",
+  "identifier": "tech.huakun.refyard",
   "build": {
     "frontendDist": "../../web/build-desktop"
   },

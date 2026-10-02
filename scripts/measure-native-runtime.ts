@@ -211,7 +211,7 @@ async function launchAppOnce(
     try {
       const listing = execFileSync(
         "lsappinfo",
-        ["info", "-only", "pid", "dev.refyard.desktop"],
+        ["info", "-only", "pid", "tech.huakun.refyard"],
         {
           encoding: "utf8",
         },
