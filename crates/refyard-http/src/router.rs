@@ -5,7 +5,7 @@
 //! response is the service's own DTO; this layer adds no fields, no envelopes and no
 //! defaults a client could mistake for service behaviour.
 //!
-//! Two deliberate absences: `worktrees`, `submodules` and `stashes` are not routed
+//! Two deliberate absences: `submodules` and `stashes` are not routed
 //! because this build does not implement those reads (the `/api` catch-all answers 404,
 //! and `capabilities.reads` does not list them), and the SSH-host listing has no route at
 //! all — a host catalogue is not something a browser page may enumerate unless the
@@ -91,6 +91,7 @@ pub fn build(state: Arc<HttpState>) -> Router {
         .route("/api/v1/status", get(status))
         .route("/api/v1/history", get(history))
         .route("/api/v1/refs", get(refs))
+        .route("/api/v1/worktrees", get(worktrees))
         .route("/api/v1/diff", get(diff))
         .route("/api/v1/previews", post(previews))
         .route(
@@ -720,6 +721,24 @@ async fn refs(
     let query: RefsQuery = query_of(raw_query.0.as_deref(), &state.limits)?;
     require_repository_grant(&state, &session, &query.repository_id).await?;
     let answer = state.service.refs(&query.repository_id).await?;
+    Ok(json_response(StatusCode::OK, &answer))
+}
+
+async fn worktrees(
+    State(state): State<Arc<HttpState>>,
+    headers: HeaderMap,
+    raw_query: axum::extract::RawQuery,
+) -> RouteResult {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct WorktreesQuery {
+        repository_id: String,
+    }
+    let session = authorize(&state, &headers)?;
+    require_scope(&session, scope::READ)?;
+    let query: WorktreesQuery = query_of(raw_query.0.as_deref(), &state.limits)?;
+    require_repository_grant(&state, &session, &query.repository_id).await?;
+    let answer = state.service.worktrees(&query.repository_id).await?;
     Ok(json_response(StatusCode::OK, &answer))
 }
 

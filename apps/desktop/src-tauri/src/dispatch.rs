@@ -120,8 +120,7 @@ pub enum GitReadRequest {
         query: DiffQuery,
     },
     Worktrees {
-        #[serde(default)]
-        query: Option<Value>,
+        query: RepositoryQuery,
     },
     Submodules {
         #[serde(default)]
@@ -255,6 +254,10 @@ pub async fn dispatch_read(
         }
         GitReadRequest::Diff { query } => {
             let response = service.diff(&query).await.map_err(failed)?;
+            to_value(response)
+        }
+        GitReadRequest::Worktrees { query } => {
+            let response = service.worktrees(&query.repository_id).await.map_err(failed)?;
             to_value(response)
         }
         GitReadRequest::Previews { query } => {

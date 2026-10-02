@@ -71,6 +71,13 @@ enum DriverRequest {
         #[serde(default)]
         repository_id: Option<String>,
     },
+    Worktrees {
+        path: String,
+        #[serde(default)]
+        fixture_home: Option<String>,
+        #[serde(default)]
+        repository_id: Option<String>,
+    },
     History {
         path: String,
         #[serde(default)]
@@ -159,6 +166,11 @@ async fn handle(request: DriverRequest) -> Result<serde_json::Value, Problem> {
             fixture_home,
             repository_id,
         }
+        | DriverRequest::Worktrees {
+            path,
+            fixture_home,
+            repository_id,
+        }
         | DriverRequest::History {
             path,
             fixture_home,
@@ -221,6 +233,10 @@ async fn handle(request: DriverRequest) -> Result<serde_json::Value, Problem> {
         DriverRequest::Refs { .. } => {
             let snapshot = service.refs(&repository_id).await?;
             serde_json::to_value(snapshot).map_err(serialize_error)
+        }
+        DriverRequest::Worktrees { .. } => {
+            let response = service.worktrees(&repository_id).await?;
+            serde_json::to_value(response).map_err(serialize_error)
         }
         DriverRequest::History {
             limit,

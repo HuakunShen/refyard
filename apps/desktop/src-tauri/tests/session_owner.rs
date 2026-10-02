@@ -374,14 +374,14 @@ async fn a_read_this_build_does_not_implement_is_refused_and_absent_from_capabil
         &state,
         MAIN,
         &session_id,
-        json!({ "method": "worktrees", "query": { "repositoryId": repository_id } }),
+        json!({ "method": "submodules", "query": { "repositoryId": repository_id } }),
     )
     .await;
     assert_eq!(refusal_code(&asked), ProblemCode::UnsupportedOperation);
 
-    // The refusal and the capabilities list have to agree. A host that advertised worktrees
-    // and answered with an empty list would make a UI show "no worktrees" for a repository
-    // that has four.
+    // The refusal and the capabilities list have to agree. A host that advertised submodules
+    // and answered with an empty list would make a UI show "no submodules" for a repository
+    // that has one.
     let capabilities =
         commands::git_read(&state, MAIN, &session_id, json!({"method": "capabilities"}))
             .await
@@ -395,7 +395,11 @@ async fn a_read_this_build_does_not_implement_is_refused_and_absent_from_capabil
         reads.iter().any(|kind| kind == "filesystem"),
         "the local picker is served, so the Browse control must stay available: {reads:?}"
     );
-    for absent in ["worktrees", "submodules", "stashes"] {
+    assert!(
+        reads.iter().any(|kind| kind == "worktrees"),
+        "the worktrees read is served, so the panel has real data behind it: {reads:?}"
+    );
+    for absent in ["submodules", "stashes"] {
         assert!(
             !reads.iter().any(|kind| kind == absent),
             "capabilities must not list {absent}: {reads:?}"

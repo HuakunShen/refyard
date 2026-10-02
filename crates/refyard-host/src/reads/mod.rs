@@ -22,6 +22,7 @@ pub mod filesystem;
 pub mod history;
 pub mod refs;
 pub mod status;
+pub mod worktrees;
 
 use std::path::Path;
 

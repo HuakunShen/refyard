@@ -13,12 +13,12 @@
 //! refused it is the one failure a client cannot recover from.
 //!
 //! The `git.features` flags are a statement about *this build's* reads rather than a
-//! guess from a version string: `porcelainV2Status` and `catFileBatch` are true because
-//! every status, history and diff read here is built on them, and a Git too old to
-//! answer fails with the exit code and diagnostic in the problem. `worktreeListZ`,
-//! `fetchPorcelain` and `pushPorcelain` are false because this slice implements no
-//! worktree read and no network operation. `objectFormats` names both formats the
-//! parsers accept; the format actually in use is detected per repository from
+//! guess from a version string: `porcelainV2Status`, `catFileBatch` and `worktreeListZ`
+//! are true because every status, history, diff and worktrees read here is built on
+//! them, and a Git too old to answer fails with the exit code and diagnostic in the
+//! problem. `fetchPorcelain` and `pushPorcelain` are false because this slice implements
+//! no network operation. `objectFormats` names both formats the parsers accept; the
+//! format actually in use is detected per repository from
 //! `rev-parse --show-object-format` during registration, never assumed.
 
 use std::path::{Path, PathBuf};
@@ -916,7 +916,7 @@ impl ApplicationService {
                 version,
                 features: GitCapabilities {
                     porcelain_v2_status: true,
-                    worktree_list_z: false,
+                    worktree_list_z: true,
                     cat_file_batch: true,
                     push_porcelain: false,
                     fetch_porcelain: false,
@@ -943,6 +943,7 @@ impl ApplicationService {
             ReadKind::History,
             ReadKind::Refs,
             ReadKind::Diff,
+            ReadKind::Worktrees,
         ]
     }
 
@@ -1267,6 +1268,23 @@ impl ApplicationService {
         reads::refs::read_refs(target.executor()?, &record, &self.snapshots, &now_iso8601())
             .await
             .map_err(|error| error.to_problem())
+    }
+
+    /// Every worktree of one repository, the primary included.
+    pub async fn worktrees(
+        &self,
+        repository_id: &str,
+    ) -> Result<refyard_contract::reads::WorktreesResponse, Problem> {
+        let record = self.require_record(repository_id)?;
+        let target = self.target_for(&record)?;
+        reads::worktrees::read_worktrees(
+            target.executor()?,
+            &record,
+            &self.snapshots,
+            &now_iso8601(),
+        )
+        .await
+        .map_err(|error| error.to_problem())
     }
 
     /// A bounded diff, with a patch only for the path the caller named.
@@ -1761,12 +1779,12 @@ mod tests {
                 ReadKind::History,
                 ReadKind::Refs,
                 ReadKind::Diff,
+                ReadKind::Worktrees,
             ]
         );
-        // Worktrees, submodules, stashes, operations and events are not implemented, so
-        // they must not appear: a client polls what this list names.
+        // Submodules, stashes, operations and events are not implemented, so they must
+        // not appear: a client polls what this list names.
         for absent in [
-            ReadKind::Worktrees,
             ReadKind::Submodules,
             ReadKind::Stashes,
             ReadKind::Operations,

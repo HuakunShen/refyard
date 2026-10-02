@@ -284,6 +284,7 @@ Commands actually run and exit codes: 见下方逐行表与 B、C 记录“本�
 Existing regression failures: chromium 项目无失败（`pnpm test:e2e` 全引擎跑：170 passed / 2 skipped / 2 failed——失败为 context-menu.spec 在 firefox+webkit，已在未含本改动的已提交树上复现，属既有引擎问题，非本轮引入；root Rust 539 / desktop 25 / native vitest 49 均 0 failed）
 Not-run matrix cells: A06；B01–B04、B06–B09；C03–C06、C08、C10、C12–C14；D06–D12、D14；E06、E08、E09、E11、E12（App 内）、E14、E15；断网场景；第 5 节除 app/CLI 字节、延迟与 RSS 外的预算项
 Next executable task: D 轨收官；后续为 P01（完整只读 parity 与远端目录浏览），进入条件——releaseApp 可用且核心 SSH 不回归（均满足）
+P01 部分（2026-10-02）：worktrees 读已落地并广告——`implemented_reads()` 列出 worktrees、`worktreeListZ: true`、桌面 dispatch 与 `/api/v1/worktrees` 路由接通；集成测试 `crates/refyard-host/tests/worktrees_read.rs`（主/linked/locked 带理由/detached/prunable/未知仓库 6 例）与 desktop crate 全绿。linked worktree 的逐 worktree status 读仍按单 worktree 注册拒绝（P01 剩余）；submodules/stashes 读未做，UI 侧按 capabilities 诚实隐藏（fix(web) 94aff07）。
 ```
 
 ### 9.1 A 节（架构与运行时）

@@ -269,6 +269,7 @@ describe("native capabilities", () => {
       "refs",
       "repositories",
       "status",
+      "worktrees",
     ]);
     expect(parsed.data.unavailable.length).toBeGreaterThan(0);
   });
