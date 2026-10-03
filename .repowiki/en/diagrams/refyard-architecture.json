@@ -6,6 +6,12 @@
     "locale": "en",
     "output": "refyard-architecture.html",
     "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/HuakunShen/refyard",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "4d9bc3ce980296d80ec018975bc150cfd7eea4d1"
+    },
     "views": [
       {
         "id": "main-path",
@@ -32,13 +38,29 @@
         "note": "GitHub reads sit behind an explicit scope gate and never leak the token."
       },
       {
+        "id": "host-embeds",
+        "label": "Embedding hosts",
+        "focus": [
+          "browser",
+          "dsh",
+          "dshapi",
+          "dshservice",
+          "vscode"
+        ],
+        "note": "The Harness plugin and the VS Code extension are clients of the contract, not second engines."
+      },
+      {
         "id": "native-form",
-        "label": "Native desktop form",
+        "label": "Native desktop forms",
         "focus": [
           "native",
-          "browser"
+          "nativehost",
+          "nativegit",
+          "gpui",
+          "graphcrate",
+          "ssh"
         ],
-        "note": "The Rust host reuses the same Svelte components over Tauri IPC with no JS runtime."
+        "note": "Tauri, GPUI and the native CLI drive one Rust ApplicationService; no JS runtime, no localhost HTTP."
       }
     ]
   },
@@ -49,14 +71,26 @@
       "label": "Workbench UI",
       "sublabel": "SvelteKit SPA",
       "pos": [
-        20,
-        270
+        40,
+        460
       ],
       "size": [
         150,
         76
       ],
-      "tag": "packages/git-ui"
+      "tag": "packages/git-ui",
+      "sources": [
+        {
+          "path": "AGENTS.md",
+          "line": 88,
+          "label": "browser form"
+        },
+        {
+          "path": "packages/git-ui/src/lib/geometry.ts",
+          "line": 1,
+          "label": "shared components"
+        }
+      ]
     },
     {
       "id": "http",
@@ -65,12 +99,29 @@
       "sublabel": "127.0.0.1:9595",
       "tag": "ticket → bearer",
       "pos": [
-        195,
-        270
+        380,
+        460
       ],
       "size": [
-        160,
+        170,
         76
+      ],
+      "sources": [
+        {
+          "path": "packages/host-node/src/http/server.ts",
+          "line": 72,
+          "label": "default port"
+        },
+        {
+          "path": "packages/host-node/src/http/auth.ts",
+          "line": 1,
+          "label": "pairing ticket"
+        },
+        {
+          "path": "packages/host-node/src/http/origins.ts",
+          "line": 1,
+          "label": "Origin/Host checks"
+        }
       ]
     },
     {
@@ -79,12 +130,24 @@
       "label": "Node Coordinator",
       "sublabel": "scopes · jobs · SSE",
       "pos": [
-        380,
-        270
+        740,
+        460
       ],
       "size": [
         175,
         76
+      ],
+      "sources": [
+        {
+          "path": "packages/host-node/src/http/router.ts",
+          "line": 195,
+          "label": "scoped routes"
+        },
+        {
+          "path": "packages/host-node/src/http/events.ts",
+          "line": 1,
+          "label": "SSE ring"
+        }
       ]
     },
     {
@@ -93,12 +156,24 @@
       "label": "Git Core",
       "sublabel": "host-free planners",
       "pos": [
-        580,
-        270
+        40,
+        760
       ],
       "size": [
         165,
         76
+      ],
+      "sources": [
+        {
+          "path": "AGENTS.md",
+          "line": 114,
+          "label": "host-free rule"
+        },
+        {
+          "path": "AGENTS.md",
+          "line": 98,
+          "label": "two interfaces"
+        }
       ]
     },
     {
@@ -107,12 +182,19 @@
       "label": "GitHostPort",
       "sublabel": "argv + approved I/O",
       "pos": [
-        770,
-        270
+        340,
+        760
       ],
       "size": [
         165,
         76
+      ],
+      "sources": [
+        {
+          "path": "AGENTS.md",
+          "line": 92,
+          "label": "scope-bound capability"
+        }
       ]
     },
     {
@@ -121,12 +203,19 @@
       "label": "System git CLI",
       "sublabel": "hooks · credentials intact",
       "pos": [
-        960,
-        270
+        640,
+        760
       ],
       "size": [
-        155,
+        165,
         76
+      ],
+      "sources": [
+        {
+          "path": "AGENTS.md",
+          "line": 95,
+          "label": "machine's own git"
+        }
       ]
     },
     {
@@ -135,12 +224,19 @@
       "label": "Repository",
       "sublabel": "approved local repo",
       "pos": [
-        1140,
-        270
+        960,
+        760
       ],
       "size": [
-        155,
+        160,
         76
+      ],
+      "sources": [
+        {
+          "path": "docs/product/north-star.md",
+          "line": 39,
+          "label": "never discovered by scan"
+        }
       ]
     },
     {
@@ -149,26 +245,24 @@
       "label": "Journal",
       "sublabel": "append-only audit",
       "pos": [
-        380,
-        110
+        740,
+        140
       ],
       "size": [
-        175,
+        165,
         76
-      ]
-    },
-    {
-      "id": "provider",
-      "type": "backend",
-      "label": "Provider Service",
-      "sublabel": "cached PR reads",
-      "pos": [
-        380,
-        450
       ],
-      "size": [
-        175,
-        76
+      "sources": [
+        {
+          "path": "packages/host-node/src/journal/store.ts",
+          "line": 1,
+          "label": "persist before act"
+        },
+        {
+          "path": "packages/host-node/src/journal/access.ts",
+          "line": 1,
+          "label": "approval audit"
+        }
       ]
     },
     {
@@ -177,26 +271,302 @@
       "label": "GitHub",
       "sublabel": "REST · device flow",
       "pos": [
-        580,
-        450
+        390,
+        1060
       ],
       "size": [
-        175,
+        165,
         76
+      ],
+      "sources": [
+        {
+          "path": "packages/host-node/src/http/router.ts",
+          "line": 210,
+          "label": "provider routes"
+        }
+      ]
+    },
+    {
+      "id": "provider",
+      "type": "backend",
+      "label": "Provider Service",
+      "sublabel": "cached PR reads",
+      "pos": [
+        40,
+        1060
+      ],
+      "size": [
+        165,
+        76
+      ],
+      "sources": [
+        {
+          "path": "packages/host-node/src/provider/service.ts",
+          "line": 1,
+          "label": "host-side forge"
+        },
+        {
+          "path": "docs/product/north-star.md",
+          "line": 236,
+          "label": "token host-side"
+        }
       ]
     },
     {
       "id": "native",
       "type": "backend",
-      "label": "refyard-native",
-      "sublabel": "Rust + Tauri 2 host",
+      "label": "Tauri desktop",
+      "sublabel": "Rust app-service host",
       "pos": [
-        0,
-        450
+        40,
+        1880
+      ],
+      "size": [
+        180,
+        76
+      ],
+      "sources": [
+        {
+          "path": "AGENTS.md",
+          "line": 41,
+          "label": "no JS runtime"
+        },
+        {
+          "path": "docs/product/north-star.md",
+          "line": 257,
+          "label": "Tauri 2 decision"
+        }
+      ]
+    },
+    {
+      "id": "nativehost",
+      "type": "backend",
+      "label": "refyard-host",
+      "sublabel": "Rust application service",
+      "pos": [
+        340,
+        2120
+      ],
+      "size": [
+        180,
+        76
+      ],
+      "sources": [
+        {
+          "path": "crates/refyard-host/src/lib.rs",
+          "line": 1,
+          "label": "owns machine contact"
+        },
+        {
+          "path": "crates/refyard-host/src/providers/local.rs",
+          "line": 39,
+          "label": "resolves git once"
+        }
+      ]
+    },
+    {
+      "id": "gpui",
+      "type": "backend",
+      "label": "refyard-gpui",
+      "sublabel": "GPUI desktop shell",
+      "pos": [
+        40,
+        2120
+      ],
+      "size": [
+        180,
+        76
+      ],
+      "sources": [
+        {
+          "path": "apps/desktop-gpui/README.md",
+          "line": 4,
+          "label": "in-process, no IPC"
+        },
+        {
+          "path": "apps/desktop-gpui/README.md",
+          "line": 74,
+          "label": "capability honesty"
+        }
+      ]
+    },
+    {
+      "id": "graphcrate",
+      "type": "backend",
+      "label": "refyard-graph",
+      "sublabel": "headless lane layout",
+      "pos": [
+        340,
+        2360
+      ],
+      "size": [
+        180,
+        76
+      ],
+      "sources": [
+        {
+          "path": "crates/refyard-graph/src/lib.rs",
+          "line": 1,
+          "label": "pure Rust graph"
+        },
+        {
+          "path": "AGENTS.md",
+          "line": 78,
+          "label": "GPUI workstream"
+        }
+      ]
+    },
+    {
+      "id": "nativegit",
+      "type": "external",
+      "label": "System git CLI",
+      "sublabel": "local + SSH targets",
+      "pos": [
+        680,
+        2120
+      ],
+      "size": [
+        175,
+        76
+      ],
+      "sources": [
+        {
+          "path": "crates/refyard-host/src/providers/local.rs",
+          "line": 41,
+          "label": "found on PATH"
+        }
+      ]
+    },
+    {
+      "id": "ssh",
+      "type": "external",
+      "label": "OpenSSH",
+      "sublabel": "host's own ssh_config",
+      "pos": [
+        680,
+        2360
+      ],
+      "size": [
+        175,
+        76
+      ],
+      "sources": [
+        {
+          "path": "AGENTS.md",
+          "line": 46,
+          "label": "host OpenSSH"
+        },
+        {
+          "path": "crates/refyard-host/src/ssh/probe.rs",
+          "line": 287,
+          "label": "remote probe"
+        }
+      ]
+    },
+    {
+      "id": "dsh",
+      "type": "frontend",
+      "label": "Harness Web UI",
+      "sublabel": "Refyard SPA iframe",
+      "pos": [
+        820,
+        1060
       ],
       "size": [
         190,
         76
+      ],
+      "tag": "/refyard mount",
+      "sources": [
+        {
+          "path": "integrations/dsh/README.md",
+          "line": 9,
+          "label": "own SPA in a frame"
+        },
+        {
+          "path": "integrations/dsh/src/host.ts",
+          "line": 49,
+          "label": "mount prefix"
+        }
+      ]
+    },
+    {
+      "id": "dshapi",
+      "type": "security",
+      "label": "Harness web server",
+      "sublabel": "127.0.0.1:3080 · forwarder",
+      "pos": [
+        820,
+        1240
+      ],
+      "size": [
+        190,
+        76
+      ],
+      "tag": "dsh-app://app",
+      "sources": [
+        {
+          "path": "integrations/dsh/src/host.ts",
+          "line": 585,
+          "label": "registers prefix"
+        },
+        {
+          "path": "docs/evidence/2026-10-03-dsh-desktop-pairing.md",
+          "line": 24,
+          "label": "renderer origin"
+        }
+      ]
+    },
+    {
+      "id": "dshservice",
+      "type": "backend",
+      "label": "Refyard service",
+      "sublabel": "port 0 · assembly",
+      "pos": [
+        820,
+        1420
+      ],
+      "size": [
+        190,
+        76
+      ],
+      "sources": [
+        {
+          "path": "integrations/dsh/src/host.ts",
+          "line": 218,
+          "label": "assembleService"
+        },
+        {
+          "path": "integrations/dsh/src/host.ts",
+          "line": 238,
+          "label": "private port 0"
+        }
+      ]
+    },
+    {
+      "id": "vscode",
+      "type": "backend",
+      "label": "VS Code extension",
+      "sublabel": "extension host + webview",
+      "pos": [
+        820,
+        1600
+      ],
+      "size": [
+        190,
+        76
+      ],
+      "sources": [
+        {
+          "path": "apps/refyard-vscode/README.md",
+          "line": 6,
+          "label": "spawns native CLI"
+        },
+        {
+          "path": "apps/refyard-vscode/src/supervisor.ts",
+          "line": 1,
+          "label": "machine ticket"
+        }
       ]
     }
   ],
@@ -209,17 +579,36 @@
         "coordinator",
         "core",
         "hostport",
-        "journal",
-        "provider"
-      ]
+        "journal"
+      ],
+      "pad": 40
+    },
+    {
+      "kind": "region",
+      "label": "Harness host process — dsh plugin",
+      "wraps": [
+        "dshapi",
+        "dshservice"
+      ],
+      "pad": 40
+    },
+    {
+      "kind": "region",
+      "label": "Embedded core — no JS runtime",
+      "wraps": [
+        "nativehost",
+        "graphcrate"
+      ],
+      "pad": 56
     },
     {
       "kind": "security-group",
-      "label": "Loopback only · exact Origin/Host · all reads authenticated",
+      "label": "Loopback only · exact Origin/Host · every read authenticated",
       "wraps": [
         "http",
         "coordinator"
-      ]
+      ],
+      "pad": 74
     }
   ],
   "connections": [
@@ -229,98 +618,96 @@
       "to": "http",
       "label": "intentions: closed JSON contract",
       "variant": "emphasis",
-      "labelAt": [
-        190,
-        360
-      ]
+      "fromSide": "right",
+      "toSide": "left"
     },
     {
       "id": "authz",
       "from": "http",
       "to": "coordinator",
       "label": "verified ticket → scoped session",
-      "labelAt": [
-        367,
-        360
-      ]
+      "fromSide": "right",
+      "toSide": "left"
     },
     {
       "id": "plan",
       "from": "coordinator",
       "to": "core",
       "label": "intention → planned argv",
-      "labelAt": [
-        567,
-        360
-      ]
+      "fromSide": "bottom",
+      "toSide": "left"
     },
     {
       "id": "port",
       "from": "core",
       "to": "hostport",
       "label": "core-only argv",
-      "labelAt": [
-        757,
-        360
-      ]
+      "fromSide": "right",
+      "toSide": "left"
     },
     {
       "id": "spawn",
       "from": "hostport",
       "to": "git",
       "label": "spawn as user",
-      "labelAt": [
-        947,
-        360
-      ]
+      "fromSide": "right",
+      "toSide": "left"
     },
     {
       "id": "tree",
       "from": "git",
       "to": "repo",
       "label": "read / write working tree",
-      "labelAt": [
-        1127,
-        360
-      ]
+      "fromSide": "right",
+      "toSide": "left"
     },
     {
       "id": "sse",
       "from": "coordinator",
       "to": "browser",
-      "label": "authenticated SSE: graph, status, panels",
-      "fromSide": "top",
-      "toSide": "top"
+      "label": "authenticated SSE events",
+      "fromSide": "bottom",
+      "toSide": "bottom"
     },
     {
       "id": "audit",
       "from": "coordinator",
       "to": "journal",
       "label": "append-only, no token bytes",
-      "labelAt": [
-        467,
-        205
-      ]
+      "fromSide": "right",
+      "toSide": "top"
     },
     {
       "id": "gate",
       "from": "coordinator",
       "to": "provider",
-      "label": "scope gate: provider:manage",
-      "labelAt": [
-        467,
-        400
-      ]
+      "label": "scope provider:manage",
+      "fromSide": "bottom",
+      "toSide": "left"
     },
     {
       "id": "forge",
       "from": "provider",
       "to": "github",
-      "label": "GitHub REST; token only in Authorization header",
-      "labelAt": [
-        567,
-        540
-      ]
+      "label": "GitHub REST; token in header only",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "embed",
+      "from": "dshapi",
+      "to": "dshservice",
+      "label": "proxy + ticket",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "framed",
+      "from": "dsh",
+      "to": "dshapi",
+      "label": "iframe /refyard",
+      "fromSide": "bottom",
+      "toSide": "top"
     },
     {
       "id": "adapt",
@@ -328,6 +715,44 @@
       "to": "browser",
       "label": "same components via BackendAdapter",
       "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "inproc",
+      "from": "native",
+      "to": "nativehost",
+      "label": "in-process link"
+    },
+    {
+      "id": "gpuihost",
+      "from": "gpui",
+      "to": "nativehost",
+      "label": "ApplicationService"
+    },
+    {
+      "id": "graphpaint",
+      "from": "gpui",
+      "to": "graphcrate",
+      "label": "paints tested lanes"
+    },
+    {
+      "id": "nativerun",
+      "from": "nativehost",
+      "to": "nativegit",
+      "label": "planned argv, in process"
+    },
+    {
+      "id": "sshremote",
+      "from": "nativehost",
+      "to": "ssh",
+      "label": "host's OpenSSH"
+    },
+    {
+      "id": "vscodecli",
+      "from": "vscode",
+      "to": "dshservice",
+      "label": "spawns refyard-native",
       "fromSide": "top",
       "toSide": "bottom"
     }
@@ -351,9 +776,9 @@
     },
     {
       "dot": "violet",
-      "title": "Native form",
+      "title": "Native and embedded hosts",
       "items": [
-        "Rust + Tauri 2 binary: no JS runtime, no localhost HTTP",
+        "Tauri, GPUI and the native CLI share one Rust ApplicationService: no JS runtime, no localhost HTTP",
         "SSH via the host's OpenSSH; capabilities reports every gap honestly"
       ]
     },
@@ -363,6 +788,14 @@
       "items": [
         "Opt-in GitHub reads behind provider:manage scope",
         "Token never appears in responses or the journal"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Embedded clients",
+      "items": [
+        "The Harness plugin mounts Refyard's SPA at /refyard and proxies to a service built from @refyard/host-node",
+        "VS Code spawns refyard-native and keeps the bearer in the extension host; the webview never sees it"
       ]
     }
   ]
