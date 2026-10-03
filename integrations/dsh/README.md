@@ -128,6 +128,13 @@ Two consequences follow, and both have bitten this plugin's sibling in another r
 A local publish runs the same build the workflow runs, through this manifest's
 `prepublishOnly`, so a hand-published first version carries the same three artifacts.
 
+It does not carry the **same bytes**: the embedded SPA is not reproducible, because the
+SvelteKit build stamps `Date.now()` into `_app/version.json` and every chunk that references it
+changes hash with it. Two builds of one commit produce two different tarballs. npm records the
+integrity of whatever it is handed, so each artifact is verifiable against itself — but a local
+publish and a tagged publish of the same revision are not interchangeable, and only the tagged
+one carries a provenance attestation.
+
 ## Reloading it while developing
 
 **The host half is loaded once per Harness process and is cached by package name.** Rebuilding
