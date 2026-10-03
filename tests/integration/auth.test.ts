@@ -183,6 +183,85 @@ describe("authentication", () => {
     expect(response.status).toBe(403);
   });
 
+  it("redeems a ticket from any loopback spelling of the same service", async () => {
+    // Prevents: the desktop embedding failing to pair because the document was
+    // minted for `127.0.0.1` while the page exchanges from `localhost` (or the
+    // reverse) — same machine, same port, same service, different spelling.
+    const port = service.http.port;
+    const ticket = ticketFrom(
+      service.http.pairingUrl(`http://127.0.0.1:${port}`),
+    );
+    const response = await fetch(`${service.baseUrl}/api/v1/session/exchange`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: `http://localhost:${port}`,
+      },
+      body: JSON.stringify({ ticket }),
+    });
+    expect(response.status).toBe(200);
+  });
+
+  it("redeems a localhost ticket from the numeric loopback spelling", async () => {
+    // The reverse direction: a page opened on `127.0.0.1` redeeming a ticket the
+    // host minted while serving the document on `localhost`.
+    const port = service.http.port;
+    const ticket = ticketFrom(
+      service.http.pairingUrl(`http://localhost:${port}`),
+    );
+    const response = await fetch(`${service.baseUrl}/api/v1/session/exchange`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        origin: `http://127.0.0.1:${port}`,
+      },
+      body: JSON.stringify({ ticket }),
+    });
+    expect(response.status).toBe(200);
+  });
+
+  it("keeps the ticket when another allowed origin tries to redeem it", async () => {
+    // Prevents: a single probe from a different allowed origin permanently
+    // consuming the ticket, so the legitimate holder can still pair afterwards
+    // instead of facing an "already used" failure for a ticket it never spent.
+    const siteA = "https://site-a.example.test";
+    const siteB = "https://site-b.example.test";
+    const hosted = await startTestService({
+      repo,
+      allowedOrigins: [siteA, siteB],
+      hostedPassword: "correct-hosted-password-2026",
+    });
+    try {
+      const ticket = ticketFrom(hosted.http.pairingUrl(siteA));
+      const refused = await fetch(
+        `${hosted.baseUrl}/api/v1/session/exchange`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", origin: siteB },
+          body: JSON.stringify({
+            ticket,
+            password: "correct-hosted-password-2026",
+          }),
+        },
+      );
+      expect(refused.status).toBe(403);
+      const redeemed = await fetch(
+        `${hosted.baseUrl}/api/v1/session/exchange`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", origin: siteA },
+          body: JSON.stringify({
+            ticket,
+            password: "correct-hosted-password-2026",
+          }),
+        },
+      );
+      expect(redeemed.status).toBe(200);
+    } finally {
+      await hosted.close();
+    }
+  });
+
   it("refuses a ticket that this service never issued", async () => {
     const response = await fetch(`${service.baseUrl}/api/v1/session/exchange`, {
       method: "POST",
