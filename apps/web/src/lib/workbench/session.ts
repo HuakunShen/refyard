@@ -166,6 +166,12 @@ export function describeBackendProblem(error: unknown): string {
   if (isBackendError(error)) {
     return formatProblem(error.code, error.message, error.correlationId);
   }
+  if (error instanceof GitClientError) {
+    // The connect path throws the client's own error before any session exists
+    // to wrap it: without this branch every refused ticket reports as an
+    // internal failure and the user never learns the real reason.
+    return formatProblem(error.code, error.message, error.correlationId);
+  }
   const problem = problemSchema.safeParse(error);
   if (problem.success) {
     return formatProblem(problem.data.code, problem.data.message, null);

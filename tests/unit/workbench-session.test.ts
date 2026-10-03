@@ -5,10 +5,12 @@
  * security-sensitive transitions so moving them out of +page.svelte cannot change their meaning.
  */
 import { describe, expect, it, vi } from "vitest";
+import { GitClientError } from "@refyard/git-client";
 import {
   clearWorkbenchCredentials,
   consumeInitialPairingUrl,
   createWorkbenchSessionState,
+  describeBackendProblem,
   isDefaultSessionBaseUrl,
   pairWorkbenchSession,
   type WorkbenchSessionPorts,
@@ -181,5 +183,20 @@ describe("workbench session state", () => {
     expect(state.token).toBeNull();
     expect(state.pairedInstance).toBeNull();
     expect(h.stored.cleared).toBe(1);
+  });
+
+  it("reports a refused ticket with its real reason, not an internal failure", () => {
+    // Prevents: the pairing panel showing "an unexpected failure" when the
+    // service refused the ticket — the connect path throws the client's own
+    // error type, and the describer must read it rather than fall back to a
+    // message that tells the user nothing about what to do next.
+    const refused = new GitClientError({
+      code: "Forbidden",
+      status: 403,
+      message: "that pairing ticket was issued for a different origin",
+    });
+    expect(describeBackendProblem(refused)).toBe(
+      "Forbidden: that pairing ticket was issued for a different origin",
+    );
   });
 });
