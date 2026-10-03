@@ -1,0 +1,133 @@
+# Publishes the Refyard DeepSeek Harness plugin (`dsh-plugin-refyard`) to npm.
+#
+# One tag runs the gates and ships the artifact. The tag namespace is `plugin-v*`, because
+# the two lines that already own a namespace must never be mistaken for this one: `v*` is
+# the CLI/service package (`publish.yml`) and `app-v*` is the desktop release
+# (`release.yml`). A tag names one artifact.
+#
+# Auth is npm trusted publishing (OIDC), never a token: the package's Trusted Publisher
+# settings on npmjs.com must point at this repository and this workflow file, with the same
+# `npm` environment declared below. The OIDC claim is also what produces the public
+# `--provenance` attestation. That means there is no `NPM_TOKEN` to rotate — and it also
+# means npm must already know the package (see the plugin README's publishing section).
+name: dsh-plugin
+
+on:
+  push:
+    tags:
+      - "plugin-v*"
+  pull_request:
+    paths:
+      - "integrations/dsh/**"
+      - "scripts/build-dsh-plugin.ts"
+      - "apps/web/**"
+      - "packages/**"
+      - ".github/workflows/dsh-plugin.yml"
+  workflow_dispatch:
+
+# `cancel-in-progress` is false on purpose: a half-finished publish is worse than a queued
+# one, and a tag push is the one event here that spends a version number.
+concurrency:
+  group: dsh-plugin-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # What npm would receive is built on every pull request, on the steps the publish job
+  # relies on. It stops short of publishing: nothing in this job can spend a version.
+  bundle:
+    if: github.event_name != 'push'
+    name: Build the bundle without publishing
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          # Pinned to the version in package.json "packageManager".
+          version: 11.25.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      # The build script is TypeScript run by bun, and never product code.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the plugin bundle
+        run: pnpm build:dsh
+
+      # The manifest points at exactly these three, and a publish that carried two of them
+      # would install as a panel with no body. `pack` is the same file list npm would use.
+      - name: The bundle carries what the manifest advertises
+        run: |
+          test -f integrations/dsh/dist/host.js
+          test -f integrations/dsh/dist/client.js
+          test -f integrations/dsh/dist/web/200.html
+          test -f integrations/dsh/locale/en.json
+
+      - name: Pack what npm would receive
+        working-directory: integrations/dsh
+        run: npm pack --dry-run
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/plugin-v')
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: npm
+    permissions:
+      contents: read
+      # The OIDC claim trusted publishing exchanges for a short-lived publish credential.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # Checked before anything is built or published: the tag is the release's authority
+      # and the manifest is what npm will record, so a mismatch is refused rather than
+      # shipped. The desktop and CLI lines check the same way.
+      - name: The tag names the version the plugin manifest carries
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#plugin-v}"
+          declared="$(node -p "require('./integrations/dsh/package.json').version")"
+          if [[ "${version}" != "${declared}" ]]; then
+            echo "tag plugin-v${version} but the plugin manifest says ${declared}" >&2
+            exit 1
+          fi
+
+      # `npm publish` builds through the manifest's own `prepublishOnly`, so the published
+      # bytes are produced by the same command a local publish runs — not by a second,
+      # CI-only recipe that could drift from it.
+      - name: Publish with npm Trusted Publishing
+        working-directory: integrations/dsh
+        run: |
+          # Trusted publishing (OIDC, no NPM_TOKEN) needs npm >= 11.5.1.
+          npm install -g npm@latest
+          npm publish --access public --provenance

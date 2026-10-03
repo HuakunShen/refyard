@@ -71,17 +71,16 @@ cross-site, opaque and foreign origins are still refused, and API reads still ne
 The plugin keeps its own state root (`<refyard state root>/dsh`) so its journal is never the
 file a terminal `refyard run` is concurrently appending to.
 
-## Building
+## Installing
+
+From the plugin registry, once a version is published (below):
 
 ```
-pnpm build:dsh          # from the repository root
+plugin_manager install_bundle  dsh-plugin-refyard
 ```
 
-That produces, in order: the embedded SPA (`apps/web/build-dsh`, via
-`REFYARD_BUILD_TARGET=dsh`), the host bundle (`dist/host.js`) and the client bundle
-(`dist/client.js`), staging the SPA at `dist/web`.
-
-Install it into the current Harness profile:
+From a checkout, install the directory itself — the package the manifest points at is the
+same one either way:
 
 ```
 plugin_manager install_bundle  /absolute/path/to/integrations/dsh
@@ -94,6 +93,40 @@ missing — a bundle that is a dependency but not a bundle is installed, inactiv
 ```
 plugin_manager set_bundle  enabled=true  target=dsh-plugin-refyard
 ```
+
+## Building
+
+```
+pnpm build:dsh          # from the repository root
+```
+
+That produces, in order: the embedded SPA (`apps/web/build-dsh`, via
+`REFYARD_BUILD_TARGET=dsh`), the host bundle (`dist/host.js`) and the client bundle
+(`dist/client.js`), staging the SPA at `dist/web`.
+
+## Publishing
+
+The npm line is `.github/workflows/dsh-plugin.yml`: pushing a **`plugin-v*`** tag builds the
+bundle and publishes `dsh-plugin-refyard` with that version, after checking the tag against
+this package's `version`. The tag namespace is separate from `v*` (the CLI/service package) and
+`app-v*` (the desktop release) so a tag can never name two artifacts.
+
+Authentication is npm **trusted publishing** — an OIDC claim, never an `NPM_TOKEN`. npm matches
+that claim against the package's *Trusted Publisher* settings on npmjs.com (this repository,
+the workflow file, and the `npm` environment the workflow declares), and the same claim produces
+the public `--provenance` attestation.
+
+Two consequences follow, and both have bitten this plugin's sibling in another repository:
+
+- **The first version of a package cannot be published this way**, because trusted-publisher
+  settings live in the settings of a package that does not exist yet. Publish the first version
+  by hand (interactively, with 2FA), then configure the trusted publisher; every later release
+  is a tag.
+- **The connection must allow a direct `npm publish`.** Until that switch is on, npm answers
+  `403 OIDC permission denied for this action` even though provenance signing succeeded.
+
+A local publish runs the same build the workflow runs, through this manifest's
+`prepublishOnly`, so a hand-published first version carries the same three artifacts.
 
 ## Reloading it while developing
 

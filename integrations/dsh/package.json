@@ -1,11 +1,26 @@
 {
   "name": "dsh-plugin-refyard",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "description": "The Refyard Git workbench as a DeepSeek Harness panel: history, changes, diffs, commits, branches and stashes for the repository the current session is working in.",
   "license": "AGPL-3.0-only",
   "icon": "./icon.svg",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HuakunShen/refyard.git",
+    "directory": "integrations/dsh"
+  },
+  "homepage": "https://github.com/HuakunShen/refyard#readme",
+  "bugs": {
+    "url": "https://github.com/HuakunShen/refyard/issues"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh-plugin",
+    "refyard",
+    "git",
+    "git-workbench"
+  ],
   "meta": {
     "title": "Refyard",
     "description": "A Git workbench for the repository this session is working in."
@@ -23,6 +38,10 @@
     "cordis.patch.yml",
     "README.md"
   ],
+  "scripts": {
+    "build": "cd ../.. && pnpm build:dsh",
+    "prepublishOnly": "pnpm build"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
