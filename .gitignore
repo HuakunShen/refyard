@@ -65,6 +65,14 @@ references
 # Generated development build output (see scripts/bundle-cli.ts).
 .refyard-dev/
 
+# The archify skill's per-request working folder; every diagram request gets its own.
+.archify/
+
+# Wiki diagram capture evidence. The rendered diagram HTML (and the candidate JSON it
+# came from) are the tracked artifacts; the PNG captures are a local visual check that
+# re-renders on every repair, so tracking them would grow history without adding source.
+.repowiki/**/*.visual-check*.png
+
 # Generated publication staging (see scripts/build-release.ts). The manifest in
 packages/npm-dist is source; everything it stages next to it is not.
 packages/npm-dist/bin/
