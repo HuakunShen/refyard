@@ -1,6 +1,8 @@
 # System Overview
 
-**Created: 2026-09-23** — initial wiki bootstrap.
+**Created: 2026-09-23** — initial wiki bootstrap. **Updated: 2026-10-03** — repository map and
+forms brought level with the tree (`integrations/`, the GPUI shell, the VS Code extension, the
+DeepSeek Harness plugin).
 
 Refyard is a local-first Git workbench: the whole history of a repository in a beautiful graph, without handing a hosted service the repository. It drives **the machine's own `git`** — run as the user, with their hooks, filters, credential helpers, and SSH configuration — and the UI receives a closed JSON contract plus authenticated SSE updates.
 
@@ -12,6 +14,16 @@ Refyard is a local-first Git workbench: the whole history of a repository in a b
 
 Both runtimes speak **one closed contract** rendered by one Svelte component library (`packages/git-ui`), which the VS Code extension (`apps/refyard-vscode`) also embeds.
 
+A third native form sits beside the Tauri app: the **GPUI shell** (`apps/desktop-gpui`, binary
+`refyard-gpui`) drives `ApplicationService` in-process over a tokio runtime owned by the app —
+no IPC, no HTTP listener, no sidecar — with the commit-graph lane layout ported to the headless
+crate `crates/refyard-graph`.
+
+Beyond the shipped apps, `integrations/` holds hosts that **embed** Refyard rather than being
+Refyard: `dsh/` (the DeepSeek Harness plugin), `kunkun/` and `xross/`. Each is transport glue
+over the same packages, is built by its own script under `scripts/`, and must not grow a second
+Git engine.
+
 ## Repository map (top level)
 
 | Path | Role |
@@ -19,13 +31,18 @@ Both runtimes speak **one closed contract** rendered by one Svelte component lib
 | `apps/web` | SvelteKit static shell: routes, connection config, service worker |
 | `apps/cli` | argv parsing, doctor, open/serve lifecycle |
 | `apps/desktop` | Tauri 2 package; reuses apps/web's Svelte build |
+| `apps/desktop-gpui` | GPUI-native shell; own cargo workspace, in-process service, no IPC |
+| `apps/refyard-vscode` | VS Code extension embedding the same `git-ui` components |
 | `apps/docs` | published docs site (Fumadocs on Astro → docs.refyard.huakun.tech) |
+| `integrations/dsh` | DeepSeek Harness plugin: host + client halves and the embedded SPA |
+| `integrations/kunkun`, `integrations/xross` | other hosts that embed the workbench |
 | `packages/git-contract` | Zod schemas → DTOs → JSON Schema (single source) |
 | `packages/git-core`, `git-graph` | host-free planners/parsers, pure-TS DAG layout |
 | `packages/host-node` | coordinator, journal, HTTP service, adapters |
+| `packages/git-service`, `backend-http`, `backend-tauri` | transport-neutral service contract and its HTTP/Tauri adapters |
 | `packages/git-provider` | opt-in forge integration (GitHub REST, device flow) |
 | `packages/git-client`, `git-ui` | browser/HTTP+SSE client; Svelte 5 components |
-| `crates/refyard-*` | Rust contract/core/host/http/cli for the native form |
+| `crates/refyard-*` | Rust contract/core/host/http/cli for the native form, plus `refyard-graph` (GPUI) and `refyard-dock-icon` (macOS) |
 
 ## Toolchain
 
@@ -34,5 +51,6 @@ Node 26.8.2 (dev/CI), pnpm 11.25.0 workspace + turborepo, TypeScript 7.0.2 stric
 ## Where to go next
 
 - Architecture and safety invariants → `Architecture/Architecture.md`
+- The Harness panel → `Services/DeepSeek Harness Plugin.md`
 - Recent provider work → `Services/Git Provider Integration.md`
 - Recent docs-site / packaging work → `Services/Documentation Site.md`, `Infrastructure/Release and Packaging.md`

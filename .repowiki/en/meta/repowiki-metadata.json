@@ -18,6 +18,11 @@
       "path": "content/Services/Node CLI and HTTP Service.md"
     },
     {
+      "id": "b7d41e0c-52af-4a3e-9c1d-6f0a2c84e5b1",
+      "title": "DeepSeek Harness Plugin",
+      "path": "content/Services/DeepSeek Harness Plugin.md"
+    },
+    {
       "id": "fab02d4f-8793-4bc7-aad9-433c4cd70d4f",
       "title": "Native Desktop and SSH",
       "path": "content/Services/Native Desktop and SSH.md"
@@ -98,6 +103,26 @@
       "source": "aa4f928f-afc8-43b0-bdac-0efbceec1a49",
       "target": "00a31835-2394-415c-99b6-67475d210c53",
       "type": "PARENT_CHILD"
+    },
+    {
+      "source": "aa4f928f-afc8-43b0-bdac-0efbceec1a49",
+      "target": "b7d41e0c-52af-4a3e-9c1d-6f0a2c84e5b1",
+      "type": "PARENT_CHILD"
+    },
+    {
+      "source": "b7d41e0c-52af-4a3e-9c1d-6f0a2c84e5b1",
+      "target": "da63a1c5-4fab-4512-bdcc-6d8ffa3a21dc",
+      "type": "REFERENCE"
+    },
+    {
+      "source": "b7d41e0c-52af-4a3e-9c1d-6f0a2c84e5b1",
+      "target": "6eb006ac-024e-4d1b-a24f-cd26eb4bb120",
+      "type": "REFERENCE"
+    },
+    {
+      "source": "c1a7b3fb-3a28-4e69-9833-63b0ad82876a",
+      "target": "b7d41e0c-52af-4a3e-9c1d-6f0a2c84e5b1",
+      "type": "REFERENCE"
     },
     {
       "source": "c80bad50-6d00-447b-b965-57295eeaf664",
