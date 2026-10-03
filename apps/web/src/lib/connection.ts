@@ -100,7 +100,9 @@ export function extractTicketFromText(raw: string): string {
 }
 
 /**
- * A normalised `http(s)` service address, or null when the value is missing or unusable.
+ * A normalised HTTP(S) address or root-relative embedded mount, or null when unusable.
+ * A relative mount deliberately retains the renderer's transport (including an embedder's
+ * secure custom scheme); it must never become an HTTP override or a network-path URL.
  *
  * The path is part of the address, not noise. A service mounted under a prefix — an
  * embedding host that serves the workbench at `/refyard` beside its own routes — is a real
@@ -110,9 +112,25 @@ export function extractTicketFromText(raw: string): string {
  * `//api/v1/…`.
  */
 export function normalizeBaseUrl(value: string | null): string | null {
+  if (value !== null && /[\u0000-\u001f\u007f]/.test(value)) {
+    return null;
+  }
   const trimmed = clean(value);
   if (trimmed === null) {
     return null;
+  }
+  if (trimmed.startsWith("/")) {
+    if (trimmed.startsWith("//") || trimmed.includes("\\")) return null;
+    const path = trimmed.split(/[?#]/, 1)[0] ?? "";
+    // URL parsers erase dot segments before fetching, including percent-encoded dots.
+    if (
+      path
+        .split("/")
+        .some((segment) => /^\.{1,2}$/.test(segment.replace(/%2e/gi, ".")))
+    )
+      return null;
+    // An explicit root means requests already beginning with `/api` need no prefix.
+    return path.replace(/\/+$/, "");
   }
   const url = safeUrl(trimmed);
   if (url === null || (url.protocol !== "http:" && url.protocol !== "https:")) {

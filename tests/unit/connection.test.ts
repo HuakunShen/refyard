@@ -150,6 +150,47 @@ describe("service address", () => {
     );
   });
 
+  it("keeps an embedded API on the page's transport, even with a stale stored HTTP address", () => {
+    expect(
+      parseSessionConfig({
+        href: "dsh-app://app/refyard/?api=%2Frefyard&pair=desktop-ticket",
+        storedBaseUrl: "http://127.0.0.1:19387/refyard",
+      }),
+    ).toEqual({
+      baseUrl: "/refyard",
+      ticket: "desktop-ticket",
+      overridden: true,
+    });
+    expect(normalizeBaseUrl("/refyard/")).toBe("/refyard");
+    expect(normalizeBaseUrl("/refyard/?x=1#y")).toBe("/refyard");
+    expect(normalizeBaseUrl("/")).toBe("");
+    expect(
+      parseSessionConfig({
+        href: "https://host.test/?api=%2F",
+        storedBaseUrl: null,
+      }).baseUrl,
+    ).toBe("");
+  });
+
+  it("rejects relative addresses that can escape or ambiguously change the mount", () => {
+    // Fetch interprets network paths, backslashes and dot segments before dispatching;
+    // accepting them could silently leave the embedded same-origin mount.
+    for (const address of [
+      "//evil.example/refyard",
+      "/\\\\evil.example/refyard",
+      "/refyard\\\\other",
+      "/refyard/../api",
+      "/refyard/./api",
+      "/refyard/%2e%2e/api",
+      "/refyard/.%2e/api",
+      "/refyard/%2e./api",
+      "/refyard\n/api",
+      "/refyard\t/api",
+      "refyard",
+    ])
+      expect(normalizeBaseUrl(address)).toBeNull();
+  });
+
   it("refuses a scheme that cannot carry an authenticated API", () => {
     expect(normalizeBaseUrl("file:///tmp/index.html")).toBeNull();
     expect(normalizeBaseUrl("ws://127.0.0.1:9595")).toBeNull();

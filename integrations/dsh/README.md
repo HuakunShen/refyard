@@ -59,6 +59,15 @@ mints one for a human at a terminal. Nothing was relaxed to make embedding conve
 frame is a normal authenticated Refyard client, and the route is guarded by Refyard's own
 origin policy, so a cross-site page cannot use it to reach the workbench.
 
+The API override is the root-relative `/refyard`, not an absolute HTTP address. In the
+browser this stays on the Harness HTTP origin; in desktop it stays on `dsh-app://app` and
+uses the shell's authenticated forwarding transport. That preserves `connect-src 'self'`
+and `frame-ancestors 'self'` without CORS allowances or custom schemes in Refyard's policy.
+The desktop forwarder validates the renderer origin and removes it before HTTP forwarding.
+After this route's own Origin/Host/Fetch-Site checks pass, the plugin restores a missing
+Origin from the checked HTTP authority for ticket binding. Explicit origins are preserved;
+cross-site, opaque and foreign origins are still refused, and API reads still need a bearer.
+
 The plugin keeps its own state root (`<refyard state root>/dsh`) so its journal is never the
 file a terminal `refyard run` is concurrently appending to.
 

@@ -461,9 +461,10 @@ export function apply(ctx: HostContext): void {
       sendProblem(res, 500, "the service did not issue a pairing ticket");
       return;
     }
-    // `api` is what tells the SPA its service lives under this prefix rather than at the
-    // page origin — the Harness owns `/api` for its own bridge.
-    url.searchParams.set("api", `${origin}${PREFIX}`);
+    // Keep the renderer's transport: web uses HTTP, desktop uses dsh-app://app.
+    // An absolute HTTP API would escape desktop's carrier and violate connect-src 'self'.
+    // The Harness owns `/api`, so the same-origin mount prefix is still explicit.
+    url.searchParams.set("api", PREFIX);
     url.searchParams.set("pair", ticket);
     res.writeHead(302, {
       location: `${url.pathname}${url.search}`,
@@ -479,6 +480,7 @@ export function apply(ctx: HostContext): void {
     res: ServerResponse,
     upstreamPort: number,
     path: string,
+    origin: string,
   ): void {
     const upstream = httpRequest({
       host: "127.0.0.1",
@@ -489,6 +491,10 @@ export function apply(ctx: HostContext): void {
         ...req.headers,
         // The service answers only on its own authority, and this is that authority.
         host: `127.0.0.1:${upstreamPort}`,
+        // Desktop's trusted carrier checks dsh-app Origin then removes it. Restore its
+        // HTTP identity only AFTER this route's Origin/Host/Fetch-Site policy passed.
+        // Explicit origins survive unchanged; tickets and bearer checks remain upstream.
+        origin: req.headers.origin ?? origin,
       },
     });
     upstream.on("response", (answer) => {
@@ -565,7 +571,13 @@ export function apply(ctx: HostContext): void {
 
     const running = await ensureWorkbench(port);
     const upstreamPath = `${url.pathname.slice(PREFIX.length)}${url.search}`;
-    proxy(req, res, running.http.port, upstreamPath === "" ? "/" : upstreamPath);
+    proxy(
+      req,
+      res,
+      running.http.port,
+      upstreamPath === "" ? "/" : upstreamPath,
+      origin,
+    );
   }
 
   ctx.effect(
