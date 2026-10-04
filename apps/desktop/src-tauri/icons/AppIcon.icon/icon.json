@@ -1,0 +1,52 @@
+{
+  "groups": [
+    {
+      "name": "Refyard",
+      "layers": [
+        {
+          "image-name": "light.svg",
+          "name": "light tile",
+          "position": {
+            "scale": 3,
+            "translation-in-points": [
+              0,
+              0
+            ]
+          },
+          "hidden-specializations": [
+            {
+              "value": false
+            },
+            {
+              "appearance": "dark",
+              "value": true
+            }
+          ]
+        },
+        {
+          "image-name": "dark.svg",
+          "name": "dark tile",
+          "position": {
+            "scale": 3,
+            "translation-in-points": [
+              0,
+              0
+            ]
+          },
+          "hidden-specializations": [
+            {
+              "value": true
+            },
+            {
+              "appearance": "dark",
+              "value": false
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared"
+  }
+}

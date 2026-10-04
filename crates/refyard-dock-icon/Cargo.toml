@@ -1,12 +1,13 @@
 # A per-user appearance-aware Dock icon for the macOS shells.
 #
-# macOS switches an app's Dock icon with the system appearance only when the bundle
-# carries an appearance-aware asset catalog; neither the GPUI nor the Tauri bundle
-# ships one (the platform `actool` compiles no dark renditions for a hand-written mac
-# app-icon set), so this crate does what the catalog would do at run time: pick the
+# On macOS 11–15 a bundle switches its Dock icon with the system appearance only when
+# it carries an appearance-aware asset catalog, and a bare `.icns` cannot express
+# appearances — so this crate does what such a catalog would do at run time: pick the
 # icon for the current appearance, apply it to `NSApplication`, and re-apply it when
-# the system appearance changes. The shells share one implementation because the
-# behaviour — and the two PNGs it reads — is a product fact, not a shell detail.
+# the system appearance changes. On macOS 26 and newer the desktop bundles ship that
+# catalog (the `AppIcon.icon` document), the system owns the icon, and this crate
+# stands down (`install` early-returns). The shells share one implementation because
+# the behaviour — and the two PNGs it reads — is a product fact, not a shell detail.
 #
 # The Cocoa dependencies are gated to macOS itself: the release gate's `cargo test`
 # runs on Linux, where `objc2` refuses to compile by design, and the crate's non-macOS
@@ -21,4 +22,4 @@ license.workspace = true
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-app-kit = "0.3"
-objc2-foundation = "0.3"
+objc2-foundation = { version = "0.3", features = ["NSProcessInfo"] }

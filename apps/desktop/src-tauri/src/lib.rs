@@ -268,9 +268,11 @@ pub fn run() {
             let service = Arc::clone(&state.service);
             let events = Arc::clone(&state.events);
             tauri::async_runtime::spawn(relay::run(handle, service, events));
-            // The Dock icon follows the system appearance: two tiles ship as bundle
-            // resources, and the crate swaps them as macOS switches. The handle is
-            // intentionally forgotten — the observer serves the process's life.
+            // The Dock icon follows the system appearance: on macOS 26+ the bundle's
+            // asset catalog owns it (the crate stands down there), and on older
+            // macOS the two tile PNGs below let the crate swap it at run time. The
+            // handle is intentionally forgotten — the observer serves the process's
+            // life.
             if let Ok(resource_dir) = app.path().resource_dir() {
                 let resources = resource_dir.join("resources");
                 match refyard_dock_icon::install_on_current_thread(

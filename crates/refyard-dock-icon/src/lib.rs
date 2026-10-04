@@ -1,12 +1,16 @@
 //! An appearance-aware Dock icon for the macOS shells.
 //!
 //! macOS switches an app's Dock icon with the system appearance only when the bundle
-//! carries an appearance-aware asset catalog. Neither shell ships one — the platform
-//! `actool` compiles no dark renditions for a hand-written mac app-icon set — so this
-//! crate does what the catalog would do at run time: apply the icon for the current
-//! appearance to `NSApplication`, and re-apply on the system's
-//! `AppleInterfaceThemeChangedNotification`, which is the same signal the system's own
-//! appearance observers use.
+//! carries an appearance-aware asset catalog — a bare `.icns` has no light/dark
+//! concept. The desktop bundles ship that catalog as of the macOS 26 icon format
+//! (the checked-in `AppIcon.icon` document, compiled into `Assets.car`), and on
+//! macOS 26+ the system owns the
+//! icon whether the app is running or not, so this crate stands down there. On
+//! older macOS, where the catalog is ignored, this crate does what the catalog
+//! would do at run time: apply the icon for the current appearance to
+//! `NSApplication`, and re-apply on the system's
+//! `AppleInterfaceThemeChangedNotification`, which is the same signal the system's
+//! own appearance observers use.
 //!
 //! `install` must be called on the main thread before the run loop starts serving the
 //! user, with the two PNGs the bundle carries (light tile, dark tile). If either file
@@ -46,8 +50,11 @@ pub struct DockIcon;
 
 /// Apply the icon for the current appearance and observe future changes.
 ///
-/// `light` and `dark` are the bundle's two tiles. Call on the main thread. A missing
-/// tile leaves the bundle icon alone and returns the explanation — for the caller's
+/// `light` and `dark` are the bundle's two tiles. Call on the main thread. On macOS
+/// 26+ this returns without touching anything: the bundle's asset catalog owns the
+/// icon there, and painting a PNG over it would also freeze the user's chosen icon
+/// style (light/dark/tinted/clear) for as long as the app runs. A missing tile
+/// leaves the bundle icon alone and returns the explanation — for the caller's
 /// log, never a user-facing surface.
 #[cfg(target_os = "macos")]
 pub fn install(
@@ -57,9 +64,14 @@ pub fn install(
 ) -> Result<DockIcon, String> {
     use objc2::sel;
     use objc2_app_kit::{NSApplication, NSImage};
-    use objc2_foundation::{ns_string, NSDistributedNotificationCenter, NSString};
+    use objc2_foundation::{ns_string, NSDistributedNotificationCenter, NSProcessInfo, NSString};
 
     use crate::imp::ThemeObserver;
+
+    let system = NSProcessInfo::processInfo().operatingSystemVersion();
+    if system.majorVersion >= 26 {
+        return Ok(DockIcon {});
+    }
 
     if !light.exists() || !dark.exists() {
         return Err(format!(

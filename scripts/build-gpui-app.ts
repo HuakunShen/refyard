@@ -2,8 +2,11 @@
  * Build `Refyard.app` — the macOS app bundle around the GPUI shell binary.
  *
  * A bare `refyard-gpui` executable runs fine, but macOS shows a generic exec icon and
- * the process name in the Dock. The bundle fixes both: an `Info.plist` naming the app
- * and an `.icns` rendered from the repository logo. The steps are plain host tools
+ * the process name in the Dock. The bundle fixes both: an `Info.plist` naming the app,
+ * an `.icns` rendered from the repository logo, and the appearance-aware `Assets.car`
+ * compiled from the checked-in `AppIcon.icon` document — macOS 26+ switches the Dock
+ * icon with the system appearance through it, older macOS falls back to the `.icns`
+ * (where the dock-icon crate takes over at run time). The steps are plain host tools
  * (`cargo`, `sips`, `iconutil`, `codesign`) so the script only orchestrates them.
  *
  * Usage:
@@ -24,6 +27,7 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const appDir = join(repoRoot, "apps/desktop-gpui");
 const logoSvg = join(repoRoot, "packages/logo/refyard-app-icon-v2.svg");
 const darkSvg = join(repoRoot, "packages/logo/refyard-app-icon-v2-dark.svg");
+const assetsCar = join(repoRoot, "apps/desktop/src-tauri/icons/Assets.car");
 
 const argv = process.argv.slice(2);
 const args = new Set(argv);
@@ -83,6 +87,10 @@ mkdirSync(join(contents, "MacOS"), { recursive: true });
 mkdirSync(join(contents, "Resources"), { recursive: true });
 cpSync(binary, join(contents, "MacOS", "Refyard"));
 cpSync(icns, join(contents, "Resources", "refyard.icns"));
+// The appearance-aware catalog, precompiled from the checked-in AppIcon.icon
+// document (`scripts/build-desktop-app-icon.ts`): macOS 26+ reads `CFBundleIconName`
+// out of it and switches the Dock icon with the system appearance on its own.
+cpSync(assetsCar, join(contents, "Resources", "Assets.car"));
 cpSync(rasterized, join(contents, "Resources", "icon-light.png"));
 cpSync(darkRasterized, join(contents, "Resources", "icon-dark.png"));
 // The identifier is a placeholder: `refyard` is a working name and no domain is owned.
@@ -104,6 +112,8 @@ const infoPlist = `<?xml version="1.0" encoding="UTF-8"?>
 	<string>Refyard</string>
 	<key>CFBundleIconFile</key>
 	<string>refyard</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>LSMinimumSystemVersion</key>
