@@ -2633,7 +2633,7 @@ dependencies = [
 
 [[package]]
 name = "refyard-desktop"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "refyard-contract",
  "refyard-dock-icon",
