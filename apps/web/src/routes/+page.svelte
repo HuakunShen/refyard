@@ -2323,31 +2323,40 @@
       {/if}
     </main>
 
-    {#if terminalOpen && terminalService !== null && repository !== null}
+    {#if terminalService !== null && repository !== null}
+      <!--
+        Toggling the dock HIDES it: the panel stays mounted, so every shell
+        keeps running behind the workbench and the scrollback is exactly where
+        it was on reveal. Only the panel's own ✕ ends the sessions.
+      -->
       <div
         class="relative shrink-0 border-t border-border"
         style:height="{terminalHeight}px"
+        hidden={!terminalOpen}
         data-testid="terminal-dock"
       >
         <TerminalPanel
           bind:this={terminalPanel}
           terminal={terminalService}
           repositoryId={repository.repositoryId}
+          open={terminalOpen}
           onClose={() => (terminalOpen = false)}
         />
-        <ResizeHandle
-          side="left"
-          orientation="horizontal"
-          alwaysVisible
-          label="Terminal dock height"
-          onResize={(delta) =>
-            (terminalHeight = Math.min(
-              Math.max(terminalHeight - delta, 120),
-              Math.round(window.innerHeight * 0.7),
-            ))}
-          onResizeEnd={() => {}}
-          style={`top: 0px`}
-        />
+        {#if terminalOpen}
+          <ResizeHandle
+            side="left"
+            orientation="horizontal"
+            alwaysVisible
+            label="Terminal dock height"
+            onResize={(delta) =>
+              (terminalHeight = Math.min(
+                Math.max(terminalHeight - delta, 120),
+                Math.round(window.innerHeight * 0.7),
+              ))}
+            onResizeEnd={() => {}}
+            style={`top: 0px`}
+          />
+        {/if}
       </div>
     {/if}
   {/if}

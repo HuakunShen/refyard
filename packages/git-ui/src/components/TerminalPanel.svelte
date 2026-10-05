@@ -16,10 +16,17 @@
 	let {
 		terminal,
 		repositoryId,
+		open,
 		onClose,
 	}: {
 		terminal: TerminalService | null;
 		repositoryId: string | null;
+		/**
+		 * Whether the dock is visible. Hiding is the caller's business (it keeps
+		 * this panel mounted, so every shell lives through a toggle); this prop
+		 * only tells the panel when its autostart moment arrives.
+		 */
+		open: boolean;
 		onClose: () => void;
 	} = $props();
 
@@ -87,11 +94,11 @@
 		activeKey = tabs[(current + delta + tabs.length) % tabs.length]?.key ?? null;
 	}
 
-	// A dock that opens with a usable session starts with one shell in it —
-	// nobody should have to press `+` to see a prompt the first time.
+	// A dock that becomes visible with a usable session starts with one shell in
+	// it — nobody should have to press `+` to see a prompt the first time.
 	let userClosedAll = false;
 	$effect(() => {
-		if (usable && !userClosedAll && tabs.length === 0) {
+		if (open && usable && !userClosedAll && tabs.length === 0) {
 			createTab();
 		}
 	});
