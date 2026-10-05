@@ -55,8 +55,10 @@ export function createTauriTerminalService(
   async function invokeTerminal(
     command: NativeCommand,
     request: unknown,
-  ): Promise<void> {
-    await ports.invoke(command, { sessionId, request });
+  ): Promise<unknown> {
+    // The ack payload must reach `check`: void here is how a healthy `{"accepted":
+    // true}` once reached its validator as undefined and killed the session.
+    return ports.invoke(command, { sessionId, request });
   }
 
   return {

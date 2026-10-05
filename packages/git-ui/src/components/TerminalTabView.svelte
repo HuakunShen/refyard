@@ -25,12 +25,15 @@
 		active,
 		onReady,
 		onExit,
+		fontFamily,
 	}: {
 		terminal: TerminalService;
 		repositoryId: string;
 		active: boolean;
 		onReady: (info: TerminalOpenResponse) => void;
 		onExit: (exitCode: number | null) => void;
+		/** Terminal font stack. Nerd-Font-first so prompt glyphs (powerline, git icons) render. */
+		fontFamily?: string | undefined;
 	} = $props();
 
 	let container: HTMLDivElement | null = $state(null);
@@ -38,6 +41,9 @@
 	let fit: FitAddon | null = null;
 	let session: TerminalSessionHandle | null = $state(null);
 	let disposed = false;
+	/** The grid the pty was last told about; a resize is only sent on real change. */
+	let sentCols = 0;
+	let sentRows = 0;
 
 	const encoder = new TextEncoder();
 	/** Keystrokes accumulate here for a tick: one request per burst, not per key. */
@@ -83,11 +89,19 @@
 			clearTimeout(resizeTimer);
 		}
 		// A trailing debounce: dragging the dock's edge fires many resizes, and
-		// only the last one describes a grid anyone wants the pty to adopt.
+		// only the last one describes a grid anyone wants the pty to adopt. The
+		// grid dedupe below also breaks the observer loop: a fit that changes
+		// nothing must not fire another observer round.
 		resizeTimer = setTimeout(() => {
 			resizeTimer = null;
 			fitNow();
-			if (term !== null && session !== null) {
+			if (
+				term !== null &&
+				session !== null &&
+				(term.cols !== sentCols || term.rows !== sentRows)
+			) {
+				sentCols = term.cols;
+				sentRows = term.rows;
 				session.resize(term.cols, term.rows);
 			}
 		}, 150);
@@ -113,7 +127,13 @@
 
 	export function refit(): void {
 		fitNow();
-		if (term !== null && session !== null) {
+		if (
+			term !== null &&
+			session !== null &&
+			(term.cols !== sentCols || term.rows !== sentRows)
+		) {
+			sentCols = term.cols;
+			sentRows = term.rows;
 			session.resize(term.cols, term.rows);
 		}
 	}
@@ -130,6 +150,12 @@
 			const instance = new Terminal({
 				cursorBlink: true,
 				fontSize: 12,
+				fontFamily:
+					fontFamily ??
+					// Nerd-Font glyphs first (powerline separators, git icons), then the
+					// platform monospace fallbacks. MesloLGS NF is the common Nerd Font;
+					// a machine without it falls through cleanly.
+					'"MesloLGS NF", "MesloLGSDZ Nerd Font", "JetBrainsMono Nerd Font", Menlo, Monaco, "Courier New", monospace',
 				scrollback: 5000,
 				// The panel paints the canvas color; the emulator stays transparent
 				// over it so the interface style (web/macos/windows/linux) shows.
@@ -181,6 +207,8 @@
 				return;
 			}
 			session = opened;
+			sentCols = instance.cols;
+			sentRows = instance.rows;
 			// The host opened a grid it was asked for; the panel may have resized
 			// while the session was starting, so the truth goes back once now.
 			session.resize(instance.cols, instance.rows);

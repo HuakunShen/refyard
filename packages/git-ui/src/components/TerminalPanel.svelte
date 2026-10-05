@@ -89,7 +89,7 @@
 </script>
 
 <section
-	class="relative flex min-h-0 flex-col border-t border-border bg-background"
+	class="relative flex h-full min-h-0 flex-col border-t border-border bg-background"
 	data-testid="terminal-panel"
 >
 	<header
