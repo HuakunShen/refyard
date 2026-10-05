@@ -82,6 +82,40 @@ What this revision changes, exactly — and nothing more:
   (render only what `capabilities()` advertises), `confirmed: true` dialog flows for destructive
   operations, previews/snapshot binding, and no argv construction outside the host.
 
+## 0c. Scope revision — 2026-10-05: integrated terminal
+
+On 2026-10-05 the user directed this repository to ship an **integrated terminal** — an
+occasional shell beside the workbench — in the browser form and the Tauri desktop app.
+Governing document: `docs/superpowers/specs/2026-10-05-terminal.md`.
+
+What this revision changes, exactly — and nothing more:
+
+- §1's "no built-in terminal" and the shell half of "never expose … shell … over HTTP,
+  SSE, or any browser bridge" are **historical from this date** for the terminal surface
+  only. The rule's core still binds everything else: the *Git* API never becomes a shell
+  escape, and Git intentions still turn into argv only inside trusted core. The terminal
+  is its own explicitly-scoped channel with its own rules:
+  - the renderer names an **approved repository id and a grid size** — never a path, a
+    shell, or an argument; the host resolves everything else;
+  - every frame travels as a **contract schema** (`TerminalOutputFrame`,
+    `TerminalExitFrame`), authenticated like every other call;
+  - **one browser session owns one terminal**, re-checked on every input, resize, close
+    and output attach;
+  - `capabilities.terminal` is present only when the host really has a pty, and a host
+    without one answers `UnsupportedOperation` — never a fake session.
+- The terminal runs the **host machine's own login shell** in an approved repository; it
+  is not scope-bound to one repository the way Git writes are (a shell can `cd`), which
+  is why it demands the write scope plus its ownership check and why the hosted-UI form
+  must not enable it without a separate, explicit decision.
+- **node-pty stays out of the published package.** It is a workspace devDependency and
+  an optional runtime module loaded by dynamic import; a machine without it reports no
+  terminal capability. The `external: ["node-pty"]` in both bundle scripts and the
+  optional-module pattern are part of this revision — the CLI's "bundle carries its
+  dependencies" rule is unchanged otherwise.
+- The Tauri desktop carries its pty in the headless crate `crates/refyard-pty`
+  (portable-pty), linked only by the desktop shell; GPUI is not part of this revision
+  (no terminal widget exists in gpui-kit 0.7; deferred, see the spec).
+
 ## 1. Architecture — non-negotiable
 
 ```
