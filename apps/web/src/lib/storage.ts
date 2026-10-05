@@ -72,3 +72,7 @@ export const storeDensity = (density: string | null): void =>
 export const readStoredLanguage = (): string => storage.readStoredLanguage();
 export const storeLanguage = (language: string | null): void =>
   storage.storeLanguage(language);
+export const readStoredInterfaceStyle = (): string =>
+  storage.readStoredInterfaceStyle();
+export const storeInterfaceStyle = (style: string | null): void =>
+  storage.storeInterfaceStyle(style);

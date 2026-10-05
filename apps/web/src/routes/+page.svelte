@@ -50,6 +50,11 @@
     type RowDensity,
   } from "@refyard/git-ui/lib/geometry";
   import {
+    isInterfaceStyle,
+    resolveInterfaceStyle,
+    type InterfaceStyle,
+  } from "@refyard/git-ui/lib/interface-style";
+  import {
     FileDiff,
     FolderGit2,
     GitBranch,
@@ -148,6 +153,8 @@
     storeDensity,
     readStoredLanguage,
     storeLanguage,
+    readStoredInterfaceStyle,
+    storeInterfaceStyle,
   } from "$lib/storage.js";
   import { createDesktopUpdates } from "$lib/runtime/updates.js";
   import type { UpdateOffer, UpdatesProbe } from "@refyard/git-ui";
@@ -290,6 +297,19 @@
   let density = $state<RowDensity>(
     isRowDensity(storedDensity) ? storedDensity : "compact",
   );
+  /**
+   * Which native interface style the workbench wears. The default is the web look; the
+   * platform styles (and `auto`, which follows the platform the page runs on) are an
+   * explicit choice. The attribute on `<html>` is the resolved style, so `auto` keeps
+   * following the platform rather than a platform guessed once.
+   */
+  const storedInterfaceStyle = browser ? readStoredInterfaceStyle() : "web";
+  let interfaceStyle = $state<InterfaceStyle>(
+    isInterfaceStyle(storedInterfaceStyle) ? storedInterfaceStyle : "web",
+  );
+  const automaticStyle: InterfaceStyle = browser
+    ? resolveInterfaceStyle("auto", navigator.userAgent)
+    : "web";
   // One value for the whole list: the virtualizer's row height and the graph's lane
   // spacing must be the same number, or a node stops sitting on its own row.
   const historyMetrics = $derived(densityMetrics(density));
@@ -300,6 +320,10 @@
     }
     document.documentElement.setAttribute("data-accent", accent);
     document.documentElement.setAttribute(
+      "data-interface",
+      resolveInterfaceStyle(interfaceStyle, navigator.userAgent),
+    );
+    document.documentElement.setAttribute(
       "data-glass",
       glass ? "true" : "false",
     );
@@ -309,6 +333,7 @@
     storeAvatars(avatars);
     storeDensity(density);
     storeLanguage(language);
+    storeInterfaceStyle(interfaceStyle);
   });
 
   // The updater exists only on the desktop runtime, and its code only loads there.
@@ -1659,6 +1684,9 @@
         onGlassChange={(val) => (glass = val)}
         onAvatarsChange={(val) => (avatars = val)}
         onDensityChange={(val) => (density = val)}
+        {interfaceStyle}
+        {automaticStyle}
+        onInterfaceStyleChange={(val) => (interfaceStyle = val)}
         {language}
         onLanguageChange={applyLanguage}
         updates={updatesProbe ?? undefined}

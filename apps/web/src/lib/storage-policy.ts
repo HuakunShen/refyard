@@ -14,6 +14,7 @@
  */
 
 import { isRowDensity } from "@refyard/git-ui/lib/geometry";
+import { isInterfaceStyle } from "@refyard/git-ui/lib/interface-style";
 
 const TOKEN_KEY = "refyard.session.token";
 /**
@@ -42,6 +43,14 @@ const AVATARS_KEY = "refyard.appearance.avatars";
  */
 const DENSITY_KEY = "refyard.appearance.density";
 const LANGUAGE_KEY = "refyard.appearance.language";
+/**
+ * Which native interface style the workbench wears. The default is the web look — the
+ * platform styles are an explicit choice, never something the workbench puts on by
+ * itself (`auto` remains available and follows the reader's platform). The stored value
+ * is always a name, never a font or a colour, so the styles themselves can evolve
+ * without a migration.
+ */
+const INTERFACE_KEY = "refyard.appearance.interface";
 
 /** The two methods of the browser's `Storage` this module uses. */
 export interface StorageLike {
@@ -79,6 +88,8 @@ export interface BrowserStorage {
   storeDensity(density: string | null): void;
   readStoredLanguage(): string;
   storeLanguage(language: string | null): void;
+  readStoredInterfaceStyle(): string;
+  storeInterfaceStyle(style: string | null): void;
 }
 
 export function createBrowserStorage(stores: BrowserStores): BrowserStorage {
@@ -191,6 +202,13 @@ export function createBrowserStorage(stores: BrowserStores): BrowserStorage {
     },
     storeLanguage(language: string | null): void {
       writeTo(stores.local, LANGUAGE_KEY, language);
+    },
+    readStoredInterfaceStyle(): string {
+      const style = readFrom(stores.local, INTERFACE_KEY);
+      return isInterfaceStyle(style) ? style : "web";
+    },
+    storeInterfaceStyle(style: string | null): void {
+      writeTo(stores.local, INTERFACE_KEY, style);
     },
   };
 }

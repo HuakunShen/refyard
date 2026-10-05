@@ -153,6 +153,29 @@ describe("the browser's stored session", () => {
     expect(storage.readStoredDensity()).toBe("compact");
   });
 
+  it("reads an interface style as a name, and defaults to the web one", () => {
+    // The native styles round-trip by name, like the densities. The default is the web
+    // look — the platform styles are an explicit choice, not something the workbench
+    // puts on by itself.
+    expect(storage.readStoredInterfaceStyle()).toBe("web");
+
+    storage.storeInterfaceStyle("macos");
+
+    expect(storage.readStoredInterfaceStyle()).toBe("macos");
+    expect(local.getItem("refyard.appearance.interface")).toBe("macos");
+    expect(session.getItem("refyard.appearance.interface")).toBeNull();
+  });
+
+  it("migrates an unknown interface style to the web default", () => {
+    // A stored value this build does not know (an older or future build's vocabulary)
+    // must not reach the DOM as an attribute the stylesheet has no rules for.
+    local.setItem("refyard.appearance.interface", "gnome");
+    expect(storage.readStoredInterfaceStyle()).toBe("web");
+
+    storage.storeInterfaceStyle(null);
+    expect(storage.readStoredInterfaceStyle()).toBe("web");
+  });
+
   it("reads as unpaired when the browser refuses storage entirely", () => {
     // Private modes and blocked site data must not turn into a crash: the workbench opens
     // unpaired, and the pairing URL still works.
