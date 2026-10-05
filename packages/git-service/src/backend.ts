@@ -9,6 +9,7 @@
 import type { Problem } from "@refyard/git-contract";
 import type { EventService } from "./events.js";
 import type { HostService } from "./host.js";
+import type { TerminalService } from "./terminal.js";
 import type {
   GitReadService,
   MutationService,
@@ -53,6 +54,12 @@ export interface BackendSession {
    * empty panel.
    */
   readonly provider?: ProviderBackendService | undefined;
+  /**
+   * Terminal sessions, same rule as `provider`: a host (or transport) that
+   * cannot carry a pty leaves it unset, and the UI keeps the terminal panel
+   * hidden instead of offering a button that can only fail.
+   */
+  readonly terminal?: TerminalService | undefined;
   state(): ConnectionState;
   onState(listener: (state: ConnectionState) => void): () => void;
   /** Idempotent: releases this session's listeners, timers and owned targets. */

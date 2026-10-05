@@ -46,6 +46,7 @@ import {
   type NativeReadMethod,
 } from "./commands.js";
 import { createNativeEventService } from "./events.js";
+import { createTauriTerminalService } from "./terminal.js";
 
 export interface TauriBackendAdapterOptions {
   readonly ports: NativePorts;
@@ -423,6 +424,13 @@ export function createTauriBackendAdapter(
         mutations,
         host,
         events,
+        // The native host always carries the pty module, so a native session
+        // always offers the terminal — `session.terminal !== undefined` is the
+        // one gate the workbench needs, on every transport.
+        terminal: createTauriTerminalService(
+          options.ports,
+          nativeMetadata.sessionId,
+        ),
         state: () => state,
         onState: (listener) => {
           listeners.add(listener);

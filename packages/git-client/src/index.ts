@@ -25,6 +25,10 @@ export {
   type MutationClient,
   type MutationClientOptions,
 } from "./mutations.js";
+export {
+  createTerminalClient,
+  type TerminalClientOptions,
+} from "./terminal.js";
 
 /**
  * Re-exported so a consumer that already depends on this package does not need a

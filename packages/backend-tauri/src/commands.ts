@@ -133,6 +133,10 @@ export const NATIVE_COMMANDS = [
   "refyard_host_request",
   "refyard_events_subscribe",
   "refyard_events_unsubscribe",
+  "refyard_terminal_open",
+  "refyard_terminal_write",
+  "refyard_terminal_resize",
+  "refyard_terminal_close",
 ] as const;
 
 export type NativeCommand = (typeof NATIVE_COMMANDS)[number];

@@ -20,6 +20,7 @@ import {
 import {
   createGitClient,
   createMutationClient,
+  createTerminalClient,
   GitClientError,
 } from "@refyard/git-client";
 import {
@@ -33,6 +34,7 @@ import {
   type HostService,
   type MutationService,
   type SessionMetadata,
+  type TerminalService,
 } from "@refyard/git-service";
 import { createHttpEventService } from "./events.js";
 import type { ProviderBackendService } from "@refyard/git-service";
@@ -53,6 +55,11 @@ export interface HttpSessionPorts {
   readonly sessionId: string | null;
   readonly serviceInstanceId: string;
   readonly backendLabel?: string;
+  /**
+   * Whether this service advertised terminal sessions. Set by the connect flow
+   * after one capabilities read; the session surfaces a terminal only then.
+   */
+  readonly hasTerminal?: boolean;
 }
 
 export function toBackendError(error: unknown): BackendError {
@@ -171,6 +178,14 @@ export function createHttpBackendSession(
     fetch: sessionFetch,
     token: ports.token,
   });
+
+  const terminalClient = () =>
+    createTerminalClient({
+      baseUrl: ports.baseUrl,
+      fetch: sessionFetch,
+      token: ports.token,
+      signal: lifetime.signal,
+    });
 
   const mutations: MutationService = {
     submit: (request) => guard(() => mutationClient.submit(request)),
@@ -339,6 +354,16 @@ export function createHttpBackendSession(
     pullRequests: (repositoryId) => guard(() => client.providerPullRequests(repositoryId)),
   };
 
+  // The terminal rides the same boundary. Whether the *service* offers one is a
+  // capability fact, so the session carries it only when the service advertised
+  // one — the UI's single honest gate is `session.terminal !== undefined`.
+  const terminal: TerminalService | undefined = ports.hasTerminal
+    ? {
+        open: (request, observer) =>
+          guard(() => terminalClient().open(request, observer)),
+      }
+    : undefined;
+
   return {
     metadata,
     git,
@@ -346,6 +371,7 @@ export function createHttpBackendSession(
     host,
     events,
     provider,
+    ...(terminal === undefined ? {} : { terminal }),
     state: () => state,
     onState: (listener) => {
       stateListeners.add(listener);

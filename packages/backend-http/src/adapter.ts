@@ -80,10 +80,14 @@ export function createHttpBackendAdapter(
         token: () => token,
       });
       let serviceInstanceId: string;
+      let hasTerminal = false;
       try {
         const health = await probe.health();
         serviceInstanceId = health.serviceInstanceId;
-        await probe.capabilities();
+        // The capability answer already read here decides whether this session
+        // carries a terminal at all: a service without a pty module is one the
+        // UI shows no terminal button for, not one whose button then fails.
+        hasTerminal = (await probe.capabilities()).terminal !== undefined;
       } catch (error) {
         const failure = toBackendError(error);
         // A bearer the service rejected is not worth keeping: the caller is told so
@@ -98,6 +102,7 @@ export function createHttpBackendAdapter(
         token: () => token,
         sessionId,
         serviceInstanceId,
+        hasTerminal,
         ...(options.backendLabel === undefined
           ? {}
           : { backendLabel: options.backendLabel }),

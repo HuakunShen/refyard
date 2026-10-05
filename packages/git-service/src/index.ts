@@ -6,6 +6,7 @@
  * depend on this package, never the other way around.
  */
 export * from "./service.js";
+export * from "./terminal.js";
 export * from "./backend.js";
 export * from "./host.js";
 export * from "./events.js";
