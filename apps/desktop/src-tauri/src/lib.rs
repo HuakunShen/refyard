@@ -63,6 +63,15 @@ pub struct AppState {
     /// Kept behind an `Arc` because the relay task outlives the command that opened a
     /// subscription: it reads the same registry the handshake wrote to.
     pub events: Arc<EventRegistry>,
+    /// Live terminal sessions. Their reader and waiter threads hold only the
+    /// session's own handles, so a registry behind an `Arc` is all a command
+    /// needs; the shells die with this process.
+    pub pty: Arc<refyard_pty::PtyRegistry>,
+    /// Which service session opened which terminal. The registry is
+    /// deliberately policy-free, so ownership — "this shell answers only to the
+    /// browser session that opened it" — is recorded here, beside the commands
+    /// that enforce it.
+    pub terminal_owners: Arc<std::sync::Mutex<std::collections::HashMap<u32, String>>>,
 }
 
 impl AppState {
@@ -148,6 +157,10 @@ impl AppState {
             service: Arc::new(service.with_writes()),
             sessions: SessionRegistry::default(),
             events: Arc::new(EventRegistry::default()),
+            pty: Arc::new(refyard_pty::PtyRegistry::new()),
+            terminal_owners: Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
         })
     }
 }
@@ -304,6 +317,10 @@ pub fn run() {
             commands::refyard_operation_get,
             commands::refyard_operation_list,
             commands::refyard_operation_cancel,
+            commands::refyard_terminal_open,
+            commands::refyard_terminal_write,
+            commands::refyard_terminal_resize,
+            commands::refyard_terminal_close,
         ])
         .run(tauri::generate_context!())
         .expect("the desktop window failed to start")

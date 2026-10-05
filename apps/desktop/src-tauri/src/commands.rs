@@ -11,7 +11,7 @@
 //! of an IPC deserialization error that reaches the caller as an untyped failure.
 
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::State;
 
@@ -29,6 +29,249 @@ use refyard_host::jobs::{MutationRequest, SubmitResult};
 /// gets a bounded answer rather than an unbounded scan of the state directory.
 const DEFAULT_OPERATION_LIMIT: u32 = 50;
 const MAX_OPERATION_LIMIT: u32 = 200;
+
+/* ------------------------------------------------------------------ terminal */
+
+/// The event name every pty frame is emitted on; the adapter listens for exactly
+/// this and demultiplexes by the session id inside the frame.
+pub const TERMINAL_EVENT_NAME: &str = "refyard://terminal";
+
+/// One output frame is at most ~43 KiB of base64: under the contract's 64 KiB
+/// payload bound with room to spare, because the pty reader cuts at 32 KiB raw.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
+enum TerminalFrame {
+    Output {
+        session_id: String,
+        data: String,
+    },
+    Exit {
+        session_id: String,
+        exit_code: Option<i32>,
+    },
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TerminalOpenRequest {
+    repository_id: String,
+    cols: u16,
+    rows: u16,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TerminalInputRequest {
+    session_id: String,
+    data: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TerminalResizeRequest {
+    session_id: String,
+    cols: u16,
+    rows: u16,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct TerminalCloseRequest {
+    session_id: String,
+}
+
+/// Where a session's frames go: the windowed host forwards them to the WebView
+/// that opened the terminal; a test collects them instead. The pty registry
+/// tags every event with the session id, so the sink needs no other state.
+pub type TerminalEmitter = std::sync::Arc<dyn Fn(u32, refyard_pty::PtyEvent) + Send + Sync>;
+
+/// `term_` ids are the contract's; the registry counts integers. The prefix is
+/// the contract's guarantee that a UI cannot confuse a terminal id with a
+/// repository or operation id, so parsing refuses anything else.
+fn terminal_id(session_id: &str) -> Result<u32, ProblemResponse> {
+    let number = session_id
+        .strip_prefix("term_")
+        .and_then(|rest| rest.parse::<u32>().ok())
+        .ok_or_else(|| {
+            failed(Problem::new(
+                ProblemCode::InvalidRequest,
+                "the terminal session id is not one this host minted",
+            ))
+        })?;
+    if number == 0 {
+        return Err(failed(Problem::new(
+            ProblemCode::InvalidRequest,
+            "the terminal session id is not one this host minted",
+        )));
+    }
+    Ok(number)
+}
+
+/// `refyard_terminal_open` — one shell in one approved repository.
+///
+/// The WebView names a repository id and a grid size and nothing else: the
+/// directory comes from the registry record and the shell from the machine, so
+/// no renderer input decides what program runs. The new terminal is recorded as
+/// belonging to this service session, and every later command against it
+/// re-checks that record — a session id alone must never drive another window's
+/// shell.
+pub fn terminal_open(
+    state: &AppState,
+    caller_label: &str,
+    session_id: &str,
+    request: Value,
+    emit: TerminalEmitter,
+) -> Result<Value, ProblemResponse> {
+    state
+        .sessions
+        .service_for(session_id, caller_label)
+        .map_err(failed)?;
+    let request: TerminalOpenRequest = decode(request)?;
+    let record = state
+        .service
+        .repository_record(&request.repository_id)
+        .ok_or_else(|| {
+            failed(Problem::new(
+                ProblemCode::NotFound,
+                "no approved repository with that id on this host",
+            ))
+        })?;
+    // Records of shells that already exited hold no slot and no owner anymore.
+    sweep_finished_owners(state);
+    let id = state
+        .pty
+        .open(
+            refyard_pty::PtyOpenRequest {
+                cwd: record.root_path.clone(),
+                cols: request.cols,
+                rows: request.rows,
+                shell: None,
+            },
+            emit,
+        )
+        .map_err(|error| {
+            failed(Problem::new(ProblemCode::InternalError, error.to_string()))
+        })?;
+    state
+        .terminal_owners
+        .lock()
+        .expect("terminal owners poisoned")
+        .insert(id, session_id.to_owned());
+    to_value(serde_json::json!({
+        "sessionId": format!("term_{id}"),
+        "shell": state.pty.default_shell_name(),
+        "cwd": record.display_path,
+    }))
+}
+
+/// The one ownership gate every terminal command passes: the asking session must
+/// be the service session that opened this terminal. Absent is not owned.
+fn require_terminal_owner(
+    state: &AppState,
+    id: u32,
+    session_id: &str,
+) -> Result<(), ProblemResponse> {
+    let owners = state.terminal_owners.lock().expect("terminal owners poisoned");
+    match owners.get(&id) {
+        Some(owner) if owner == session_id => Ok(()),
+        Some(_) => Err(failed(Problem::new(
+            ProblemCode::Forbidden,
+            "this terminal belongs to another browser session",
+        ))),
+        None => Err(failed(Problem::new(
+            ProblemCode::NotFound,
+            "no such terminal session on this host",
+        ))),
+    }
+}
+
+/// Drops owner records whose shells the registry has already reaped, so a
+/// long-running host does not grow the map one exited tab at a time.
+fn sweep_finished_owners(state: &AppState) {
+    let mut owners = state.terminal_owners.lock().expect("terminal owners poisoned");
+    owners.retain(|id, _| state.pty.is_live(*id));
+}
+
+/// `refyard_terminal_write` — bytes the emulator typed into the shell.
+pub fn terminal_write(
+    state: &AppState,
+    caller_label: &str,
+    session_id: &str,
+    request: Value,
+) -> Result<Value, ProblemResponse> {
+    state
+        .sessions
+        .service_for(session_id, caller_label)
+        .map_err(failed)?;
+    let request: TerminalInputRequest = decode(request)?;
+    let id = terminal_id(&request.session_id)?;
+    require_terminal_owner(state, id, session_id)?;
+    let bytes = base64_decode(&request.data)?;
+    state.pty.write(id, &bytes).map_err(|error| {
+        failed(Problem::new(ProblemCode::NotFound, error.to_string()))
+    })?;
+    to_value(serde_json::json!({ "accepted": true }))
+}
+
+/// `refyard_terminal_resize` — the grid changed; the pty follows.
+pub fn terminal_resize(
+    state: &AppState,
+    caller_label: &str,
+    session_id: &str,
+    request: Value,
+) -> Result<Value, ProblemResponse> {
+    state
+        .sessions
+        .service_for(session_id, caller_label)
+        .map_err(failed)?;
+    let request: TerminalResizeRequest = decode(request)?;
+    let id = terminal_id(&request.session_id)?;
+    require_terminal_owner(state, id, session_id)?;
+    state
+        .pty
+        .resize(id, request.cols, request.rows)
+        .map_err(|error| {
+            failed(Problem::new(ProblemCode::NotFound, error.to_string()))
+        })?;
+    to_value(serde_json::json!({ "accepted": true }))
+}
+
+/// `refyard_terminal_close` — kill the shell and forget the session.
+pub fn terminal_close(
+    state: &AppState,
+    caller_label: &str,
+    session_id: &str,
+    request: Value,
+) -> Result<Value, ProblemResponse> {
+    state
+        .sessions
+        .service_for(session_id, caller_label)
+        .map_err(failed)?;
+    let request: TerminalCloseRequest = decode(request)?;
+    let id = terminal_id(&request.session_id)?;
+    require_terminal_owner(state, id, session_id)?;
+    state.pty.close(id);
+    state
+        .terminal_owners
+        .lock()
+        .expect("terminal owners poisoned")
+        .remove(&id);
+    to_value(serde_json::json!({ "accepted": true }))
+}
+
+fn base64_decode(text: &str) -> Result<Vec<u8>, ProblemResponse> {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD
+        .decode(text)
+        .map_err(|_| {
+            failed(Problem::new(
+                ProblemCode::InvalidRequest,
+                "the terminal payload is not base64",
+            ))
+        })
+}
+
+/* ------------------------------------------------------------------- reads */
 
 /// `refyard_connect` — mints a session for the calling window.
 ///
@@ -104,7 +347,26 @@ pub fn disconnect(
     state
         .sessions
         .disconnect(session_id, caller_label)
-        .map_err(failed)
+        .map_err(failed)?;
+    // A window that leaves takes its shells with it: terminals are owned by the
+    // session that opened them, and its owner record is the only authority.
+    let owned: Vec<u32> = {
+        let owners = state.terminal_owners.lock().expect("terminal owners poisoned");
+        owners
+            .iter()
+            .filter(|(_, owner)| owner.as_str() == session_id)
+            .map(|(id, _)| *id)
+            .collect()
+    };
+    for id in owned {
+        state.pty.close(id);
+        state
+            .terminal_owners
+            .lock()
+            .expect("terminal owners poisoned")
+            .remove(&id);
+    }
+    Ok(())
 }
 
 /// `refyard_events_subscribe` — registers an event stream for this window.
@@ -293,6 +555,69 @@ fn to_value<T: serde::Serialize>(value: T) -> Result<Value, ProblemResponse> {
             format!("the answer could not be serialized: {error}"),
         ))
     })
+}
+
+/* ------------------------------------------------------- Tauri terminal commands */
+
+#[tauri::command]
+pub async fn refyard_terminal_open(
+    window: tauri::WebviewWindow,
+    state: State<'_, AppState>,
+    session_id: String,
+    request: Value,
+) -> Result<Value, ProblemResponse> {
+    use tauri::{Emitter, Manager};
+    let app = window.app_handle().clone();
+    let label = window.label().to_string();
+    let emit: TerminalEmitter = std::sync::Arc::new(move |id, event| {
+        let frame = match event {
+            refyard_pty::PtyEvent::Output(bytes) => TerminalFrame::Output {
+                session_id: format!("term_{id}"),
+                data: base64_encode(&bytes),
+            },
+            refyard_pty::PtyEvent::Exit(exit_code) => TerminalFrame::Exit {
+                session_id: format!("term_{id}"),
+                exit_code,
+            },
+        };
+        let _ = app.emit_to(&label, TERMINAL_EVENT_NAME, frame);
+    });
+    terminal_open(&state, window.label(), &session_id, request, emit)
+}
+
+fn base64_encode(bytes: &[u8]) -> String {
+    use base64::Engine as _;
+    base64::engine::general_purpose::STANDARD.encode(bytes)
+}
+
+#[tauri::command]
+pub async fn refyard_terminal_write(
+    window: tauri::WebviewWindow,
+    state: State<'_, AppState>,
+    session_id: String,
+    request: Value,
+) -> Result<Value, ProblemResponse> {
+    terminal_write(&state, window.label(), &session_id, request)
+}
+
+#[tauri::command]
+pub async fn refyard_terminal_resize(
+    window: tauri::WebviewWindow,
+    state: State<'_, AppState>,
+    session_id: String,
+    request: Value,
+) -> Result<Value, ProblemResponse> {
+    terminal_resize(&state, window.label(), &session_id, request)
+}
+
+#[tauri::command]
+pub async fn refyard_terminal_close(
+    window: tauri::WebviewWindow,
+    state: State<'_, AppState>,
+    session_id: String,
+    request: Value,
+) -> Result<Value, ProblemResponse> {
+    terminal_close(&state, window.label(), &session_id, request)
 }
 
 /* ------------------------------------------------------------- Tauri commands */

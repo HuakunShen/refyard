@@ -947,6 +947,15 @@ impl ApplicationService {
         ]
     }
 
+    /// The registered repository record, when this host approved it.
+    ///
+    /// The terminal surface needs exactly one fact per session — the approved
+    /// directory a shell may start in — and must resolve it from the registry
+    /// rather than accept a path: the WebView cannot name one.
+    pub fn repository_record(&self, repository_id: &str) -> Option<RepositoryRecord> {
+        self.repositories.get(repository_id)
+    }
+
     /// The registered repositories and the roots they were approved under.
     ///
     /// Each row carries the repository's real HEAD, read now: a list that reported an
