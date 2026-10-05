@@ -68,7 +68,7 @@ use crate::writes::WriteHost;
 
 /// The contract revision this build serves. It matches `CONTRACT_VERSION` in
 /// `packages/git-contract/src/version.ts`; a mismatch is a bug rather than a feature.
-pub const CONTRACT_VERSION: &str = "1.2.0";
+pub const CONTRACT_VERSION: &str = "1.3.0";
 /// `API_MAJOR`: the number a client checks before it calls a write endpoint.
 pub const API_MAJOR: u32 = 1;
 

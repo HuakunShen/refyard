@@ -1040,7 +1040,7 @@ mod tests {
     fn capabilities_response_serializes_the_shape_the_contract_publishes() {
         let capabilities = CapabilitiesResponse {
             api_major: 1,
-            contract_version: "1.2.0".to_string(),
+            contract_version: "1.3.0".to_string(),
             service_instance_id: "srvc_1".to_string(),
             host: HostInfo {
                 kind: HostKind::Rust,
@@ -1090,7 +1090,7 @@ mod tests {
             serde_json::to_value(&capabilities).expect("serializes"),
             json!({
                 "apiMajor": 1,
-                "contractVersion": "1.2.0",
+                "contractVersion": "1.3.0",
                 "serviceInstanceId": "srvc_1",
                 "host": { "kind": "rust", "version": "0.1.0" },
                 "git": {

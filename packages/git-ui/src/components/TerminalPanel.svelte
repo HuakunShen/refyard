@@ -64,9 +64,40 @@
 		if (activeKey === tab.key) {
 			activeKey = tabs[Math.min(index, tabs.length - 1)]?.key ?? null;
 		}
+		if (tabs.length === 0) {
+			// The autostarter below must not resurrect a shell the reader just
+			// closed: closing the last tab by hand is an intention, not a gap.
+			userClosedAll = true;
+		}
 	}
 
+	/** Open one more shell; the toolbar's `+` and Cmd/Ctrl+T both land here. */
+	export function openNew(): void {
+		userClosedAll = false;
+		createTab();
+	}
+
+	/** Focus the neighbour tab: `delta` −1 is the previous, +1 the next. */
+	export function cycle(delta: number): void {
+		const current = tabs.findIndex((tab) => tab.key === activeKey);
+		if (current === -1) {
+			activeKey = tabs[0]?.key ?? null;
+			return;
+		}
+		activeKey = tabs[(current + delta + tabs.length) % tabs.length]?.key ?? null;
+	}
+
+	// A dock that opens with a usable session starts with one shell in it —
+	// nobody should have to press `+` to see a prompt the first time.
+	let userClosedAll = false;
+	$effect(() => {
+		if (usable && !userClosedAll && tabs.length === 0) {
+			createTab();
+		}
+	});
+
 	async function closePanel(): Promise<void> {
+		userClosedAll = true;
 		for (const tab of tabs) {
 			await tab.view?.destroy();
 		}

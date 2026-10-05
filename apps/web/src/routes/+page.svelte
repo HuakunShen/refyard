@@ -248,6 +248,44 @@
   let terminalOpen = $state(false);
   let terminalHeight = $state(300);
   const terminalService = $derived(backendSession?.terminal ?? null);
+  let terminalPanel: TerminalPanel | null = $state(null);
+
+  /**
+   * Terminal keyboard surface, bound on the capture phase so it wins over both
+   * the focused emulator (a Ctrl chord must never reach the shell) and any
+   * browser tab shortcuts the webview would otherwise keep for itself.
+   *
+   * - Ctrl+` toggles the dock.
+   * - Cmd/Ctrl+T opens a new shell (opening the dock if it is closed).
+   * - Ctrl+Tab / Ctrl+Shift+Tab walk to the next / previous shell.
+   */
+  function terminalShortcut(event: KeyboardEvent): void {
+    if (terminalService === null || repository === null) {
+      return;
+    }
+    if (event.ctrlKey && !event.metaKey && event.key === "`") {
+      event.preventDefault();
+      event.stopPropagation();
+      terminalOpen = !terminalOpen;
+      return;
+    }
+    if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "t") {
+      event.preventDefault();
+      event.stopPropagation();
+      if (terminalOpen) {
+        terminalPanel?.openNew();
+      } else {
+        // The panel autostarts one shell when it mounts with a usable session.
+        terminalOpen = true;
+      }
+      return;
+    }
+    if (event.ctrlKey && !event.metaKey && event.key === "Tab" && terminalOpen) {
+      event.preventDefault();
+      event.stopPropagation();
+      terminalPanel?.cycle(event.shiftKey ? -1 : 1);
+    }
+  }
   let connectionState = $state<ConnectionState>({
     phase: "connecting",
     problem: null,
@@ -1427,6 +1465,7 @@
 </script>
 
 <svelte:window
+  onkeydowncapture={terminalShortcut}
   onkeydown={(event) => {
     if (
       event.key === "Escape" &&
@@ -2291,6 +2330,7 @@
         data-testid="terminal-dock"
       >
         <TerminalPanel
+          bind:this={terminalPanel}
           terminal={terminalService}
           repositoryId={repository.repositoryId}
           onClose={() => (terminalOpen = false)}
