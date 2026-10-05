@@ -672,6 +672,12 @@
     writeController.onPush(toolbarTarget.remoteName, toolbarTarget.branchName);
   }
 
+  /** A branch with no upstream: the dialog named where it goes, and the push tracks it. */
+  function toolbarPushUpstream(remoteName: string, branchName: string): void {
+    if (writeController.busy) return;
+    writeController.onPush(remoteName, branchName, true);
+  }
+
   function openWorktree(worktreeId: string, inNewTab = false): void {
     if (writeController.busy || repository === null) return;
     const worktree = queries.worktrees.data?.worktrees.find(
@@ -1727,6 +1733,11 @@
     onFetch={writeController.availability.network ? toolbarFetch : null}
     onPull={writeController.availability.pull ? toolbarPull : null}
     onPush={writeController.availability.push ? toolbarPush : null}
+    onPushUpstream={
+      writeController.availability.push ? toolbarPushUpstream : null
+    }
+    branchName={toolbarTarget?.branchName ?? null}
+    remotes={(refs.data?.remotes ?? []).map((remote) => remote.name)}
   />
 
   {#if sessionExpired}

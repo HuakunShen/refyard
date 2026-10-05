@@ -1179,7 +1179,11 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
     );
   }
 
-  function onPush(remoteName: string, branchName: string): void {
+  function onPush(
+    remoteName: string,
+    branchName: string,
+    setUpstream = false,
+  ): void {
     void performWrite(
       "push",
       () => ({
@@ -1187,7 +1191,7 @@ export function createWorkbenchMutations(input: WorkbenchMutationInputs) {
         remoteName,
         sourceRef: `refs/heads/${branchName}`,
         destinationRef: `refs/heads/${branchName}`,
-        setUpstream: false,
+        setUpstream,
       }),
       (result, context, scope) => {
         remoteMessage = scopedMessage(result, context, scope);

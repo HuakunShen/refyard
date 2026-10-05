@@ -15,6 +15,7 @@
   import { m } from "../i18n.js";
   import { cn } from "../lib/utils.js";
   import { Button } from "./ui/button/index.js";
+  import PushSetUpstreamDialog from "./PushSetUpstreamDialog.svelte";
 
   interface Props {
     /** True while any write is in flight; the whole row holds still. */
@@ -28,10 +29,19 @@
     onFetch: (() => void) | null;
     onPull: (() => void) | null;
     onPush: (() => void) | null;
+    /**
+     * Push a branch that has no upstream yet: the dialog names the remote and the
+     * destination, and the push sets upstream tracking in the same move.
+     */
+    onPushUpstream?: ((remoteName: string, branchName: string) => void) | null;
     /** Why a sync button cannot run, when it cannot: the tooltip says it. */
     syncProblem?: null | "no-remote" | "no-branch" | "no-upstream";
     /** The remote the sync buttons act on, for their tooltips. */
     remoteName?: string;
+    /** The checked-out branch, for the upstream question and its prefilled answer. */
+    branchName?: string | null;
+    /** The repository's remote names, for the upstream question's dropdown. */
+    remotes?: readonly string[];
     stashCount?: number;
     class?: string;
   }
@@ -46,8 +56,11 @@
     onFetch,
     onPull,
     onPush,
+    onPushUpstream = null,
     syncProblem = null,
     remoteName = "",
+    branchName = null,
+    remotes = [],
     stashCount = 0,
     class: className = "",
   }: Props = $props();
@@ -57,10 +70,20 @@
       ? m.toolbar_no_remote()
       : syncProblem === "no-branch"
         ? m.toolbar_no_branch()
-        : syncProblem === "no-upstream"
-          ? m.toolbar_no_upstream()
-          : null,
+        : null,
   );
+
+  /** A branch without upstream can still push — by answering where it goes first. */
+  let upstreamOpen = $state(false);
+
+  function push(): void {
+    if (busy) return;
+    if (syncProblem === "no-upstream" && onPushUpstream !== null) {
+      upstreamOpen = true;
+      return;
+    }
+    onPush?.();
+  }
 </script>
 
 {#if visible}
@@ -166,14 +189,25 @@
         variant="outline"
         size="sm"
         class="h-7 gap-1.5 px-2.5 text-xs"
-        disabled={busy || syncDisabledReason !== null || syncProblem === "no-upstream"}
-        title={syncDisabledReason ?? m.toolbar_push()}
+        disabled={busy || syncDisabledReason !== null}
+        title={syncDisabledReason ??
+          (syncProblem === "no-upstream" ? m.toolbar_push_set_upstream() : m.toolbar_push())}
         data-testid="toolbar-push"
-        onclick={onPush}
+        onclick={push}
       >
         <ArrowUpFromLine class="size-3.5" />
         {m.toolbar_push()}
       </Button>
     {/if}
   </div>
+{/if}
+
+{#if onPushUpstream !== null}
+  <PushSetUpstreamDialog
+    bind:open={upstreamOpen}
+    {branchName}
+    {remotes}
+    {busy}
+    onSubmit={(remote, branch) => onPushUpstream(remote, branch)}
+  />
 {/if}
