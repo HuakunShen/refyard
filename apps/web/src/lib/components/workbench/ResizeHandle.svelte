@@ -19,6 +19,13 @@
     /** `vertical` drags a column edge sideways; `horizontal` drags a stacked divider. */
     orientation?: "vertical" | "horizontal";
     style?: string;
+    /**
+     * Escape the layout container query: a divider that belongs to a panel the
+     * layout does not own — the terminal dock, say — is visible at every width.
+     */
+    alwaysVisible?: boolean;
+    /** The handle's own name, when it is not the stacked repository divider. */
+    label?: string;
   }
 
   let {
@@ -27,6 +34,8 @@
     onResizeEnd,
     orientation = "vertical",
     style = "",
+    alwaysVisible = false,
+    label,
   }: Props = $props();
   let dragging = $state(false);
   let last = 0;
@@ -99,18 +108,19 @@
     // hidden once it is not: one container query decides both, so the two can never both be
     // absent or both be present.
     horizontal
-      ? "right-0 left-0 flex h-3 -translate-y-1/2 cursor-row-resize @5xl:hidden"
+      ? `right-0 left-0 flex h-3 -translate-y-1/2 cursor-row-resize ${alwaysVisible ? "" : "@5xl:hidden"}`
       : "top-0 bottom-0 hidden w-3 cursor-col-resize @5xl:flex",
     !horizontal && (side === "left" ? "-translate-x-1/2" : "translate-x-1/2"),
     dragging && "bg-primary/10",
   )}
   {style}
-  aria-label={horizontal
-    ? m.resize_repo_list()
-    : `${side === "left" ? "Left" : "Right"} sidebar width`}
-  data-testid={horizontal
-    ? "stacked-nav-resize-handle"
-    : `${side}-sidebar-resize-handle`}
+  aria-label={label ??
+    (horizontal ? m.resize_repo_list() : `${side === "left" ? "Left" : "Right"} sidebar width`)}
+  data-testid={label === undefined
+    ? horizontal
+      ? "stacked-nav-resize-handle"
+      : `${side}-sidebar-resize-handle`
+    : "panel-resize-handle"}
   onpointerdown={pointerDown}
   onpointermove={pointerMove}
   onpointerup={pointerUp}

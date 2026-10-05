@@ -36,6 +36,7 @@
     RepositoryTabs,
     WorkbenchToolbar,
     StateBanner,
+    TerminalPanel,
     UncertainOutcomePanel,
     cn,
     type ExecutionTargetSelection,
@@ -241,6 +242,12 @@
   }
 
   let backendSession = $state<BackendSession | null>(null);
+  // The terminal dock: open/closed and its height are view state; whether a
+  // terminal exists at all is the session's fact (`terminal` is unset when the
+  // host offers none), and the toolbar button simply does not exist then.
+  let terminalOpen = $state(false);
+  let terminalHeight = $state(300);
+  const terminalService = $derived(backendSession?.terminal ?? null);
   let connectionState = $state<ConnectionState>({
     phase: "connecting",
     problem: null,
@@ -1739,6 +1746,12 @@
     }
     branchName={toolbarTarget?.branchName ?? null}
     remotes={(refs.data?.remotes ?? []).map((remote) => remote.name)}
+    onToggleTerminal={
+      terminalService !== null && repository !== null
+        ? () => (terminalOpen = !terminalOpen)
+        : null
+    }
+    terminalActive={terminalOpen}
   />
 
   {#if sessionExpired}
@@ -2270,6 +2283,33 @@
         />
       {/if}
     </main>
+
+    {#if terminalOpen && terminalService !== null && repository !== null}
+      <div
+        class="relative shrink-0 border-t border-border"
+        style:height="{terminalHeight}px"
+        data-testid="terminal-dock"
+      >
+        <TerminalPanel
+          terminal={terminalService}
+          repositoryId={repository.repositoryId}
+          onClose={() => (terminalOpen = false)}
+        />
+        <ResizeHandle
+          side="left"
+          orientation="horizontal"
+          alwaysVisible
+          label="Terminal dock height"
+          onResize={(delta) =>
+            (terminalHeight = Math.min(
+              Math.max(terminalHeight - delta, 120),
+              Math.round(window.innerHeight * 0.7),
+            ))}
+          onResizeEnd={() => {}}
+          style={`top: 0px`}
+        />
+      </div>
+    {/if}
   {/if}
   {/key}
 </div>
