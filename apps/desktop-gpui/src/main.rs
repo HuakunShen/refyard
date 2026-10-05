@@ -36,6 +36,9 @@ fn main() {
     };
 
     let theme_override = std::env::var("REFYARD_THEME").ok();
+    // `REFYARD_STYLE=native` wears the macOS-native palette; the default stays the
+    // workbench palette so the shell opens looking like the web one.
+    let theme_style = theme::ThemeStyle::from_env(std::env::var("REFYARD_STYLE").ok().as_deref());
     application()
         .with_assets(assets::Assets)
         .run(move |cx| {
@@ -51,7 +54,7 @@ fn main() {
             } else {
                 gpui_kit::component::theme::ThemeMode::Dark
             };
-            theme::apply_theme(mode, cx);
+            theme::apply_theme(theme_style, mode, cx);
 
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(Bounds::centered(None, size(px(1360.), px(900.)), cx))),
