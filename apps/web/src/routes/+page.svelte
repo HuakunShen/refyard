@@ -62,6 +62,7 @@
     PanelLeftOpen,
     RefreshCw,
     Server,
+    X,
   } from "@lucide/svelte";
   import {
     m,
@@ -2135,6 +2136,16 @@
                     : "Stage file"}
                 </Button>
               {/if}
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onclick={backToHistory}
+                title={m.common_close()}
+                aria-label={m.common_close()}
+                data-testid="main-diff-close"
+              >
+                <X class="size-4" />
+              </Button>
             </header>
             {#if diff.isPending}
               <div class="p-3">
