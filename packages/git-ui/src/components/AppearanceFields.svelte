@@ -14,6 +14,10 @@
     ROW_DENSITIES,
     type RowDensity,
   } from "../lib/geometry.js";
+  import {
+    INTERFACE_STYLES,
+    type InterfaceStyle,
+  } from "../lib/interface-style.js";
   import { m, type UiLanguage } from "../i18n.js";
 
   /** The three choices, named in their own languages: a reader picking a language reads it
@@ -35,12 +39,17 @@
     density: RowDensity;
     /** The reader's language preference; `auto` follows the browser. */
     language: UiLanguage;
+    /** The interface-style preference; defaults to the web look, `auto` follows the platform. */
+    interfaceStyle?: InterfaceStyle;
+    /** The style `auto` resolves to on this device, for the button's own label. */
+    automaticStyle?: string;
     onAccentChange: (accent: string) => void;
     onLanguageChange?: (language: UiLanguage) => void;
     onBackgroundChange: (bg: string) => void;
     onGlassChange: (glass: boolean) => void;
     onAvatarsChange?: (avatars: boolean) => void;
     onDensityChange?: (density: RowDensity) => void;
+    onInterfaceStyleChange?: (style: InterfaceStyle) => void;
   }
 
   let {
@@ -50,13 +59,39 @@
     avatars,
     density,
     language,
+    interfaceStyle = "web",
+    automaticStyle = "web",
     onAccentChange,
     onLanguageChange = undefined,
     onBackgroundChange,
     onGlassChange,
     onAvatarsChange = undefined,
     onDensityChange = undefined,
+    onInterfaceStyleChange = undefined,
   }: Props = $props();
+
+  /** The five style buttons, `auto` naming what it would resolve to here. */
+  const INTERFACE_CHOICES = $derived.by(() => {
+    const labels: Record<InterfaceStyle, () => string> = {
+      auto: m.settings_interface_auto,
+      web: m.settings_interface_web,
+      macos: m.settings_interface_macos,
+      windows: m.settings_interface_windows,
+      linux: m.settings_interface_linux,
+    };
+    const details: Record<InterfaceStyle, string> = {
+      auto: automaticStyle,
+      web: m.settings_interface_web_desc(),
+      macos: m.settings_interface_macos_desc(),
+      windows: m.settings_interface_windows_desc(),
+      linux: m.settings_interface_linux_desc(),
+    };
+    return INTERFACE_STYLES.map((id) => ({
+      id,
+      label: labels[id],
+      detail: details[id],
+    }));
+  });
 
   /** The density buttons, each drawn with its own node size so the choice is visible. */
   const DENSITIES = ROW_DENSITIES.map((id) => {
@@ -127,6 +162,45 @@
 </script>
 
 <div class="flex flex-col gap-5">
+  <!-- Interface Style -->
+  <div class="flex flex-col gap-2">
+    <div class="flex items-center justify-between">
+      <span class="text-xs font-semibold uppercase tracking-wider text-ink-muted">
+        {m.settings_interface()}
+      </span>
+      <span class="text-[11px] text-ink-faint">
+        {interfaceStyle === "auto" ? m.settings_interface_hint() : ""}
+      </span>
+    </div>
+    <div
+      class="grid grid-cols-2 gap-2"
+      role="radiogroup"
+      aria-label={m.settings_interface()}
+    >
+      {#each INTERFACE_CHOICES as choice (choice.id)}
+        {@const active = interfaceStyle === choice.id}
+        <button
+          type="button"
+          role="radio"
+          aria-checked={active}
+          onclick={() => onInterfaceStyleChange?.(choice.id)}
+          class={cn(
+            "flex flex-col items-start gap-0.5 rounded-lg border p-2 text-left text-xs transition-all",
+            active
+              ? "border-primary bg-primary/10 font-medium text-foreground shadow-xs"
+              : "border-border/60 bg-card/60 hover:border-border hover:bg-accent/40 text-ink-muted",
+          )}
+          data-testid={`settings-interface-${choice.id}`}
+        >
+          <span class="truncate">{choice.label()}</span>
+          <span class="truncate text-[10px] text-ink-faint"
+            >{choice.detail}</span
+          >
+        </button>
+      {/each}
+    </div>
+  </div>
+
   <!-- Accent Color Selection -->
   <div class="flex flex-col gap-2">
     <span class="text-xs font-semibold uppercase tracking-wider text-ink-muted">

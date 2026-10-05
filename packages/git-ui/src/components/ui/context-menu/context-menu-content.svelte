@@ -21,7 +21,7 @@
     bind:ref
     data-slot="context-menu-content"
     class={cn(
-      "data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 data-closed:zoom-out-95 data-open:zoom-in-95 ring-foreground/10 bg-popover text-popover-foreground min-w-40 rounded-lg p-1 shadow-md ring-1 duration-100 z-50 overflow-x-hidden overflow-y-auto data-closed:overflow-hidden",
+      "macos:rounded-lg macos:bg-popover/95 macos:backdrop-blur-xl macos:shadow-xl windows:rounded-lg windows:border windows:border-border windows:shadow-lg linux:rounded-xl linux:shadow-xl data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 data-closed:zoom-out-95 data-open:zoom-in-95 ring-foreground/10 bg-popover text-popover-foreground min-w-40 rounded-lg p-1 shadow-md ring-1 duration-100 z-50 overflow-x-hidden overflow-y-auto data-closed:overflow-hidden",
       className,
     )}
     {...restProps}

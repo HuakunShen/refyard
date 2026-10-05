@@ -33,6 +33,7 @@
     type UpdatesProbe,
   } from "../lib/updates.js";
   import type { RowDensity } from "../lib/geometry.js";
+  import type { InterfaceStyle } from "../lib/interface-style.js";
 
   interface SettingsAbout {
     /** The app shell's own version, when the runtime knows one (desktop via Tauri). */
@@ -52,12 +53,17 @@
     density?: RowDensity;
     /** The reader's language preference; `auto` follows the browser. */
     language?: UiLanguage;
+    /** The interface-style preference; `auto` follows the reader's platform. */
+    interfaceStyle?: InterfaceStyle;
+    /** The style `auto` resolves to on this device, named on the Automatic button. */
+    automaticStyle?: string;
     onAccentChange: (accent: string) => void;
     onLanguageChange?: (language: UiLanguage) => void;
     onBackgroundChange: (bg: string) => void;
     onGlassChange: (glass: boolean) => void;
     onAvatarsChange?: (avatars: boolean) => void;
     onDensityChange?: (density: RowDensity) => void;
+    onInterfaceStyleChange?: (style: InterfaceStyle) => void;
     about?: SettingsAbout;
     onDisconnect?: () => void;
     /** Present only where updates can exist: the desktop runtime. */
@@ -73,12 +79,15 @@
     avatars = true,
     density = "compact",
     language = "auto",
+    interfaceStyle = "web",
+    automaticStyle = "web",
     onAccentChange,
     onLanguageChange = undefined,
     onBackgroundChange,
     onGlassChange,
     onAvatarsChange = undefined,
     onDensityChange = undefined,
+    onInterfaceStyleChange = undefined,
     about,
     onDisconnect,
     updates,
@@ -237,12 +246,15 @@
             {avatars}
             {density}
             {language}
+            {interfaceStyle}
+            {automaticStyle}
             {onAccentChange}
             {onLanguageChange}
             {onBackgroundChange}
             {onGlassChange}
             {onAvatarsChange}
             {onDensityChange}
+            {onInterfaceStyleChange}
           />
         </section>
 

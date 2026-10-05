@@ -66,7 +66,7 @@
 {#if visible}
   <div
     class={cn(
-      "flex shrink-0 items-center gap-1.5 border-b border-border/60 bg-card/40 px-2.5 py-1.5",
+      "macos:border-b-border macos:bg-(--chrome) macos:backdrop-blur-xl macos:backdrop-saturate-150 windows:bg-(--chrome) linux:bg-(--chrome) flex shrink-0 items-center gap-1.5 border-b border-border/60 bg-card/40 px-2.5 py-1.5",
       className,
     )}
     data-testid="workbench-toolbar"
