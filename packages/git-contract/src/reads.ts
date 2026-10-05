@@ -40,6 +40,7 @@ import {
 } from "./names.js";
 import { MUTATION_KINDS, OPERATION_TARGET_LIST } from "./operations.js";
 import { providerIdSchema } from "./provider.js";
+import { terminalCapabilitySchema } from "./terminal.js";
 import {
   mutationTargetSchema,
   targetKindSchema,
@@ -162,6 +163,11 @@ export const capabilitiesResponseSchema = z
     reads: z.array(readKindSchema),
     /** Forge integrations this host carries; absent from hosts without the module. */
     providers: z.array(providerIdSchema).optional(),
+    /**
+     * Interactive terminal sessions, when this host carries a PTY module. Absent
+     * means the host cannot open a terminal — never an empty promise.
+     */
+    terminal: terminalCapabilitySchema.optional(),
     operations: z.array(
       z.strictObject({
         kind: z.enum(MUTATION_KINDS),

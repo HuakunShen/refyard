@@ -46,6 +46,11 @@ export const LIMITS = {
   providerPullRequestsMaxEntries: 100,
   commitMessageMaxBytes: 1_048_576,
   branchNameMaxLength: 255,
+  /** Terminal frames: one base64 payload in either direction, and live sessions per host. */
+  terminalPayloadMaxBytes: 65_536,
+  terminalSessionsPerService: 8,
+  /** How many shell bytes a session buffers while no output stream is attached. */
+  terminalPreSubscribeBufferBytes: 256 * 1024,
   /** How many tips a history snapshot may pin. */
   // Every accepted ref (5,000) plus a detached HEAD fits in the history snapshot.
   historyTipsMax: 5_001,

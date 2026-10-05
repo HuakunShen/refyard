@@ -137,6 +137,19 @@ import {
   workspaceTargetSchema,
   worktreeTargetSchema,
 } from "./targets.js";
+import {
+  terminalAcknowledgementSchema,
+  terminalCapabilitySchema,
+  terminalCloseRequestSchema,
+  terminalExitFrameSchema,
+  terminalInputRequestSchema,
+  terminalOpenRequestSchema,
+  terminalOpenResponseSchema,
+  terminalOutputFrameSchema,
+  terminalOutputQuerySchema,
+  terminalResizeRequestSchema,
+  terminalSessionIdSchema,
+} from "./terminal.js";
 
 /**
  * Every named public schema. Keys become `$defs` entries, so they must be unique
@@ -227,6 +240,17 @@ export const CONTRACT_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   PreviewsResponse: previewsResponseSchema,
   EventPayload: eventPayloadSchema,
   EventEnvelope: eventEnvelopeSchema,
+  TerminalSessionId: terminalSessionIdSchema,
+  TerminalCapability: terminalCapabilitySchema,
+  TerminalOpenRequest: terminalOpenRequestSchema,
+  TerminalOpenResponse: terminalOpenResponseSchema,
+  TerminalInputRequest: terminalInputRequestSchema,
+  TerminalResizeRequest: terminalResizeRequestSchema,
+  TerminalCloseRequest: terminalCloseRequestSchema,
+  TerminalOutputFrame: terminalOutputFrameSchema,
+  TerminalExitFrame: terminalExitFrameSchema,
+  TerminalAcknowledgement: terminalAcknowledgementSchema,
+  TerminalOutputQuery: terminalOutputQuerySchema,
   CapabilitiesQuery: capabilitiesQuerySchema,
   RepositoriesQuery: repositoriesQuerySchema,
   RegisterRepositoryRequest: registerRepositoryRequestSchema,

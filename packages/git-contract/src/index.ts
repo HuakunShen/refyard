@@ -16,6 +16,7 @@ export * from "./operations.js";
 export * from "./requests.js";
 export * from "./errors.js";
 export * from "./provider.js";
+export * from "./terminal.js";
 export * from "./reads.js";
 export * from "./validate.js";
 export * from "./registry.js";

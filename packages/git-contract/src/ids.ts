@@ -9,8 +9,12 @@
 import { z } from "zod";
 import { API_MAJOR } from "./version.js";
 
-/** A prefixed, URL-safe identifier such as `repo_7f3a…`. */
-function prefixedId(prefix: string, meta: { id: string; description: string }) {
+/** A prefixed, URL-safe identifier such as `repo_7f3a…`. Exported for sibling
+ * schema modules that mint their own host-side identifiers (terminal sessions). */
+export function prefixedId(
+  prefix: string,
+  meta: { id: string; description: string },
+) {
   return z
     .string()
     .regex(
