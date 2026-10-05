@@ -288,7 +288,9 @@ describe("legacy compatibility of repository shapes", () => {
 
 describe("contract revision", () => {
   it("is the additive native revision of API major 1", () => {
-    expect(CONTRACT_VERSION).toBe("1.2.0");
+    // 1.3.0 is the terminal slice: the optional `capabilities.terminal` field
+    // and the Terminal* request/frame schemas (2026-10-05).
+    expect(CONTRACT_VERSION).toBe("1.3.0");
   });
 
   it("names every new host shape in the wire registry", () => {

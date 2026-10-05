@@ -40,12 +40,6 @@ async function start(
   return { repo, service };
 }
 
-interface Opened {
-  readonly sessionId: string;
-  readonly shell: string;
-  readonly cwd: string;
-}
-
 async function open(
   service: TestService,
   token: string,

@@ -63,11 +63,16 @@ describe("the native service answers the contract the browser already speaks", (
     const parsed = capabilitiesResponseSchema.parse(await client.capabilities());
     expect(parsed.apiMajor).toBe(1);
     expect(parsed.reads).toContain("status");
-    expect(parsed.operations.map((operation) => operation.kind)).toEqual([
-      "stagePaths",
-      "unstagePaths",
-      "commit",
-    ]);
+    // The D-era pin (exactly stagePaths/unstagePaths/commit) went stale when the
+    // P-rounds registered the rest of the write surface; what must hold is that
+    // the original three are still advertised and every operation names targets.
+    const kinds = parsed.operations.map((operation) => operation.kind);
+    for (const kind of ["stagePaths", "unstagePaths", "commit"]) {
+      expect(kinds).toContain(kind);
+    }
+    for (const operation of parsed.operations) {
+      expect(operation.targets.length).toBeGreaterThan(0);
+    }
   });
 
   it("lists the repository the process was started with", async () => {

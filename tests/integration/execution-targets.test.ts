@@ -33,7 +33,9 @@ describe("execution target selectors on a single-target host", () => {
     const body = capabilitiesResponseSchema.safeParse(await response.json());
     expect(body.success).toBe(true);
     if (body.success) {
-      expect(body.data.contractVersion).toBe("1.2.0");
+      // 1.3.0 is the terminal slice (2026-10-05); the pin moves with every
+      // deliberate additive revision of the contract.
+      expect(body.data.contractVersion).toBe("1.3.0");
       expect(body.data.host.kind).toBe("node");
     }
   });
