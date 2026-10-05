@@ -12,6 +12,7 @@
   import CloudDownload from "@lucide/svelte/icons/cloud-download";
   import Layers from "@lucide/svelte/icons/layers";
   import PackageOpen from "@lucide/svelte/icons/package-open";
+  import SquareTerminal from "@lucide/svelte/icons/square-terminal";
   import { m } from "../i18n.js";
   import { cn } from "../lib/utils.js";
   import { Button } from "./ui/button/index.js";
@@ -43,6 +44,14 @@
     /** The repository's remote names, for the upstream question's dropdown. */
     remotes?: readonly string[];
     stashCount?: number;
+    /**
+     * Toggle the bottom terminal dock; null means this session has no terminal
+     * (the transport or the host does not carry a pty), and no button exists —
+     * never a button that can only fail.
+     */
+    onToggleTerminal?: (() => void) | null;
+    /** Whether the dock is open, for the button's pressed state. */
+    terminalActive?: boolean;
     class?: string;
   }
 
@@ -62,6 +71,8 @@
     branchName = null,
     remotes = [],
     stashCount = 0,
+    onToggleTerminal = null,
+    terminalActive = false,
     class: className = "",
   }: Props = $props();
 
@@ -197,6 +208,21 @@
       >
         <ArrowUpFromLine class="size-3.5" />
         {m.toolbar_push()}
+      </Button>
+    {/if}
+
+    {#if onToggleTerminal !== null}
+      <Button
+        variant="outline"
+        size="sm"
+        class="h-7 gap-1.5 px-2.5 text-xs {terminalActive ? 'bg-accent' : ''}"
+        title={m.terminal_toggle()}
+        aria-pressed={terminalActive}
+        data-testid="toolbar-terminal"
+        onclick={onToggleTerminal}
+      >
+        <SquareTerminal class="size-3.5" />
+        {m.terminal_toggle()}
       </Button>
     {/if}
   </div>

@@ -22,6 +22,8 @@
     "@lucide/svelte": "^1.46.0",
     "@sveltejs/vite-plugin-svelte": "catalog:",
     "@tanstack/svelte-virtual": "catalog:",
+    "@xterm/addon-fit": "catalog:",
+    "@xterm/xterm": "catalog:",
     "bits-ui": "^2.19.2",
     "clsx": "catalog:",
     "mode-watcher": "catalog:",

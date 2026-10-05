@@ -503,5 +503,13 @@
   "toolbar_no_remote": "No remote is configured for this repository",
   "toolbar_no_branch": "HEAD is not on a branch",
   "toolbar_stage_all_title": "Stage all {n} changed path(s)",
-  "toolbar_pop_none_title": "No stash to pop"
+  "toolbar_pop_none_title": "No stash to pop",
+  "terminal_toggle": "Terminal",
+  "terminal_new": "New terminal",
+  "terminal_new_hint": "Press + to open a terminal in this repository.",
+  "terminal_close_tab": "Close terminal",
+  "terminal_close_panel": "Close terminal panel",
+  "terminal_exited": "Exited ({code})",
+  "terminal_exit_unknown": "Exited",
+  "terminal_unavailable": "This host offers no terminal."
 }

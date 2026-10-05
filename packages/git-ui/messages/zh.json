@@ -503,5 +503,13 @@
   "toolbar_no_remote": "此仓库没有配置远程",
   "toolbar_no_branch": "HEAD 不在分支上",
   "toolbar_stage_all_title": "暂存全部 {n} 个变更路径",
-  "toolbar_pop_none_title": "没有可弹出的贮藏"
+  "toolbar_pop_none_title": "没有可弹出的贮藏",
+  "terminal_toggle": "终端",
+  "terminal_new": "新建终端",
+  "terminal_new_hint": "按 + 在此仓库打开终端。",
+  "terminal_close_tab": "关闭终端",
+  "terminal_close_panel": "关闭终端面板",
+  "terminal_exited": "已退出（{code}）",
+  "terminal_exit_unknown": "已退出",
+  "terminal_unavailable": "当前主机不提供终端。"
 }
