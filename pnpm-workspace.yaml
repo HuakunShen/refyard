@@ -4,10 +4,12 @@ packages:
 
 # esbuild's install script only places its own platform binary; the portability
 # smoke (scripts/check-portable.ts) needs that binary, and nothing else in the
-# workspace is allowed to run install scripts.
+# workspace is allowed to run install scripts. node-pty's install script only
+# compiles a fallback; its prebuilt darwin/linux/win32 bindings load without it.
 allowBuilds:
   esbuild: true
   workerd: true
+  node-pty: true
 
 # Every dependency version lives here so a package.json can only ask for a name.
 # The plan forbids silent "latest" upgrades during task execution; bumping a
@@ -42,6 +44,8 @@ catalog:
   "@tanstack/svelte-query": 6.1.48
   "@tanstack/svelte-virtual": 3.13.39
   "@types/node": 26.5.1
+  "@xterm/xterm": 5.5.0
+  "@xterm/addon-fit": 0.10.0
   bits-ui: 2.19.2
   clsx: 2.1.1
   esbuild: 0.28.2
@@ -58,6 +62,8 @@ catalog:
   hono-openapi: 1.3.3
   hono-rate-limiter: 0.5.4
   kkrpc: 2.0.0
+  # Optional at runtime (dynamic import): a host without it reports no terminal.
+  node-pty: 1.1.0
   tsdown: 0.23.0
   turbo: 2.10.12
   typescript: 7.0.2

@@ -118,6 +118,9 @@ export async function runService(
     repositoryRootOf: (repositoryId: string) =>
       assembly.repositories.get(repositoryId)?.allowedRootId ?? null,
     provider: assembly.provider,
+    ...(assembly.terminal === null
+      ? {}
+      : { terminal: assembly.terminal }),
     grants: {
       allowedRootIds: [...assembly.allowedRootIds],
       repositoryIds: [...assembly.repositoryIds],

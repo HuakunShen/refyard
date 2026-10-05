@@ -47,6 +47,13 @@ import {
   stashesResponseSchema,
   statusSnapshotSchema,
   submodulesResponseSchema,
+  terminalAcknowledgementSchema,
+  terminalCloseRequestSchema,
+  terminalInputRequestSchema,
+  terminalOpenRequestSchema,
+  terminalOpenResponseSchema,
+  terminalOutputQuerySchema,
+  terminalResizeRequestSchema,
   worktreeIdSchema,
   worktreesResponseSchema,
   type Problem,
@@ -57,6 +64,7 @@ import {
   UNIMPLEMENTED_PATHS,
   mutationRoutes,
   readRoutes,
+  terminalRoutes,
   unsupportedProblem,
   type RouteDefinition,
   type RouteServices,
@@ -132,6 +140,10 @@ const RESPONSE_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   "/api/v1/provider/disconnect": providerConnectionsResponseSchema,
   "/api/v1/previews": previewsResponseSchema,
   "/api/v1/operations": operationsListResponseSchema,
+  "/api/v1/terminal/open": terminalOpenResponseSchema,
+  "/api/v1/terminal/input": terminalAcknowledgementSchema,
+  "/api/v1/terminal/resize": terminalAcknowledgementSchema,
+  "/api/v1/terminal/close": terminalAcknowledgementSchema,
 };
 
 const BODY_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
@@ -143,6 +155,10 @@ const BODY_SCHEMAS: Readonly<Record<string, z.ZodType>> = {
   "/api/v1/previews": previewsRequestSchema,
   "/api/v1/operations": MutationRequestSchema,
   "/api/v1/operations/cancel": cancelOperationRequestSchema,
+  "/api/v1/terminal/open": terminalOpenRequestSchema,
+  "/api/v1/terminal/input": terminalInputRequestSchema,
+  "/api/v1/terminal/resize": terminalResizeRequestSchema,
+  "/api/v1/terminal/close": terminalCloseRequestSchema,
 };
 
 const MUTATION_SUBMISSION_RESPONSE = z.union([
@@ -370,7 +386,11 @@ export function createHonoHttpApp(options: HonoHttpAppOptions): HonoHttpApp {
     },
   );
 
-  const routes = [...readRoutes(), ...mutationRoutes()];
+  const routes = [
+    ...readRoutes(),
+    ...mutationRoutes(),
+    ...terminalRoutes(),
+  ];
   for (const route of routes) {
     app.on(
       route.method,
@@ -426,6 +446,75 @@ export function createHonoHttpApp(options: HonoHttpAppOptions): HonoHttpApp {
         context,
         options.events,
         typeof since === "number" ? since : undefined,
+        options,
+      );
+    },
+  );
+
+  app.get(
+    "/api/v1/terminal/output",
+    describeRoute({
+      operationId: "streamTerminalOutput",
+      tags: ["GitService"],
+      security: [{ BearerAuth: [] }],
+      parameters: queryParameters(terminalOutputQuerySchema),
+      responses: {
+        200: {
+          description:
+            "The terminal session's output as base64 contract frames, then one exit frame when the shell ends.",
+          content: { "text/event-stream": { schema: { type: "string" } } },
+        },
+      },
+    }),
+    async (context) => {
+      const authorized = authorize(context, options);
+      if (!authorized.ok) {
+        logRequestProblem(context, now, log, authorized.problem);
+        return problemResponse(context, authorized.problem, options);
+      }
+      const authority = authorizationScopeProblem(
+        authorized.session,
+        "repository:write",
+        options,
+      );
+      if (authority !== null) {
+        logRequestProblem(context, now, log, authority, authorized.session);
+        return problemResponse(context, authority, options);
+      }
+      const terminal = options.services.terminal;
+      if (terminal === undefined) {
+        const problem = problemFor(
+          "UnsupportedOperation",
+          "this host has no pty module, so it offers no terminal sessions",
+        );
+        logRequestProblem(context, now, log, problem, authorized.session);
+        return problemResponse(context, problem, options);
+      }
+      const target = requestTarget(context.req.raw);
+      const query = parseQuery(target.rawQuery, limits);
+      if (!query.ok) {
+        logRequestProblem(context, now, log, query.problem);
+        return problemResponse(context, query.problem, options);
+      }
+      const converted = convertQuery(terminalOutputQuerySchema, query.value);
+      if (!converted.ok) {
+        logRequestProblem(context, now, log, converted.problem);
+        return problemResponse(context, converted.problem, options);
+      }
+      const sessionId = converted.value["sessionId"];
+      if (typeof sessionId !== "string") {
+        const problem = problemFor(
+          "InvalidRequest",
+          "the terminal output query must name one session",
+        );
+        logRequestProblem(context, now, log, problem);
+        return problemResponse(context, problem, options);
+      }
+      return terminalOutputResponse(
+        context,
+        terminal,
+        sessionId,
+        authorized.session.sessionId,
         options,
       );
     },
@@ -1064,6 +1153,75 @@ function eventResponse(
   return new Response(stream, { status: 200, headers });
 }
 
+/**
+ * The one live output stream of one terminal session.
+ *
+ * Unlike the event ring there is no replay: bytes the shell wrote before the
+ * stream attached were buffered by the terminal service and arrive first, and
+ * bytes from before that are gone — the same as any terminal emulator. The
+ * session keeps living when the stream drops, so a refresh reattaches instead of
+ * killing the shell.
+ */
+function terminalOutputResponse(
+  context: Context,
+  terminal: NonNullable<RouteServices["terminal"]>,
+  sessionId: string,
+  ownerSessionId: string,
+  options: HonoHttpAppOptions,
+): Response {
+  const encoder = new TextEncoder();
+  let detach: (() => void) | null = null;
+  let heartbeat: ReturnType<typeof setInterval> | null = null;
+  let cleaned = false;
+  const cleanup = (): void => {
+    if (cleaned) {
+      return;
+    }
+    cleaned = true;
+    detach?.();
+    detach = null;
+    if (heartbeat !== null) {
+      clearInterval(heartbeat);
+      heartbeat = null;
+    }
+  };
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const write = (value: string): void => {
+        if (!cleaned) {
+          controller.enqueue(encoder.encode(value));
+        }
+      };
+      try {
+        detach = terminal.subscribe(sessionId, ownerSessionId, (frame) => {
+          write(`data: ${JSON.stringify(frame)}\n\n`);
+        });
+      } catch (error) {
+        cleanup();
+        const problem =
+          error instanceof ReadProblem
+            ? error.toProblem()
+            : problemFor("NotFound", "no such terminal session on this host");
+        return problemResponse(context, problem, options);
+      }
+      write("retry: 3000\n\n");
+      heartbeat = setInterval(() => write(": keep-alive\n\n"), 15_000);
+      if (typeof heartbeat === "object" && "unref" in heartbeat) {
+        heartbeat.unref();
+      }
+      context.req.raw.signal.addEventListener("abort", cleanup, { once: true });
+    },
+    cancel: cleanup,
+  });
+  const headers = responseHeaders(context, options, {
+    "content-type": "text/event-stream; charset=utf-8",
+    "cache-control": "no-store",
+    connection: "keep-alive",
+    "x-accel-buffering": "no",
+  });
+  return new Response(stream, { status: 200, headers });
+}
+
 function createMcpSession(
   session: Session,
   options: HonoHttpAppOptions,
@@ -1297,6 +1455,10 @@ function operationIdFor(route: RouteDefinition): string {
     "/api/v1/operations":
       route.method === "GET" ? "listOperations" : "submitOperation",
     "/api/v1/operations/cancel": "cancelOperation",
+    "/api/v1/terminal/open": "openTerminal",
+    "/api/v1/terminal/input": "writeTerminalInput",
+    "/api/v1/terminal/resize": "resizeTerminal",
+    "/api/v1/terminal/close": "closeTerminal",
   };
   return (
     ids[route.path] ??

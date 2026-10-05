@@ -87,6 +87,15 @@ import {
   createProviderStore,
 } from "../provider/manager.js";
 import { createProviderService } from "../provider/service.js";
+import { createNodePtyPort } from "../terminal/node-pty-port.js";
+import {
+  createTerminalService,
+  type TerminalService,
+} from "../terminal/service.js";
+import {
+  defaultTerminalCommand,
+  type TerminalCommand,
+} from "../terminal/shell.js";
 
 export interface ServiceAssembly {
   readonly read: ReadService;
@@ -106,6 +115,11 @@ export interface ServiceAssembly {
   readonly repositoryManagement: RepositoryApprovalManager;
   readonly accessJournal: AccessJournal;
   readonly provider: ReturnType<typeof createProviderService>;
+  /**
+   * Terminal sessions, when this machine offers a pty. The CLI passes this to the
+   * HTTP host; a host that leaves it out simply serves no terminal routes.
+   */
+  readonly terminal: TerminalService | null;
   readonly repositoryPaths: readonly string[];
   readonly repositoryIds: readonly string[];
   readonly allowedRootIds: readonly string[];
@@ -139,6 +153,15 @@ export interface AssembleOptions {
   readonly providerGithubBaseUrl?: string;
   /** Test seam: the device-flow login endpoints, likewise for stubs. */
   readonly providerGithubLoginBaseUrl?: string;
+  /**
+   * Terminal sessions: `"off"` builds a host with no pty surface at all, and a
+   * `command` pins the shell new sessions run (tests pin `/bin/sh`; production
+   * resolves the machine's login shell). Unset means auto-detect.
+   */
+  readonly terminal?:
+    | { readonly mode: "off" }
+    | { readonly mode: "on"; readonly command?: TerminalCommand }
+    | undefined;
   /** Injected in tests so no real Git process is probed twice. */
   readonly skipDoctor?: boolean;
 }
@@ -233,6 +256,22 @@ export async function assembleService(
     engine,
     repositories,
     adapter: providerAdapter,
+  });
+  // The terminal axis: a pty port when the machine has one (node-pty is optional),
+  // the machine's own login shell, and sessions rooted at approved repositories
+  // only. A host built with `terminal: {mode: "off"}` serves no terminal at all.
+  const terminalPort =
+    options.terminal?.mode === "off" ? null : await createNodePtyPort();
+  const terminalCommand =
+    options.terminal?.mode === "on" && options.terminal.command !== undefined
+      ? options.terminal.command
+      : defaultTerminalCommand(process.env);
+  const terminal = terminalPort === null ? null : createTerminalService({
+    port: terminalPort,
+    repositories,
+    command: terminalCommand,
+    environment: process.env,
+    nextSessionId: () => `term_${randomBytes(9).toString("base64url")}`,
   });
   const recovery = createRecovery({ journal });
   await recovery.run();
@@ -391,6 +430,9 @@ export async function assembleService(
     gitFeatures: features,
     unavailable,
     providers: ["github"],
+    // No pty module on this machine means `capabilities` omits the terminal —
+    // the field is absent, never an empty promise.
+    terminal: terminalPort === null ? undefined : { shell: terminalCommand.name },
     reads,
     // The registry is the single source: a kind is advertised exactly when an
     // effect for it was registered above.
@@ -411,6 +453,7 @@ export async function assembleService(
     repositoryManagement,
     accessJournal,
     provider,
+    terminal,
     repositoryPaths,
     repositoryIds: registrations.map(({ record }) => record.repositoryId),
     allowedRootIds: registrations.map(({ root }) => root.allowedRootId),

@@ -25,6 +25,7 @@ import type { MutationCoordinator } from "../coordinator/submit.js";
 import { createEventRing, type EventRing } from "./events.js";
 import type { RepositoryApprovalManager } from "../registry/managed.js";
 import type { ProviderService } from "../provider/service.js";
+import type { TerminalService } from "../terminal/service.js";
 import { createAuthStore, type AuthStore, type SessionGrants } from "./auth.js";
 import { createAssetServer, type AssetServer } from "./assets.js";
 import { DEFAULT_HTTP_LIMITS, logLine, type HttpLimits } from "./json.js";
@@ -113,6 +114,8 @@ export interface HttpHostOptions {
   readonly repositoryManagement?: RepositoryApprovalManager;
   /** Forge connections and their one read, when the provider module is wired. */
   readonly provider?: ProviderService;
+  /** Terminal sessions, when this host carries a pty module. */
+  readonly terminal?: TerminalService;
   readonly actor?: string;
   /**
    * Pairing-ticket lifetime in seconds. The 60-second default is the design; widening it
@@ -203,6 +206,7 @@ export async function startHttpHost(
       ? {}
       : { mutations: options.mutations }),
     ...(options.provider === undefined ? {} : { provider: options.provider }),
+    ...(options.terminal === undefined ? {} : { terminal: options.terminal }),
     ...(options.repositoryManagement === undefined
       ? {}
       : {
@@ -554,6 +558,9 @@ export async function startHttpHost(
 
     async close(): Promise<void> {
       await honoHttp.close();
+      // A shell outlives no host: every terminal session dies with the process
+      // that owns its pty, before the sockets go away.
+      options.terminal?.closeAll();
       await closeQuietly(server, {
         inFlight: () => inFlight,
         ...(options.shutdownGraceMs === undefined

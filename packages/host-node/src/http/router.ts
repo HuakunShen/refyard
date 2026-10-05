@@ -34,12 +34,19 @@ import {
   repositoryQuerySchema,
   revokeRepositoryRequestSchema,
   targetKindsOf,
+  terminalAcknowledgementSchema,
+  terminalCloseRequestSchema,
+  terminalInputRequestSchema,
+  terminalOpenRequestSchema,
+  terminalResizeRequestSchema,
   validateMutationRequest,
   worktreeQuerySchema,
   type Problem,
 } from "@refyard/git-contract";
 import type { ReadService } from "../coordinator/reads.js";
 import { ReadProblem, refuseForeignTarget } from "../coordinator/reads.js";
+import { fromBase64 } from "../terminal/service.js";
+import type { TerminalService } from "../terminal/service.js";
 import type { AuthorizationScope, Session } from "./auth.js";
 import { scopeForMutationKind } from "./scope-policy.js";
 import type { MutationCoordinator } from "../coordinator/submit.js";
@@ -65,6 +72,8 @@ export interface RouteServices {
   readonly repositoryManagement?: RepositoryApprovalManager | undefined;
   /** Forge connections and their one read, when this host carries the module. */
   readonly provider?: ProviderService | undefined;
+  /** Terminal sessions, when this host carries a pty module. */
+  readonly terminal?: TerminalService | undefined;
   readonly onRepositoryRegistered?: (input: {
     readonly sessionId: string;
     readonly approval: RepositoryApproval;
@@ -377,6 +386,71 @@ function actionRoute<Schema extends z.ZodType<unknown>>(
   };
 }
 
+/**
+ * The terminal routes.
+ *
+ * Every route requires the write scope, and every handler re-checks inside the
+ * service that the asking bearer session is the one that opened the terminal:
+ * the session id alone must never be enough to drive somebody else's shell.
+ * `open` additionally names a repository, so the standard repository-grant check
+ * runs for it before the handler is reached.
+ */
+export function terminalRoutes(): readonly RouteDefinition[] {
+  return [
+    actionRoute(
+      "/api/v1/terminal/open",
+      terminalOpenRequestSchema,
+      "repository:write",
+      async (body, services, session) =>
+        requireTerminal(services).open({
+          repositoryId: body.repositoryId,
+          cols: body.cols,
+          rows: body.rows,
+          ownerSessionId: session.sessionId,
+        }),
+    ),
+    actionRoute(
+      "/api/v1/terminal/input",
+      terminalInputRequestSchema,
+      "repository:write",
+      async (body, services, session) => {
+        requireTerminal(services).write({
+          sessionId: body.sessionId,
+          bytes: fromBase64(body.data),
+          ownerSessionId: session.sessionId,
+        });
+        return terminalAcknowledgementSchema.parse({ accepted: true });
+      },
+    ),
+    actionRoute(
+      "/api/v1/terminal/resize",
+      terminalResizeRequestSchema,
+      "repository:write",
+      async (body, services, session) => {
+        requireTerminal(services).resize({
+          sessionId: body.sessionId,
+          cols: body.cols,
+          rows: body.rows,
+          ownerSessionId: session.sessionId,
+        });
+        return terminalAcknowledgementSchema.parse({ accepted: true });
+      },
+    ),
+    actionRoute(
+      "/api/v1/terminal/close",
+      terminalCloseRequestSchema,
+      "repository:write",
+      async (body, services, session) => {
+        requireTerminal(services).close({
+          sessionId: body.sessionId,
+          ownerSessionId: session.sessionId,
+        });
+        return terminalAcknowledgementSchema.parse({ accepted: true });
+      },
+    ),
+  ];
+}
+
 function mutationRequestScope(
   input: RouteScopeInput,
 ): AuthorizationScope | null {
@@ -400,6 +474,23 @@ function requireProvider(services: RouteServices): ProviderService {
     });
   }
   return provider;
+}
+
+/**
+ * The same honesty for terminals: a host whose machine has no pty module refuses
+ * instead of answering with a session that does not exist. The scope a terminal
+ * demands is deliberately the write scope — a shell can do everything a write
+ * can and more, and granting it any weaker authority would be a fiction.
+ */
+function requireTerminal(services: RouteServices): TerminalService {
+  const terminal = services.terminal;
+  if (terminal === undefined) {
+    throw new ReadProblem({
+      code: "UnsupportedOperation",
+      message: "this host has no pty module, so it offers no terminal sessions",
+    });
+  }
+  return terminal;
 }
 
 function cancellationScope(input: RouteScopeInput): AuthorizationScope | null {

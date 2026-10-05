@@ -61,6 +61,15 @@ import {
   targetKindsOf,
   type OperationRecord,
 } from "@refyard/git-contract";
+import { createNodePtyPort } from "@refyard/host-node/terminal/node-pty-port";
+import {
+  createTerminalService,
+  type TerminalService,
+} from "@refyard/host-node/terminal/service";
+import {
+  defaultTerminalCommand,
+  type TerminalCommand,
+} from "@refyard/host-node/terminal/shell";
 import { fixtureGitPath, type GitFixtureRepo } from "./repo.js";
 
 export interface TestService {
@@ -99,6 +108,8 @@ export interface TestService {
    * the session does not.
    */
   readonly ungrantedRootIds: readonly string[];
+  /** The terminal service, or null when the harness built this host without one. */
+  readonly terminal: TerminalService | null;
   /** The pairing URL a browser would be sent to, ticket included in the fragment. */
   readonly pairingUrl: string;
   /** Exchange the ticket for a bearer token; returns the token. */
@@ -176,6 +187,13 @@ export interface StartTestServiceOptions {
   readonly allowedOrigins?: readonly string[];
   /** Secret used when the test exercises the password-gated hosted form. */
   readonly hostedPassword?: string;
+  /**
+   * Terminal sessions. Off by default so a harness is deterministic; a case that
+   * tests the terminal turns it on and may pin the shell (`/bin/sh`, no argv).
+   */
+  readonly terminal?:
+    | { readonly mode: "off" }
+    | { readonly mode: "on"; readonly command?: TerminalCommand };
 }
 
 export async function startTestService(
@@ -289,6 +307,29 @@ export async function startTestService(
     nextSequence: () => (sequence += 1),
   });
 
+
+  // The terminal axis is opt-in for harnesses: a case that tests it turns it on
+  // (and may pin the shell), and every other test host is deterministic without it.
+  const terminalPort =
+    options.terminal === undefined || options.terminal.mode === "off"
+      ? null
+      : await createNodePtyPort();
+  const terminalCommand =
+    options.terminal?.mode === "on" && options.terminal.command !== undefined
+      ? options.terminal.command
+      : defaultTerminalCommand(process.env);
+  let terminalCounter = 0;
+  const terminal =
+    terminalPort === null
+      ? null
+      : createTerminalService({
+          port: terminalPort,
+          repositories,
+          command: terminalCommand,
+          environment: process.env,
+          nextSessionId: () => `term_test${(terminalCounter += 1)}`,
+        });
+
   const read = createReadService({
     engine,
     roots,
@@ -324,6 +365,9 @@ export async function startTestService(
       "stashes",
     ],
     providers: ["github"],
+    ...(terminalPort === null
+      ? {}
+      : { terminal: { shell: terminalCommand.name } }),
     // Derived from the live registry, as the CLI does: an operation is
     // advertised exactly when an effect for it is registered.
     operations: mutations.implementedKinds().map((kind) => ({
@@ -364,10 +408,12 @@ export async function startTestService(
     adapter: providerAdapter,
   });
 
+
   const http = await startHttpHost({
     read,
     mutations,
     provider,
+    ...(terminal === null ? {} : { terminal }),
     events,
     serviceInstanceId,
     port: 0,
@@ -418,6 +464,7 @@ export async function startTestService(
     repositoryId: record.repositoryId,
     allowedRootId: root.allowedRootId,
     ungrantedRootIds: [...ungranted],
+    terminal,
     mutations,
     effects,
     journal,

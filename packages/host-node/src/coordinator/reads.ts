@@ -58,6 +58,7 @@ import {
   type StashesResponse,
   type StatusSnapshot,
   type SubmodulesResponse,
+  type TerminalCapability,
   type UnavailableReason,
   type WorktreesResponse,
   type ProviderId,
@@ -159,6 +160,8 @@ export interface ReadServiceOptions {
   readonly reads: readonly ReadKind[];
   /** Forge integrations this host carries; a host without the module omits it. */
   readonly providers?: readonly ProviderId[];
+  /** Terminal sessions this host offers; a host without a pty module omits it. */
+  readonly terminal?: TerminalCapability | undefined;
   readonly operations: readonly OperationCapability[];
   readonly now?: () => number;
 }
@@ -380,6 +383,9 @@ export function createReadService(options: ReadServiceOptions): ReadService {
           // without the provider module, never an empty promise.
           providers:
             options.providers === undefined ? undefined : [...options.providers],
+          // Same honesty for terminal sessions: no pty module on this machine
+          // means the field is absent, and no client is told a terminal exists.
+          terminal: options.terminal,
           // Only what this build actually implements. A write operation is absent
           // from this list until it runs for real, so a client can never be told an
           // operation is available and then be refused.

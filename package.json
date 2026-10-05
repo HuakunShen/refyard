@@ -48,6 +48,7 @@
     "@types/node": "catalog:",
     "esbuild": "catalog:",
     "kkrpc": "catalog:",
+    "node-pty": "catalog:",
     "oxc-parser": "catalog:",
     "prettier": "catalog:",
     "prettier-plugin-svelte": "catalog:",
