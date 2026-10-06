@@ -86,8 +86,10 @@ describe("preferred pty loader", () => {
     while (Date.now() < deadline && exit === undefined) {
       await sleep(100);
     }
-    // The host ended the session; the code it died with is nobody's business.
-    expect(exit).toBeNull();
+    // The adapter reports whatever code the platform observed — the service,
+    // which knows it did the killing, owns the null mapping.
+    expect(exit).toBeDefined();
+    expect(typeof exit).toBe("number");
   });
 });
 

@@ -130,11 +130,22 @@ describe("a process killed mid-write", () => {
     );
     const worktreeId = status.body.worktreeId;
     repo.write("a.txt", "changed by the killed run\n");
-    const changed = await api(
+    // A fresh write can land a beat after the read that primed the status; poll
+    // briefly so the case tests the kill-and-recover path, not scheduler timing.
+    let changed = await api(
       running,
       "GET",
       `/api/v1/status?repositoryId=${repositoryId}`,
     );
+    const changedDeadline = Date.now() + 10_000;
+    while (changed.body.entries.length === 0 && Date.now() < changedDeadline) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      changed = await api(
+        running,
+        "GET",
+        `/api/v1/status?repositoryId=${repositoryId}`,
+      );
+    }
     const pathId = changed.body.entries[0].pathId;
     const previews = await api(running, "POST", "/api/v1/previews", {
       repositoryId,

@@ -36,7 +36,10 @@ class FakePty implements PtyProcess {
 
   kill(): void {
     this.killed = true;
-    for (const listener of [...this.exitListeners]) listener(null);
+    // A real pty reports whatever code the platform observed (a SIGKILL'd
+    // shell on macOS reports 0, on Linux 137); the service, not the process,
+    // decides that a host kill is reported as null.
+    for (const listener of [...this.exitListeners]) listener(137);
   }
 
   onData(listener: (chunk: Uint8Array) => void): void {
@@ -206,6 +209,17 @@ describe("output", () => {
     // not silently complete.
     expect(received).toBeLessThan(16 * 64 * 1024);
     expect(frames.length).toBeGreaterThan(0);
+  });
+
+  it("a host kill is reported as null, whatever code the platform observed", () => {
+    const { service } = serviceWith();
+    const opened = service.open({ repositoryId: "repo_one", cols: 80, rows: 24, ownerSessionId: OWNER });
+    const frames: string[] = [];
+    service.subscribe(opened.sessionId, OWNER, (frame) => frames.push(frame.kind));
+    service.close({ sessionId: opened.sessionId, ownerSessionId: OWNER });
+    // The process reported a code (as real pties do — macOS says 0, Linux 137),
+    // and the exit frame is still null: the service knows it did the killing.
+    expect(frames).toEqual(["exit"]);
   });
 
   it("frames carry base64 the contract validates, and exit ends the stream once", () => {

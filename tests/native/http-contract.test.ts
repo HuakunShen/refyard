@@ -102,7 +102,17 @@ describe("the native service answers the contract the browser already speaks", (
     const worktreeId = status.worktreeId;
 
     service.repo.write("a.txt", "changed\n");
-    const changed = statusSnapshotSchema.parse(await client.status({ repositoryId }));
+    // A fresh write can land a beat after the read that primed the status; poll
+    // briefly so the case tests the mutation surface, not scheduler timing.
+    let changed = statusSnapshotSchema.parse(await client.status({ repositoryId }));
+    const changedDeadline = Date.now() + 10_000;
+    while (
+      !changed.entries.some((entry) => entry.displayPath === "a.txt") &&
+      Date.now() < changedDeadline
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      changed = statusSnapshotSchema.parse(await client.status({ repositoryId }));
+    }
     expect(changed.entries.map((entry) => entry.displayPath)).toContain("a.txt");
     const pathId = changed.entries.find((entry) => entry.displayPath === "a.txt")?.pathId as string;
 

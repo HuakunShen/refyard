@@ -165,10 +165,12 @@ class NodePtyProcess implements PtyProcess {
 
   onExit(listener: (exitCode: number | null) => void): void {
     this.pty.onExit((event: { exitCode: number; signal?: number }) => {
-      // node-pty reports `signal: 0` for a clean exit; only a real signal means
-      // the host (or a kill) ended the session, and that stays null.
-      const signaled = event.signal !== undefined && event.signal !== 0;
-      listener(signaled ? null : event.exitCode);
+      // The observable exit code passes through raw, on every platform: Linux
+      // reports a nonzero `signal` alongside a clean exit's code, so guessing
+      // from the signal here once turned a real `exit 0` into a fabricated
+      // null. Whether a code means "the host ended this" is the service's
+      // knowledge, not the adapter's.
+      listener(event.exitCode);
     });
   }
 }

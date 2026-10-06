@@ -108,6 +108,8 @@ interface TerminalSession {
   pendingBytes: number;
   subscriber: ((frame: TerminalFrame) => void) | null;
   exited: boolean;
+  /** Set before the service kills a session, so its exit reports as null. */
+  killedByHost: boolean;
 }
 
 /**
@@ -255,13 +257,17 @@ export function createTerminalService(
         pendingBytes: 0,
         subscriber: null,
         exited: false,
+        killedByHost: false,
       };
       sessions.set(sessionId, session);
       process.onData((bytes) => {
         deliver(session, bytes);
       });
       process.onExit((exitCode) => {
-        finish(session, exitCode);
+        // A host kill reaches here through the process's own exit event, whose
+        // code differs per platform and per killer; the flag, not the code,
+        // decides that the exit is reported as null.
+        finish(session, session.killedByHost ? null : exitCode);
       });
       return { sessionId, shell: session.shell, cwd };
     },
@@ -279,6 +285,7 @@ export function createTerminalService(
 
     close(input): void {
       const session = requireLiveSession(input);
+      session.killedByHost = true;
       session.process?.kill();
       // An explicit close is the one removal that is not a sweep: the record
       // (and its buffered output) is nobody's business after this.
@@ -311,6 +318,7 @@ export function createTerminalService(
 
     closeAll(): void {
       for (const session of [...sessions.values()]) {
+        session.killedByHost = true;
         session.process?.kill();
         finish(session, null);
         sessions.delete(session.sessionId);

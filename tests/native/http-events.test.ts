@@ -138,7 +138,17 @@ describe("the native event stream on the wire", () => {
     const repositoryId = repositories.repositories[0]?.repositoryId as string;
     const status = statusSnapshotSchema.parse(await client.status({ repositoryId }));
     service.repo.write("events.txt", "an event should name this\n");
-    const changed = statusSnapshotSchema.parse(await client.status({ repositoryId }));
+    // A fresh write can land a beat after the read that primed the status; poll
+    // briefly so the case tests the event wire, not scheduler timing.
+    let changed = statusSnapshotSchema.parse(await client.status({ repositoryId }));
+    const changedDeadline = Date.now() + 10_000;
+    while (
+      !changed.entries.some((entry) => entry.pathId !== undefined) &&
+      Date.now() < changedDeadline
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      changed = statusSnapshotSchema.parse(await client.status({ repositoryId }));
+    }
     const pathId = changed.entries[0]?.pathId as string;
     const previews = previewsResponseSchema.parse(
       await client.previews({ repositoryId, worktreeId: status.worktreeId, pathIds: [pathId] }),
@@ -192,7 +202,17 @@ describe("the native event stream on the wire", () => {
     const repositoryId = repositories.repositories[0]?.repositoryId as string;
     const status = statusSnapshotSchema.parse(await client.status({ repositoryId }));
     service.repo.write("replay.txt", "written while nobody listened\n");
-    const changed = statusSnapshotSchema.parse(await client.status({ repositoryId }));
+    // A fresh write can land a beat after the read that primed the status; poll
+    // briefly so the case tests the event wire, not scheduler timing.
+    let changed = statusSnapshotSchema.parse(await client.status({ repositoryId }));
+    const changedDeadline = Date.now() + 10_000;
+    while (
+      !changed.entries.some((entry) => entry.pathId !== undefined) &&
+      Date.now() < changedDeadline
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      changed = statusSnapshotSchema.parse(await client.status({ repositoryId }));
+    }
     const pathId = changed.entries[0]?.pathId as string;
     const previews = previewsResponseSchema.parse(
       await client.previews({ repositoryId, worktreeId: status.worktreeId, pathIds: [pathId] }),
@@ -234,8 +254,20 @@ describe("the native event stream on the wire", () => {
           (envelope.payload.operation as { operationId?: string }).operationId === operationId,
       ),
     ).toBe(true);
-    // The hint follows the replay, never precedes it.
-    expect(stream.text().indexOf("retry: 3000")).toBeGreaterThan(stream.text().lastIndexOf("data: "));
+    // The hint follows the replay that names this operation. Live events may
+    // land after the hint — that ordering is unspecified and races on a slow
+    // machine — so the check is bounded to the stream up to the hint.
+    const hintAt = stream.text().indexOf("retry: 3000");
+    const beforeHint = frames(stream.text().slice(0, hintAt)).map((frame) =>
+      eventEnvelopeSchema.parse(frame.envelope),
+    );
+    expect(
+      beforeHint.some(
+        (envelope) =>
+          envelope.payload.kind === "operation" &&
+          (envelope.payload.operation as { operationId?: string }).operationId === operationId,
+      ),
+    ).toBe(true);
     await stream.close();
 
     // A cursor at the newest replayed sequence replays nothing — but the operation's
