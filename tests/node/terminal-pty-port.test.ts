@@ -4,12 +4,11 @@
  * These cases prove the loader's contract rather than any one provider: the
  * preferred port spawns a real shell, carries bytes both ways, reports a real
  * exit code, and maps a host kill to `null`. They run against whichever
- * provider the loader picks on this machine — @kunkun.sh/pty when it is
+ * provider the loader picks on this machine — @lydell/node-pty when it is
  * linked, node-pty otherwise — and are skipped (honestly, by name) where no
  * pty module exists at all. The provider's identity is asserted so a machine
  * that believes it has the small binding cannot silently be testing node-pty.
  */
-import { platform } from "node:process";
 import { describe, expect, it } from "vitest";
 import { createPreferredPtyPort } from "@refyard/host-node/terminal/node-pty-port";
 
@@ -18,14 +17,10 @@ describe("preferred pty loader", () => {
     const port = await createPreferredPtyPort();
     if (port === null) {
       throw new Error(
-        "no pty module on this machine; link @kunkun.sh/pty or install node-pty to run this case",
+        "no pty module on this machine; link @lydell/node-pty or install node-pty to run this case",
       );
     }
-    if (platform !== "win32") {
-      expect(["kunkun-sh-pty", "node-pty"]).toContain(port.kind);
-    } else {
-      expect(port.kind).toBe("node-pty");
-    }
+    expect(["lydell-node-pty", "node-pty"]).toContain(port.kind);
   });
 
   it("carries a shell's echo and a real exit code", async () => {

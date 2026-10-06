@@ -112,7 +112,7 @@ const result = await build({
   // node-pty stays external twice over: a native addon can never be inlined,
   // and the terminal is an optional capability — a machine without the module
   // answers "no terminal" honestly instead of failing to boot.
-  external: ["node-pty", "@kunkun.sh/pty"],
+  external: ["node-pty", "@lydell/node-pty"],
   legalComments: "none",
   banner: {
     js: [

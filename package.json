@@ -33,6 +33,7 @@
     "deploy:web:dry-run": "pnpm --dir apps/web deploy:dry-run"
   },
   "devDependencies": {
+    "@lydell/node-pty": "catalog:",
     "@playwright/test": "catalog:",
     "@refyard/backend-http": "workspace:*",
     "@refyard/backend-tauri": "workspace:*",
