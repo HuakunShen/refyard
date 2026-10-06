@@ -19,6 +19,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TextDecoder, TextEncoder } from "node:util";
 import type { IPty } from "node-pty";
+import { createKkterminalPtyPort } from "./kkterminal-port.js";
 import type { PtyPort, PtyProcess, PtySpawnRequest } from "./port.js";
 
 export interface NodePtyModule {
@@ -33,6 +34,25 @@ export interface NodePtyModule {
       env: Record<string, string>;
     },
   ): IPty;
+}
+
+/**
+ * The pty port this host should use, in preference order.
+ *
+ * `@kkterminal/pty` (a ~590 KB per-platform binding around the same
+ * portable-pty crate) wins wherever it is installed and its owner's decision
+ * record does not call the platform verified — Windows stays with node-pty
+ * until the ConPTY specifics there are done. node-pty is the fallback, and a
+ * machine with neither reports no terminal capability at all.
+ */
+export async function createPreferredPtyPort(): Promise<PtyPort | null> {
+  if (process.platform !== "win32") {
+    const small = await createKkterminalPtyPort();
+    if (small !== null) {
+      return small;
+    }
+  }
+  return createNodePtyPort();
 }
 
 export async function createNodePtyPort(

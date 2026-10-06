@@ -87,7 +87,7 @@ import {
   createProviderStore,
 } from "../provider/manager.js";
 import { createProviderService } from "../provider/service.js";
-import { createNodePtyPort } from "../terminal/node-pty-port.js";
+import { createPreferredPtyPort } from "../terminal/node-pty-port.js";
 import {
   createTerminalService,
   type TerminalService,
@@ -261,7 +261,7 @@ export async function assembleService(
   // the machine's own login shell, and sessions rooted at approved repositories
   // only. A host built with `terminal: {mode: "off"}` serves no terminal at all.
   const terminalPort =
-    options.terminal?.mode === "off" ? null : await createNodePtyPort();
+    options.terminal?.mode === "off" ? null : await createPreferredPtyPort();
   const terminalCommand =
     options.terminal?.mode === "on" && options.terminal.command !== undefined
       ? options.terminal.command

@@ -61,7 +61,7 @@ import {
   targetKindsOf,
   type OperationRecord,
 } from "@refyard/git-contract";
-import { createNodePtyPort } from "@refyard/host-node/terminal/node-pty-port";
+import { createPreferredPtyPort } from "@refyard/host-node/terminal/node-pty-port";
 import {
   createTerminalService,
   type TerminalService,
@@ -313,7 +313,7 @@ export async function startTestService(
   const terminalPort =
     options.terminal === undefined || options.terminal.mode === "off"
       ? null
-      : await createNodePtyPort();
+      : await createPreferredPtyPort();
   const terminalCommand =
     options.terminal?.mode === "on" && options.terminal.command !== undefined
       ? options.terminal.command
