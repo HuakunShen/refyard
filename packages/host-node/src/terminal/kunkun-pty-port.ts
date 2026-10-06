@@ -1,7 +1,7 @@
 /**
- * The @kkterminal/pty port — the small alternative to node-pty.
+ * The @kunkun.sh/pty port — the small alternative to node-pty.
  *
- * `@kkterminal/pty` (the owner's own napi-rs wrapper around portable-pty,
+ * `@kunkun.sh/pty` (the owner's own napi-rs wrapper around portable-pty,
  * developed in the kkterminal workspace) ships a ~590 KB per-platform binding
  * where node-pty unpacks to 64 MB. This adapter wraps its `spawnPty` API into
  * the same `PtyPort` the node-pty adapter speaks, so the terminal service
@@ -16,7 +16,7 @@
 import { TextDecoder } from "node:util";
 import type { PtyPort, PtyProcess, PtySpawnRequest } from "./port.js";
 
-export interface KkterminalPtyModule {
+export interface KunkunPtyModule {
   spawnPty(
     options: {
       shell: string;
@@ -28,19 +28,19 @@ export interface KkterminalPtyModule {
     },
     onData: (data: Buffer) => void,
     onExit: (exitCode: number) => void,
-  ): KkterminalPtySession;
+  ): KunkunPtySession;
 }
 
-export interface KkterminalPtySession {
+export interface KunkunPtySession {
   write(data: string): void;
   resize(cols: number, rows: number): void;
   kill(): void;
 }
 
-export async function createKkterminalPtyPort(
-  load: () => Promise<KkterminalPtyModule> = loadKkterminalPty,
+export async function createKunkunPtyPort(
+  load: () => Promise<KunkunPtyModule> = loadKunkunPty,
 ): Promise<PtyPort | null> {
-  let module: KkterminalPtyModule;
+  let module: KunkunPtyModule;
   try {
     module = await load();
   } catch {
@@ -49,7 +49,7 @@ export async function createKkterminalPtyPort(
     return null;
   }
   return {
-    kind: "kkterminal-pty",
+    kind: "kunkun-sh-pty",
     spawn(request: PtySpawnRequest): PtyProcess {
       // The binding takes its callbacks at spawn time, while the port hands
       // them over afterwards; everything that arrives in between queues here
@@ -126,9 +126,9 @@ export async function createKkterminalPtyPort(
   };
 }
 
-async function loadKkterminalPty(): Promise<KkterminalPtyModule> {
-  const module = (await import("@kkterminal/pty")) as unknown as KkterminalPtyModule & {
-    default?: KkterminalPtyModule;
+async function loadKunkunPty(): Promise<KunkunPtyModule> {
+  const module = (await import("@kunkun.sh/pty")) as unknown as KunkunPtyModule & {
+    default?: KunkunPtyModule;
   };
   return module.default ?? module;
 }
