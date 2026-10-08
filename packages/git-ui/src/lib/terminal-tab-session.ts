@@ -16,11 +16,12 @@ import type {
 
 /**
  * Scrollback retained per shell. xterm defaults to 1000; a workbench shell is
- * a build-log reader so a little more helps, but every retained line is cells
- * held for as long as the tab lives — hidden tabs keep their buffers by
- * design, and each additional shell pays the whole cost again.
+ * a build-log reader so twice that is useful, but every retained line is
+ * cells held for as long as the tab lives — hidden tabs keep their buffers by
+ * design, and each additional shell pays the whole cost again. The budget
+ * test pins this range.
  */
-export const TERMINAL_SCROLLBACK_LINES = 5000;
+export const TERMINAL_SCROLLBACK_LINES = 2000;
 
 /** The emulator surface this module drives — xterm's Terminal, structurally. */
 export interface EmulatorLike {

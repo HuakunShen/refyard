@@ -15,6 +15,7 @@ import type {
   TerminalSessionHandle,
 } from "@refyard/git-service";
 import {
+  TERMINAL_SCROLLBACK_LINES,
   startTerminalTab,
   type EmulatorLike,
 } from "@refyard/git-ui/lib/terminal-tab-session";
@@ -49,8 +50,8 @@ function fakeHost() {
     };
     const handle: TerminalSessionHandle = {
       info,
-      write: vi.fn<[data: Uint8Array], void>(),
-      resize: vi.fn<[cols: number, rows: number], void>(),
+      write: vi.fn<(data: Uint8Array) => void>(),
+      resize: vi.fn<(cols: number, rows: number) => void>(),
       close: vi.fn<() => Promise<void>>(async () => undefined),
     };
     handles.push(handle);
@@ -81,7 +82,7 @@ function fakeEmulator(cols = 80, rows = 24) {
   const emulator: EmulatorLike = {
     cols,
     rows,
-    write: vi.fn<[data: Uint8Array | string], void>(),
+    write: vi.fn<(data: Uint8Array | string) => void>(),
     onData(callback: (data: string) => void): { dispose(): void } {
       input = callback;
       return {
@@ -248,5 +249,16 @@ describe("terminal tab session", () => {
     await tab.destroy();
     expect(handle.close).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
+  });
+});
+
+describe("terminal scrollback budget", () => {
+  // Prevents the regression where every shell retained 5000 lines: the dock
+  // keeps hidden tabs and their buffers alive by design, so each shell pays
+  // the scrollback cost several times over — measured as the webview renderer
+  // climbing past 200 MB. The floor keeps xterm's usefulness as a log reader.
+  it("retains between the xterm default and the workbench memory cap", () => {
+    expect(TERMINAL_SCROLLBACK_LINES).toBeGreaterThanOrEqual(1000);
+    expect(TERMINAL_SCROLLBACK_LINES).toBeLessThanOrEqual(2000);
   });
 });
