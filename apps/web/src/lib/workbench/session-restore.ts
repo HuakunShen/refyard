@@ -115,6 +115,13 @@ export function saveSessionTabs(
  * preserves the saved order, carries the summary's fresh id and display name, and
  * activates the saved active tab — or the first restored tab when the saved active
  * one failed to come back. Tabs skipped by the restore are simply absent.
+ *
+ * Restored tabs are default tabs: they carry no `worktreeId`, exactly like the
+ * tabs `tabForRepository` builds for a fresh open. The primary worktree is the
+ * null worktree selection resolving to `primaryWorktreeId`, so pinning the primary
+ * id onto the tab would mint a second identity (`repo:wt`) for the same view as
+ * the default tab (`repo`) — and every later open would land beside it as a
+ * visible duplicate.
  */
 export function tabsFromRestore(
   saved: readonly SavedSessionTab[],
@@ -132,7 +139,6 @@ export function tabsFromRestore(
         : entry.targetId !== undefined
           ? { targetId: entry.targetId }
           : {}),
-      worktreeId: summary.primaryWorktreeId,
       displayName: summary.displayName,
       displayPath: summary.displayPath,
     };

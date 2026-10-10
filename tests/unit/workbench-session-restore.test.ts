@@ -14,6 +14,11 @@ import {
   saveSessionTabs,
   tabsFromRestore,
 } from "../../apps/web/src/lib/workbench/session-restore.js";
+import {
+  createRepositoryTabs,
+  openRepositoryTab,
+  type RepositoryTab,
+} from "../../apps/web/src/lib/workbench/repository-tabs.js";
 import type { RepositorySummary } from "@refyard/git-contract";
 
 function memoryStorage(initial: Record<string, string> = {}): {
@@ -133,7 +138,7 @@ describe("mapping a restore onto fresh tabs", () => {
     expect(tabs.map((tab) => tab.repositoryId)).toEqual(["repo_a", "repo_b"]);
     expect(tabs.map((tab) => tab.displayName)).toEqual(["xross-dev", "refyard"]);
     // The saved active tab came back, so it stays active despite sitting first.
-    expect(activeRepositoryId).toBe("repo_a:wt_1");
+    expect(activeRepositoryId).toBe("repo_a");
   });
 
   it("activates the first restored tab when the saved active one failed", () => {
@@ -143,7 +148,7 @@ describe("mapping a restore onto fresh tabs", () => {
     ];
     const { tabs, activeRepositoryId } = tabsFromRestore(onlyOther, registered);
     expect(tabs).toHaveLength(1);
-    expect(activeRepositoryId).toBe("repo_b:wt_1");
+    expect(activeRepositoryId).toBe("repo_b");
   });
 
   it("restores to nothing when every registration failed", () => {
@@ -155,9 +160,31 @@ describe("mapping a restore onto fresh tabs", () => {
     expect(activeRepositoryId).toBeNull();
   });
 
-  it("carries the fresh worktree id from the summary", () => {
+  it("restores a default tab that resolves to the primary worktree", () => {
+    // Prevents: a restored tab pinning the primary worktree id (`repo:wt`) while a
+    // fresh open builds a default tab (`repo`) — the same repository then adopts a
+    // second, visible duplicate beside the restored one.
     const { tabs } = tabsFromRestore(saved, registered);
-    expect(tabs[0]?.worktreeId).toBe("wt_1");
+    expect(tabs[0]?.worktreeId).toBeUndefined();
+    expect(tabs[0]?.repositoryId).toBe("repo_a");
+  });
+
+  it("reopening a restored repository reuses its tab instead of duplicating it", () => {
+    // Prevents the kkterminal duplicate: restore opens `repo_a`, then the
+    // repository list (or a second open of the same path) arrives with the same
+    // repository but no pinned worktree id — adoption must recognize it.
+    const { tabs } = tabsFromRestore(saved, registered);
+    const state = createRepositoryTabs(tabs);
+    const reopened: RepositoryTab = {
+      repositoryId: "repo_a",
+      displayName: "xross-dev",
+      displayPath: "/dev/xross",
+    };
+    openRepositoryTab(state, reopened);
+    expect(state.tabs).toHaveLength(2);
+    expect(state.tabs.filter((tab) => tab.repositoryId === "repo_a")).toHaveLength(
+      1,
+    );
   });
 });
 
@@ -203,7 +230,7 @@ describe("restoreSessionTabs", () => {
     // Only the path the surviving registry does not know is worth a register call.
     expect(registerCalls).toEqual(["/dev/gone"]);
     expect(tabs.map((tab) => tab.repositoryId)).toEqual(["repo_a", "repo_b"]);
-    expect(activeRepositoryId).toBe("repo_a:wt_1");
+    expect(activeRepositoryId).toBe("repo_a");
   });
 
   it("registers what the registry lost and skips what it cannot", async () => {
@@ -217,7 +244,7 @@ describe("restoreSessionTabs", () => {
     );
     expect(registerCalls).toEqual(["/dev/xross", "/dev/refyard", "/dev/gone"]);
     expect(tabs.map((tab) => tab.repositoryId)).toEqual(["repo_b"]);
-    expect(activeRepositoryId).toBe("repo_b:wt_1");
+    expect(activeRepositoryId).toBe("repo_b");
   });
 
   it("skips remote-target tabs without asking the service about them", async () => {
