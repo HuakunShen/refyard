@@ -33,11 +33,12 @@ describe("public release identity", () => {
 
     expect(root.license).toBe("AGPL-3.0-only");
     expect(published.license).toBe("AGPL-3.0-only");
-    // 0.2.0 was committed but never tagged; 0.3.0 skips past it and carries the
-    // integrated terminal. Keep this pin on the manifest's version on every
+    // 0.2.0 was committed but never tagged; 0.3.0 carried the integrated
+    // terminal and 0.3.1 unifies the npm and desktop lines plus the
+    // duplicate-tab fix. Keep this pin on the manifest's version on every
     // release commit — a tag that republishes an immutable version fails at
     // the registry, not in CI.
-    expect(published.version).toBe("0.3.0");
+    expect(published.version).toBe("0.3.1");
     expect(published.private).toBeUndefined();
     expect(published.repository).toEqual({
       type: "git",
