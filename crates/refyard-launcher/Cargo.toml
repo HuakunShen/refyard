@@ -1,0 +1,18 @@
+[package]
+name = "refyard-launcher"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "The `refyard` command the desktop app installs into PATH: it resolves a directory and hands it to the window. The bundled binary is named `refyard-launcher` because macOS volumes are case-insensitive and `Refyard` (the app) already exists beside it."
+
+[[bin]]
+name = "refyard-launcher"
+path = "src/main.rs"
+
+[lib]
+name = "refyard_launcher"
+path = "src/lib.rs"
+
+[dev-dependencies]
+tempfile = { workspace = true }
