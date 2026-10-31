@@ -92,7 +92,7 @@ What this revision changes, exactly — and nothing more:
 
 - §1's "no built-in terminal" and the shell half of "never expose … shell … over HTTP,
   SSE, or any browser bridge" are **historical from this date** for the terminal surface
-  only. The rule's core still binds everything else: the *Git* API never becomes a shell
+  only. The rule's core still binds everything else: the _Git_ API never becomes a shell
   escape, and Git intentions still turn into argv only inside trusted core. The terminal
   is its own explicitly-scoped channel with its own rules:
   - the renderer names an **approved repository id and a grid size** — never a path, a
@@ -261,6 +261,9 @@ crates/refyard-core/       pure bytes/parsers/planners — no host APIs
 crates/refyard-host/       Local/SSH execution providers, registry, jobs, journal, GitService
 crates/refyard-http/       optional Axum adapter; never a dependency of the desktop crate
 crates/refyard-cli/        native `refyard-native` doctor/open/serve
+crates/refyard-launcher/   the `refyard <dir>` command bundled in the desktop app; resolves
+                           operands and starts the window (bundle name `refyard-launcher`,
+                           installed into PATH as `refyard`)
 crates/refyard-graph/      commit-graph lane layout + geometry ported from packages/git-graph
                            (headless Rust: no gpui, no host APIs) — GPUI workstream, §0b
 ```

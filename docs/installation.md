@@ -76,6 +76,27 @@ refyard-native open <path>... [options]       # the same, plus the static workbe
 | `--json`            | Machine output: the readiness JSON (URL, port, service instance id, ticket policy) on stdout, the single-use pairing URL on **stderr** so logs cannot mistake it for data. |
 | `REFYARD_STATE_DIR` | Pin the private state directory (journal, backups). Default is the platform per-user directory, as below.                                                                  |
 
+### `refyard <directory>` from a terminal
+
+The desktop bundle also carries a small launcher, so a repository can be opened from a prompt the
+way a code editor is:
+
+```sh
+refyard .                    # open this directory
+refyard ~/src/one ~/src/two  # one tab each
+```
+
+Settings → **Command line** installs it: a link named `refyard` in `~/.local/bin` pointing at the
+bundled launcher. No administrator rights are involved, and an existing file with that name is
+never overwritten. If `~/.local/bin` is not on your `PATH`, the sheet prints the line to add.
+
+The launcher resolves each operand against the directory you typed it in, refuses a path that does
+not exist or is not a directory at the prompt, and starts the app with what remains; a second
+`refyard .` is forwarded to the running window. Nothing else is passed across: the app registers
+each directory through the same path the folder picker uses. Installing the command is offered on
+macOS and Linux; Windows is not supported by this build yet (`capabilities.cliCommandInstaller` is
+`false` there).
+
 The private state, the journal's crash behaviour, and uninstalling are the same as the Node
 forms: a mutation whose process is killed mid-flight is recovered as `unknown`, blocks that
 repository's writes, and yields only to an explicit in-app acknowledgement that never rewrites
@@ -136,7 +157,7 @@ The ticket is single-use and expires (`--ticket-ttl`). For a second browser — 
 the first one lost its session — mint another ticket on one of two trusted local channels:
 
 - Press `p` and Enter in the terminal that is serving; the fresh URL prints there.
-- Run `refyard pair` in any other terminal. It asks the *running* service over a
+- Run `refyard pair` in any other terminal. It asks the _running_ service over a
   same-user-only control socket (a unix socket in the private state directory, mode 0600;
   a named pipe on Windows) and prints one fresh URL. With several services running it names
   the ports instead of guessing: `refyard pair --port 5995`. `--json` prints
