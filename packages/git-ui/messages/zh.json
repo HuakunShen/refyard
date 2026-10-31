@@ -511,5 +511,9 @@
   "terminal_close_panel": "关闭终端面板",
   "terminal_exited": "已退出（{code}）",
   "terminal_exit_unknown": "已退出",
-  "terminal_unavailable": "当前主机不提供终端。"
+  "terminal_unavailable": "当前主机不提供终端。",
+  "settings_command_line": "命令行",
+  "settings_command_line_detail": "安装 `refyard` 命令后，在终端执行 `refyard .` 即可在这里打开该目录。",
+  "settings_command_line_install": "安装 `refyard` 命令",
+  "launch_refused": "Refyard 无法打开命令行给出的目录"
 }

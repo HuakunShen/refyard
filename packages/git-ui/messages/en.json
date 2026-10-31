@@ -511,5 +511,9 @@
   "terminal_close_panel": "Close terminal panel",
   "terminal_exited": "Exited ({code})",
   "terminal_exit_unknown": "Exited",
-  "terminal_unavailable": "This host offers no terminal."
+  "terminal_unavailable": "This host offers no terminal.",
+  "settings_command_line": "Command line",
+  "settings_command_line_detail": "Install a `refyard` command so `refyard .` in a terminal opens that directory here.",
+  "settings_command_line_install": "Install `refyard` command",
+  "launch_refused": "Refyard could not open a directory from the command line"
 }

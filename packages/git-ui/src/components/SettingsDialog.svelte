@@ -65,6 +65,17 @@
     onDensityChange?: (density: RowDensity) => void;
     onInterfaceStyleChange?: (style: InterfaceStyle) => void;
     about?: SettingsAbout;
+    /**
+     * Present only where the host reports `cliCommandInstaller`: the one-click step that
+     * puts the `refyard` command on the person's PATH. `message` is the host's own answer
+     * — where the command went, or why it did not — shown verbatim, because a paraphrase
+     * of a filesystem result is how somebody stops believing either one.
+     */
+    commandLine?: {
+      readonly busy: boolean;
+      readonly message: string | null;
+      readonly onInstall: () => void;
+    };
     onDisconnect?: () => void;
     /** Present only where updates can exist: the desktop runtime. */
     updates?: UpdatesProbe;
@@ -89,6 +100,7 @@
     onDensityChange = undefined,
     onInterfaceStyleChange = undefined,
     about,
+    commandLine,
     onDisconnect,
     updates,
     autoCheck = false,
@@ -257,6 +269,41 @@
             {onInterfaceStyleChange}
           />
         </section>
+
+        {#if commandLine !== undefined}
+          <section
+            class="flex flex-col gap-3"
+            data-testid="settings-command-line"
+          >
+            <h3
+              class="text-xs font-semibold uppercase tracking-wider text-ink-muted"
+            >
+              {m.settings_command_line()}
+            </h3>
+            <p class="text-xs text-ink-muted">
+              {m.settings_command_line_detail()}
+            </p>
+            <div class="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={commandLine.busy}
+                onclick={commandLine.onInstall}
+                data-testid="install-cli-command"
+              >
+                {m.settings_command_line_install()}
+              </Button>
+            </div>
+            {#if commandLine.message !== null}
+              <p
+                class="text-xs text-ink-muted"
+                data-testid="install-cli-message"
+              >
+                {commandLine.message}
+              </p>
+            {/if}
+          </section>
+        {/if}
 
         {#if updates !== undefined}
           <section class="flex flex-col gap-3" data-testid="settings-updates">
