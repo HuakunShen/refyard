@@ -11,9 +11,12 @@
  * operation where the host recorded it, and the caller finds it again by id.
  */
 import { z } from "zod";
-import type {
-  AcknowledgeUncertainOperationRequest,
-  CreateTargetRequest,
+import {
+  launchRequestSchema,
+  type AcknowledgeUncertainOperationRequest,
+  type CreateTargetRequest,
+  type CliCommandInstall,
+  type LaunchRequest,
 } from "@refyard/git-contract";
 import type {
   BackendAdapter,
@@ -46,6 +49,7 @@ import {
   type NativeReadMethod,
 } from "./commands.js";
 import { createNativeEventService } from "./events.js";
+import { LAUNCH_EVENT } from "./launch.js";
 import { createTauriTerminalService } from "./terminal.js";
 
 export interface TauriBackendAdapterOptions {
@@ -359,6 +363,63 @@ export function createTauriBackendAdapter(
             { method: "acknowledgeUncertainOperation", request },
             "acknowledgeUncertainOperation",
           )) as never,
+        installCliCommand: async (): Promise<CliCommandInstall> =>
+          (await hostRequest(
+            { method: "installCliCommand" },
+            "installCliCommand",
+          )) as never,
+        // The command line this app was started with. A cold start answers once; the
+        // host keeps the launch until it is asked, so a page that reloads during startup
+        // still finds the directory it was opened with.
+        takeLaunchPaths: async (): Promise<LaunchRequest> => {
+          const payload = await guard(async () =>
+            options.ports
+              .invoke<unknown>("refyard_take_launch_paths", {
+                sessionId: metadata.sessionId,
+              })
+              .catch((error: unknown) => {
+                throw problemFrom(error);
+              }),
+          );
+          const parsed = launchRequestSchema.safeParse(payload);
+          if (!parsed.success) {
+            throw new BackendError({
+              code: "InternalError",
+              message:
+                "the native host answered the launch channel with a shape this client cannot validate",
+              retryable: false,
+            });
+          }
+          return parsed.data;
+        },
+        onLaunchPaths: (
+          listener: (request: LaunchRequest) => void,
+        ): (() => void) => {
+          let stopped = false;
+          let unlisten: (() => void) | null = null;
+          void options.ports
+            .listen(LAUNCH_EVENT, (event) => {
+              if (stopped) return;
+              // A frame this client cannot read is dropped rather than guessed at; the
+              // host's queue still holds the launch for the next ask.
+              const parsed = launchRequestSchema.safeParse(event.payload);
+              if (parsed.success) listener(parsed.data);
+            })
+            .then((stop) => {
+              if (stopped) {
+                stop();
+                return;
+              }
+              unlisten = stop;
+            })
+            .catch(() => {
+              // A host that cannot carry the event still carries the queue.
+            });
+          return () => {
+            stopped = true;
+            unlisten?.();
+          };
+        },
         ...(options.ports.onDragDropPaths === undefined
           ? {}
           : {

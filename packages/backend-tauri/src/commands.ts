@@ -15,6 +15,7 @@
 import { z } from "zod";
 import {
   capabilitiesResponseSchema,
+  cliCommandInstallSchema,
   diffResponseSchema,
   executionTargetSummarySchema,
   hostCapabilitiesSchema,
@@ -137,6 +138,7 @@ export const NATIVE_COMMANDS = [
   "refyard_terminal_write",
   "refyard_terminal_resize",
   "refyard_terminal_close",
+  "refyard_take_launch_paths",
 ] as const;
 
 export type NativeCommand = (typeof NATIVE_COMMANDS)[number];
@@ -293,7 +295,8 @@ export type HostRequest =
   | {
       readonly method: "acknowledgeUncertainOperation";
       readonly request: AcknowledgeUncertainOperationRequest;
-    };
+    }
+  | { readonly method: "installCliCommand" };
 
 const HOST_METHODS = new Set<HostRequest["method"]>([
   "capabilities",
@@ -303,6 +306,7 @@ const HOST_METHODS = new Set<HostRequest["method"]>([
   "disconnectTarget",
   "pickLocalDirectory",
   "acknowledgeUncertainOperation",
+  "installCliCommand",
 ]);
 
 export function assertHostRequest(request: HostRequest): void {
@@ -322,6 +326,7 @@ export const HOST_RESPONSE_SCHEMAS = {
   targets: z.array(executionTargetSummarySchema),
   createTarget: executionTargetSummarySchema,
   acknowledgeUncertainOperation: operationRecordSchema,
+  installCliCommand: cliCommandInstallSchema,
 } as const;
 
 export type NativeHostMethod = keyof typeof HOST_RESPONSE_SCHEMAS;

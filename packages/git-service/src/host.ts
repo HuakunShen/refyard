@@ -10,9 +10,11 @@
  */
 import type {
   AcknowledgeUncertainOperationRequest,
+  CliCommandInstall,
   CreateTargetRequest,
   ExecutionTargetSummary,
   HostCapabilities,
+  LaunchRequest,
   OperationRecord,
   SshHostList,
 } from "@refyard/git-contract";
@@ -32,6 +34,29 @@ export interface HostService {
   acknowledgeUncertainOperation(
     request: AcknowledgeUncertainOperationRequest,
   ): Promise<OperationRecord>;
+  /**
+   * The directories the host process was started with — `refyard <dir>` — answered once
+   * per launch. Present only on a native adapter whose host has a command line; a browser
+   * has none, and a caller opens those directories through the ordinary registration the
+   * picker's answer uses.
+   *
+   * This is an offer, not an instruction: the directories are registered by the caller,
+   * exactly like a dropped folder, and a refusal says which operand could not be used.
+   */
+  takeLaunchPaths?(): Promise<LaunchRequest>;
+  /**
+   * A second `refyard <dir>` while this app is running. Present only where the host can
+   * receive one; the listener returns its own unsubscribe.
+   */
+  onLaunchPaths?(listener: (request: LaunchRequest) => void): () => void;
+  /**
+   * Installs the `refyard` command into a directory on the person's PATH.
+   *
+   * Present only where `capabilities().cliCommandInstaller` is true: the answer says where
+   * the command was installed, whether that directory is on the host process's PATH, and —
+   * when it is not — the line to add. Nothing outside the person's home is written.
+   */
+  installCliCommand?(): Promise<CliCommandInstall>;
   /**
    * Folders (or files) dragged onto the window, with the phase of the drag — the
    * shape a desktop webview reports and a browser cannot: a dropped folder arrives as

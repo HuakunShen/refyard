@@ -25,6 +25,7 @@ export const LEGACY_HOST_CAPABILITIES: HostCapabilities = {
   sshConfig: false,
   localFolderPicker: false,
   uncertainOperationAcknowledgement: false,
+  cliCommandInstaller: false,
   targetKinds: ["local"],
 };
 
