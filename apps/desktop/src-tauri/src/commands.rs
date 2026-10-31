@@ -407,6 +407,29 @@ pub fn events_unsubscribe(
         .map_err(failed)
 }
 
+/// `refyard_take_launch_paths` — the directories this process was started with.
+///
+/// Answered once per launch: the page opens them, and a second ask (a reload during
+/// startup, or a remount) finds nothing left rather than reopening the same tabs. A
+/// refused operand travels with the answer instead of being dropped, so `refyard ./typo`
+/// says so in the window instead of opening nothing and saying nothing.
+pub fn take_launch_paths(
+    state: &AppState,
+    caller_label: &str,
+    session_id: &str,
+) -> Result<Value, ProblemResponse> {
+    state
+        .sessions
+        .service_for(session_id, caller_label)
+        .map_err(failed)?;
+    let mut merged = crate::launch::LaunchRequest::default();
+    for request in state.launch.take() {
+        merged.directories.extend(request.directories);
+        merged.refused.extend(request.refused);
+    }
+    to_value(merged)
+}
+
 /// `refyard_mutation_submit` — one write through the session the caller owns.
 ///
 /// The **session is the actor**: two windows hold two sessions, so the operation one of them
@@ -676,6 +699,15 @@ pub async fn refyard_events_unsubscribe(
     subscription_id: String,
 ) -> Result<(), ProblemResponse> {
     events_unsubscribe(&state, window.label(), &session_id, &subscription_id)
+}
+
+#[tauri::command]
+pub async fn refyard_take_launch_paths(
+    window: tauri::WebviewWindow,
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<Value, ProblemResponse> {
+    take_launch_paths(&state, window.label(), &session_id)
 }
 
 #[tauri::command]

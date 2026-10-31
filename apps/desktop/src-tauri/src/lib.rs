@@ -30,9 +30,11 @@
 //! The modules are public so the integration tests can drive the production dispatcher and the
 //! real ownership gate instead of a test double.
 
+pub mod cli_command;
 pub mod commands;
 pub mod dispatch;
 pub mod events;
+pub mod launch;
 pub mod relay;
 pub mod session;
 
@@ -72,6 +74,11 @@ pub struct AppState {
     /// browser session that opened it" — is recorded here, beside the commands
     /// that enforce it.
     pub terminal_owners: Arc<std::sync::Mutex<std::collections::HashMap<u32, String>>>,
+    /// The directories this process was started with, until the page asks for
+    /// them. `refyard .` is a launch channel, not a service call: the paths are
+    /// offered to the page, which registers them the way the folder picker's
+    /// answer is registered.
+    pub launch: Arc<launch::LaunchQueue>,
 }
 
 impl AppState {
@@ -161,6 +168,7 @@ impl AppState {
             terminal_owners: Arc::new(std::sync::Mutex::new(
                 std::collections::HashMap::new(),
             )),
+            launch: Arc::new(launch::LaunchQueue::default()),
         })
     }
 }
@@ -252,6 +260,15 @@ pub fn run() {
     let startup = AppState::for_this_machine();
 
     tauri::Builder::default()
+        // First, as the plugin's documentation requires: a second launch is answered
+        // before anything else in this process runs, so it never starts a second window,
+        // a second journal or a second writer of the same state directory. The payload is
+        // the operand list a `refyard <dir>` process was started with, handed to the
+        // window that is already open.
+        .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
+            let operands: Vec<String> = argv.into_iter().skip(1).collect();
+            launch::deliver(app, launch::request_from(&operands, std::path::Path::new(&cwd)));
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
@@ -278,6 +295,12 @@ pub fn run() {
             // window watching the same repository.
             let handle = app.handle().clone();
             let state = app.state::<AppState>();
+            // A cold start: `refyard <dir>` starts this process with the directory as its
+            // argument. Queued before the page exists, because the page is what opens it —
+            // the host never registers a repository on its own authority.
+            let operands: Vec<String> = std::env::args().skip(1).collect();
+            let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            state.launch.push(launch::request_from(&operands, &cwd));
             let service = Arc::clone(&state.service);
             let events = Arc::clone(&state.events);
             tauri::async_runtime::spawn(relay::run(handle, service, events));
@@ -321,6 +344,7 @@ pub fn run() {
             commands::refyard_terminal_write,
             commands::refyard_terminal_resize,
             commands::refyard_terminal_close,
+            commands::refyard_take_launch_paths,
         ])
         .run(tauri::generate_context!())
         .expect("the desktop window failed to start")
