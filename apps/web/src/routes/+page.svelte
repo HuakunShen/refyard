@@ -19,6 +19,8 @@
   import type {
     CommitSummary,
     ExecutionTargetSummary,
+    HostCapabilities,
+    LaunchRequest,
     RepositorySummary,
   } from "@refyard/git-contract";
   import {
@@ -299,6 +301,19 @@
   let pendingUpdate = $state<UpdateOffer | null>(null);
   let appVersion = $state<string | undefined>(undefined);
   let failureBanner = $state("");
+  /**
+   * Operands `refyard <dir>` could not use, quoted back with their reason. A launch that
+   * silently opened nothing would be worse than one that says which path it did not find,
+   * so the refusal is a banner rather than a dropped event.
+   */
+  let launchRefused = $state("");
+  /** What the host says it can do around the workbench itself, once the session exists. */
+  let hostCapabilities = $state<HostCapabilities | null>(null);
+  /** The one-click PATH install: busy while it runs, and the host's own words after. */
+  let cliInstall = $state<{
+    busy: boolean;
+    message: string | null;
+  }>({ busy: false, message: null });
 
   let accent = $state(browser ? readStoredAccent() : "default");
   let background = $state(browser ? readStoredBackground() : "none");
@@ -1135,8 +1150,132 @@
     return host.pickLocalDirectory();
   }
 
-  async function browseRepositoryPath(path: string) {
-    return queries.filesystemEntries(path);
+  /**
+   * Opens what `refyard <dir>` named.
+   *
+   * The directories arrive from the host as an offer, not an instruction: each one goes
+   * through `handleOpenRepository`, the same registration the folder picker's answer uses,
+   * so the launch channel can only open a directory the person named and cannot reach
+   * anything else. The target is temporarily cleared for the same reason a dropped folder
+   * clears it — the path was typed on this machine's terminal, so opening it "on" a remote
+   * host would answer a different question than the one that was asked.
+   */
+  function handleLaunchRequest(request: LaunchRequest): void {
+    launchRefused =
+      request.refused.length === 0
+        ? ""
+        : request.refused
+            .map((entry) => `${entry.named}: ${entry.problem}`)
+            .join("; ");
+    if (request.directories.length === 0) return;
+    const restore = executionTarget;
+    executionTarget = null;
+    try {
+      for (const directory of request.directories) {
+        handleOpenRepository(directory);
+      }
+    } finally {
+      executionTarget = restore;
+    }
+  }
+
+  /**
+   * The command line this app was started with, asked for once per session.
+   *
+   * A cold start has no listener yet when the host receives the arguments, so the host
+   * holds them until the page asks; asking once is what keeps a reload from reopening the
+   * same tabs on every mount.
+   */
+  $effect(() => {
+    const host = backendSession?.host;
+    if (host?.takeLaunchPaths === undefined) return;
+    let cancelled = false;
+    void host
+      .takeLaunchPaths()
+      .then((request) => {
+        if (!cancelled) handleLaunchRequest(request);
+      })
+      .catch(() => {
+        // A host without a launch channel (or one that refuses the question) simply has
+        // nothing to offer; the page keeps the state it already had.
+      });
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  /** A second `refyard <dir>` while this window is open — the single-instance forward. */
+  $effect(() => {
+    const host = backendSession?.host;
+    if (host?.onLaunchPaths === undefined) return;
+    return host.onLaunchPaths((request) => {
+      handleLaunchRequest(request);
+    });
+  });
+
+  /**
+   * The host's own answer about itself, asked once per session: which target kinds it
+   * offers, whether it can show an OS dialog, and whether it can put the `refyard` command
+   * on this person's PATH. Nothing here is inferred from the runtime kind — the flag is
+   * what the Settings sheet is wired to.
+   */
+  $effect(() => {
+    const host = backendSession?.host;
+    if (host === undefined || host === null) {
+      hostCapabilities = null;
+      return;
+    }
+    let cancelled = false;
+    void host
+      .capabilities()
+      .then((answer) => {
+        if (!cancelled) hostCapabilities = answer;
+      })
+      .catch(() => {
+        if (!cancelled) hostCapabilities = null;
+      });
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  /**
+   * Installs the bundled `refyard` command into a directory on the person's PATH.
+   *
+   * The host answers with where the command went and whether that directory is on its own
+   * PATH; that answer is shown verbatim rather than paraphrased, because the person's next
+   * step (`refyard .` working, or a `PATH` line to add) depends on it.
+   */
+  async function installCliCommand(): Promise<void> {
+    const host = backendSession?.host;
+    if (host?.installCliCommand === undefined) return;
+    cliInstall = { busy: true, message: cliInstall.message };
+    try {
+      const outcome = await host.installCliCommand();
+      cliInstall = { busy: false, message: outcome.message };
+    } catch (error) {
+      cliInstall = { busy: false, message: describeBackendProblem(error) };
+    }
+  }
+
+  /**
+   * Lists one directory on the machine the launcher selected.
+   *
+   * A local path is this machine's, exactly as before. A remote path is listed through
+   * the target — created on the first Browse if it does not exist yet — because asking
+   * this machine about it would show the wrong machine's directories. The created target
+   * is handed back to the launcher so Open reuses it instead of probing again.
+   */
+  async function browseRepositoryPath(
+    path: string,
+    target: ExecutionTargetSelection | null,
+  ) {
+    if (target === null || target.kind === "local") {
+      return queries.filesystemEntries(path);
+    }
+    const summary = await writeController.ensureTarget(target);
+    launcherTargetSummary = summary;
+    return queries.filesystemEntries(path, summary.targetId);
   }
 
   function handleRecentRepository(entry: RecentRepository): void {
@@ -1757,6 +1896,15 @@
               backendLabel,
               operations: capabilities.data.operations.length,
             }}
+        commandLine={hostCapabilities?.cliCommandInstaller === true
+          ? {
+              busy: cliInstall.busy,
+              message: cliInstall.message,
+              onInstall: () => {
+                void installCliCommand();
+              },
+            }
+          : undefined}
         onDisconnect={runtime.kind === "http" ? disconnect : undefined}
       />
     {/if}
@@ -1817,6 +1965,26 @@
         title={m.update_failed()}
         detail={failureBanner}
       />
+    </div>
+  {/if}
+
+  {#if launchRefused.length > 0}
+    <div class="relative z-10 border-b border-border bg-panel px-4 py-2">
+      <StateBanner
+        state="error"
+        title={m.launch_refused()}
+        detail={launchRefused}
+      >
+        {#snippet action()}
+          <Button
+            size="sm"
+            variant="outline"
+            onclick={() => {
+              launchRefused = "";
+            }}>{m.common_close()}</Button
+          >
+        {/snippet}
+      </StateBanner>
     </div>
   {/if}
 
