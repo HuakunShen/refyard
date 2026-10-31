@@ -10,10 +10,12 @@ import {
   acknowledgeUncertainOperationRequestSchema,
   capabilitiesQuerySchema,
   capabilitiesResponseSchema,
+  cliCommandInstallSchema,
   createTargetRequestSchema,
   disconnectTargetRequestSchema,
   executionTargetSummarySchema,
   hostCapabilitiesSchema,
+  launchRequestSchema,
   registerRepositoryRequestSchema,
   repositorySummarySchema,
   sshHostListSchema,
@@ -209,6 +211,65 @@ describe("host service shapes", () => {
     expect(disconnectTargetRequestSchema.safeParse({ targetId: "tgt_abc123", force: true }).success).toBe(
       false,
     );
+  });
+});
+
+describe("the launch channel and the installed command", () => {
+  it("accepts absolute directories beside the operands that could not be used", () => {
+    const value = {
+      directories: ["/srv/one", "/srv/two"],
+      refused: [{ named: "nope", problem: "no directory at /srv/nope" }],
+    };
+    expect(launchRequestSchema.safeParse(value).success).toBe(true);
+  });
+
+  it("accepts a launch that only refused something", () => {
+    // `refyard ./typo` must be able to answer with the mistake and nothing else.
+    expect(
+      launchRequestSchema.safeParse({
+        directories: [],
+        refused: [{ named: "./typo", problem: "no directory at ./typo" }],
+      }).success,
+    ).toBe(true);
+  });
+
+  it("refuses a refusal that does not say why", () => {
+    // A refusal without a reason is a banner the person cannot act on.
+    expect(
+      launchRequestSchema.safeParse({
+        directories: [],
+        refused: [{ named: "./typo" }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("refuses a launch answer that carries a command instead of a directory", () => {
+    // The channel offers paths; anything resembling argv or a shell is not this shape.
+    expect(
+      launchRequestSchema.safeParse({
+        directories: ["/srv/one"],
+        refused: [],
+        argv: ["git", "status"],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("accepts an install answer that admits the directory is not on PATH", () => {
+    const value = {
+      installed: true,
+      commandPath: "/home/me/.local/bin/refyard",
+      onPath: false,
+      message: "add /home/me/.local/bin to PATH",
+    };
+    expect(cliCommandInstallSchema.safeParse(value).success).toBe(true);
+  });
+
+  it("requires the host to say whether it can install the command", () => {
+    // A missing flag is not "no": the UI would have to guess, and either guess is a
+    // control that either lies or stays hidden on a machine that could have shown it.
+    const { cliCommandInstaller, ...withoutFlag } = validHostCapabilities();
+    expect(cliCommandInstaller).toBe(false);
+    expect(hostCapabilitiesSchema.safeParse(withoutFlag).success).toBe(false);
   });
 });
 

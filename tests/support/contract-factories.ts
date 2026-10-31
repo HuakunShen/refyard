@@ -55,6 +55,7 @@ export function validHostCapabilities(
     sshConfig: false,
     localFolderPicker: false,
     uncertainOperationAcknowledgement: false,
+    cliCommandInstaller: false,
     targetKinds: ["local"],
     ...overrides,
   };

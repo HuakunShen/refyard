@@ -85,6 +85,7 @@ function installDesktopShapeRoutes(page: Page): void {
         sshConfig: false,
         localFolderPicker: false,
         uncertainOperationAcknowledgement: false,
+        cliCommandInstaller: false,
         targetKinds: ["local"],
       }),
     });
@@ -208,7 +209,9 @@ test.describe("recent repositories", () => {
 
       await page.goto(service.pairingUrl);
       await expect(page.getByTestId("build-badge")).toBeVisible();
-      await expect(page.getByRole("heading", { name: "History" })).toBeVisible();
+      await expect(
+        page.getByRole("heading", { name: "History" }),
+      ).toBeVisible();
       await expect(page.getByTestId("repository-tabs")).toBeVisible();
 
       await openSecondRepositoryThroughLauncher(page, unapprovedPath);

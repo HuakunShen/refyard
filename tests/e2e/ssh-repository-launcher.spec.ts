@@ -178,6 +178,7 @@ async function installFakeHost(page: Page, fake: FakeHost): Promise<void> {
         sshConfig: true,
         localFolderPicker: false,
         uncertainOperationAcknowledgement: false,
+        cliCommandInstaller: false,
         targetKinds: ["local", "ssh-config"],
       });
       return;

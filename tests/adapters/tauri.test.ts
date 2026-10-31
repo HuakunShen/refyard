@@ -360,3 +360,104 @@ describe("native adapter mutations", () => {
     expect(result.kind).toBe("duplicate");
   });
 });
+
+describe("native launch channel and the installed command", () => {
+  const launchFrame = (
+    directories: readonly string[],
+    refused: readonly { named: string; problem: string }[] = [],
+  ) => ({ directories, refused });
+
+  it("asks for the launch paths once and binds the ask to this session", async () => {
+    const harness = startPorts();
+    harness.respond("refyard_take_launch_paths", () =>
+      launchFrame(
+        ["/srv/repo"],
+        [{ named: "nope", problem: "no directory at /srv/nope" }],
+      ),
+    );
+    const session = await connect();
+    const request = await session.host.takeLaunchPaths?.();
+    expect(request).toBeDefined();
+    expect(request?.directories).toEqual(["/srv/repo"]);
+    // The refusal travels with the answer: dropping it would leave the person with a
+    // window that opened nothing and said nothing.
+    expect(request?.refused).toEqual([
+      { named: "nope", problem: "no directory at /srv/nope" },
+    ]);
+    expect(harness.lastCall("refyard_take_launch_paths")?.args).toMatchObject({
+      sessionId: "sess_1",
+    });
+  });
+
+  it("refuses a launch answer whose shape the client cannot validate", async () => {
+    const harness = startPorts();
+    harness.respond("refyard_take_launch_paths", () => ({
+      directories: [42],
+      refused: [],
+    }));
+    const session = await connect();
+    const error = await expectBackendError(
+      async () => await session.host.takeLaunchPaths?.(),
+    );
+    expect(error.code).toBe("InternalError");
+  });
+
+  it("delivers a second launch to the live listener and stops on unsubscribe", async () => {
+    const harness = startPorts();
+    const session = await connect();
+    const seen: string[] = [];
+    const stop = session.host.onLaunchPaths?.((request) => {
+      seen.push(...request.directories);
+    });
+    expect(stop).toBeDefined();
+    // The adapter registers its listener through an async port, so the emit happens
+    // after that microtask rather than racing it.
+    await Promise.resolve();
+    harness.emit(launchFrame(["/srv/two"]));
+    expect(seen).toEqual(["/srv/two"]);
+    stop?.();
+    harness.emit(launchFrame(["/srv/three"]));
+    expect(seen).toEqual(["/srv/two"]);
+  });
+
+  it("drops a launch frame it cannot read instead of opening a guessed path", async () => {
+    const harness = startPorts();
+    const session = await connect();
+    const seen: string[] = [];
+    session.host.onLaunchPaths?.((request) => {
+      seen.push(...request.directories);
+    });
+    await Promise.resolve();
+    harness.emit({ directories: [42], refused: [] });
+    harness.emit(launchFrame(["/srv/ok"]));
+    expect(seen).toEqual(["/srv/ok"]);
+  });
+
+  it("asks the host to install the command and validates where it went", async () => {
+    const harness = startPorts();
+    harness.respond("refyard_host_request", (args) => {
+      const request = args?.["request"];
+      const method =
+        typeof request === "object" && request !== null
+          ? Reflect.get(request, "method")
+          : undefined;
+      if (method === "installCliCommand") {
+        return {
+          installed: true,
+          commandPath: "/home/me/.local/bin/refyard",
+          onPath: false,
+          message: "`refyard` is installed at /home/me/.local/bin/refyard",
+        };
+      }
+      throw new Error(`unexpected host method ${String(method)}`);
+    });
+    const session = await connect();
+    const outcome = await session.host.installCliCommand?.();
+    expect(outcome?.installed).toBe(true);
+    expect(outcome?.onPath).toBe(false);
+    expect(harness.lastCall("refyard_host_request")?.args).toMatchObject({
+      sessionId: "sess_1",
+      request: { method: "installCliCommand" },
+    });
+  });
+});

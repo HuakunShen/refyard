@@ -54,6 +54,7 @@ test.describe("native folder picker affordance", () => {
           sshConfig: false,
           localFolderPicker,
           uncertainOperationAcknowledgement: true,
+          cliCommandInstaller: false,
           targetKinds: ["local"],
         }),
       });
