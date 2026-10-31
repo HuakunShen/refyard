@@ -94,3 +94,7 @@ target/
 apps/desktop/src-tauri/gen/
 
 .zcode
+
+# Tauri sidecars staged by scripts/stage-launcher.ts. `bundle.externalBin` names
+# them at build time; a binary per target triple is output, not source.
+apps/desktop/src-tauri/binaries/

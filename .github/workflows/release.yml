@@ -73,14 +73,19 @@ jobs:
         include:
           - platform: macos-latest # Apple Silicon
             args: --target aarch64-apple-darwin
+            triple: aarch64-apple-darwin
           - platform: macos-latest # Intel
             args: --target x86_64-apple-darwin
+            triple: x86_64-apple-darwin
           - platform: ubuntu-22.04 # x86_64, older glibc for compatibility
             args: ""
+            triple: x86_64-unknown-linux-gnu
           - platform: ubuntu-22.04-arm # arm64; public-repo runners only
             args: ""
+            triple: aarch64-unknown-linux-gnu
           - platform: windows-latest # x86_64
             args: ""
+            triple: x86_64-pc-windows-msvc
           # Windows ARM64 is deliberately absent: Tauri's own release sample omits it and
           # the WebView2 ARM64 bootstrapper is the flaky part. To try it, add:
           #   - platform: windows-latest
@@ -122,6 +127,11 @@ jobs:
         run: pnpm --dir apps/web exec vite build
         env:
           REFYARD_BUILD_TARGET: desktop
+
+      - name: Build the bundled `refyard` command
+        # The sidecar `bundle.externalBin` embeds. It must be built for the same triple the
+        # bundle is, and named `<name>-<triple>` for the bundler to find it.
+        run: bun scripts/stage-launcher.ts ${{ matrix.triple }}
 
       - uses: tauri-apps/tauri-action@v1
         env:

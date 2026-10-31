@@ -6,7 +6,8 @@
  * compiles the Rust host and bundles it around those assets. The order is the point — Tauri
  * embeds the frontend directory at compile time, so building the app first would embed the
  * previous frontend, which is the "worked on my machine" failure this script exists to make
- * impossible.
+ * impossible. The bundled `refyard` command is built just before the bundle for the same
+ * reason: Tauri embeds whatever sidecar exists, so it must exist and be current.
  *
  * `--web-only` runs just the first step, for a change that only touches the frontend.
  *
@@ -25,7 +26,14 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const webDir = join(repoRoot, "apps", "web");
 const desktopDir = join(repoRoot, "apps", "desktop");
 const desktopDist = join(webDir, "build-desktop");
-const bundleRoot = join(desktopDir, "src-tauri", "target", "release", "bundle", "macos");
+const bundleRoot = join(
+  desktopDir,
+  "src-tauri",
+  "target",
+  "release",
+  "bundle",
+  "macos",
+);
 const appBundle = join(bundleRoot, "Refyard.app");
 
 const webOnly = process.argv.includes("--web-only");
@@ -33,7 +41,10 @@ const webOnly = process.argv.includes("--web-only");
 async function run(
   command: string,
   args: readonly string[],
-  options: { readonly cwd: string; readonly env?: Record<string, string | undefined> },
+  options: {
+    readonly cwd: string;
+    readonly env?: Record<string, string | undefined>;
+  },
 ): Promise<void> {
   await new Promise<void>((settle, fail) => {
     const child = spawn(command, [...args], {
@@ -82,6 +93,12 @@ async function buildFrontend(): Promise<void> {
 }
 
 async function buildApp(): Promise<void> {
+  console.log("build-desktop: building the bundled `refyard` command");
+  // `bundle.externalBin` only takes a binary that is already built and named with this
+  // host's target triple. The stage step is the bridge; skipping it bundles a stale
+  // command, or fails the build outright when none exists.
+  await run("bun", ["scripts/stage-launcher.ts"], { cwd: repoRoot });
+
   console.log("build-desktop: compiling the host and bundling the application");
   await run("pnpm", ["exec", "tauri", "build"], { cwd: desktopDir });
 
