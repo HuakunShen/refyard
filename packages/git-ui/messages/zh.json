@@ -278,6 +278,8 @@
   "loading_repos": "正在加载仓库…",
   "sidebar_no_repos": "没有仓库",
   "commit_column_settings": "列设置",
+  "commit_compact_graph": "紧凑图形列",
+  "commit_expand_graph": "展开图形列",
   "commit_signed": "提交带有签名。",
   "commit_history_aria": "提交历史 — 方向键移动选择",
   "commit_shallow": "浅层历史",

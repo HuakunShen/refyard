@@ -100,7 +100,11 @@ async function buildApp(): Promise<void> {
   await run("bun", ["scripts/stage-launcher.ts"], { cwd: repoRoot });
 
   console.log("build-desktop: compiling the host and bundling the application");
-  await run("pnpm", ["exec", "tauri", "build"], { cwd: desktopDir });
+  const tauriArgs = ["exec", "tauri", "build"];
+  if (!process.env.TAURI_SIGNING_PRIVATE_KEY) {
+    tauriArgs.push("--config", JSON.stringify({ bundle: { createUpdaterArtifacts: false } }));
+  }
+  await run("pnpm", tauriArgs, { cwd: desktopDir });
 
   if (!(await pathExists(appBundle))) {
     throw new Error(

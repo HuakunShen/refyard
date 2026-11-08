@@ -198,8 +198,9 @@ export function refConnectorPath(
   laneIndex: number,
   index: number,
   metrics: GraphMetrics = DEFAULT_METRICS,
+  customCx?: number,
 ): string {
-  const cx = laneX(laneIndex, metrics);
+  const cx = customCx ?? laneX(laneIndex, metrics);
   const cy = rowCenterY(index, metrics);
   return `M 0 ${format(cy)} L ${format(cx)} ${format(cy)}`;
 }
@@ -331,6 +332,53 @@ export function rowGeometry(
   });
 
   return { circle: { cx, cy, paint: lanePaint(row.laneColor) }, segments };
+}
+
+/**
+ * Single-line geometry for a narrow graph column (GitKraken-style collapsed mode).
+ * All commit nodes are centered at `cx = Math.round(columnWidth / 2)`, and each row
+ * draws a single vertical spine segment connecting through `(cx, cy)`.
+ */
+export function collapsedRowGeometry(
+  row: GraphRow,
+  index: number,
+  columnWidth: number,
+  metrics: GraphMetrics = DEFAULT_METRICS,
+  hasWipAbove: boolean = false,
+): GraphRowGeometry {
+  const cx = Math.round(columnWidth / 2);
+  const cy = rowCenterY(index, metrics);
+  const top = index * metrics.rowHeight;
+  const bottom = top + metrics.rowHeight;
+  const paint = lanePaint(row.laneColor);
+  const segments: GraphSegment[] = [];
+
+  const hasIncoming = index > 0 || row.inputLanes.length > 0 || hasWipAbove;
+  const hasOutgoing = row.outputLanes.length > 0 || row.parentIds.length > 0;
+
+  if (hasIncoming) {
+    segments.push({
+      path: edgePath(cx, top, cx, cy),
+      paint,
+      kind: "lane",
+    });
+  }
+  if (hasOutgoing) {
+    segments.push({
+      path: edgePath(cx, cy, cx, bottom),
+      paint,
+      kind: "lane",
+    });
+  }
+
+  return {
+    circle: {
+      cx,
+      cy,
+      paint,
+    },
+    segments,
+  };
 }
 
 function format(value: number): string {

@@ -278,6 +278,8 @@
   "loading_repos": "Loading repositories…",
   "sidebar_no_repos": "No repositories",
   "commit_column_settings": "Column settings",
+  "commit_compact_graph": "Compact Graph Column",
+  "commit_expand_graph": "Expand Graph Column",
   "commit_signed": "Commit carries a signature.",
   "commit_history_aria": "Commit history — arrow keys move the selection",
   "commit_shallow": "Shallow history",

@@ -155,7 +155,16 @@
       {/if}
     </header>
 
-    {#if awaitingPerPathPatches && !listingOnly && !onlySelected}
+    {@const fileListingTruncated = diff.files.length >= 200}
+    {#if fileListingTruncated}
+      <div class="shrink-0">
+        <StateBanner
+          state="truncated"
+          title="This listing was truncated"
+          detail="The host bounded this response, so later files in it are not shown. Narrow the request to see them."
+        />
+      </div>
+    {:else if awaitingPerPathPatches && !listingOnly && !onlySelected}
       <div class="shrink-0">
         <StateBanner
           state="info"
@@ -163,23 +172,12 @@
           detail="This change set is listed without patches: a patch for every file at once is unbounded work. Select a file to read its patch."
         />
       </div>
-    {:else if diff.truncated}
+    {:else if diff.truncated && !awaitingPerPathPatches && !listingOnly && !onlySelected}
       <div class="shrink-0">
-        <!--
-          `truncated` means "the host applied a limitation", and one of those limitations is
-          the per-path patch rule — which cuts nothing. Saying "later files are not shown" for
-          a complete listing is the kind of confident wrong answer this pane exists to avoid,
-          so the claim is narrowed to what the file data proves: with patches present, only a
-          bound can have set the flag; without them, either could have.
-        -->
         <StateBanner
           state="truncated"
-          title={awaitingPerPathPatches
-            ? m.host_limited()
-            : "This listing was truncated"}
-          detail={awaitingPerPathPatches
-            ? "Either the change set was larger than the host returns at once, or patches were not included because they are read one path at a time. Select a file to read its patch, or narrow the request."
-            : "The host bounded this response, so later files in it are not shown. Narrow the request to see them."}
+          title="This listing was truncated"
+          detail="The host bounded this response, so later files in it are not shown. Narrow the request to see them."
         />
       </div>
     {/if}

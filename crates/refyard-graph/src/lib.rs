@@ -13,9 +13,9 @@ pub mod head;
 pub mod layout;
 
 pub use geometry::{
-    avatar_radius_for, compressed_metrics, edge_shape, gutter_width, lane_x, ref_connector,
-    row_center_y, row_geometry, Circle, COMPACT_METRICS, COMFORTABLE_METRICS, DEFAULT_METRICS,
-    Metrics, RowGeometry, Segment, SegmentKind, SegmentShape,
+    avatar_radius_for, collapsed_row_geometry, compressed_metrics, edge_shape, gutter_width, lane_x,
+    ref_connector, ref_connector_at, row_center_y, row_geometry, Circle, COMPACT_METRICS,
+    COMFORTABLE_METRICS, DEFAULT_METRICS, Metrics, RowGeometry, Segment, SegmentKind, SegmentShape,
 };
 pub use head::{head_segment_for, HeadSegment};
 pub use layout::{

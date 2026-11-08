@@ -219,10 +219,14 @@ pub struct RowGeometry {
 /// the pill and the lane it names are two things a reader has to join up themselves.
 /// It runs from the column's left edge to the node's centre at the node's own y.
 pub fn ref_connector(lane_index: usize, index: usize, metrics: &Metrics) -> SegmentShape {
+    ref_connector_at(lane_x(lane_index, metrics), index, metrics)
+}
+
+pub fn ref_connector_at(cx: f32, index: usize, metrics: &Metrics) -> SegmentShape {
     SegmentShape::Line {
         x0: 0.0,
         y0: row_center_y(index, metrics),
-        x1: lane_x(lane_index, metrics),
+        x1: cx,
         y1: row_center_y(index, metrics),
     }
 }
@@ -309,6 +313,44 @@ pub fn row_geometry(row: &GraphRow, index: usize, metrics: &Metrics) -> RowGeome
     }
 
     RowGeometry { circle: Circle { cx, cy, color: row.lane_color.clone() }, segments }
+}
+
+/// Single-line geometry for a narrow graph column (GitKraken-style collapsed mode).
+pub fn collapsed_row_geometry(
+    row: &GraphRow,
+    index: usize,
+    column_width: f32,
+    metrics: &Metrics,
+    has_wip_above: bool,
+) -> RowGeometry {
+    let cx = (column_width / 2.0).round();
+    let cy = row_center_y(index, metrics);
+    let top = index as f32 * metrics.row_height;
+    let bottom = top + metrics.row_height;
+    let mut segments = Vec::new();
+
+    let has_incoming = index > 0 || !row.input_lanes.is_empty() || has_wip_above;
+    let has_outgoing = !row.output_lanes.is_empty() || !row.parent_ids.is_empty();
+
+    if has_incoming {
+        segments.push(Segment {
+            shape: edge_shape(cx, top, cx, cy),
+            color: row.lane_color.clone(),
+            kind: SegmentKind::Lane,
+        });
+    }
+    if has_outgoing {
+        segments.push(Segment {
+            shape: edge_shape(cx, cy, cx, bottom),
+            color: row.lane_color.clone(),
+            kind: SegmentKind::Lane,
+        });
+    }
+
+    RowGeometry {
+        circle: Circle { cx, cy, color: row.lane_color.clone() },
+        segments,
+    }
 }
 
 #[cfg(test)]
@@ -744,6 +786,57 @@ mod tests {
         };
         assert!(geometry.segments.iter().any(|s| s.shape == through));
         assert!(geometry.segments.iter().any(|s| s.shape == merge_edge));
+    }
+
+    #[test]
+    fn collapsed_row_geometry_centres_node_and_connects_incoming_and_outgoing() {
+        let commit = GraphRow {
+            id: "commit".to_string(),
+            parent_ids: vec!["parent".to_string()],
+            ref_names: vec![],
+            lane_index: 2,
+            lane_color: "lane-2".into(),
+            input_lanes: vec![ref_lane("commit", 2)],
+            output_lanes: vec![ref_lane("parent", 2)],
+            is_merge: false,
+            is_root: false,
+        };
+        let geometry = collapsed_row_geometry(&commit, 1, 64.0, &METRICS, false);
+        assert_eq!(geometry.circle.cx, 32.0);
+        assert_eq!(geometry.circle.cy, row_center_y(1, &METRICS));
+        assert_eq!(geometry.segments.len(), 2);
+        assert_eq!(
+            geometry.segments[0].shape,
+            SegmentShape::Line {
+                x0: 32.0,
+                y0: 24.0,
+                x1: 32.0,
+                y1: 36.0,
+            }
+        );
+        assert_eq!(
+            geometry.segments[1].shape,
+            SegmentShape::Line {
+                x0: 32.0,
+                y0: 36.0,
+                x1: 32.0,
+                y1: 48.0,
+            }
+        );
+    }
+
+    #[test]
+    fn ref_connector_at_uses_custom_centre_for_collapsed_mode() {
+        let connector = ref_connector_at(30.0, 2, &METRICS);
+        assert_eq!(
+            connector,
+            SegmentShape::Line {
+                x0: 0.0,
+                y0: row_center_y(2, &METRICS),
+                x1: 30.0,
+                y1: row_center_y(2, &METRICS),
+            }
+        );
     }
 
     #[test]

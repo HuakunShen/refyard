@@ -51,7 +51,7 @@ export const columnLimits: Record<HistoryColumnId, ColumnLimits> = {
   sha: { min: 56, max: 120 },
 };
 
-const DEFAULT_WIDTHS: Record<HistoryColumnId, number> = {
+export const DEFAULT_WIDTHS: Record<HistoryColumnId, number> = {
   refs: 140,
   graph: 120,
   message: 480,
@@ -59,6 +59,15 @@ const DEFAULT_WIDTHS: Record<HistoryColumnId, number> = {
   date: 150,
   sha: 70,
 };
+
+/**
+ * When the graph column width drops below this threshold, all lanes collapse into
+ * a single vertical line, GitKraken-style.
+ */
+export const COLLAPSED_GRAPH_WIDTH = 80;
+
+/** Default width used when switching the graph column into compact mode. */
+export const COMPACT_GRAPH_WIDTH = 64;
 
 export interface HistoryColumnState {
   readonly widths: Readonly<Record<HistoryColumnId, number>>;

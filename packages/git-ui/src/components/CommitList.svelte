@@ -69,6 +69,9 @@
     githubCommitUrl,
   } from "../lib/avatars.js";
   import {
+    COLLAPSED_GRAPH_WIDTH,
+    COMPACT_GRAPH_WIDTH,
+    DEFAULT_WIDTHS,
     HIDEABLE_COLUMN_IDS,
     defaultColumnState,
     loadStoredColumnState,
@@ -425,6 +428,9 @@
       ? metrics
       : compressedMetrics(laneCount, graphCell.width, metrics),
   );
+  const isGraphCollapsed = $derived(
+    graphCell !== undefined && graphCell.width < COLLAPSED_GRAPH_WIDTH,
+  );
   /**
    * The rows where the checked-out branch still owns its line, GitKraken's tinted
    * "what my branch adds" segment. Skipped when filtered: a filtered list does not
@@ -554,6 +560,21 @@
           columnState = toggleColumn(columnState, id);
         },
       })),
+      { kind: "separator" as const, id: "graph-separator" },
+      {
+        kind: "action" as const,
+        id: "compact-graph",
+        label: isGraphCollapsed
+          ? m.commit_expand_graph()
+          : m.commit_compact_graph(),
+        onSelect: () => {
+          columnState = resizeColumn(
+            columnState,
+            "graph",
+            isGraphCollapsed ? DEFAULT_WIDTHS.graph : COMPACT_GRAPH_WIDTH,
+          );
+        },
+      },
       { kind: "separator" as const, id: "reset-separator" },
       {
         kind: "action" as const,
@@ -1324,11 +1345,12 @@
                 </div>
               {/if}
               {#if graphCell !== undefined}
+                {@const cx = isGraphCollapsed
+                  ? Math.round(graphCell.width / 2)
+                  : graphMetrics.lanePadding + graphMetrics.radius}
                 <div
                   class="flex shrink-0 items-center border-r border-border/25"
-                  style="width: {graphCell.width}px; min-width: {graphCell.width}px; padding-left: {graphMetrics.lanePadding +
-                    graphMetrics.radius -
-                    6}px"
+                  style="width: {graphCell.width}px; min-width: {graphCell.width}px; padding-left: {cx - 6}px"
                 >
                   <span
                     aria-hidden="true"
@@ -1381,7 +1403,7 @@
         >
           {#if topology === "continuous" && graphCell !== undefined}
             <svg
-              class="pointer-events-none absolute top-0"
+              class="pointer-events-none absolute top-0 overflow-visible"
               style="left: {graphLeft}px"
               width={graphCell.width}
               height={totalSize}
@@ -1392,6 +1414,9 @@
                 rows={visibleRows}
                 startIndex={firstVisible}
                 metrics={graphMetrics}
+                collapsed={isGraphCollapsed}
+                columnWidth={graphCell.width}
+                hasWipAbove={wip !== null}
                 {avatarByOid}
                 {initialsByOid}
                 {selectedOid}

@@ -11,6 +11,7 @@ import { layoutGraph, type GraphRow, type LaneRef } from "@refyard/git-graph";
 import {
   ROW_DENSITIES,
   avatarRadiusFor,
+  collapsedRowGeometry,
   DEFAULT_METRICS,
   compressedMetrics,
   densityMetrics,
@@ -209,6 +210,12 @@ describe("ref connectors", () => {
     const [, startY] = path.split(" ").slice(1, 3);
     const endY = path.split(" ").at(-1);
     expect(endY).toBe(startY);
+  });
+
+  it("supports a custom cx for collapsed single-line mode", () => {
+    expect(refConnectorPath(1, 5, metrics, 32)).toBe(
+      `M 0 ${rowCenterY(5, metrics)} L 32 ${rowCenterY(5, metrics)}`,
+    );
   });
 });
 
@@ -463,4 +470,31 @@ it("keeps duplicate ancestor tracks attached to their own slots", () => {
         segment.path === edgePath(laneX(1, metrics), 48, laneX(1, metrics), 72),
     ),
   ).toBe(true);
+});
+
+describe("collapsed row geometry", () => {
+  it("centres node and connects incoming and outgoing segments along a single line", () => {
+    const singleRow = row({
+      id: "commit",
+      laneIndex: 2,
+      laneColor: "lane-2",
+      inputLanes: [ref("commit", "lane-2")],
+      outputLanes: [ref("parent", "lane-2")],
+    });
+    const geometry = collapsedRowGeometry(singleRow, 1, 64, metrics, false);
+    expect(geometry.circle.cx).toBe(32);
+    expect(geometry.circle.cy).toBe(rowCenterY(1, metrics));
+    expect(geometry.circle.paint).toBe(lanePaint("lane-2"));
+    expect(geometry.segments).toHaveLength(2);
+    expect(geometry.segments[0]).toEqual({
+      path: edgePath(32, 24, 32, 36),
+      paint: lanePaint("lane-2"),
+      kind: "lane",
+    });
+    expect(geometry.segments[1]).toEqual({
+      path: edgePath(32, 36, 32, 48),
+      paint: lanePaint("lane-2"),
+      kind: "lane",
+    });
+  });
 });

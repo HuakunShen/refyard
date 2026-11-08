@@ -16,6 +16,7 @@
   import type { GraphRow } from "@refyard/git-graph";
   import {
     avatarRadiusFor,
+    collapsedRowGeometry,
     DEFAULT_METRICS,
     lanePaint,
     refConnectorPath,
@@ -36,6 +37,10 @@
     initialsByOid?: ReadonlyMap<string, InitialsAvatar>;
     /** Widens strokes and dots for the selected row. */
     selectedOid?: string | null;
+    /** When collapsed (narrow column), all lanes merge into a single line at columnWidth / 2. */
+    collapsed?: boolean;
+    columnWidth?: number;
+    hasWipAbove?: boolean;
   }
 
   let {
@@ -45,14 +50,33 @@
     avatarByOid = undefined,
     initialsByOid = undefined,
     selectedOid = null,
+    collapsed = false,
+    columnWidth = 0,
+    hasWipAbove = false,
   }: Props = $props();
 
   const geometries = $derived(
-    rows.map((row, offset) => ({
-      row,
-      index: startIndex + offset,
-      geometry: rowGeometry(row, startIndex + offset, metrics),
-    })),
+    rows.map((row, offset) => {
+      const index = startIndex + offset;
+      if (collapsed && columnWidth > 0) {
+        return {
+          row,
+          index,
+          geometry: collapsedRowGeometry(
+            row,
+            index,
+            columnWidth,
+            metrics,
+            hasWipAbove,
+          ),
+        };
+      }
+      return {
+        row,
+        index,
+        geometry: rowGeometry(row, index, metrics),
+      };
+    }),
   );
 
   // The avatar keeps a photo-sized node even when the lanes are squeezed; the
@@ -84,7 +108,12 @@
       <!-- The label sits in the column to the left; this is the line that ties it to
            the node it names. -->
       <path
-        d={refConnectorPath(entry.row.laneIndex, entry.index, metrics)}
+        d={refConnectorPath(
+          entry.row.laneIndex,
+          entry.index,
+          metrics,
+          collapsed && columnWidth > 0 ? Math.round(columnWidth / 2) : undefined,
+        )}
         fill="none"
         stroke={lanePaint(entry.row.laneColor)}
         stroke-width={metrics.lineWidth}
