@@ -103,11 +103,12 @@ export function reduceDemoState(state: DemoState, action: DemoAction): DemoState
       const timestamp = new Date(Date.UTC(2026, 9, 20, 12, state.revision)).toISOString();
       const [subject, ...body] = message.split("\n");
       if (!subject || subject.length > 4096) return state;
+      const currentBranchRef = `refs/heads/${state.status.head.branchName ?? "main"}`;
       const commit = commitSummarySchema.parse({
         oid, parents: previous ? [previous.oid] : [], subject,
         authorName: "You · Sandbox", authorEmail: "sandbox@example.invalid",
         authoredAt: timestamp, committedAt: timestamp,
-        refNames: ["refs/heads/main"], signed: false, boundary: false, missingParents: [],
+        refNames: [currentBranchRef], signed: false, boundary: false, missingParents: [],
       });
       const detail = commitDetailSchema.parse({
         oid: commit.oid, parents: commit.parents, treeOid: demoOid(300 + state.revision),
@@ -123,12 +124,16 @@ export function reduceDemoState(state: DemoState, action: DemoAction): DemoState
       });
       const commits = [commit, ...state.commits.map((existing) => ({
         ...existing,
-        refNames: existing.refNames.filter((ref) => ref !== "refs/heads/main" && ref !== "refs/remotes/origin/main"),
+        refNames: existing.refNames.filter((ref) => ref !== currentBranchRef),
       }))];
       return {
         ...state, commits,
         detailsByOid: { ...state.detailsByOid, [oid]: detail },
-        diffsByOid: { ...state.diffsByOid, [oid]: makeDemoDiff(oid, 1000 + state.revision) },
+        diffsByOid: { ...state.diffsByOid, [oid]: {
+          ...makeDemoDiff(oid, 1000 + state.revision),
+          repositoryId: state.status.repositoryId,
+          worktreeId: state.status.worktreeId,
+        } },
         status: statusSnapshotSchema.parse({
           ...state.status, head: { ...state.status.head, oid }, entries, entryCount: entries.length,
           upstream: state.status.upstream ? { ...state.status.upstream, ahead: state.status.upstream.ahead + 1 } : null,

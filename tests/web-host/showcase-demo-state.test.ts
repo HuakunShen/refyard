@@ -21,6 +21,12 @@ import {
   getSelectedDemoDiff,
   getSelectedWorkingCopyDiff,
 } from "../../apps/docs/src/lib/demo/selectors.js";
+import {
+  createDemoWorkspace,
+  getActiveDemoState,
+  makeDemoRepositories,
+  reduceDemoWorkspace,
+} from "../../apps/docs/src/lib/demo/workspace.js";
 
 describe("local Refyard Git sandbox", () => {
   it("contains a believable valid history, merge lanes, diffs and working copy", () => {
@@ -102,5 +108,67 @@ describe("local Refyard Git sandbox", () => {
     const reset = reduceDemoState(committed, { type: "reset" });
     expect(reset).toEqual(createDemoState(fixture));
     expect(fixture.commits).toHaveLength(initial.commits.length);
+  });
+});
+
+describe("multi-repository homepage workbench", () => {
+  it("creates three independent synthetic repositories with realistic named tabs", () => {
+    const repositories = makeDemoRepositories();
+    expect(repositories.map((repo) => repo.id)).toEqual(["atlas-editor", "sample-api", "design-system"]);
+    expect(repositories.every((repo) => statusSnapshotSchema.safeParse(repo.fixture.status).success)).toBe(true);
+    expect(new Set(repositories.map((repo) => repo.fixture.status.repositoryId)).size).toBe(3);
+    const workspace = createDemoWorkspace();
+    expect(workspace.openRepositoryIds).toHaveLength(3);
+    expect(workspace.activeRepositoryId).toBe("atlas-editor");
+  });
+
+  it("keeps staged changes in one repository when switching tabs and restores all on reset", () => {
+    const initial = createDemoWorkspace();
+    const pathId = "path_ui";
+    const staged = reduceDemoWorkspace(initial, { type: "repo", action: { type: "stage", pathIds: [pathId] } });
+    expect(getActiveDemoState(staged).status.entries.find((entry) => entry.pathId === pathId)?.indexStatus).toBe("M");
+    const switched = reduceDemoWorkspace(staged, { type: "select-repository", repositoryId: "sample-api" });
+    expect(getActiveDemoState(switched).status.repositoryId).toBe("repo_sample_api");
+    expect(getActiveDemoState(switched).status.entries.find((entry) => entry.pathId === pathId)?.indexStatus).toBe(".");
+    const returned = reduceDemoWorkspace(switched, { type: "select-repository", repositoryId: "atlas-editor" });
+    expect(getActiveDemoState(returned).status.entries.find((entry) => entry.pathId === pathId)?.indexStatus).toBe("M");
+    expect(reduceDemoWorkspace(returned, { type: "reset" })).toEqual(initial);
+  });
+
+  it("stages only eligible unstaged paths and preserves ambiguous mixed status", () => {
+    const initial = createDemoWorkspace();
+    const staged = reduceDemoWorkspace(initial, { type: "stage-all" });
+    const entries = getActiveDemoState(staged).status.entries;
+    expect(entries.find((entry) => entry.pathId === "path_ui")).toMatchObject({ indexStatus: "M", worktreeStatus: "." });
+    expect(entries.find((entry) => entry.pathId === "path_untracked")).toMatchObject({ indexStatus: "A", worktreeStatus: "." });
+    expect(entries.find((entry) => entry.pathId === "path_mixed")).toMatchObject({ indexStatus: "M", worktreeStatus: "M" });
+    expect(initial.status).toBeUndefined();
+  });
+
+  it("keeps the active selection valid when commit search has no matches", () => {
+    const initial = createDemoWorkspace();
+    const filtered = reduceDemoWorkspace(initial, { type: "repo", action: { type: "filter", query: "impossible search sentinel" } });
+    const current = getActiveDemoState(filtered);
+    expect(getDemoGraph(current).rows).toHaveLength(0);
+    expect(current.commits).toHaveLength(32);
+  });
+
+  it("supports closing and reopening a preset tab without losing its workspace", () => {
+    const initial = createDemoWorkspace();
+    const closed = reduceDemoWorkspace(initial, { type: "close-tab", repositoryId: "sample-api" });
+    expect(closed.openRepositoryIds).not.toContain("sample-api");
+    const reopened = reduceDemoWorkspace(closed, { type: "open-tab", repositoryId: "sample-api" });
+    expect(reopened.openRepositoryIds).toContain("sample-api");
+  });
+
+  it("makes a simulated commit on the active branch without moving origin's branch", () => {
+    const initial = createDemoWorkspace();
+    const api = reduceDemoWorkspace(initial, { type: "select-repository", repositoryId: "sample-api" });
+    const committed = reduceDemoWorkspace(api, { type: "repo", action: { type: "commit", message: "feat: sample branch change" } });
+    const latest = getActiveDemoState(committed).commits;
+    expect(latest[0]?.refNames).toContain("refs/heads/develop");
+    expect(latest[0]?.refNames).not.toContain("refs/heads/main");
+    expect(latest[1]?.refNames).toContain("refs/remotes/origin/develop");
+    expect(latest[1]?.refNames).not.toContain("refs/heads/develop");
   });
 });
