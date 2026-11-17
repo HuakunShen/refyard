@@ -13,17 +13,24 @@ interface Props {
 }
 
 export async function getStaticPaths() {
-  return source.getPages().map((page) => ({
-    params: { slug: page.slugs.length > 0 ? page.slugs.join("/") : undefined },
-    props: { page: page.data._raw },
-  }));
+  return source.getPages().flatMap((page) => {
+    const route = page.slugs.join("/");
+    const canonical = {
+      params: { slug: ["docs", ...page.slugs].join("/") },
+      props: { page: page.data._raw },
+    };
+    // Keep existing deep links, while leaving `/` free for the product homepage.
+    return route ? [canonical, { params: { slug: route }, props: canonical.props }] : [canonical];
+  });
 }
 
 const { page } = Astro.props;
 const { Content, headings } = await render(page);
-const slugs = typeof Astro.params.slug === "string" ? Astro.params.slug.split("/") : [];
+const routeParts = typeof Astro.params.slug === "string" ? Astro.params.slug.split("/") : [];
+const slugs = routeParts[0] === "docs" ? routeParts.slice(1) : routeParts;
 const docsPage = source.getPage(slugs)!;
 const image = getPageImageUrl(docsPage).url;
+const canonicalUrl = new URL(docsPage.url, Astro.site).toString();
 
 const toc: TOCItemType[] = headings.map((heading) => ({
   depth: heading.depth,
@@ -37,6 +44,7 @@ const toc: TOCItemType[] = headings.map((heading) => ({
   <meta name="title" content={page.data.title} />
   <meta name="description" content={page.data.description} />
   <meta property="og:image" content={image} />
+  <link rel="canonical" href={canonicalUrl} />
   <Docs
     tree={source.getPageTree()}
     pathname={Astro.url.pathname}

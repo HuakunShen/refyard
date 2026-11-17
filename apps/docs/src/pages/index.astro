@@ -1,0 +1,135 @@
+---
+/** Refyard's independent product introduction; existing docs routes stay intact. */
+import "../styles/showcase.css";
+import HeroGraph from "../components/showcase/HeroGraph.svelte";
+import PatchPreview from "../components/showcase/PatchPreview.svelte";
+import FullWorkbenchDemo from "../components/demo/FullWorkbenchDemo.svelte";
+---
+
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0a0c10" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta property="og:type" content="website" />
+    <link rel="canonical" href="https://docs.refyard.huakun.tech/" />
+    <title>Refyard — Your Git history, finally in focus.</title>
+    <meta name="description" content="A local-first Git workbench. Explore branching history, review diffs and stage changes with your own Git, on your own machine. Try a live sandbox without installing anything." />
+  </head>
+  <body class="refyard-site refyard-showcase-page">
+    <div class="site-grid-overlay" aria-hidden="true"></div>
+    <header class="showcase-nav" id="top">
+      <a class="showcase-wordmark" href="/" aria-label="Refyard homepage"><span class="showcase-mark">⑂</span>refyard<span class="showcase-wordmark-period">.</span></a>
+      <nav aria-label="Main navigation">
+        <a href="#why">Why Refyard</a>
+        <a href="#features">Features</a>
+        <a href="/docs/">Documentation</a>
+        <a href="https://github.com/HuakunShen/refyard" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+      </nav>
+      <a href="#try-it" class="showcase-nav-action">Try it live <span>↗</span></a>
+    </header>
+
+    <main>
+      <section class="showcase-hero" aria-labelledby="hero-title">
+        <div class="showcase-hero-copy">
+          <div class="showcase-eyebrow"><span class="showcase-beacon"></span> A BETTER VIEW OF GIT <span class="showcase-eyebrow-line"></span> OPEN SOURCE</div>
+          <h1 id="hero-title">Your Git history,<br/><em>finally in focus.</em></h1>
+          <p class="showcase-hero-description">Every branch has a story. Trace it, understand it, and make your next move with confidence. A powerful Git workbench that stays where your code lives.</p>
+          <div class="showcase-hero-actions">
+            <a href="#try-it" class="showcase-primary-cta">Explore live demo <span>↗</span></a>
+            <a href="/docs/install/" class="showcase-secondary-cta">Get Refyard <span>→</span></a>
+          </div>
+          <div class="showcase-hero-note"><span class="showcase-note-diamond">✧</span> No signup · No repository upload · Just Git</div>
+        </div>
+        <div class="showcase-hero-visual" data-glow-surface>
+          <div class="showcase-glow-halo"></div>
+          <div class="showcase-visual-kicker"><span>01 / COMMIT GRAPH</span><span>INTERACTIVE PREVIEW</span></div>
+          <HeroGraph client:load />
+          <div class="showcase-visual-caption"><span>READ THE WHOLE STORY</span><span>CLICK A COMMIT · TRY ARROW KEYS</span></div>
+        </div>
+      </section>
+
+      <div class="showcase-tech-strip" aria-label="Refyard principles">
+        <span>GIT NATIVE</span><i></i><span>LOCAL FIRST</span><i></i><span>OPEN SOURCE</span><i></i><span>YOUR TOOLS &amp; CONFIG</span><i></i><span>MULTIPLE FRONTENDS</span>
+      </div>
+
+      <section class="showcase-live-demo" id="try-it" aria-labelledby="try-it-heading">
+        <div class="showcase-live-demo-heading">
+          <div><p class="showcase-overline">02 / THE ACTUAL WORKBENCH</p><h2 id="try-it-heading">Don't just look.<br/><em>Take it for a spin.</em></h2></div>
+          <div class="showcase-live-demo-intro"><p>This is the real Refyard Svelte interface, running entirely on safe preset data. Switch repositories, inspect the commit graph, stage files, and create a fictional commit — without connecting your Git.</p><a href="/demo/">Go fullscreen ↗</a></div>
+        </div>
+        <FullWorkbenchDemo client:only="svelte" mode="embedded">
+          <div slot="fallback" class="demo-loading">Preparing your private Git sandbox…</div>
+        </FullWorkbenchDemo>
+      </section>
+
+      <section class="showcase-manifesto" id="why">
+        <div class="showcase-section-mark">/ THE IDEA</div>
+        <div>
+          <p class="showcase-overline">MORE THAN A PRETTY GRAPH</p>
+          <h2>Git is powerful.<br/><span>Understanding it should feel effortless.</span></h2>
+          <p>Refyard works with the Git already installed on your machine. Your credential helpers, signing, hooks and SSH config stay in charge. No migration, no new source of truth. Just a clearer view of what’s happening in your repository.</p>
+          <a href="/docs/architecture/">How Refyard works <span>↗</span></a>
+        </div>
+      </section>
+
+      <section class="showcase-features" id="features">
+        <div class="showcase-features-heading"><div><p class="showcase-overline">THE WORKBENCH, EXPLORED</p><h2>One workspace.<br/>Every Git decision.</h2></div><p>From the shape of your history to the exact line you changed, the details stay connected.</p></div>
+
+        <article class="showcase-feature showcase-feature-diff">
+          <div class="showcase-feature-story"><span class="showcase-feature-number">01 / INSPECT</span><h3>See the difference.<br/>Not just the diff.</h3><p>Move from a commit to its changed files, then down to the exact lines. Refyard's real patch viewer lets you inspect changes without losing the context of the branch they came from.</p><a href="/demo/">Try patch review <span>↗</span></a></div>
+          <div class="showcase-feature-visual showcase-patch-frame"><PatchPreview client:visible /></div>
+        </article>
+
+        <article class="showcase-feature showcase-feature-stage">
+          <div class="showcase-feature-story"><span class="showcase-feature-number">02 / CRAFT</span><h3>Make each commit<br/>mean something.</h3><p>Review unstaged and staged changes separately, assemble a focused commit, and keep your working copy under control. The sandbox uses the same staging component as the app.</p><a href="/demo/">Try staging files <span>↗</span></a></div>
+          <div class="showcase-feature-visual showcase-staging-illustration" aria-label="Illustration of staged and unstaged file groups">
+            <div class="showcase-stage-top"><span>WORKING COPY</span><span class="showcase-stage-branch">⑂ feature/graph</span></div>
+            <div class="showcase-stage-group"><span class="showcase-stage-group-name">UNSTAGED CHANGES <small>2</small></span><div class="showcase-stage-file"><span class="showcase-file-badge">M</span><code>src/git/graph/layout.ts</code><span class="showcase-stage-plus">+</span></div><div class="showcase-stage-file"><span class="showcase-file-badge">M</span><code>src/components/Graph.svelte</code><span class="showcase-stage-plus">+</span></div></div>
+            <div class="showcase-stage-flow">↓ SELECT WHAT BELONGS TOGETHER</div>
+            <div class="showcase-stage-group showcase-staged"><span class="showcase-stage-group-name">STAGED CHANGES <small>1</small></span><div class="showcase-stage-file"><span class="showcase-file-badge">A</span><code>tests/graph-layout.test.ts</code><span class="showcase-staged-check">✓</span></div></div>
+            <div class="showcase-stage-footer"><span>COMMIT MESSAGE</span><div>test: verify stable merge lanes <span>↵</span></div></div>
+          </div>
+        </article>
+
+        <article class="showcase-feature showcase-feature-local">
+          <div class="showcase-feature-story"><span class="showcase-feature-number">03 / OWN</span><h3>Your repository.<br/>Your machine.</h3><p>No hosted copy of your code. No special Git replacement. The native desktop and local browser forms speak to a scoped service that drives your machine's Git with your existing configuration.</p><a href="/docs/security/">Read the security model <span>↗</span></a></div>
+          <div class="showcase-feature-visual showcase-architecture" aria-label="Architecture: your machine runs Git and Refyard UI communicates locally">
+            <div class="showcase-architecture-node"><span class="showcase-architecture-icon">⌘</span><strong>YOUR MACHINE</strong><small>Your files, keys &amp; hooks</small></div>
+            <div class="showcase-architecture-connector"><span>LOCAL CONNECTION</span><div></div></div>
+            <div class="showcase-architecture-node showcase-architecture-git"><span class="showcase-architecture-icon">⑂</span><strong>YOUR GIT</strong><small>Unchanged. In control.</small></div>
+            <span class="showcase-architecture-footnote">NO CENTRAL REPOSITORY · NO CLOUD MIRROR</span>
+          </div>
+        </article>
+      </section>
+
+      <section class="showcase-final-cta">
+        <div class="showcase-section-mark">/ GO DEEPER</div>
+        <h2>Take Git for a spin.<br/><span>No installation required.</span></h2>
+        <p>The demo runs on synthetic commits and files in your browser. Every graph, diff and staging control is a real Refyard component.</p>
+        <div class="showcase-hero-actions"><a href="#try-it" class="showcase-primary-cta">Open interactive sandbox <span>↗</span></a><a href="/docs/install/" class="showcase-secondary-cta">Install the app <span>→</span></a></div>
+      </section>
+    </main>
+    <footer class="showcase-footer"><a class="showcase-wordmark" href="#top"><span class="showcase-mark">⑂</span>refyard<span class="showcase-wordmark-period">.</span></a><span>Built for developers who care about the details.</span><div><a href="/docs/">Docs</a><a href="/docs/security/">Security</a><a href="https://github.com/HuakunShen/refyard">GitHub ↗</a></div></footer>
+    <script>
+      // Imperative pointer styling: no Svelte/React state updates per mouse frame.
+      const surface = document.querySelector<HTMLElement>("[data-glow-surface]");
+      if (surface && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        let frame = 0;
+        surface.addEventListener("pointermove", (event) => {
+          if (frame) return;
+          const x = event.clientX;
+          const y = event.clientY;
+          frame = requestAnimationFrame(() => {
+            const box = surface.getBoundingClientRect();
+            surface.style.setProperty("--pointer-x", `${x - box.left}px`);
+            surface.style.setProperty("--pointer-y", `${y - box.top}px`);
+            frame = 0;
+          });
+        }, { passive: true });
+      }
+    </script>
+  </body>
+</html>

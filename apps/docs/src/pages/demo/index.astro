@@ -1,7 +1,7 @@
 ---
 /** Local-only, static Git workbench demo; no backend or repository mutation. */
 import "../../styles/showcase.css";
-import DemoWorkbench from "../../components/demo/DemoWorkbench.svelte";
+import FullWorkbenchDemo from "../../components/demo/FullWorkbenchDemo.svelte";
 ---
 
 <!doctype html>
@@ -14,9 +14,9 @@ import DemoWorkbench from "../../components/demo/DemoWorkbench.svelte";
   </head>
   <body class="refyard-site refyard-demo-page">
     <main id="demo-app">
-      <DemoWorkbench client:only="svelte">
+      <FullWorkbenchDemo client:only="svelte" mode="full">
         <div slot="fallback" class="demo-loading">Loading the local-only Git sandbox…</div>
-      </DemoWorkbench>
+      </FullWorkbenchDemo>
     </main>
   </body>
 </html>

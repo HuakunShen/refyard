@@ -42,6 +42,8 @@ export function getSelectedWorkingCopyDiff(state: DemoState): DiffResponse | nul
   const example = makeDemoDiff(state.status.head.oid ?? "0".repeat(40), 2);
   return diffResponseSchema.parse({
     ...example,
+    repositoryId: state.status.repositoryId,
+    worktreeId: state.status.worktreeId,
     request: { kind: side, oid: null, from: null, to: null, pathId: entry.pathId },
     files: example.files.map((file) => ({ ...file, pathId: entry.pathId, displayPath: entry.displayPath })),
   });
