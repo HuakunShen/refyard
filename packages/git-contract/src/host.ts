@@ -8,6 +8,7 @@
  * by name and the host machine's OpenSSH decides the rest.
  */
 import { z } from "zod";
+import { problemSchema } from "./errors.js";
 import {
   operationIdSchema,
   snapshotIdSchema,
@@ -51,12 +52,13 @@ export const hostCapabilitiesSchema = z
     sshConfig: z.boolean(),
     localFolderPicker: z.boolean(),
     uncertainOperationAcknowledgement: z.boolean(),
+    cliCommandInstaller: z.boolean(),
     targetKinds: z.array(executionTargetKindSchema),
   })
   .meta({
     id: "HostCapabilities",
     description:
-      "Host-level abilities. `localFolderPicker` is true only where the host can open a real OS directory dialog; a browser must use the path picker instead.",
+      "Host-level abilities. `localFolderPicker` is true only where the host can open a real OS directory dialog; a browser must use the path picker instead. `cliCommandInstaller` is true only where this process can install the `refyard` command into the person's PATH, which is an ability of an installed desktop app.",
   });
 
 export const hostWarningSchema = z
@@ -104,6 +106,12 @@ export const executionTargetSummarySchema = z
     state: executionTargetStateSchema,
     remotePathBrowse: z.boolean(),
     generation: targetGenerationSchema,
+    /**
+     * Why the target is not ready, when it is not. A client shows this instead of a
+     * generic "unavailable": the probe's own reason (refused, timed out, no shell, no
+     * Git) is the whole diagnostic.
+     */
+    problem: problemSchema.optional(),
   })
   .meta({
     id: "ExecutionTargetSummary",
@@ -150,16 +158,61 @@ export const acknowledgeUncertainOperationRequestSchema = z
       "Lifts the write block an uncertain operation left behind, after the caller has re-read state and confirmed against a fresh snapshot. It never rewrites the uncertain operation's outcome.",
   });
 
+/**
+ * The directories a desktop host was started with — `refyard <dir>`.
+ *
+ * A native-only surface: a browser has no command line, and the HTTP service has no
+ * process of its own to have been started with one. Every directory is absolute and was
+ * resolved against the working directory the command ran in; a refusal carries the operand
+ * exactly as it was written, so the window can quote it back instead of opening nothing
+ * and saying nothing.
+ */
+export const launchRequestSchema = z
+  .strictObject({
+    directories: z.array(z.string().min(1)),
+    refused: z.array(
+      z.strictObject({
+        named: z.string().min(1),
+        problem: z.string().min(1),
+      }),
+    ),
+  })
+  .meta({
+    id: "LaunchRequest",
+    description:
+      "What a desktop process was asked to open: absolute directories that exist, plus the operands that could not be used and why.",
+  });
+
+/** What installing the `refyard` command into the person's PATH did. */
+export const cliCommandInstallSchema = z
+  .strictObject({
+    installed: z.boolean(),
+    commandPath: z.string().min(1).nullable(),
+    onPath: z.boolean(),
+    message: z.string().min(1),
+  })
+  .meta({
+    id: "CliCommandInstall",
+    description:
+      "The outcome of installing the `refyard` command. `installed` is true only when a command now exists at `commandPath`; `onPath` says whether that directory is on the host process's PATH, which a refusal explains in `message`.",
+  });
+
 export type HostKind = z.infer<typeof hostKindSchema>;
 export type ExecutionTargetKind = z.infer<typeof executionTargetKindSchema>;
 export type ExecutionTargetState = z.infer<typeof executionTargetStateSchema>;
 export type HostCapabilities = z.infer<typeof hostCapabilitiesSchema>;
+export type LaunchRequest = z.infer<typeof launchRequestSchema>;
+export type CliCommandInstall = z.infer<typeof cliCommandInstallSchema>;
 export type HostWarning = z.infer<typeof hostWarningSchema>;
 export type SshHostCandidate = z.infer<typeof sshHostCandidateSchema>;
 export type SshHostList = z.infer<typeof sshHostListSchema>;
-export type ExecutionTargetSummary = z.infer<typeof executionTargetSummarySchema>;
+export type ExecutionTargetSummary = z.infer<
+  typeof executionTargetSummarySchema
+>;
 export type CreateTargetRequest = z.infer<typeof createTargetRequestSchema>;
-export type DisconnectTargetRequest = z.infer<typeof disconnectTargetRequestSchema>;
+export type DisconnectTargetRequest = z.infer<
+  typeof disconnectTargetRequestSchema
+>;
 export type AcknowledgeUncertainOperationRequest = z.infer<
   typeof acknowledgeUncertainOperationRequestSchema
 >;

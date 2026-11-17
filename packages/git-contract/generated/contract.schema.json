@@ -67,7 +67,7 @@
           "$ref": "#/$defs/SnapshotId"
         },
         "confirmed": {
-          "$ref": "#/$defs/__schema387"
+          "$ref": "#/$defs/__schema389"
         }
       },
       "required": [
@@ -459,7 +459,7 @@
           "$ref": "#/$defs/ProviderId"
         },
         "token": {
-          "$ref": "#/$defs/__schema400"
+          "$ref": "#/$defs/__schema402"
         }
       },
       "required": [
@@ -590,13 +590,13 @@
     "CreateTargetRequest": {
       "anyOf": [
         {
-          "$ref": "#/$defs/__schema384"
-        },
-        {
-          "$ref": "#/$defs/__schema385"
-        },
-        {
           "$ref": "#/$defs/__schema386"
+        },
+        {
+          "$ref": "#/$defs/__schema387"
+        },
+        {
+          "$ref": "#/$defs/__schema388"
         }
       ],
       "description": "Selects where future Git work runs: this machine, a candidate from the host list, or a manually entered alias bound to the config source it should be read from. Credentials are never part of this request."
@@ -972,16 +972,19 @@
           "$ref": "#/$defs/ExecutionTargetKind"
         },
         "label": {
-          "$ref": "#/$defs/__schema382"
+          "$ref": "#/$defs/__schema383"
         },
         "state": {
           "$ref": "#/$defs/ExecutionTargetState"
         },
         "remotePathBrowse": {
-          "$ref": "#/$defs/__schema383"
+          "$ref": "#/$defs/__schema384"
         },
         "generation": {
           "$ref": "#/$defs/TargetGeneration"
+        },
+        "problem": {
+          "$ref": "#/$defs/__schema385"
         }
       },
       "required": [
@@ -1299,18 +1302,22 @@
         "uncertainOperationAcknowledgement": {
           "$ref": "#/$defs/__schema372"
         },
-        "targetKinds": {
+        "cliCommandInstaller": {
           "$ref": "#/$defs/__schema373"
+        },
+        "targetKinds": {
+          "$ref": "#/$defs/__schema374"
         }
       },
       "required": [
         "sshConfig",
         "localFolderPicker",
         "uncertainOperationAcknowledgement",
+        "cliCommandInstaller",
         "targetKinds"
       ],
       "additionalProperties": false,
-      "description": "Host-level abilities. `localFolderPicker` is true only where the host can open a real OS directory dialog; a browser must use the path picker instead."
+      "description": "Host-level abilities. `localFolderPicker` is true only where the host can open a real OS directory dialog; a browser must use the path picker instead. `cliCommandInstaller` is true only where this process can install the `refyard` command into the person's PATH, which is an ability of an installed desktop app."
     },
     "HostKind": {
       "type": "string",
@@ -1324,10 +1331,10 @@
       "type": "object",
       "properties": {
         "code": {
-          "$ref": "#/$defs/__schema374"
+          "$ref": "#/$defs/__schema375"
         },
         "message": {
-          "$ref": "#/$defs/__schema375"
+          "$ref": "#/$defs/__schema376"
         }
       },
       "required": [
@@ -1993,13 +2000,13 @@
           "$ref": "#/$defs/ProviderId"
         },
         "accountLogin": {
-          "$ref": "#/$defs/__schema388"
+          "$ref": "#/$defs/__schema390"
         },
         "accountType": {
-          "$ref": "#/$defs/__schema389"
+          "$ref": "#/$defs/__schema391"
         },
         "scopes": {
-          "$ref": "#/$defs/__schema390"
+          "$ref": "#/$defs/__schema392"
         },
         "connectedAt": {
           "$ref": "#/$defs/Timestamp"
@@ -2008,7 +2015,7 @@
           "$ref": "#/$defs/ProviderAuthMethod"
         },
         "tokenExpiresAt": {
-          "$ref": "#/$defs/__schema392"
+          "$ref": "#/$defs/__schema394"
         }
       },
       "required": [
@@ -2032,7 +2039,7 @@
       "type": "object",
       "properties": {
         "connections": {
-          "$ref": "#/$defs/__schema399"
+          "$ref": "#/$defs/__schema401"
         }
       },
       "required": [
@@ -2057,10 +2064,10 @@
       "type": "object",
       "properties": {
         "userCode": {
-          "$ref": "#/$defs/__schema393"
+          "$ref": "#/$defs/__schema395"
         },
         "verificationUri": {
-          "$ref": "#/$defs/__schema394"
+          "$ref": "#/$defs/__schema396"
         }
       },
       "required": [
@@ -2086,16 +2093,16 @@
       "type": "object",
       "properties": {
         "state": {
-          "$ref": "#/$defs/__schema395"
-        },
-        "message": {
-          "$ref": "#/$defs/__schema396"
-        },
-        "userCode": {
           "$ref": "#/$defs/__schema397"
         },
-        "verificationUri": {
+        "message": {
           "$ref": "#/$defs/__schema398"
+        },
+        "userCode": {
+          "$ref": "#/$defs/__schema399"
+        },
+        "verificationUri": {
+          "$ref": "#/$defs/__schema400"
         }
       },
       "required": [
@@ -2115,16 +2122,16 @@
       "type": "object",
       "properties": {
         "number": {
-          "$ref": "#/$defs/__schema401"
-        },
-        "title": {
-          "$ref": "#/$defs/__schema402"
-        },
-        "authorLogin": {
           "$ref": "#/$defs/__schema403"
         },
-        "authorAvatarUrl": {
+        "title": {
           "$ref": "#/$defs/__schema404"
+        },
+        "authorLogin": {
+          "$ref": "#/$defs/__schema405"
+        },
+        "authorAvatarUrl": {
+          "$ref": "#/$defs/__schema406"
         },
         "headRef": {
           "$ref": "#/$defs/BranchName"
@@ -2133,10 +2140,10 @@
           "$ref": "#/$defs/BranchName"
         },
         "isDraft": {
-          "$ref": "#/$defs/__schema406"
+          "$ref": "#/$defs/__schema408"
         },
         "url": {
-          "$ref": "#/$defs/__schema405"
+          "$ref": "#/$defs/__schema407"
         },
         "updatedAt": {
           "$ref": "#/$defs/Timestamp"
@@ -2173,16 +2180,16 @@
       "type": "object",
       "properties": {
         "repository": {
-          "$ref": "#/$defs/__schema407"
-        },
-        "source": {
-          "$ref": "#/$defs/__schema408"
-        },
-        "cachedAt": {
           "$ref": "#/$defs/__schema409"
         },
-        "pullRequests": {
+        "source": {
           "$ref": "#/$defs/__schema410"
+        },
+        "cachedAt": {
+          "$ref": "#/$defs/__schema411"
+        },
+        "pullRequests": {
+          "$ref": "#/$defs/__schema412"
         }
       },
       "required": [
@@ -2884,13 +2891,13 @@
           "$ref": "#/$defs/SshSourceId"
         },
         "alias": {
-          "$ref": "#/$defs/__schema376"
-        },
-        "displayLabel": {
           "$ref": "#/$defs/__schema377"
         },
-        "discoveryIncomplete": {
+        "displayLabel": {
           "$ref": "#/$defs/__schema378"
+        },
+        "discoveryIncomplete": {
+          "$ref": "#/$defs/__schema379"
         }
       },
       "required": [
@@ -2912,13 +2919,13 @@
       "type": "object",
       "properties": {
         "hosts": {
-          "$ref": "#/$defs/__schema379"
-        },
-        "warnings": {
           "$ref": "#/$defs/__schema380"
         },
-        "revision": {
+        "warnings": {
           "$ref": "#/$defs/__schema381"
+        },
+        "revision": {
+          "$ref": "#/$defs/__schema382"
         }
       },
       "required": [
@@ -6547,39 +6554,36 @@
       "type": "boolean"
     },
     "__schema373": {
+      "type": "boolean"
+    },
+    "__schema374": {
       "type": "array",
       "items": {
         "$ref": "#/$defs/ExecutionTargetKind"
       }
     },
-    "__schema374": {
+    "__schema375": {
       "type": "string",
       "minLength": 1,
       "maxLength": 64
     },
-    "__schema375": {
+    "__schema376": {
       "type": "string",
       "minLength": 1,
       "maxLength": 512
     },
-    "__schema376": {
+    "__schema377": {
       "type": "string",
       "minLength": 1,
       "maxLength": 128
     },
-    "__schema377": {
+    "__schema378": {
       "type": "string",
       "minLength": 1,
       "maxLength": 256
     },
-    "__schema378": {
-      "type": "boolean"
-    },
     "__schema379": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/SshHostCandidate"
-      }
+      "type": "boolean"
     },
     "__schema38": {
       "type": "boolean",
@@ -6588,23 +6592,32 @@
     "__schema380": {
       "type": "array",
       "items": {
-        "$ref": "#/$defs/HostWarning"
+        "$ref": "#/$defs/SshHostCandidate"
       }
     },
     "__schema381": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 128
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/HostWarning"
+      }
     },
     "__schema382": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 256
+      "maxLength": 128
     },
     "__schema383": {
-      "type": "boolean"
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
     },
     "__schema384": {
+      "type": "boolean"
+    },
+    "__schema385": {
+      "$ref": "#/$defs/Problem"
+    },
+    "__schema386": {
       "type": "object",
       "properties": {
         "kind": {
@@ -6617,7 +6630,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema385": {
+    "__schema387": {
       "type": "object",
       "properties": {
         "kind": {
@@ -6634,7 +6647,7 @@
       ],
       "additionalProperties": false
     },
-    "__schema386": {
+    "__schema388": {
       "type": "object",
       "properties": {
         "kind": {
@@ -6657,19 +6670,9 @@
       ],
       "additionalProperties": false
     },
-    "__schema387": {
+    "__schema389": {
       "type": "boolean",
       "const": true
-    },
-    "__schema388": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 100
-    },
-    "__schema389": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 40
     },
     "__schema39": {
       "type": "object",
@@ -6692,18 +6695,28 @@
       "additionalProperties": false
     },
     "__schema390": {
-      "maxItems": 32,
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/__schema391"
-      }
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
     },
     "__schema391": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 64
+      "maxLength": 40
     },
     "__schema392": {
+      "maxItems": 32,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/__schema393"
+      }
+    },
+    "__schema393": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "__schema394": {
       "anyOf": [
         {
           "$ref": "#/$defs/Timestamp"
@@ -6713,17 +6726,17 @@
         }
       ]
     },
-    "__schema393": {
+    "__schema395": {
       "type": "string",
       "minLength": 1,
       "maxLength": 32
     },
-    "__schema394": {
+    "__schema396": {
       "type": "string",
       "minLength": 1,
       "maxLength": 2048
     },
-    "__schema395": {
+    "__schema397": {
       "type": "string",
       "enum": [
         "idle",
@@ -6734,26 +6747,14 @@
         "failed"
       ]
     },
-    "__schema396": {
+    "__schema398": {
       "type": "string",
       "maxLength": 500
     },
-    "__schema397": {
+    "__schema399": {
       "type": "string",
       "minLength": 1,
       "maxLength": 32
-    },
-    "__schema398": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 2048
-    },
-    "__schema399": {
-      "maxItems": 8,
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/ProviderConnection"
-      }
     },
     "__schema4": {
       "type": "integer",
@@ -6766,44 +6767,56 @@
     },
     "__schema400": {
       "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "__schema401": {
+      "maxItems": 8,
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ProviderConnection"
+      }
+    },
+    "__schema402": {
+      "type": "string",
       "minLength": 20,
       "maxLength": 255
     },
-    "__schema401": {
+    "__schema403": {
       "type": "integer",
       "exclusiveMinimum": 0,
       "maximum": 9007199254740991
     },
-    "__schema402": {
+    "__schema404": {
       "type": "string",
       "minLength": 1,
       "maxLength": 600
     },
-    "__schema403": {
+    "__schema405": {
       "type": "string",
       "minLength": 1,
       "maxLength": 100
     },
-    "__schema404": {
+    "__schema406": {
       "anyOf": [
         {
-          "$ref": "#/$defs/__schema405"
+          "$ref": "#/$defs/__schema407"
         },
         {
           "type": "null"
         }
       ]
     },
-    "__schema405": {
+    "__schema407": {
       "type": "string",
       "minLength": 1,
       "maxLength": 2048,
       "pattern": "^https:\\/\\/(?:github\\.com|[\\w.-]+\\.githubusercontent\\.com|[\\w.-]+\\.github\\.com)(?:\\/|$)"
     },
-    "__schema406": {
+    "__schema408": {
       "type": "boolean"
     },
-    "__schema407": {
+    "__schema409": {
       "type": "object",
       "properties": {
         "provider": {
@@ -6827,23 +6840,6 @@
       ],
       "additionalProperties": false
     },
-    "__schema408": {
-      "type": "string",
-      "enum": [
-        "upstream",
-        "cache"
-      ]
-    },
-    "__schema409": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/Timestamp"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
     "__schema41": {
       "type": "object",
       "properties": {
@@ -6865,6 +6861,23 @@
       "additionalProperties": false
     },
     "__schema410": {
+      "type": "string",
+      "enum": [
+        "upstream",
+        "cache"
+      ]
+    },
+    "__schema411": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Timestamp"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "__schema412": {
       "maxItems": 100,
       "type": "array",
       "items": {
