@@ -1259,23 +1259,14 @@
   }
 
   /**
-   * Lists one directory on the machine the launcher selected.
+   * Lists one directory for the repository launcher.
    *
-   * A local path is this machine's, exactly as before. A remote path is listed through
-   * the target — created on the first Browse if it does not exist yet — because asking
-   * this machine about it would show the wrong machine's directories. The created target
-   * is handed back to the launcher so Open reuses it instead of probing again.
+   * Only this machine is listed. The launcher disables Browse for a remote target and
+   * says why, because a listing served here would describe the wrong machine; a remote
+   * repository is reached by typing its path, which registers the target instead.
    */
-  async function browseRepositoryPath(
-    path: string,
-    target: ExecutionTargetSelection | null,
-  ) {
-    if (target === null || target.kind === "local") {
-      return queries.filesystemEntries(path);
-    }
-    const summary = await writeController.ensureTarget(target);
-    launcherTargetSummary = summary;
-    return queries.filesystemEntries(path, summary.targetId);
+  async function browseRepositoryPath(path: string) {
+    return queries.filesystemEntries(path);
   }
 
   function handleRecentRepository(entry: RecentRepository): void {
