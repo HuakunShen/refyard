@@ -21,7 +21,7 @@ import FullWorkbenchDemo from "../components/demo/FullWorkbenchDemo.svelte";
   <body class="refyard-site refyard-showcase-page">
     <div class="site-grid-overlay" aria-hidden="true"></div>
     <header class="showcase-nav" id="top">
-      <a class="showcase-wordmark" href="/" aria-label="Refyard homepage"><span class="showcase-mark">⑂</span>refyard<span class="showcase-wordmark-period">.</span></a>
+      <a class="showcase-wordmark" href="/" aria-label="Refyard homepage"><img class="showcase-mark" src="/refyard-mark.svg" alt="" width="38" height="38" />refyard<span class="showcase-wordmark-period">.</span></a>
       <nav aria-label="Main navigation">
         <a href="#why">Why Refyard</a>
         <a href="#features">Features</a>
@@ -112,7 +112,7 @@ import FullWorkbenchDemo from "../components/demo/FullWorkbenchDemo.svelte";
         <div class="showcase-hero-actions"><a href="#try-it" class="showcase-primary-cta">Open interactive sandbox <span>↗</span></a><a href="/docs/install/" class="showcase-secondary-cta">Install the app <span>→</span></a></div>
       </section>
     </main>
-    <footer class="showcase-footer"><a class="showcase-wordmark" href="#top"><span class="showcase-mark">⑂</span>refyard<span class="showcase-wordmark-period">.</span></a><span>Built for developers who care about the details.</span><div><a href="/docs/">Docs</a><a href="/docs/security/">Security</a><a href="https://github.com/HuakunShen/refyard">GitHub ↗</a></div></footer>
+    <footer class="showcase-footer"><a class="showcase-wordmark" href="#top"><img class="showcase-mark" src="/refyard-mark.svg" alt="" width="38" height="38" />refyard<span class="showcase-wordmark-period">.</span></a><span>Built for developers who care about the details.</span><div><a href="/docs/">Docs</a><a href="/docs/security/">Security</a><a href="https://github.com/HuakunShen/refyard">GitHub ↗</a></div></footer>
     <script>
       // Imperative pointer styling: no Svelte/React state updates per mouse frame.
       const surface = document.querySelector<HTMLElement>("[data-glow-surface]");
