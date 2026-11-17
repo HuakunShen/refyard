@@ -37,7 +37,12 @@ export function Docs({
       <DocsLayout
         tree={tree}
         nav={{
-          title: "Refyard",
+          title: (
+            <span className="inline-flex items-center gap-2 font-semibold">
+              <img src="/refyard-mark.svg" alt="" width={26} height={26} />
+              Refyard
+            </span>
+          ),
           url: "/",
           transparentMode: "top",
         }}

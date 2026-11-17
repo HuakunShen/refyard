@@ -7,6 +7,7 @@
   "scripts": {
     "dev:site": "astro dev",
     "build:site": "astro build",
+    "verify:branding": "node scripts/verify-branding.ts",
     "preview:site": "astro preview",
     "check": "svelte-check --tsconfig ./tsconfig.svelte.json --threshold error"
   },

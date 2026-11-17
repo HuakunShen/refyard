@@ -1,33 +1,93 @@
-<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 128 128">
-  <g>
-    <path
-      d="M47.7 107.1c-5.5-5-7.2-15.7-4.9-23.4 4 4.9 9.6 6.4 15.4 7.3 8.9 1.3 17.6.8 25.9-3.2l2.8-1.7a18 18 0 0 1-7.2 20l-5.5 3.8c-5.6 3.8-7.2 8.2-5 14.7l.2.7a14 14 0 0 1-6.6-5.6 15.8 15.8 0 0 1-2.6-8.6c0-1.5 0-3-.2-4.5-.5-3.7-2.2-5.3-5.5-5.4-3.3-.1-5.9 2-6.6 5.2l-.2.7Z"
-    />
-    <path
-      d="M16 82.4s16.5-8 33-8l12.4-38.3c.5-2 1.8-3.2 3.3-3.2 1.6 0 3 1.3 3.4 3.2l12.4 38.3c19.6 0 33 8 33 8l-28-76c-.8-2.3-2.2-3.7-4-3.7H48c-1.8 0-3.1 1.4-4 3.7l-28 76Z"
-    />
-  </g>
-  <path
-    fill="url(#a)"
-    d="M47.7 107.1c-5.5-5-7.2-15.7-4.9-23.4 4 4.9 9.6 6.4 15.4 7.3 8.9 1.3 17.6.8 25.9-3.2l2.8-1.7a18 18 0 0 1-7.2 20l-5.5 3.8c-5.6 3.8-7.2 8.2-5 14.7l.2.7a14 14 0 0 1-6.6-5.6 15.8 15.8 0 0 1-2.6-8.6c0-1.5 0-3-.2-4.5-.5-3.7-2.2-5.3-5.5-5.4-3.3-.1-5.9 2-6.6 5.2l-.2.7Z"
-  />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Refyard mark</title>
+  <desc id="desc">Layered repository pages separated by white negative space, with a branching ref graph.</desc>
 
   <defs>
-    <linearGradient id="a" x1="64.7" x2="77.4" y1="119.2" y2="77.4" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#D83333" />
-      <stop offset="1" stop-color="#F041FF" />
+    <linearGradient id="navyGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#183552"/>
+      <stop offset="1" stop-color="#0A1B2D"/>
+    </linearGradient>
+    <linearGradient id="blueGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4D7FFF"/>
+      <stop offset="1" stop-color="#1E5EFF"/>
     </linearGradient>
   </defs>
 
-  <style>
-    g {
-      fill: #000;
-    }
+  <!-- back page -->
+  <path d="M32 72
+           Q32 56 47 50
+           L108 27
+           Q118 23 118 35
+           L118 57
+           L72 74
+           Q61 78 61 90
+           L61 191
+           Q61 202 51 207
+           L43 211
+           Q32 206 32 194 Z"
+        fill="url(#navyGrad)"
+        stroke="#FFFFFF"
+        stroke-width="10"
+        stroke-linejoin="round"/>
 
-    @media (prefers-color-scheme: dark) {
-      g {
-        fill: #FFF;
-      }
-    }
-  </style>
+  <!-- middle page: white outline creates the first visible page gap -->
+  <path d="M57 82
+           Q57 67 70 62
+           L131 39
+           Q141 35 141 47
+           L141 70
+           L96 87
+           Q85 91 85 103
+           L85 198
+           Q85 209 75 214
+           L67 218
+           Q57 213 57 202 Z"
+        fill="#112A45"
+        stroke="#FFFFFF"
+        stroke-width="10"
+        stroke-linejoin="round"/>
+
+  <!-- front page: second white separator -->
+  <path d="M84 96
+           Q84 81 97 76
+           L151 56
+           Q162 52 162 64
+           L162 110
+           Q162 123 150 128
+           L115 142
+           Q104 147 104 159
+           L104 198
+           Q104 211 91 217
+           L84 220
+           Q76 216 76 205
+           L76 109
+           Q76 101 84 96 Z"
+        fill="url(#navyGrad)"
+        stroke="#FFFFFF"
+        stroke-width="10"
+        stroke-linejoin="round"/>
+
+  <!-- blue ref path -->
+  <path d="M173 60
+           C173 91 171 104 153 114
+           C132 126 119 132 119 153"
+        fill="none"
+        stroke="url(#blueGrad)"
+        stroke-width="13"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
+
+  <!-- branch to secondary ref -->
+  <path d="M119 153 C128 171 146 184 174 198"
+        fill="none"
+        stroke="#14283D"
+        stroke-width="12"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
+
+  <!-- ref nodes -->
+  <circle cx="173" cy="56" r="22" fill="#FFFFFF" stroke="url(#blueGrad)" stroke-width="13"/>
+  <circle cx="119" cy="153" r="19" fill="#FFFFFF" stroke="url(#blueGrad)" stroke-width="12"/>
+  <circle cx="184" cy="202" r="17" fill="#FFFFFF" stroke="#14283D" stroke-width="11"/>
+
 </svg>

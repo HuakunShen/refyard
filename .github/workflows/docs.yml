@@ -47,6 +47,9 @@ jobs:
       - name: Build the site
         run: pnpm --dir apps/docs build:site
 
+      - name: Verify authentic application branding
+        run: pnpm --dir apps/docs verify:branding
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: apps/docs/dist

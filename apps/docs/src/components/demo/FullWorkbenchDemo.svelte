@@ -92,7 +92,7 @@
 <div class:full-demo-embedded={mode === "embedded"} class="full-demo" data-testid="full-workbench-demo">
   {#if mode === "full"}
     <div class="full-demo-external-nav">
-      <a href="/" class="demo-brand"><span class="showcase-mark">⑂</span> refyard<span class="demo-brand-dot">.</span></a>
+      <a href="/" class="demo-brand"><img class="showcase-mark" src="/refyard-mark.svg" alt="" width="38" height="38" /> refyard<span class="demo-brand-dot">.</span></a>
       <div class="full-demo-external-links"><a href="/docs/">Documentation</a><a href="https://github.com/HuakunShen/refyard">GitHub ↗</a></div>
     </div>
   {/if}
