@@ -23,6 +23,11 @@ export default defineConfig({
       project: resolve(gitUiRoot, "project.inlang"),
       outdir: resolve(gitUiRoot, "src/i18n/paraglide"),
       emitTsDeclarations: true,
+      // The compiled output is committed, because the type check and the unit suites run
+      // before any build exists. Paraglide's default `.gitignore` (a single `*`) hides
+      // newly added message modules, so a string could compile locally and be missing from
+      // a fresh checkout — which is exactly how `commit_expand_graph` reached CI.
+      emitGitIgnore: false,
       // A static SPA has no server to read a URL strategy from, so the locale is one
       // variable the app sets from its own persisted setting; `baseLocale` is the fallback
       // while nothing has set it.
