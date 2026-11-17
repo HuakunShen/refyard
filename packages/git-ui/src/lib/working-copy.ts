@@ -61,6 +61,11 @@ export function canStage(entry: StatusEntry): boolean {
   );
 }
 
+/** For hosts that can only safely move an entire path between Git's two layers. */
+export function canStageWholeFile(entry: StatusEntry): boolean {
+  return canStage(entry) && !isUnmerged(entry) && (entry.kind === "untracked" || entry.indexStatus === ".");
+}
+
 export function canUnstage(entry: StatusEntry): boolean {
   return (
     entry.pathEncoding === "utf8" &&
@@ -68,6 +73,10 @@ export function canUnstage(entry: StatusEntry): boolean {
     entry.kind !== "ignored" &&
     entry.indexStatus !== "."
   );
+}
+
+export function canUnstageWholeFile(entry: StatusEntry): boolean {
+  return canUnstage(entry) && !isUnmerged(entry) && entry.worktreeStatus === ".";
 }
 
 export function canDiscard(entry: StatusEntry): boolean {
