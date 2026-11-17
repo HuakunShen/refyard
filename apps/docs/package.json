@@ -7,24 +7,32 @@
   "scripts": {
     "dev:site": "astro dev",
     "build:site": "astro build",
-    "preview:site": "astro preview"
+    "preview:site": "astro preview",
+    "check": "svelte-check --tsconfig ./tsconfig.svelte.json --threshold error"
   },
   "dependencies": {
     "@astrojs/markdown-remark": "catalog:",
     "@astrojs/mdx": "catalog:",
     "@astrojs/react": "catalog:",
+    "@astrojs/svelte": "catalog:",
+    "@refyard/git-ui": "workspace:*",
+    "@refyard/git-contract": "workspace:*",
+    "@refyard/git-graph": "workspace:*",
     "astro": "catalog:",
     "fumadocs-core": "catalog:",
     "fumadocs-ui": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
     "sharp": "catalog:",
+    "svelte": "catalog:",
     "takumi-js": "catalog:"
   },
   "devDependencies": {
     "@tailwindcss/vite": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
-    "tailwindcss": "catalog:"
+    "tailwindcss": "catalog:",
+    "svelte-check": "catalog:",
+    "typescript": "catalog:svelte"
   }
 }

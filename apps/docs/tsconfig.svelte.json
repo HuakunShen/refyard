@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["svelte"],
+    "moduleResolution": "bundler",
+    "allowJs": true,
+    "checkJs": true,
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src/components/**/*.svelte", "src/lib/demo/**/*.ts", "src/**/*.d.ts"]
+}

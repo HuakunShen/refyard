@@ -22,6 +22,8 @@
     busy?: boolean;
     /** True when the branch has at least one commit (amend needs a tip to rewrite). */
     canAmend?: boolean;
+    /** Hosts that do not support rewriting history can remove amend controls. */
+    showAmendActions?: boolean;
     message?: string | null;
     /** The draft is bindable so each worktree can retain its own composer text. */
     draft?: string;
@@ -37,6 +39,7 @@
     disabled = false,
     busy = false,
     canAmend = true,
+    showAmendActions = true,
     message = null,
     draft = $bindable(""),
     onDraftChange = undefined,
@@ -108,6 +111,7 @@
       {m.commit_commit()}
     </Button>
 
+    {#if showAmendActions}
     <ConfirmAction
       label={m.working_copy_amend()}
       confirmLabel={m.commit_rewrite_tip()}
@@ -126,6 +130,7 @@
       onConfirm={() => onAmend(null)}
       data-testid="amend-keep-button"
     />
+    {/if}
   </div>
 
   {#if message !== null}

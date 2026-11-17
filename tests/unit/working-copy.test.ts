@@ -4,7 +4,9 @@ import type { StatusEntry } from "@refyard/git-contract";
 import {
   canDiscard,
   canStage,
+  canStageWholeFile,
   canUnstage,
+  canUnstageWholeFile,
   groupWorkingCopyEntries,
   isUnmerged,
 } from "@refyard/git-ui/lib/working-copy";
@@ -86,5 +88,15 @@ describe("working-copy grouping", () => {
     expect(canDiscard(conflict)).toBe(true);
     expect(canStage(unrepresentable)).toBe(false);
     expect(canDiscard(unrepresentable)).toBe(false);
+  });
+
+  it("protects whole-file-only hosts from silently collapsing mixed XY state", () => {
+    const mixed = entry("mixed", "M", "M");
+    expect(canStageWholeFile(mixed)).toBe(false);
+    expect(canUnstageWholeFile(mixed)).toBe(false);
+    expect(canStageWholeFile(entry("unstaged", ".", "M"))).toBe(true);
+    expect(canUnstageWholeFile(entry("staged", "M", "."))).toBe(true);
+    expect(canStageWholeFile(entry("untracked", "?", "?", "untracked"))).toBe(true);
+    expect(canStageWholeFile(entry("bad-bytes", ".", "M", "ordinary", { pathEncoding: "unrepresentable" }))).toBe(false);
   });
 });

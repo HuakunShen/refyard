@@ -1,0 +1,22 @@
+---
+/** Local-only, static Git workbench demo; no backend or repository mutation. */
+import "../../styles/showcase.css";
+import DemoWorkbench from "../../components/demo/DemoWorkbench.svelte";
+---
+
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0a0c10" />
+    <title>Git Sandbox — Refyard</title>
+  </head>
+  <body class="refyard-site refyard-demo-page">
+    <main id="demo-app">
+      <DemoWorkbench client:only="svelte">
+        <div slot="fallback" class="demo-loading">Loading the local-only Git sandbox…</div>
+      </DemoWorkbench>
+    </main>
+  </body>
+</html>

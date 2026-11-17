@@ -19,7 +19,9 @@
   import {
     canDiscard,
     canStage,
+    canStageWholeFile,
     canUnstage,
+    canUnstageWholeFile,
     groupWorkingCopyEntries,
     isUnmerged,
     type WorkingCopyGroups,
@@ -38,6 +40,12 @@
     busy?: boolean;
     stagingAvailable?: boolean;
     commitAvailable?: boolean;
+    /** Hosts with no discard capability should not expose a misleading action. */
+    discardAvailable?: boolean;
+    /** Hosts without history rewriting can hide the amend affordance. */
+    amendAvailable?: boolean;
+    /** Disable the ambiguous partial-stage case in simple whole-file sandboxes. */
+    wholeFileOnly?: boolean;
     stagingMessage?: string | null;
     commitMessage?: string | null;
     draft?: string;
@@ -62,6 +70,9 @@
     busy = false,
     stagingAvailable = true,
     commitAvailable = true,
+    discardAvailable = true,
+    amendAvailable = true,
+    wholeFileOnly = false,
     stagingMessage = null,
     commitMessage = null,
     draft = $bindable(""),
@@ -113,6 +124,14 @@
     return disabled || busy || !stagingAvailable;
   }
 
+  function stageAllowed(entry: StatusEntry): boolean {
+    return wholeFileOnly ? canStageWholeFile(entry) : canStage(entry);
+  }
+
+  function unstageAllowed(entry: StatusEntry): boolean {
+    return wholeFileOnly ? canUnstageWholeFile(entry) : canUnstage(entry);
+  }
+
   function askDiscard(entry: StatusEntry): void {
     pendingDiscardEntry = entry;
     discardDialogOpen = true;
@@ -120,31 +139,34 @@
 
   function pathActions(entry: StatusEntry): readonly ContextAction[] {
     const disabledAction = actionDisabled();
-    return [
+    const actions: ContextAction[] = [
       {
         kind: "action",
         id: "stage",
         label: m.copy_stage(),
-        disabled: disabledAction || !canStage(entry),
+        disabled: disabledAction || !stageAllowed(entry),
         onSelect: () => onStage([entry.pathId]),
       },
       {
         kind: "action",
         id: "unstage",
         label: m.copy_unstage(),
-        disabled: disabledAction || !canUnstage(entry),
+        disabled: disabledAction || !unstageAllowed(entry),
         onSelect: () => onUnstage([entry.pathId]),
       },
-      { kind: "separator", id: "discard-separator" },
-      {
-        kind: "action",
-        id: "discard",
-        label: m.copy_discard(),
-        destructive: true,
-        disabled: disabledAction || !canDiscard(entry),
-        onSelect: () => askDiscard(entry),
-      },
     ];
+    if (discardAvailable) {
+      actions.push(
+        { kind: "separator", id: "discard-separator" },
+        {
+          kind: "action", id: "discard", label: m.copy_discard(),
+          destructive: true,
+          disabled: disabledAction || !canDiscard(entry),
+          onSelect: () => askDiscard(entry),
+        },
+      );
+    }
+    return actions;
   }
 
   function actionPaths(
@@ -153,7 +175,7 @@
   ): string[] {
     return entries
       .filter((entry) =>
-        side === "unstaged" ? canStage(entry) : canUnstage(entry),
+        side === "unstaged" ? stageAllowed(entry) : unstageAllowed(entry),
       )
       .map((entry) => entry.pathId);
   }
@@ -336,7 +358,7 @@
                             size="icon-xs"
                             variant="ghost"
                             class="size-6 text-ink-muted hover:text-emerald-600"
-                            disabled={rowActionDisabled || !canStage(entry)}
+                            disabled={rowActionDisabled || !stageAllowed(entry)}
                             onclick={() => onStage([entry.pathId])}
                             title={`Stage ${entry.displayPath}`}
                             aria-label={`Stage ${entry.displayPath}`}
@@ -349,7 +371,7 @@
                             size="icon-xs"
                             variant="ghost"
                             class="size-6 text-ink-muted hover:text-amber-600"
-                            disabled={rowActionDisabled || !canUnstage(entry)}
+                            disabled={rowActionDisabled || !unstageAllowed(entry)}
                             onclick={() => onUnstage([entry.pathId])}
                             title={`Unstage ${entry.displayPath}`}
                             aria-label={`Unstage ${entry.displayPath}`}
@@ -389,7 +411,8 @@
         stagedCount={groups.staged.length}
         disabled={commitDisabled}
         {busy}
-        canAmend={status?.head.kind === "born"}
+        canAmend={amendAvailable && status?.head.kind === "born"}
+        showAmendActions={amendAvailable}
         message={commitMessage}
         bind:draft
         {onDraftChange}
@@ -408,6 +431,7 @@
   </section>
 </div>
 
+{#if discardAvailable}
 <ConfirmDialog
   bind:open={discardDialogOpen}
   title={pendingDiscardEntry === null
@@ -425,3 +449,4 @@
   }}
   data-testid="working-copy-discard-dialog"
 />
+{/if}
